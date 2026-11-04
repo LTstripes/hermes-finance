@@ -2,7 +2,7 @@ import { apiMultipart, apiRequest } from "./client";
 import type { ReturnAccountLink, ReturnPeriod } from "./returnAccount";
 
 export type SourceReturnProof = {
-  status: "absent" | "current" | "stale";
+  status: "absent" | "current" | "stale" | "compatibility_unchecked";
   proof_id: number | null;
   version: string;
   confirmed_at: string | null;

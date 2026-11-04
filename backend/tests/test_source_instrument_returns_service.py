@@ -823,10 +823,10 @@ def test_one_money_reader_failure_does_not_fail_response_or_other_months(db, mon
     save(db, 5, trades=(), bond=("3", "3", "3150", "3180"))
     money_reader = service._money
 
-    def broken(session, view, choices, gaps):
+    def broken(session, view, choices, gaps, **kwargs):
         if view["id"] == failed:
             raise ValueError("synthetic malformed saved money row")
-        return money_reader(session, view, choices, gaps)
+        return money_reader(session, view, choices, gaps, **kwargs)
 
     monkeypatch.setattr(service, "_money", broken)
     before = snapshot(db)

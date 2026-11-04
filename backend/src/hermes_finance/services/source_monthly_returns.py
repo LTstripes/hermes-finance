@@ -354,7 +354,7 @@ def _saved_totals(document):
     return (None, None, reasons) if reasons else (*totals, reasons)
 
 
-def _money(session, view, choices, gaps, *, selected_accounts=None):
+def _money(session, view, choices, gaps, *, selected_accounts=None, payout_groups=None):
     persisted = {
         row.source_reference: row
         for row in session.scalars(
@@ -497,6 +497,9 @@ def _money(session, view, choices, gaps, *, selected_accounts=None):
                 "narrative": saved.narrative,
             }
         )
+        if identity := (payout_groups or {}).get(reference):
+            signature = digest(["accepted_money", *identity])
+            status = "confirmed"
         occurrence = counts[signature]
         counts[signature] += 1
         result.append(
@@ -524,6 +527,12 @@ def read_monthly_returns(
 
 
 @coherent_read_operation
+def read_monthly_for_card_history(session, *, source_account):
+    """Private account-history input; optional proof XIRRs are not card inputs."""
+    return _read_monthly_returns(session, source_account=source_account, include_proof_xirr=False)
+
+
+@coherent_read_operation
 def read_monthly_result(session, *, source_account, opening_date, closing_date):
     """The ordinary month's operands, without unrelated periods or XIRR.
 
@@ -543,7 +552,13 @@ def read_monthly_result(session, *, source_account, opening_date, closing_date):
 
 
 def _read_monthly_returns(
-    session, *, source_account, originals=None, assumptions=None, target_month=None
+    session,
+    *,
+    source_account,
+    originals=None,
+    assumptions=None,
+    target_month=None,
+    include_proof_xirr=True,
 ):
     """Read persisted classifications; isolate bad originals/months and retain gaps."""
     from hermes_finance.services.returns_account_link import account_link
@@ -555,10 +570,15 @@ def _read_monthly_returns(
     uncertain_source_months = set()
     conflicting_endpoint_dates = set()
     source_flow_reasons = defaultdict(set)
+    pending_cancellations = set()
     selected, native_scope = _selected_sources(session, source_account)
     from hermes_finance.services.source_return_proofs import resolve_proof
 
     saved_dates, proof_status = resolve_proof(session, source_account, selected, native_scope)
+    from hermes_finance.services.source_return_evidence import canonical_payout_groups
+
+    payout_views = [v for _, v, error in selected if v and not error]
+    payout_groups = canonical_payout_groups(session, payout_views)
     for original, view, error in selected:
         start, end = original.covered_from, original.covered_to
         unknown_source_flows = False
@@ -612,7 +632,7 @@ def _read_monthly_returns(
                 if cancellation_dates and any(
                     day.replace(day=1) == covered_month for day in cancellation_dates
                 ):
-                    month_blockers.add("custody_cancellation_unresolved")
+                    pending_cancellations.add((original.id, covered_month))
                 if month_blockers:
                     uncertain_source_months.add(covered_month)
                     source_flow_reasons[covered_month].update(month_blockers)
@@ -661,6 +681,7 @@ def _read_monthly_returns(
                     view,
                     (assumptions or {}).get(original.id),
                     gaps,
+                    payout_groups=payout_groups,
                 ):
                     money[key].append(flow)
         except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
@@ -680,10 +701,32 @@ def _read_monthly_returns(
             opening = closing = None
         sources.append((original.id, start, end, opening, closing))
 
+    from hermes_finance.services.source_monthly_internal_evidence import verified_internal_money
+
+    internal_keys, resolved_cancellations = (
+        verified_internal_money(
+            session,
+            source_account,
+            selected,
+            native_scope,
+            saved_dates,
+            money,
+            include_xirr=target_month is None and include_proof_xirr,
+        )
+        if not originals
+        and any(f.classification == "unknown" for group in money.values() for f in group)
+        else (set(), set())
+    )
+    for intake_id, covered_month in pending_cancellations - resolved_cancellations:
+        uncertain_source_months.add(covered_month)
+        source_flow_reasons[covered_month].add("custody_cancellation_unresolved")
+        gaps.append(SourceReturnGap("custody_cancellation_unresolved", intake_id, covered_month))
+
     flows = []
     income = defaultdict(lambda: {"coupon": 0, "dividend": 0})
     assumed_income_months = set()
-    for observations in money.values():
+    ambiguous_income = set()
+    for key, observations in money.items():
         confirmed = [flow for flow in observations if flow.status == "confirmed"]
         selected = confirmed or observations
         if len({(flow.included, flow.classification) for flow in selected}) != 1:
@@ -695,7 +738,7 @@ def _read_monthly_returns(
             continue
         flow = selected[0]
         refs = tuple(ref for item in observations for ref in item.source_references)
-        if flow.classification == "unknown":
+        if flow.classification == "unknown" and key not in internal_keys:
             gaps.extend(
                 SourceReturnGap(
                     "unrecognized_money",
@@ -707,6 +750,18 @@ def _read_monthly_returns(
             )
         elif flow.classification in {"coupon", "dividend"}:
             income_month = flow.event_date.replace(day=1)
+            present = {int(ref.split(":")[1]) for ref in refs}
+            if any(
+                v["covered_from"] <= str(flow.event_date) <= v["covered_to"]
+                and v["id"] not in present
+                for v in payout_views
+            ):
+                ambiguous_income.add((income_month, flow.classification))
+                gaps.append(
+                    SourceReturnGap(
+                        "overlap_income_ambiguous", month=income_month, source_reference=refs[0]
+                    )
+                )
             income[income_month][flow.classification] += flow.amount_kopecks
             if flow.status == "assumed":
                 assumed_income_months.add(income_month)
@@ -787,18 +842,13 @@ def _read_monthly_returns(
 
         opening = endpoint(3, lambda source: source[1] == month)
         closing = endpoint(4, lambda source: source[2] == end)
-        # The monthly row never needs the chain's period XIRR. Use its same
-        # canonical monthly kernel directly for the bounded projection.
-        if target_month is not None:
-            from hermes_finance.domain.monthly_return_chain import calculate_interval_return
+        # The row uses only the shared monthly kernel; the chain's period
+        # XIRR is calculated separately for actual periods and segments.
+        from hermes_finance.domain.monthly_return_chain import calculate_interval_return
 
-            calculated = calculate_interval_return(
-                (month - timedelta(days=1), opening), (end, closing), schedule
-            )
-        else:
-            calculated = calculate_monthly_return_chain(
-                [(month - timedelta(days=1), opening), (end, closing)], schedule
-            ).months[0]
+        calculated = calculate_interval_return(
+            (month - timedelta(days=1), opening), (end, closing), schedule
+        )
         if {month - timedelta(days=1), end} & conflicting_endpoint_dates:
             calculated = replace(
                 calculated, reason_codes=(*calculated.reason_codes, "duplicate_position")
@@ -818,6 +868,8 @@ def _read_monthly_returns(
                 ),
             )
         flags = list(calculated.reason_codes)
+        if any(day == month for day, _ in ambiguous_income):
+            flags.append("overlap_income_ambiguous")
         if any(gap.code == "broker_gift_external_flow" and gap.month == month for gap in gaps):
             flags.append("broker_gift_external_flow")
         if opening is not None and previous_closing is not None and opening != previous_closing:
@@ -833,10 +885,14 @@ def _read_monthly_returns(
                 tuple(flags),
                 previous_closing,
                 income[month]["coupon"]
-                if income_covered and month not in uncertain_months
+                if income_covered
+                and month not in uncertain_months
+                and (month, "coupon") not in ambiguous_income
                 else None,
                 income[month]["dividend"]
-                if income_covered and month not in uncertain_months
+                if income_covered
+                and month not in uncertain_months
+                and (month, "dividend") not in ambiguous_income
                 else None,
                 month in assumed_income_months,
             )
@@ -846,7 +902,9 @@ def _read_monthly_returns(
     from hermes_finance.services.source_investment_proofs import read_reports
 
     if target_month is None:
-        investment_reports = read_reports(session, source_account=source_account)
+        investment_reports = read_reports(
+            session, source_account=source_account, include_xirr=include_proof_xirr
+        )
     else:
         from hermes_finance.services.source_investment_proofs import read_account_summaries
 

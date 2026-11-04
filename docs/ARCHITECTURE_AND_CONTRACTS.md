@@ -2422,14 +2422,53 @@ ordinary monthly GET, never an automatic second POST. A replay cannot reactivate
 stale evidence. Protected real-data confirmation still requires its exact
 Preview, separate Owner GO and fresh validated backup/readback.
 
-All selected sources remain present. Document-local filename/native aliases may
-share a proof only through the same single native account and exact source-set
-binding. SQL retirement revisions cover real source/head, classification,
-catalogue/mapping, correction/disposition and month changes, including ABA;
-global conservative invalidation is intentional. Parser/proof implementation
-changes invalidate old evidence too. A stale/latest-invalid proof never falls
-back to an older record or silently refreshes itself. Unrelated ordinary
-source calculations that need no custody proof retain their normal guards.
+Every originally confirmed source must remain present and unchanged. A new
+original does not inherit another original's custody evidence. Filename/native
+aliases share a proof only through one exact native account. New confirmations
+use `source_custody_structure_v2` in the existing evidence JSON and dependency
+digest: physical database incarnation, exact bound hashes/parsers/manifest heads
+and reviewed structure semantics. Catalogue, Money, reporting-month and unrelated
+source changes are not inputs to this source-only statement about custody dates.
+A separate semantic tripwire covers its parser, grammar and proof implementation;
+meaning changes require a reviewed revision. Ordinary releases preserve proofs.
+
+Legacy compatibility is recovered explicitly outside GET. Until prepared,
+`compatibility_unchecked` means the original decision is preserved but its
+compatibility has not been established; it does not request reupload or new
+Owner attestation. `prepare_legacy_recovery` reads existing evidence and may
+perform an exhaustive, progress-reported search of both old journal operands.
+Timestamps order candidates only; exact old digest equality, physical DB,
+source bindings, identity revision and allowed intervening journal records are
+mandatory. Unprovable/stale dependencies refuse preparation.
+
+An authorized offline `apply_legacy_recovery` revalidates the prepared operands
+under the existing writer reservation and appends one derived custody proof in
+`SourceReturnProof`, with the original `confirmed_at`. Existing rows remain
+unchanged. Its evidence stores the parent ID/full immutable fingerprint, exact
+old digest operands and separate recovery time. This is compatibility metadata,
+not Confirm or a new Owner decision. Replay is idempotent; racing new proofs or
+changed operands refuse the plan. No new schema, ledger, receipt store or
+financial write is introduced. Ordinary GET verifies the immediate parent,
+reproduced digest and scoped physical/source dependencies, with no journal-pair
+search and no process cache required. Later catalogue changes and future
+nonoverlapping originals do not retire the recovered custody statement;
+financial readers independently validate their current evidence. Changed bound
+source heads/manifests, replacement DBs and later explicit proofs retain their
+normal retirement boundaries. O describes the maintenance command and gates.
+
+Custody currentness alone never proves principal, quantity or return. Redemption
+requires a separate current historical investment proof and exact source transfer,
+cash occurrence, native account, ISIN, amount and dated quantity. Conflicting
+choices, missing evidence, unavailable endpoints and unallocated costs retain
+uncertainty on their dependent results. The dated and monthly projections carry
+one redemption cash flow and the same source-booked quantity/date. Ambiguous
+payout overlap cannot contribute twice to monthly components while being rejected
+by the dated reader.
+Without a current common receipt, mismatching income occurrence sets or
+multiplicity in covering originals make only that role/month component NULL.
+This ambiguity never changes the independently balance-derived account return,
+external-flow schedule or another income role. Two genuine identical payments
+retain their occurrence multiplicity.
 
 Durable effectiveness additionally requires the original physical DB object:
 file identity plus creation/birth time, with a matching SQL connection stamp.
@@ -6230,11 +6269,20 @@ them. MyBroker filenames may include a positive integer duplicate suffix such as
 ` (1)` before `.xml`; interval selection follows the [S1 period policy](#c3-mybroker_s1-1).
 Acknowledged same-request replay stays read-only.
 
-Coupon and dividend monthly subtotals remain NULL whenever money classification
-or source-flow coverage is uncertain, including unrecognized money rows. This
-withholds partial known income as well as apparent zero income; a fully classified,
-covered month with no income retains zero. Missing valuations alone do not erase
-known income.
+Account-wide coupon/dividend monthly subtotals retain their source-flow coverage
+contract. Instrument monthly readers preserve observed, independently attributed
+coupon/dividend components even when the complete result is unavailable. A known
+component is not a complete component or total: income_complete/flags retain
+uncertainty, unknown costs withhold total/rate, and absent observations remain NULL
+unless coverage proves zero. Missing valuations alone do not erase known income.
+
+Instrument subintervals may reuse individual current XML/PDF payout events from
+the existing source investment proof, never its historical endpoint valuations.
+Exact source SHA/ordinal, native account, role/date/RUB amount and payout identity
+must agree. Existing saved choices, current Money receipts and every overlapping
+original must agree; missing/duplicate occurrences, unproved timestamp changes or
+conflicting current proof identities retain UNKNOWN. This is a read projection
+with financial_authority=none; it creates no links, receipts or booked payouts.
 
 Owner decision (2026-10-23): positive promo-gift Money rows default to
 `external_deposit` when a single-line narrative contains a Cyrillic word beginning

@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { expect, test } from "vitest";
+import { reasonCopy } from "../../lib/reasonCopy";
 import { detailFixture, m } from "./fixtures";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 
@@ -10,6 +11,23 @@ const setup = (props: Parameters<typeof ReturnsInstrumentResult>[0]) =>
       <ReturnsInstrumentResult {...props} />
     </MemoryRouter>,
   );
+
+test("instrument card hides the account gift disclosure but keeps real missing-data reasons", () => {
+  const detail = detailFixture();
+  detail.pnl = { ...m(null), reason_codes: ["broker_gift_external_flow", "source_proof_stale"] };
+  detail.rate = { ...m(null, "fraction"), reason_codes: ["broker_gift_external_flow"] };
+  setup({
+    result: detail,
+    reasonCodes: ["broker_gift_external_flow", "source_proof_stale"],
+  });
+  expect(screen.queryByText(reasonCopy("broker_gift_external_flow").message)).toBeNull();
+  expect(
+    screen.getAllByText(
+      (_, node) => node?.textContent?.includes(reasonCopy("source_proof_stale").message) ?? false,
+    ).length,
+  ).toBeGreaterThan(0);
+  expect(screen.getAllByText("—")).toHaveLength(2);
+});
 
 test("preserves exact large money and negative period rate from the server", () => {
   setup({
@@ -38,6 +56,23 @@ test("missing detail never becomes zero or a conditional or partial result", () 
   setup({ result: detail, analysis: detail.analysis });
   expect(screen.getAllByText("—")).toHaveLength(2);
   expect(screen.queryByText(/76 543|12 345|0 ₽/)).toBeNull();
+});
+
+test("shows observed partial payouts without presenting them as total result", () => {
+  const detail = detailFixture();
+  detail.pnl = m(null);
+  detail.rate = m(null, "fraction", "modified_dietz");
+  detail.analysis.components.coupons = {
+    ...detail.analysis.components.coupons,
+    status: "partial",
+    value: "12345",
+  };
+  detail.analysis.components.dividends.value = null;
+  setup({ result: detail, analysis: detail.analysis });
+  expect(screen.getByText("Найденные выплаты — данные могут быть неполными")).toBeVisible();
+  expect(screen.getByText("123,45 ₽")).toBeVisible();
+  expect(screen.getAllByText("—")).toHaveLength(2);
+  expect(screen.queryByText("Дивиденды")).toBeNull();
 });
 test("assumptions on analysis, metrics and events remain visible and deduplicated", () => {
   const detail = detailFixture();

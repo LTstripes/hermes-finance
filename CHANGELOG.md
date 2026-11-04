@@ -4,6 +4,15 @@
 Точное состояние установленной версии и UAT — только в
 [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
+## [1.10.4] - 2026-11-04
+
+- Fix redemption principal/quantity/date, overlapping payout components and
+  agreeing evidence links; preserve independent components when totals are incomplete.
+- Scope new custody confirmations to immutable originals and retain strict,
+  faster compatibility checks for existing proofs without automatic writes.
+- Retain verified T-Invest TLS, sanitized diagnostics and instrument-card speed/layout fixes.
+- [Release notes 1.10.4](docs/release-notes-1.10.4.md).
+
 ## [1.8.1] - 2026-10-30
 
 - Exact distinct-root XIRR certification supports repeated sign changes and

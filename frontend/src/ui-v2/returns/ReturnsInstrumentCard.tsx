@@ -13,7 +13,7 @@ import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
 import { ReturnsBreakdown } from "./ReturnsBreakdown";
-import { Explanation } from "./ReturnsInfo";
+import { Explanation, visibleReturnReasons } from "./ReturnsInfo";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
@@ -45,18 +45,18 @@ export function ReturnsInstrumentCard({
     queryFn: ({ signal }) => getInstrumentCard(isin, signal),
     staleTime: 0,
   });
-  const data = !query.isFetching && !query.isError ? query.data : undefined;
+  const data = !query.isError ? query.data : undefined;
   const limitedAccounts =
     data?.accounts
       .map((account) => ({
         account,
-        codes: [
+        codes: visibleReturnReasons([
           ...new Set([
             ...account.reason_codes,
             ...(account.detail?.pnl.value === null ? account.detail.pnl.reason_codes : []),
             ...(account.detail?.rate.value === null ? account.detail.rate.reason_codes : []),
           ]),
-        ],
+        ]),
       }))
       .filter(({ account, codes }) => !account.included || !account.detail || codes.length > 0) ??
     [];
@@ -98,9 +98,10 @@ export function ReturnsInstrumentCard({
             Повторить
           </button>
         </p>
-      ) : query.isFetching ? (
+      ) : query.isFetching && !data ? (
         <p role="status">Загружаем инструмент…</p>
       ) : null}
+      {query.isFetching && data ? <p role="status">Обновляем данные…</p> : null}
       {data && (
         <>
           <header className={styles.header}>

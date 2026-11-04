@@ -1,8 +1,8 @@
 import type { InstrumentAnalysis } from "../../api/sourceReturns";
 import { reasonCopy } from "../../lib/reasonCopy";
 import styles from "./InstrumentResult.module.css";
-import { type Metric, unavailable } from "./model";
-import { Explanation, Value } from "./ReturnsInfo";
+import { displayMetric, type Metric, unavailable } from "./model";
+import { Explanation, Value, visibleReturnReasons } from "./ReturnsInfo";
 
 function Notes({ label, codes }: { label: string; codes: string[] }) {
   const messages = [
@@ -32,16 +32,18 @@ export function ReturnsInstrumentResult({
   analysis?: InstrumentAnalysis<string>;
   reasonCodes?: string[];
 }) {
-  const pnl = result?.pnl ?? unavailable;
-  const rate = result?.rate ?? { ...unavailable, unit: "fraction" as const };
-  const reasons = [
+  const originalPnl = result?.pnl ?? unavailable;
+  const originalRate = result?.rate ?? { ...unavailable, unit: "fraction" as const };
+  const pnl = { ...originalPnl, reason_codes: visibleReturnReasons(originalPnl.reason_codes) };
+  const rate = { ...originalRate, reason_codes: visibleReturnReasons(originalRate.reason_codes) };
+  const reasons = visibleReturnReasons([
     ...new Set([
       ...reasonCodes,
       ...pnl.reason_codes,
       ...rate.reason_codes,
       ...(analysis?.reason_codes ?? []),
     ]),
-  ];
+  ]);
   const usedAssumptions = [
     ...new Set([
       ...(analysis?.assumptions ?? []),
@@ -52,6 +54,14 @@ export function ReturnsInstrumentResult({
         .flatMap((event) => event.assumptions) ?? []),
     ]),
   ];
+  const observedPayouts = (
+    [
+      ["Купоны", analysis?.components.coupons],
+      ["Дивиденды", analysis?.components.dividends],
+    ] as const
+  ).filter(
+    ([, value]) => value?.value != null && value.value !== "0" && value.status !== "unavailable",
+  );
   return (
     <div className={styles.result}>
       <dl className={styles.metrics}>
@@ -71,6 +81,19 @@ export function ReturnsInstrumentResult({
       {rate.method === "modified_dietz" && <small>Modified Dietz · за период, не годовая</small>}
       {(pnl.value === null || rate.value === null) && (
         <p className={styles.notice}>Нужна проверка данных</p>
+      )}
+      {pnl.value === null && observedPayouts.length > 0 && (
+        <div>
+          <p>Найденные выплаты — данные могут быть неполными</p>
+          <dl>
+            {observedPayouts.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{displayMetric({ ...unavailable, value: value?.value ?? null })}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       )}
       <Notes label="Причины" codes={reasons} />
       <Notes label="Допущения" codes={usedAssumptions} />

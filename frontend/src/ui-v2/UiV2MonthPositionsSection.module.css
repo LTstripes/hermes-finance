@@ -13,7 +13,10 @@
 
 .root :global(.position-price) {
   display: flex;
+  flex-direction: row-reverse;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .root :global(.month-positions-table) {

@@ -92,6 +92,9 @@ export function SourceMonthReturn({ account, period }: { account: string; period
                 {result.data.source_proof.confirmed_at}
               </p>
             )}
+            {result.data.source_proof?.status === "compatibility_unchecked" && (
+              <p>Подтверждение сохранено; совместимость с обновлением ещё не проверена.</p>
+            )}
             {result.data.source_proof?.status === "stale" && (
               <p>Подтверждение источника устарело; требуется новая проверка оригиналов.</p>
             )}

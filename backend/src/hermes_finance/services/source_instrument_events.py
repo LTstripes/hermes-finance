@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal, localcontext
 
@@ -198,11 +199,48 @@ def _source_money_attribution(view, saved, raw, identities, native_issues):
     return _attribute(saved["operation"] + " " + saved["narrative"], identities), "legacy_text"
 
 
-def payout_attribution(saved, resolver, identities):
+def payout_attribution(
+    saved,
+    resolver,
+    identities,
+    *,
+    session=None,
+    view=None,
+    raw=None,
+    views=None,
+    historical_evidence=None,
+    canonical_matches=None,
+):
     """Validate a persisted decision; never replace it with a newly possible link."""
     from hermes_finance.services.source_instrument_returns import _attribute
 
+    if historical_evidence and session is not None and view is not None and raw is not None:
+        from hermes_finance.services.source_return_evidence import effective_historical_payout
+
+        proven, conflict = effective_historical_payout(
+            session, views, view, raw, saved, resolver, historical_evidence
+        )
+        if conflict:
+            return None, "current_source_proof", ("source_payout_evidence_conflict",)
+        if proven is not None:
+            return proven, "current_source_proof", ()
     status = saved.get("instrument_link_status")
+    if status != "linked" and session is not None and view is not None and raw is not None:
+        from hermes_finance.services.source_return_evidence import (
+            effective_overlapping_payout,
+            effective_payout_instrument,
+            payout_source_unambiguous,
+        )
+
+        proven = (
+            effective_payout_instrument(session, view, raw, saved, resolver)
+            if views is None or payout_source_unambiguous(views, view, raw["date"])
+            else effective_overlapping_payout(
+                session, views, view, raw, saved, resolver, canonical_matches=canonical_matches
+            )
+        )
+        if proven is not None:
+            return proven, "accepted_money", ()
     if status == "linked":
         security = parse_money_security(saved["narrative"])
         if (
@@ -243,7 +281,7 @@ def payout_attribution(saved, resolver, identities):
     return isin, "legacy_text", () if isin else ("unattributed_income",)
 
 
-def read_events(session, views, identities, native_account, gaps):
+def read_events(session, views, identities, native_account, gaps, *, historical_evidence=None):
     from hermes_finance.services.source_instrument_returns import (
         InstrumentReturnGap,
         _bond_total_basis,
@@ -278,6 +316,9 @@ def read_events(session, views, identities, native_account, gaps):
         )
         for v in views
     )
+    from hermes_finance.services.source_return_evidence import canonical_payout_groups
+
+    payout_groups = canonical_payout_groups(session, views, resolver)
     occurrences = defaultdict(list)
     invalid_events = []
     for view in views:
@@ -291,12 +332,26 @@ def read_events(session, views, identities, native_account, gaps):
         local = []
         validated_refs = set()
         try:
-            for key, flow in _money(session, view, None, local):
+            for key, flow in _money(session, view, None, local, payout_groups=payout_groups):
                 ref = flow.source_references[0]
                 validated_refs.add(ref)
                 row = saved[ref]
                 if flow.classification in {"coupon", "dividend"}:
-                    isin, basis, reasons = payout_attribution(row, resolver, identities)
+                    isin, basis, reasons = payout_attribution(
+                        row,
+                        resolver,
+                        identities,
+                        session=session,
+                        view=view,
+                        raw=raw[ref],
+                        views=views,
+                        historical_evidence=historical_evidence,
+                        canonical_matches=payout_groups,
+                    )
+                    if basis in {"accepted_money", "current_source_proof"}:
+                        # The current exact receipt confirms this payout's role,
+                        # date, amount, account and instrument, not other events.
+                        flow = replace(flow, status="confirmed")
                     if isin:
                         metadata = identities[isin]
                         metadata["identifiers"].add(isin)
@@ -305,6 +360,10 @@ def read_events(session, views, identities, native_account, gaps):
                             metadata["types"].add("stock")
                             metadata["names"].add(
                                 parse_money_security(row["narrative"]).issuer_name
+                            )
+                        elif basis in {"accepted_money", "current_source_proof"}:
+                            metadata["types"].add(
+                                "bond" if flow.classification == "coupon" else "stock"
                             )
                         elif target:
                             metadata["types"].add(target.instrument_type)
@@ -323,7 +382,9 @@ def read_events(session, views, identities, native_account, gaps):
                     _date(view["covered_from"]).replace(day=1),
                 )
             )
-        gaps.extend(InstrumentReturnGap(**vars(g)) for g in local)
+        gaps.extend(
+            InstrumentReturnGap(**vars(g)) for g in local if g.code != "broker_gift_external_flow"
+        )
         for ref, raw_row in raw.items():
             if ref in validated_refs:
                 continue
@@ -358,10 +419,7 @@ def read_events(session, views, identities, native_account, gaps):
         chosen = confirmed or observations
         view, flow, row, raw, isin, basis, attribution_reasons = chosen[0]
         reasons = set(attribution_reasons)
-        if (
-            len({(o[1].classification, o[4], o[2].get("instrument_link_status")) for o in chosen})
-            != 1
-        ):
+        if len({(o[1].classification, o[4]) for o in chosen}) != 1:
             reasons.add("overlap_flow_choice_conflict")
             isin = None
         # A confirmed classification does not attest another original's issue
@@ -638,7 +696,8 @@ def read_events(session, views, identities, native_account, gaps):
             and any(w in text for w in ("ведение счета", "ведение счёта", "account maintenance"))
         )
         if (
-            classification in {"external_deposit", "external_withdrawal", "internal_transfer"}
+            classification
+            in {"external_deposit", "external_withdrawal", "internal_transfer", "external_gift"}
             and not reasons
         ):
             continue
@@ -860,7 +919,7 @@ def analyse(views, isin, kind, start, end, events, references, gaps, *, reviewed
         delta = Decimal(0)
         daily = defaultdict(Decimal)
         for e in selected:
-            if e.kind not in {"BUY", "SELL"}:
+            if e.kind not in {"BUY", "SELL", "REDEMPTION"}:
                 continue
             if not e.counted or e.quantity_delta is None or e.depository_settlement_date is None:
                 quantity_reasons.add("quantity_events_incomplete")

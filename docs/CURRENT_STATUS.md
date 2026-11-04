@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-03**. This is the sole changing project status book. Current source
+Updated **2026-11-04**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
@@ -8,64 +8,43 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
-The next **1.10.3 candidate** combines capital/month-read latency and display
-corrections from [#1072](https://github.com/LTstripes/hermes-finance/pull/1072)
-with confirmed cash-gift return treatment from
-[#1073](https://github.com/LTstripes/hermes-finance/pull/1073). Integration,
-exact-release checks, publication and installation remain separate gates. The
-intermittent G04 navigation failure remains unclassified even though its retry
-passed. Owner UX acceptance and AI-export performance remain separate.
+**Stable remains 1.10.3**, `a4c06bf85eb2fcb09e83692beccf2a9ff86849a9`, verified
+read-only on 4 November. The combined **1.10.4 candidate** is prepared in
+[#1077](https://github.com/LTstripes/hermes-finance/pull/1077). Publication and
+installation are not yet claimed. The original `22deb291` checks passed, but
+independent financial review required the following corrections before release.
 
+The candidate carries exact redemption cash/quantity/depository date through
+account and instrument readers, prevents duplicate overlapping payouts, accepts
+agreeing links, preserves gift-as-external-flow treatment, and retains useful
+components without asserting incomplete totals. Interior-month payout components
+reuse current exact-original XML/PDF proof events, preserving overlapping Money
+receipt identities/cohorts and without borrowing historical valuations. New source-only custody proofs
+bind their immutable originals and explicit grammar semantics, rather than the
+entire financial catalogue. Legacy compatibility now has an explicit metadata recovery path outside GET;
+ordinary reads never perform a journal-pair search. The derived witness reuses
+the existing proof table and preserves the original decision and timestamp.
+No automatic reconfirmation or financial write is introduced. T-Invest TLS verification, sanitized logs, table
+position alignment and reduced instrument-card XIRR/aggregation work remain in the same package.
 
-**Released and installed on 3 November: [1.10.2](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.2),
-`1e6f45d8362f9331415c763c39dc5db0ac105257`.** Health is `ok/1.10.2`,
-Stable is clean and pinned to the annotated release, and the prepared code and
-served frontend agree. [#1069](https://github.com/LTstripes/hermes-finance/pull/1069)
-contains the implementation and sanitized installation receipt.
+Before-change Owner readback covers both accounts and all existing monthly
+confirmation receipts: 16 month-apply receipts and 35 latest Money confirmations;
+all 35 remain effective. Both current October workspaces are DRAFT and bookkeeping
+ready. One legacy custody proof is stale under installed Stable. Its proposed technical
+compatibility recovery must first reproduce the old digest exactly, then append
+one derived metadata row during authorized downtime. It reuses the six original
+source bindings without uploads or a repeated Owner decision. Production metadata
+write permission remains pending; no Confirm, financial Apply or Reopen has
+occurred. The complete Astra audit was subsequently provided: it exposed remaining
+gaps on `30f04cc9`, so the earlier broad code GO was withdrawn. The successor
+addresses canonical account components, explicit UNKNOWN, independently proved
+timestamp variants and unreadable future-source scoping; final review and CI
+must cover that successor. Private receipts remain outside Git.
 
-Application candidate `8a503342f527083ce8a50c1f92ece3c5d31c8451` and the
-nonsemantic version-packaging delta to `3c739dc9efacfbea37787daa5f3250febb6757c0`
-passed independent review. Exact packaging
-[PR CI41696164265](https://github.com/LTstripes/hermes-finance/actions/runs/41696164265)
-and [UI evidence41696164266](https://github.com/LTstripes/hermes-finance/actions/runs/41696164266)
-passed; the merge has the same product tree. Exact-main
-[push CI41698467647](https://github.com/LTstripes/hermes-finance/actions/runs/41698467647)
-and [guarded publication41701617355](https://github.com/LTstripes/hermes-finance/actions/runs/41701617355)
-completed SUCCESS. The October-workspace browser scenario exposed the previously
-diagnosed pending source-refetch timing failure; one targeted same-SHA G04 retry
-passed without changing code, assertions or timeouts. Independent tag/release
-readback confirms the annotated tag and its peeled exact commit.
-
-Owner-local OPS02 created a fresh verified SQLite backup before the code change;
-independent schema and all-82-table readback matches the original. Its producing
-1.10.1 code archive is retained with the backup. Prepare/Validate and separate
-stock Start completed. The first hidden Start failed before backend because of
-inherited PowerShell module paths; hidden Validate passed with standard
-process-local Windows PowerShell module paths, then only Start was repeated after
-proving the prior controller exited and the port was free. Global settings and
-runtime guards were unchanged.
-
-Native open-file identity confirms the original physical production database.
-All rows, schema 0068, `.env`, data identity, CLOSED October and all eight October
-Money readback hashes remain unchanged, including the newest Owner confirmation.
-Final readback after API/browser checks also found no database writes. No
-financial Apply, Reopen, reimport or schema migration occurred.
-
-The hotfix bounds the capital bridge to the required month, skips unused
-explanations on Home/Close, restores the narrowly reviewed 1.9.4 proof read
-transition, separates saved payouts from optional diagnostics and collapses
-instrument account details. Same-data summary/dashboard/default comparison
-response hashes match 1.10.1. Local samples improved from 4.3–4.5s to 2.6–3.1s;
-Home's comparison without the unused explanation took 0.013s with every other
-field identical. Close-workflow GET returned 200 in 2.45s. These samples are not
-an SLA. Installed browser readback confirms saved payouts and collapsed details.
-
-Valid historical proof reads are restored; unsupported or unconfirmed evidence
-remains unavailable, so the overall return remains partial. The compatibility
-receipt compares old `_derive` with current verified dependencies, not a complete
-isolated 1.9.4 runtime. Full AI-export latency remains substantial. Broker-statement
-and payout visual simplification still need the separately agreed design and
-Owner UX acceptance; this hotfix does not claim that work complete.
+Completion gates: targeted regressions, independent final review, exact-candidate
+CI, exact-main push CI, guarded publication, verified backup, and installed Stable
+readback including all confirmations. Owner UX acceptance is separate. Earlier
+release receipts below describe their historical dates only.
 
 ## Earlier checkpoints (historical)
 

@@ -126,6 +126,17 @@ export function SourceReturnProofPanel({
       if (generation.current === own) setBusy(false);
     }
   }
+  if (!loading && !unavailable && proof?.status === "compatibility_unchecked") {
+    return (
+      <section aria-label="Подтверждение источников доходности">
+        <h2>Подтверждение источников доходности</h2>
+        <p role="status">
+          Подтверждение сохранено. Совместимость с обновлением ещё не проверена. Повторно выбирать
+          выписки и подтверждать прежнее решение не требуется.
+        </p>
+      </section>
+    );
+  }
   return (
     <section aria-label="Подтверждение источников доходности">
       <h2>Подтверждение источников доходности</h2>
@@ -141,6 +152,11 @@ export function SourceReturnProofPanel({
         <p>
           Источник подтверждён: #{proof.proof_id} · {proof.version} · {proof.confirmed_at}. Обычный
           расчёт доступен без повторного выбора XML.
+        </p>
+      ) : proof?.status === "compatibility_unchecked" ? (
+        <p role="status">
+          Подтверждение сохранено. Совместимость с обновлением ещё не проверена. Повторно выбирать
+          выписки и подтверждать прежнее решение не требуется.
         </p>
       ) : proof?.status === "stale" ? (
         <p role="status">
@@ -172,7 +188,7 @@ export function SourceReturnProofPanel({
           type="file"
           accept=".xml"
           multiple
-          disabled={busy || loading || unavailable}
+          disabled={busy || loading || unavailable || proof?.status === "compatibility_unchecked"}
           onChange={(event) => {
             reset();
             setFiles(Array.from(event.target.files ?? []));

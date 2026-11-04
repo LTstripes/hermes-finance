@@ -220,6 +220,7 @@ def _source_accounts(
     include_instrument_details=True,
     captured_analyses=None,
     captured_reports=None,
+    defer_history_proof_xirr=False,
 ):
     canonical = returns_view._source_scopes(session)
     labels = {a["id"]: a["label"] for a in returns_view._accounts(session, canonical)}
@@ -247,9 +248,15 @@ def _source_accounts(
             for original, _, _ in selected
         ):
             from hermes_finance.services.source_account_history import extend_history
-            from hermes_finance.services.source_monthly_returns import read_monthly_returns
+            from hermes_finance.services.source_monthly_returns import (
+                read_monthly_for_card_history,
+                read_monthly_returns,
+            )
 
-            extended = extend_history(proof, read_monthly_returns(session, source_account=account))
+            reader = (
+                read_monthly_for_card_history if defer_history_proof_xirr else read_monthly_returns
+            )
+            extended = extend_history(proof, reader(session, source_account=account))
         result = returns_view._investment_report_result(extended) if extended else None
         status = proof["status"] if proof else "absent"
         reasons = (
@@ -708,7 +715,18 @@ def _component_metric(item, *, current_source=False):
 def read_instrument_card(session, isin, *, overview=None):
     """Compose one lazy exact-ISIN card from the ordinary, guarded detail reader."""
     with source_read_snapshot(session):
-        overview = overview if overview is not None else read_overall(session)
+        if overview is None:
+            # The instrument card needs the source index only; deposits, gold,
+            # and aggregate income from the overall page are not its inputs.
+            accounts, instruments, _ = _source_accounts(
+                session, include_instrument_details=False, defer_history_proof_xirr=True
+            )
+            for row in instruments:
+                for account in row["accounts"]:
+                    account["canonical_account_id"] = account["account_link"][
+                        "financial_account_id"
+                    ]
+            overview = {"source_accounts": accounts, "instruments": instruments}
         instrument = next((row for row in overview["instruments"] if row["isin"] == isin), None)
         if instrument is None:
             raise LookupError("returns_instrument_missing")
