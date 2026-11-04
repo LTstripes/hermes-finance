@@ -678,6 +678,11 @@ def _interval(
     expected = defaultdict(int)
     repo_groups = set()
     issues = defaultdict(set)
+    repo_owners = Counter(
+        (t["core"]["source_account"], t["ids"][0])
+        for t in trades
+        if t.get("repo_observed") and len(t.get("ids", [])) == 1
+    )
     for isin in pending_repo_isins:
         issues[isin].add("repo_position_open_at_boundary")
     repo_issue_blockers = {
@@ -713,6 +718,11 @@ def _interval(
         )
         if t.get("repo_observed"):
             issues[isin].update(repo_issue_blockers[isin])
+            if len(t.get("ids", [])) == 1 and (
+                repo_owners[(t["core"]["source_account"], t["ids"][0])] > 1
+                or repo_owners[(t["core"]["source_account"], t.get("repo_partner"))] > 1
+            ):
+                issues[isin].add("repo_pair_unproven")
             repo_groups.add(key)
             repo_quantity[isin] += q
     for isin, quantity in repo_quantity.items():

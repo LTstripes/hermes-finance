@@ -1793,6 +1793,65 @@ def test_pending_only_repo_withholds_own_issue_without_hiding_known_sibling(targ
     assert result["pnl"]["value"] is None
 
 
+def test_repo_pairs_keep_account_wide_duplicate_b_owner_across_issues(monkeypatch):
+    from dataclasses import replace
+
+    service, doc, raw, report, money = investment_case()
+    trades, names, primary, cancellations = service._native(doc, raw)
+    ordinary = trades[0]
+    other_isin = "RU000A000001"
+    other_position = {
+        **doc["positions"][0],
+        "isin": other_isin,
+        "actual_quantity": "0",
+        "ending_value": "0",
+    }
+    doc["positions"].append(other_position)
+    report = replace(report, positions={**report.positions, ("1234567", other_isin): ("0", 0)})
+    for isin, partner, day in (
+        (ordinary["core"]["isin"], "B2", "2030-01-10"),
+        (other_isin, "B3", "2030-01-20"),
+    ):
+        for own, peer, quantity, amount, marker, cash in (
+            ("B1", partner, "5", "500", "репо ч.1", -50000),
+            (partner, "B1", "-5", "501", "репо ч.2", 50100),
+        ):
+            trade = {
+                **deepcopy(ordinary),
+                "ids": [own],
+                "repo_observed": True,
+                "repo_partner": peer,
+                "repo_leg": marker,
+                "bank_commission": "0",
+                "settlement_date": day,
+                "depo_settlement_date": day,
+            }
+            trade["core"].update(
+                isin=isin, quantity=quantity, trade_amount=amount, trade_time=day + "T09:00:00"
+            )
+            trades.append(trade)
+            primary[own].append(trade)
+            money.append(
+                {
+                    **money[0],
+                    "minor": cash,
+                    "day": date.fromisoformat(day),
+                    "date": day,
+                    "primary_id": own,
+                    "ref": isin + own,
+                }
+            )
+    monkeypatch.setattr(
+        service, "_native", lambda *_, **__: (trades, names, primary, cancellations)
+    )
+    doc["rub_money"][0]["ending_amount"] = "992"
+    result = service._interval(doc, raw, report, money, {}, {}, True)
+    for instrument in result["instruments"]:
+        assert instrument["pnl"]["value"] is None
+        assert "repo_pair_unproven" in instrument["reason_codes"]
+    assert result["pnl"]["value"] is None
+
+
 def test_investment_anonymous_nkd_corroborates_cash_does_not_add_it_twice():
     service, doc, raw, report, money = investment_case()
     # Native T includes N; settlement principal plus a separate NKD Money equals T.
