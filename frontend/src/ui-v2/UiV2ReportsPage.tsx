@@ -29,6 +29,11 @@ const COLUMNS = [
 
 function ReportRowCells({ row }: { row: ArchiveReportRow }) {
   const point = row.point;
+  const coverage = point?.portfolio_source_coverage;
+  const unavailable = coverage?.status === "unavailable";
+  const partial =
+    coverage?.status === "partial" ||
+    coverage?.source_account_financial_coverage?.status === "partial";
   return (
     <>
       <Td data-label={COLUMNS[0]}>
@@ -45,19 +50,21 @@ function ReportRowCells({ row }: { row: ArchiveReportRow }) {
               ? "—"
               : money(point.liquid_capital_net)
             : "—"}
-          {point?.portfolio_source_coverage?.status &&
-          point.portfolio_source_coverage.status !== "complete" ? (
+          {coverage && (coverage.status !== "complete" || partial) ? (
             <span className={reportStyles.coverageLine}>
               <PortfolioCoverageNote coverage={point.portfolio_source_coverage} />
             </span>
           ) : null}
+          {partial ? (
+            <span className={reportStyles.coverageLine}>Итог известных записей</span>
+          ) : null}
         </span>
       </Td>
       <Td className={reportStyles.moneyCell} data-label={COLUMNS[4]} numeric>
-        {point ? money(point.liquid_assets_total) : "—"}
+        {point && !unavailable ? money(point.liquid_assets_total) : "—"}
       </Td>
       <Td className={reportStyles.moneyCell} data-label={COLUMNS[5]} numeric>
-        {point ? `− ${money(point.included_debts)}` : "—"}
+        {point && !unavailable ? `− ${money(point.included_debts)}` : "—"}
       </Td>
       <Td data-label={COLUMNS[6]}>
         <Link to={row.actionPath}>{row.actionLabel}</Link>
