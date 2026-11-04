@@ -66,7 +66,7 @@ test("API Decimal boundary rates render identically in Month and Returns after B
   expect(await (await request.get("/api/synthetic-bond-state")).json()).toEqual(before);
 });
 
-test("one-time source proof survives Back/Reload in ordinary Month and monthly GET; ABA retires it", async ({
+test("source structure proof survives Back/Reload and unrelated financial ABA", async ({
   page,
   request,
 }, info) => {
@@ -164,21 +164,26 @@ test("one-time source proof survives Back/Reload in ordinary Month and monthly G
   await page.reload();
   await openDisclosure(page, "Подробности предварительного результата");
   await expect(summary).toBeVisible();
-  await expect(summary).not.toContainText("600 ₽");
+  // Classification ABA retires financial evidence, not immutable source structure.
+  await expect(summary).toContainText(/600\s*₽/);
   await summary.getByText("Подробнее о предварительном расчёте", { exact: true }).click();
-  await expect(summary).toContainText("Подтверждение источника устарело");
-  const stale = await (
+  await expect(summary).not.toContainText("Подтверждение источника устарело");
+  const retained = await (
     await request.get("/api/source-returns/monthly?source_account=1234567")
   ).json();
-  expect(stale.source_proof.status).toBe("stale");
+  expect(retained.source_proof.status).toBe("current");
+  expect(retained.source_proof.proof_id).toBe(get.source_proof.proof_id);
   for (const closing of ["2030-04-30", "2030-06-30"]) {
-    const row = stale.months.find(
+    const row = retained.months.find(
       (item: { closing_date: string }) => item.closing_date === closing,
     );
-    expect(row.growth_kopecks).toBeNull();
-    expect(row.modified_dietz_return).toBeNull();
+    expect(row.growth_kopecks).toBe(60000);
+    expect(row.modified_dietz_return).not.toBeNull();
   }
-  await summary.screenshot({ path: info.outputPath("source-proof-stale-month.png") });
+  expect((await (await request.get("/api/synthetic-proof-inputs")).json()).other_tables).toEqual(
+    inputs.other_tables,
+  );
+  await summary.screenshot({ path: info.outputPath("source-proof-financial-aba-retained.png") });
 });
 
 test("explicit stale bond ISIN stays unavailable on reload; account switch resets to its default", async ({

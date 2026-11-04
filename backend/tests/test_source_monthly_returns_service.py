@@ -3369,3 +3369,25 @@ def test_scoped_custody_survives_new_financial_import_without_reconfirmation(db)
     assert result.source_proof["status"] == "current"
     assert result.source_proof["proof_id"] == ack["proof"]["proof_id"]
     assert result.source_proof["version"] == proofs.VERSION
+
+
+@pytest.mark.parametrize("field", ["manifest_digest", "generation", "head_seq"])
+def test_scoped_custody_rejects_changed_bound_source_identity(db, field):
+    from copy import deepcopy
+
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+    from hermes_finance.services.source_return_proofs import resolve_proof
+
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        selected, native = _selected_sources(session, ACCOUNT)
+        _, status = resolve_proof(session, ACCOUNT, selected, native)
+        assert status["status"] == "current"
+        changed = [(original, deepcopy(view), error) for original, view, error in selected]
+        view = changed[0][1]
+        view[field] = "f" * 64 if field == "manifest_digest" else view[field] + 1
+        dates, status = resolve_proof(session, ACCOUNT, changed, native)
+        assert not dates and status["status"] == "stale"
+    assert snapshot(db) == before
