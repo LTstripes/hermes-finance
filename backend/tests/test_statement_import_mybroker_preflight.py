@@ -22,6 +22,46 @@ from hermes_finance.services.mybroker_preflight import _difference, preview_batc
 from hermes_finance.statement_import.mybroker import MyBrokerError, canonical, parse_mybroker
 
 
+@pytest.mark.parametrize("mutual", [True, False])
+def test_repo_zero_net_quantity_requires_reciprocal_pair_evidence(mutual):
+    def leg(own, partner, marker, quantity, day):
+        return {
+            "ids": [own],
+            "repo_observed": True,
+            "repo_partner": partner,
+            "repo_leg": marker,
+            "settlement_date": f"2030-01-{day:02d}",
+            "depo_settlement_date": f"2030-01-{day:02d}",
+            "core": {
+                "source_account": "synthetic",
+                "isin": "RU000A000000",
+                "currency": "RUB",
+                "quantity": quantity,
+                "trade_time": f"2030-01-{day:02d}T09:00:00",
+            },
+        }
+
+    legs = [
+        leg("B10001", "B10002", "репо ч.1", "1", 10),
+        leg(
+            "B10002" if mutual else "B20001",
+            "B10001" if mutual else "B20002",
+            "репо ч.2" if mutual else "репо ч.1",
+            "-1",
+            20,
+        ),
+    ]
+    assert sum(Decimal(t["core"]["quantity"]) for t in legs) == 0
+    blockers = service._repo_pair_blockers(legs, date(2029, 12, 31), date(2030, 1, 31))
+    assert bool(blockers) != mutual
+    if not mutual:
+        assert "repo_pair_unproven" in blockers
+    else:
+        assert "repo_position_open_at_boundary" in service._repo_pair_blockers(
+            legs, date(2030, 1, 15), date(2030, 1, 31)
+        )
+
+
 def original(
     month=1,
     *,
@@ -1276,6 +1316,8 @@ def test_investment_semantics_rejects_legacy_digest(database, monkeypatch, prede
 @pytest.mark.parametrize(
     "old_code",
     [
+        "source_investment_semantics_v7",
+        "source_investment_semantics_v6",
         "source_investment_semantics_v2",
         "0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81",
     ],
@@ -1301,6 +1343,28 @@ def test_gift_v3_compatibility_preserves_exact_old_proof_without_gift(
         report = proofs.read_reports(session)[0]
         assert report["status"] == "stale"
         assert report["reason_codes"] == ["investment_proof_dependencies_changed"]
+
+
+def test_new_intersecting_original_stales_proof_without_rewriting_decision(database, monkeypatch):
+    from hermes_finance.persistence import SourceReturnProof
+    from hermes_finance.services import source_intake
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    save_semantics_proof(database, monkeypatch, "source_investment_semantics_v7", "old-v7")
+    with database.session_factory() as session:
+        row = session.scalar(select(SourceReturnProof))
+        original = (row.id, row.evidence_json, row.dependency_digest)
+        root = ET.fromstring(investment_original())
+        root.set("synthetic_marker", "new-intersecting-original")
+        source_intake.save_intake(
+            session, document=ET.tostring(root), filename=FILENAME, request_id="extra-original"
+        )
+    before = snapshot(database)
+    with database.session_factory() as session:
+        assert proofs.read_reports(session)[0]["status"] == "stale"
+        row = session.scalar(select(SourceReturnProof))
+        assert (row.id, row.evidence_json, row.dependency_digest) == original
+    assert snapshot(database) == before
 
 
 def test_investment_semantics_revision_change_stales_saved_proof(database, monkeypatch):
@@ -1647,7 +1711,8 @@ def test_investment_persistent_api_requires_exact_ack_and_boolean_attestation(
     assert ordinary["period"]["growth_kopecks"] == 9000
 
 
-def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch):
+@pytest.mark.parametrize("pending", [False, True, "other"])
+def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, pending):
     from decimal import Decimal
 
     service, doc, raw, report, money = investment_case()
@@ -1656,18 +1721,39 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch):
     for i, (quantity, amount) in enumerate([("5", "500"), ("-5", "501")]):
         t = deepcopy(ordinary)
         token = f"B{i + 1}"
-        t.update(ids=[token], repo_observed=True, bank_commission="0")
+        t.update(
+            ids=[token],
+            repo_observed=True,
+            bank_commission="0",
+            repo_partner="B2" if i == 0 else "B1",
+            repo_leg=f"репо ч.{i + 1}",
+        )
         t["core"].update(quantity=quantity, trade_amount=amount)
         trades.append(t)
         primary[token] = [t]
         money.append(
             {**money[0], "minor": -50000 if i == 0 else 50100, "primary_id": token, "ref": token}
         )
-    monkeypatch.setattr(service, "_native", lambda *_: (trades, names, primary, cancellations))
+    monkeypatch.setattr(
+        service, "_native", lambda *_, **__: (trades, names, primary, cancellations)
+    )
     doc["rub_money"][0]["ending_amount"] = "991"
+    if pending:
+        pending_trade = {
+            **deepcopy(ordinary),
+            "section": "pending",
+            "state": "pending",
+            "repo_observed": True,
+        }
+        if pending == "other":
+            pending_trade["core"]["isin"] = "RU000A000001"
+        doc["trades"].append(pending_trade)
     result = service._interval(doc, raw, report, money, {}, {}, True)
     instrument = result["instruments"][0]
-    assert instrument["pnl"]["value"] == "9000"
+    assert instrument["pnl"]["value"] == (None if pending is True else "9000")
+    if pending:
+        assert result["pnl"]["value"] is None
+        assert "repo_position_open_at_boundary" in result["reason_codes"]
     assert instrument["event_count"] == 2
     assert (
         sum(
@@ -1677,8 +1763,93 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch):
         )
         == 100
     )
-    assert not instrument["reason_codes"]
+    assert instrument["reason_codes"] == (
+        ["repo_position_open_at_boundary"] if pending is True else []
+    )
+    if pending == "other":
+        other = next(item for item in result["instruments"] if item["isin"] == "RU000A000001")
+        assert other["pnl"]["value"] is None
+        assert "repo_position_open_at_boundary" in other["reason_codes"]
     assert Decimal(instrument["closing_quantity"]) == 10
+
+
+@pytest.mark.parametrize("target", ["RU000A000000", "RU000A000001"])
+def test_pending_only_repo_withholds_own_issue_without_hiding_known_sibling(target):
+    service, doc, raw, report, money = investment_case()
+    pending = {
+        **deepcopy(doc["trades"][0]),
+        "section": "pending",
+        "state": "pending",
+        "repo_observed": True,
+    }
+    pending["core"]["isin"] = target
+    doc["trades"].append(pending)
+    result = service._interval(doc, raw, report, money, {}, {}, True)
+    by_isin = {item["isin"]: item for item in result["instruments"]}
+    assert by_isin[target]["pnl"]["value"] is None
+    assert "repo_position_open_at_boundary" in by_isin[target]["reason_codes"]
+    if target != "RU000A000000":
+        assert by_isin["RU000A000000"]["pnl"]["value"] == "9000"
+    assert result["pnl"]["value"] is None
+
+
+def test_repo_pairs_keep_account_wide_duplicate_b_owner_across_issues(monkeypatch):
+    from dataclasses import replace
+
+    service, doc, raw, report, money = investment_case()
+    trades, names, primary, cancellations = service._native(doc, raw)
+    ordinary = trades[0]
+    other_isin = "RU000A000001"
+    other_position = {
+        **doc["positions"][0],
+        "isin": other_isin,
+        "actual_quantity": "0",
+        "ending_value": "0",
+    }
+    doc["positions"].append(other_position)
+    report = replace(report, positions={**report.positions, ("1234567", other_isin): ("0", 0)})
+    for isin, partner, day in (
+        (ordinary["core"]["isin"], "B2", "2030-01-10"),
+        (other_isin, "B3", "2030-01-20"),
+    ):
+        for own, peer, quantity, amount, marker, cash in (
+            ("B1", partner, "5", "500", "репо ч.1", -50000),
+            (partner, "B1", "-5", "501", "репо ч.2", 50100),
+        ):
+            trade = {
+                **deepcopy(ordinary),
+                "ids": [own],
+                "repo_observed": True,
+                "repo_partner": peer,
+                "repo_leg": marker,
+                "bank_commission": "0",
+                "settlement_date": day,
+                "depo_settlement_date": day,
+            }
+            trade["core"].update(
+                isin=isin, quantity=quantity, trade_amount=amount, trade_time=day + "T09:00:00"
+            )
+            trades.append(trade)
+            primary[own].append(trade)
+            money.append(
+                {
+                    **money[0],
+                    "minor": cash,
+                    "day": date.fromisoformat(day),
+                    "date": day,
+                    "primary_id": own,
+                    "ref": isin + own,
+                }
+            )
+    monkeypatch.setattr(
+        service, "_native", lambda *_, **__: (trades, names, primary, cancellations)
+    )
+    doc["rub_money"][0]["ending_amount"] = "992"
+    result = service._interval(doc, raw, report, money, {}, {}, True)
+    for instrument in result["instruments"]:
+        assert instrument["pnl"]["value"] is None
+        assert "repo_pair_unproven" in instrument["reason_codes"]
+    assert result["pnl"]["value"] is None
 
 
 def test_investment_anonymous_nkd_corroborates_cash_does_not_add_it_twice():
@@ -1734,7 +1905,7 @@ def test_investment_redemption_is_principal_with_exact_cancellation(monkeypatch)
     monkeypatch.setattr(
         service,
         "_native",
-        lambda *_: (trades, names, primary, [(ACCOUNT, "RU000A000000", day, Decimal(-10))]),
+        lambda *_, **__: (trades, names, primary, [(ACCOUNT, "RU000A000000", day, Decimal(-10))]),
     )
     doc["positions"][0].update(actual_quantity="0", ending_value="0")
     doc["rub_money"][0]["ending_amount"] = "2000"
@@ -2167,13 +2338,14 @@ def test_disclosure_preserves_decimal_lexemes_and_missing_costs():
     assert result["commission_kopecks"] is None
 
 
+@pytest.mark.parametrize("revision", ["source_investment_semantics_v6", None])
 def test_reviewed_legacy_proof_read_transition_preserves_economics_and_evidence(
-    database, monkeypatch
+    database, monkeypatch, revision
 ):
     from hermes_finance.services import source_investment_proofs as proofs
 
     original = save_semantics_proof(
-        database, monkeypatch, proofs._GIFT_COMPAT_CODES[1], "reviewed-legacy"
+        database, monkeypatch, revision or proofs._GIFT_COMPAT_CODES[1], "reviewed-legacy"
     )
     before = snapshot(database)
     before_bytes = database.database_path.read_bytes()
@@ -2204,12 +2376,13 @@ def test_reviewed_legacy_proof_read_transition_preserves_economics_and_evidence(
             assert proofs.read_reports(session)[0]["status"] == "stale"
 
 
-def test_reviewed_legacy_transition_never_admits_pending_writer(database, monkeypatch):
+@pytest.mark.parametrize("revision", ["source_investment_semantics_v6", None])
+def test_reviewed_legacy_transition_never_admits_pending_writer(database, monkeypatch, revision):
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.source_return_proofs import ProofError
 
     with monkeypatch.context() as patch:
-        patch.setattr(proofs, "SEMANTICS_REVISION", proofs._GIFT_COMPAT_CODES[1])
+        patch.setattr(proofs, "SEMANTICS_REVISION", revision or proofs._GIFT_COMPAT_CODES[1])
         preview = saved_investment_preview(database, patch)["persistence"]
     before = snapshot(database)
     with database.session_factory() as session:

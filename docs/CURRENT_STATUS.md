@@ -8,6 +8,41 @@ are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
 
+**Unreleased Worker follow-up, 4 November:** branch
+`codex/returns-scope-repo-tinvest-20261104` starts at canonical main `4ff1641`.
+Synthetic regressions demonstrate an account-only expense overlap gap leaking
+into instrument completeness, and missing projection identity for recognized
+single-B-ID REPO legs. The candidate keeps account-only problems in account
+reconciliation, groups independently witnessed REPO occurrences without accepting
+their economics, and preserves ambiguous owners, conflicting issues/dates and
+missing facts. The v7 semantic guard includes the new identity helper; read-only
+v6 account-proof compatibility recomputes exact unchanged dependency operands.
+Bounded T-Invest diagnostics and the exact empty ProtoJSON payout object are also
+covered offline. No provider requests, private-data reads, runtime/data/settings
+changes, integration or release are part of this follow-up.
+
+This does not demonstrate resolution of every privately diagnosed account/issue
+pair. Unallocated possible instrument costs, unsupported REPO economics and
+absent endpoint valuations still withhold full returns. Exact-candidate CI,
+Integrator acceptance, authorized release/installation and representative Owner
+readback remain separate gates; no installed-state change is claimed here.
+
+The independent audit rejected `67f9c5e7`; its earlier code GO is superseded.
+The same branch's remediation tightens contradictory account costs and exact
+REPO pairs, makes supported later-start instrument periods reach Returns/card/AI,
+retains unknown siblings and adds an explicitly separate before-unallocated-cost
+estimate. V8 compatibility excludes changed financial scopes rather than simply
+renaming the revision. Compatible absent valuations and missing interior seams
+are distinguished from conflicting/invalid facts. HTTP redirects cannot establish
+empty payout coverage; discovery failures also receive bounded final summaries.
+Only synthetic checks are used here; the separate Owner-local readback is not
+copied into fixtures or claimed as candidate runtime/UAT evidence.
+
+### Retained pre-release checkpoint for #1077 (historical)
+
+The later merge/release receipt is in [#1077](https://github.com/LTstripes/hermes-finance/pull/1077).
+This follow-up performs no installed-state readback. The dated preparation text follows.
+
 **Stable remains 1.10.3**, `a4c06bf85eb2fcb09e83692beccf2a9ff86849a9`, verified
 read-only on 4 November. The combined **1.10.4 candidate** is prepared in
 [#1077](https://github.com/LTstripes/hermes-finance/pull/1077). Publication and

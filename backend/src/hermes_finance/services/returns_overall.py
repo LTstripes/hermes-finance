@@ -236,10 +236,9 @@ def _source_accounts(
             if include_instrument_details
             else source_investment_proofs.read_account_summaries(session, source_account=account)
         )
-        historical = [p for p in reports if p["history_from_zero"]]
-        proof = (
-            max(historical, key=lambda p: (p["covered_to"], p["proof_id"])) if historical else None
-        )
+        from hermes_finance.services.source_account_history import latest_history
+
+        proof = latest_history(reports)
         selected, _ = _selected_sources(session, account)
         metadata = _identities([view for _, view, error in selected if not error and view])
         extended = proof
@@ -262,7 +261,50 @@ def _source_accounts(
         reasons = (
             list(extended["reason_codes"]) if extended else ["all_history_source_proof_absent"]
         )
-        analyses = captured.get(proof["proof_id"], {}) if proof and status == "current" else {}
+        analyses = (
+            dict(captured.get(proof["proof_id"], {})) if proof and status == "current" else {}
+        )
+        from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+        native_result = (
+            read_instrument_returns(
+                session,
+                source_account=account,
+                include_monthly_history=False,
+                available_period=True,
+                excluded_periods={
+                    (
+                        date.fromisoformat(p["covered_from"]) - timedelta(days=1),
+                        date.fromisoformat(p["covered_to"]),
+                    )
+                    for p in reports
+                    if p["status"] != "current"
+                },
+            )
+            if any(original is not None for original, _, _ in selected)
+            else None
+        )
+        native_periods = set()
+        for native_row in native_result.instruments if native_result is not None else ():
+            candidate = native_row.analysis
+            prior = analyses.get(native_row.isin)
+            if (
+                candidate
+                and (
+                    candidate.pnl.value is not None
+                    or (
+                        "unallocated_costs_excluded" in candidate.statement_estimate.assumptions
+                        and candidate.statement_estimate.pnl.value is not None
+                    )
+                )
+                and (
+                    prior is None
+                    or prior.pnl.value is None
+                    or candidate.opening_date < prior.opening_date
+                )
+            ):
+                analyses[native_row.isin] = candidate
+                native_periods.add(native_row.isin)
         if captured_analyses is not None:
             captured_analyses[scope] = analyses
         if captured_reports is not None:
@@ -275,8 +317,8 @@ def _source_accounts(
             else {"source": {}, "pdf": {}}
         )
         keys = (
-            sorted(analyses)
-            if include_instrument_details and status == "current"
+            sorted(set(analyses) | set(metadata))
+            if analyses
             else (
                 sorted({item["isin"] for item in (proof["interval"] or {}).get("instruments", [])})
                 if status == "current"
@@ -306,7 +348,16 @@ def _source_accounts(
                 )
                 item = {
                     key: instrument[key]
-                    for key in ("period", "valuation_date", "pnl", "rate", "coupons", "dividends")
+                    for key in (
+                        "period",
+                        "valuation_date",
+                        "pnl",
+                        "rate",
+                        "coupons",
+                        "dividends",
+                        "conditional_pnl",
+                        "conditional_rate",
+                    )
                 }
                 name, kind = instrument["name"], instrument["kind"]
             else:
@@ -334,7 +385,8 @@ def _source_accounts(
                     "account_link": links[account],
                     "name": name,
                     "kind": kind,
-                    "details_loaded": include_instrument_details and status == "current",
+                    "details_loaded": include_instrument_details and row.isin in analyses,
+                    "native_period": row.isin in native_periods,
                     **item,
                 }
             )
@@ -741,10 +793,12 @@ def read_instrument_card(session, isin, *, overview=None):
             native = source["scope"].removeprefix("source:")
             if _identity_conflict(native, mappings, reverse):
                 excluded = "source_account_identity_mapping_conflict"
-            elif source["proof_status"] != "current" or not source["period"]:
+            elif not indexed.get("period") or (
+                source["proof_status"] != "current" and not indexed.get("native_period")
+            ):
                 excluded = "current_instrument_history_unavailable"
             else:
-                period = source["period"]
+                period = indexed["period"]
                 try:
                     detail = returns_view.read_detail(
                         session,
@@ -752,6 +806,7 @@ def read_instrument_card(session, isin, *, overview=None):
                         start=period["start"],
                         end=period["end"],
                         isin=isin,
+                        **({"native_period": True} if indexed.get("native_period") else {}),
                     )
                 except (ValueError, LookupError):
                     excluded = "instrument_history_detail_unavailable"
@@ -762,7 +817,7 @@ def read_instrument_card(session, isin, *, overview=None):
                     "scope": source["scope"],
                     "label": source["label"],
                     "canonical_account_id": indexed["canonical_account_id"],
-                    "period": source["period"],
+                    "period": indexed.get("period"),
                     "valuation_date": detail["valuation_date"] if detail else None,
                     "account_link": source["account_link"],
                     "proof_status": source["proof_status"],

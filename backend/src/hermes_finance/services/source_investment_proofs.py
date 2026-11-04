@@ -36,8 +36,8 @@ VERSION = "source_return_investment_v1"
 # parsing, mybroker_return_structure, source_report_preview._money classification or
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
-SEMANTICS_REVISION = "source_investment_semantics_v6"
-_GIFT_COMPAT_REVISION = "source_investment_semantics_v6"
+SEMANTICS_REVISION = "source_investment_semantics_v8"
+_GIFT_COMPAT_REVISION = "source_investment_semantics_v8"
 _V3_COMPAT_CODE = "source_investment_semantics_v3"
 _GIFT_COMPAT_CODES = (
     "source_investment_semantics_v2",
@@ -183,6 +183,37 @@ def _latest(session, scope):
     return None
 
 
+def _old_cost_meaning_unchanged(view):
+    from hermes_finance.services.source_instrument_events import _account_cost_scope
+    from hermes_finance.services.source_instrument_returns import _attribute, _identities
+
+    identities = _identities([view])
+    for row in view["money_classifications"]:
+        if row["classification"] not in {"fee", "tax"}:
+            continue
+        text = (row["operation"] + " " + row["narrative"]).casefold()
+        if row["amount_kopecks"] >= 0 or re.search(
+            r"дивиденд|dividend|купон|coupon|сторно|возврат", text
+        ):
+            return False
+        if _account_cost_scope(row, row["classification"], _attribute(text, identities)):
+            continue
+        token = re.fullmatch(r"Комиссия по сделке ([0-9]{1,128})", row["operation"])
+        matches = [
+            t
+            for t in view["document"].get("trades", [])
+            if token
+            and t.get("ids")
+            and t["ids"][0] == token[1]
+            and t.get("section") == "completed"
+            and len(t["ids"]) == 2
+            and t.get("settlement_date") == str(row["date"])
+        ]
+        if row["classification"] != "fee" or len(matches) != 1:
+            return False
+    return True
+
+
 def _snapshot(session, account, start, end, *, reserved=False, read_dependency=None):
     selected, native = _selected_sources(session, account, reserved=reserved)
     if native is None or len(native) != 1:
@@ -264,13 +295,37 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
     if gift_dependencies:
         operands["gift_dependencies"] = sorted(gift_dependencies)
     current = mybroker.digest(operands)
-    # V6 scopes unrelated unavailable sources and reuses exact payout identity; account cash economics and
-    # the saved account proof's
-    # _captured_money, _payout_links and _interval derivation remains unchanged.
+    # V8 changes REPO pairing and contradictory-cost meaning. Those scopes must
+    # not use older semantic receipts. Unaffected scopes recompute every exact
+    # old operand; original decisions are retained, never rewritten/reconfirmed.
     # Recompute all old operands including gift dependencies; never use this for
     # writes or future revisions. Older pre-gift proofs still require no gift head.
-    if not reserved and read_dependency is not None and SEMANTICS_REVISION == _GIFT_COMPAT_REVISION:
+    unchanged_scope = all(
+        not any(t.get("repo_observed") for t in view["document"].get("trades", []))
+        and _old_cost_meaning_unchanged(view)
+        and not any(
+            r["classification"] in {"fee", "tax"}
+            and (
+                r["amount_kopecks"] >= 0
+                or re.search(
+                    r"дивиденд|dividend|купон|coupon|сторно|возврат",
+                    (r["operation"] + " " + r["narrative"]).casefold(),
+                )
+            )
+            for r in view["money_classifications"]
+        )
+        for original, view, error in selected
+        if view and not error and original.covered_to >= start and original.covered_from <= end
+    )
+    if (
+        not reserved
+        and read_dependency is not None
+        and unchanged_scope
+        and SEMANTICS_REVISION == _GIFT_COMPAT_REVISION
+    ):
         codes = (
+            "source_investment_semantics_v7",
+            "source_investment_semantics_v6",
             "source_investment_semantics_v5",
             "source_investment_semantics_v4",
             _V3_COMPAT_CODE,
@@ -352,7 +407,6 @@ def prepare(session, documents, payloads, filenames, report, intervals, comparis
             trades, names, _, cancellations = _native(
                 document, payloads[document["document_sha256"]], display_names=display_names
             )
-            del trades
             plan = {
                 "version": VERSION,
                 "source_account": account,
@@ -364,6 +418,17 @@ def prepare(session, documents, payloads, filenames, report, intervals, comparis
                 "source_sha256": document["document_sha256"],
                 "report": _report(report, account),
                 "native": {
+                    **(
+                        {
+                            "repo_legs": [
+                                [t["ordinal"], t.get("repo_partner"), t.get("repo_leg")]
+                                for t in trades
+                                if t.get("repo_observed")
+                            ]
+                        }
+                        if any(t.get("repo_observed") for t in trades)
+                        else {}
+                    ),
                     "names": {k: sorted(v) for k, v in names.items()},
                     "display_names": {k: sorted(v)[:32] for k, v in display_names.items()},
                     "cancellations": [[a, i, str(d), str(q)] for a, i, d, q in cancellations],
@@ -961,8 +1026,10 @@ def instrument_result(
             and date.fromisoformat(p["covered_to"]) == closing_date
         ]
     else:
-        matches = [p for p in reports if p["history_from_zero"]]
-        matches.sort(key=lambda p: (p["covered_to"], p["proof_id"]), reverse=True)
+        from hermes_finance.services.source_account_history import latest_history
+
+        chosen = latest_history(reports)
+        matches = [chosen] if chosen is not None else []
     if not matches:
         return None
     proof = matches[0]

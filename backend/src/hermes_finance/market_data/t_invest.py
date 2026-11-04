@@ -89,6 +89,16 @@ def _transport_failure_kind(error: BaseException) -> str:
     return next((kind for kind in ("tls", "dns", "timeout") if kind in kinds), "connection")
 
 
+def _diagnostic_date(value):
+    """Normalize only a valid timestamp; arbitrary request text is never logged."""
+    if not isinstance(value, str):
+        return "unspecified"
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
+    except ValueError:
+        return "invalid"
+
+
 _INSTRUMENTS = "InstrumentsService"
 _MARKET_DATA = "MarketDataService"
 _GET_INSTRUMENT_BY = "GetInstrumentBy"
@@ -836,6 +846,54 @@ class TInvestClient:
         return found
 
     def _post(self, service: str, method: str, body: dict[str, object]) -> dict[str, object]:
+        # Only fixed method names, normalized dates, statuses and counts enter logs.
+        # Request bodies, instrument IDs, URLs, exceptions and payloads never do.
+        safe_method = (
+            method
+            if method
+            in {
+                _GET_INSTRUMENT_BY,
+                _FIND_INSTRUMENT,
+                _BOND_BY,
+                _GET_LAST_PRICES,
+                _GET_CANDLES,
+                _GET_BOND_COUPONS,
+                _GET_BOND_EVENTS,
+                _GET_DIVIDENDS,
+            }
+            else "unknown"
+        )
+        diagnostics = {"http": "unavailable", "received": "unknown"}
+        outcome = "error"
+        try:
+            payload = self._post_response(service, method, body, diagnostics)
+            outcome = "ok"
+            return payload
+        except _AuthUnavailable:
+            outcome = "auth_unavailable"
+            raise
+        except _NotFound:
+            outcome = "not_found"
+            raise
+        except _NetworkFailure as error:
+            outcome = _transport_failure_kind(error) if error.__cause__ else "network"
+            raise
+        except _Malformed:
+            outcome = "malformed"
+            raise
+        finally:
+            log = logger.info if outcome == "ok" else logger.warning
+            log(
+                "T-Invest request: method=%s from=%s to=%s status=%s http=%s received=%s",
+                safe_method,
+                _diagnostic_date(body.get("from")),
+                _diagnostic_date(body.get("to")),
+                outcome,
+                diagnostics["http"],
+                diagnostics["received"],
+            )
+
+    def _post_response(self, service, method, body, diagnostics):
         if self._token is None:
             raise _AuthUnavailable()
         path = f"/tinkoff.public.invest.api.contract.v1.{service}/{method}"
@@ -846,16 +904,11 @@ class TInvestClient:
                 headers={"Authorization": f"Bearer {self._token}"},
             )
         except httpx2.TimeoutException as error:
-            logger.warning("T-Invest request failed: kind=%s", _transport_failure_kind(error))
             raise _NetworkFailure("T-Invest request timed out") from error
         except httpx2.TransportError as error:
-            logger.warning("T-Invest request failed: kind=%s", _transport_failure_kind(error))
             raise _NetworkFailure("T-Invest network error") from error
         status = response.status_code
-        if status >= 400 and not (
-            status == 404 and method in {_GET_LAST_PRICES, _GET_CANDLES, _FIND_INSTRUMENT}
-        ):
-            logger.warning("T-Invest request failed: kind=http status=%d", status)
+        diagnostics["http"] = status
         if status in {401, 403}:
             raise _AuthUnavailable()
         if status == 404:
@@ -864,6 +917,8 @@ class TInvestClient:
             raise _NotFound()
         if status in {408, 429} or status >= 500:
             raise _NetworkFailure("T-Invest network error")
+        if not 200 <= status < 300 and status < 400:
+            raise _Malformed("T-Invest returned an unsuccessful HTTP status")
         try:
             payload = response.json()
         except ValueError as error:
@@ -878,6 +933,19 @@ class TInvestClient:
             raise _Malformed("T-Invest response is not an object")
         if _looks_like_auth_error(payload):
             raise _AuthUnavailable()
+        collection = {
+            _GET_LAST_PRICES: "lastPrices",
+            _GET_CANDLES: "candles",
+            _FIND_INSTRUMENT: "instruments",
+            _GET_BOND_COUPONS: "events",
+            _GET_BOND_EVENTS: "events",
+            _GET_DIVIDENDS: "dividends",
+        }.get(method)
+        rows = _field(payload, collection) if collection else None
+        if isinstance(rows, list):
+            diagnostics["received"] = len(rows)
+        elif collection and payload == {}:
+            diagnostics["received"] = 0
         return payload
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
@@ -49,6 +50,7 @@ _EVENT_TYPE_MTY: Final = "EVENT_TYPE_MTY"
 _COUPON_FILTER_BASIS: Final = "coupon_date"
 _DIVIDEND_FILTER_BASIS: Final = "record_date"
 _REDEMPTION_FILTER_BASIS: Final = "event_date"
+logger = logging.getLogger(__name__)
 
 # Deliberate bounded over-fetch. This is a retrieval margin, not a record->payment rule.
 DEFAULT_DIVIDEND_RECORD_MARGIN_DAYS: Final = 60
@@ -128,6 +130,7 @@ class TInvestPayoutProvider:
         try:
             uid = normalize_t_invest_uid(request.instrument_uid)
         except ValueError:
+            self._log_early_failure(request, "invalid_identity")
             return PayoutFetchResult(
                 provider=T_INVEST_PROVIDER,
                 instrument_uid=request.instrument_uid,
@@ -142,6 +145,7 @@ class TInvestPayoutProvider:
         discovered = self._client.discover_candidates(provider_instrument_id=uid)
         kind, discovery_failure = _resolve_discovered_kind(discovered)
         if discovery_failure is not None:
+            self._log_early_failure(request, "discovery_failed")
             return PayoutFetchResult(
                 provider=T_INVEST_PROVIDER,
                 instrument_uid=uid,
@@ -159,6 +163,7 @@ class TInvestPayoutProvider:
         elif kind in {InstrumentType.STOCK, InstrumentType.FUND}:
             windows = (self._dividend_window(uid, request),)
         else:
+            self._log_early_failure(request, "unsupported_kind")
             return PayoutFetchResult(
                 provider=T_INVEST_PROVIDER,
                 instrument_uid=uid,
@@ -192,6 +197,15 @@ class TInvestPayoutProvider:
             events=tuple(events),
             coverage=tuple(coverage),
             failures=tuple(failures),
+        )
+
+    def _log_early_failure(self, request, status):
+        logger.warning(
+            "T-Invest payouts: method=discovery calendar_from=%s calendar_to=%s status=%s "
+            "received=unknown processed=0 returned=0 failures=1",
+            request.calendar_from,
+            request.calendar_to,
+            status,
         )
 
     def _bond_flags(self, uid: str) -> tuple[_BondFlags, PayoutFailure | None]:
@@ -277,6 +291,35 @@ class TInvestPayoutProvider:
         window: _MethodWindow,
         bond_flags: _BondFlags | None,
     ) -> tuple[list[PayoutEvent], PayoutCoverage, list[PayoutFailure]]:
+        counts = {"received": "unknown", "processed": 0}
+        events, coverage, failures = self._fetch_method_result(
+            uid=uid, request=request, window=window, bond_flags=bond_flags, counts=counts
+        )
+        status = (
+            "error"
+            if failures or not coverage.successful or not coverage.structurally_valid
+            else "empty"
+            if counts["received"] == 0
+            else "ok"
+        )
+        log = logger.warning if status == "error" else logger.info
+        log(
+            "T-Invest payouts: method=%s from=%s to=%s calendar_from=%s calendar_to=%s "
+            "status=%s received=%s processed=%d returned=%d failures=%d",
+            window.method,
+            window.start,
+            window.end,
+            request.calendar_from,
+            request.calendar_to,
+            status,
+            counts["received"],
+            counts["processed"],
+            len(events),
+            len(failures),
+        )
+        return events, coverage, failures
+
+    def _fetch_method_result(self, *, uid, request, window, bond_flags, counts):
         try:
             payload = self._client.request_payout_method(window.method, window.body)
         except _AuthUnavailable:
@@ -342,7 +385,9 @@ class TInvestPayoutProvider:
             )
 
         rows_name = "dividends" if window.method == _GET_DIVIDENDS else "events"
-        rows = _field(payload, rows_name)
+        # ProtoJSON may omit an empty repeated field. Accept only the empty
+        # success object here; error envelopes or wrong field types stay errors.
+        rows = [] if payload == {} else _field(payload, rows_name)
         if not isinstance(rows, list):
             return (
                 [],
@@ -356,6 +401,7 @@ class TInvestPayoutProvider:
                 ],
             )
 
+        counts["received"] = len(rows)
         if window.method == _GET_BOND_COUPONS:
             conservative = bond_flags is None or not bond_flags.known or bond_flags.floating_coupon
             parsed, failures = _parse_coupons(uid, rows, force_tentative=conservative)
@@ -370,6 +416,7 @@ class TInvestPayoutProvider:
             )
             parsed, failures = _parse_redemptions(uid, rows, force_tentative=conservative)
 
+        counts["processed"] = len(parsed)
         if not failures and any(event.provider_filter_date is None for event in parsed):
             failures.append(
                 PayoutFailure(

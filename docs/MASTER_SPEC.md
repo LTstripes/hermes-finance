@@ -378,6 +378,14 @@ Exact historical performance uses historical membership, dated cash/in-kind cove
 <a id="returns-workspace"></a>
 ### Returns workspace
 
+An instrument may show a supported later-start period when its earliest history
+has no reliable opening valuation. Overview, standalone card and AI keep the
+same actual account/issue dates; other unavailable instruments remain visible.
+When only distribution of known negative common expenses is missing, show the
+separate amount and period percentage labelled **Без нераспределённых расходов
+счёта**. Keep the full result unknown and retain those expense rows; do not turn
+unknown valuations or movements into zero to obtain this estimate.
+
 The ordinary `/v2/returns` entry opens **В целом** for all available history.
 The main journey follows the compact account layout: result cards, a graph of
 supported observations, searchable instruments and leaders. Both available broker

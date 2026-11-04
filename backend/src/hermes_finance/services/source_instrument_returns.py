@@ -269,6 +269,12 @@ def _income(
         if "unallocated_compensation" in event.reason_codes
         for ref in event.source_references
     }
+    account_only_refs = {
+        ref
+        for event in events
+        if event.attribution_basis == "account_only"
+        for ref in event.source_references
+    }
     event_scopes = defaultdict(set)
     for event in events:
         for reference in event.source_references:
@@ -345,6 +351,8 @@ def _income(
         month = flow.event_date.replace(day=1)
         scope_isin = gap_scope([f for f, _ in selected])
         if flow.classification == "unknown" and f"money:{key[0]}:{key[1]}" in resolved_redemptions:
+            continue
+        if all(ref in account_only_refs for f, _ in observations for ref in f.source_references):
             continue
         if len({(f.classification, identity) for f, identity in selected}) != 1:
             gaps.append(
@@ -561,12 +569,26 @@ def _trade_cash_total(amount, nkd, fee, quantity, basis):
 
 
 def _trades(session, views, isin, month, instrument_type, flags):
+    from hermes_finance.services.source_trade_identity import repo_return_identities
+
     groups = defaultdict(list)
     documents = defaultdict(list)
     for view in views:
+        repo_ids = view.get("return_repo_identities")
         for trade in view["document"].get("trades", []):
             if trade["core"]["isin"] == isin:
-                key = trade.get("identity") or object()
+                if repo_ids is None and trade.get("repo_observed"):
+                    repo_ids = repo_return_identities(view)
+                repo_identity = (
+                    (repo_ids or {}).get(trade["ordinal"])
+                    if trade["section"] == "completed"
+                    else None
+                )
+                if repo_identity:
+                    trade = dict(
+                        trade, return_identity=repo_identity[0], repo_signature=repo_identity[1]
+                    )
+                key = trade.get("identity") or trade.get("return_identity") or object()
                 documents[key].append(view["document"])
                 # Keep unresolved occurrences separate solely to flag their months;
                 # they are never eligible for counting or deduplication.
@@ -600,7 +622,11 @@ def _trades(session, views, isin, month, instrument_type, flags):
             ]
             if not relevant:
                 continue
-            if any(not t.get("identity") or len(t.get("ids", [])) != 2 for t in relevant):
+            if any(
+                not t.get("return_identity")
+                and (not t.get("identity") or len(t.get("ids", [])) != 2)
+                for t in relevant
+            ):
                 flags.add("trade_identity_unresolved")
                 invalid = True
                 continue
@@ -617,6 +643,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
                             "bank_commission",
                             "accrued_interest",
                             "repo_observed",
+                            "repo_signature",
                             "face_value",
                         )
                     }
@@ -1103,6 +1130,8 @@ def read_instrument_returns(
     closing_date: date | None = None,
     reviewed_bond_valuation=None,
     include_monthly_history: bool = True,
+    available_period: bool = False,
+    excluded_periods=(),
 ) -> SourceInstrumentReturns:
     """Isolate unreadable sources and individual operand gaps; perform no writes.
 
@@ -1133,8 +1162,12 @@ def read_instrument_returns(
     from hermes_finance.services.source_investment_proofs import instrument_result
     from hermes_finance.services.source_return_proofs import resolve_proof
 
-    investment = instrument_result(
-        session, source_account, selected, requested_isin, opening_date, closing_date
+    investment = (
+        None
+        if available_period
+        else instrument_result(
+            session, source_account, selected, requested_isin, opening_date, closing_date
+        )
     )
     from hermes_finance.services.returns_account_link import account_link
 
@@ -1225,6 +1258,10 @@ def read_instrument_returns(
             while month <= original.covered_to:
                 gaps.append(InstrumentReturnGap(code, original.id, month))
                 month = _next_month(month)
+    from hermes_finance.services.source_trade_identity import repo_return_identities
+
+    # Owned by this one coherent read; never persisted or reused by a later GET.
+    views = [{**view, "return_repo_identities": repo_return_identities(view)} for view in views]
     identities = _identities(views)
     event_gaps = []
     native_account = next(iter(native_scope)) if native_scope else None
@@ -1288,7 +1325,9 @@ def read_instrument_returns(
             isin=event.isin,
         )
         for event in events
-        if "overlap_money_occurrence_missing" in event.reason_codes and event.event_date is not None
+        if "overlap_money_occurrence_missing" in event.reason_codes
+        and event.event_date is not None
+        and event.attribution_basis != "account_only"
     )
     for gap in event_gaps:
         if gap not in gaps:
@@ -1351,11 +1390,95 @@ def read_instrument_returns(
                 gaps,
                 reviewed_basis=reviewed_basis,
             )
+            outer_analysis = analysis
+            if (
+                available_period
+                and opening_date is None
+                and closing_date is None
+                and (analysis.pnl.value is None or (first, last) in excluded_periods)
+            ):
+                from hermes_finance.services.source_instrument_events import endpoint
+
+                dates = {
+                    day
+                    for view in views
+                    for day in (
+                        date.fromisoformat(view["covered_from"]) - timedelta(days=1),
+                        date.fromisoformat(view["covered_to"]),
+                    )
+                }
+                boundaries = sorted(
+                    day
+                    for day in dates
+                    if endpoint(
+                        views, isin, day, kind, reviewed_basis=reviewed_basis
+                    ).economic_value_kopecks
+                    is not None
+                )
+                found = None
+                conditional = (
+                    analysis
+                    if (first, last) not in excluded_periods
+                    and "unallocated_costs_excluded" in analysis.statement_estimate.assumptions
+                    else None
+                )
+                # Choose the earliest reliable start ending at the latest known
+                # valuation. At most one calculation per candidate start.
+                candidate_end = boundaries[-1] if boundaries else last
+                for candidate_start in boundaries[:-1]:
+                    if (candidate_start, candidate_end) in excluded_periods:
+                        continue
+                    candidate = analyse(
+                        views,
+                        isin,
+                        kind,
+                        candidate_start,
+                        candidate_end,
+                        events,
+                        references,
+                        gaps,
+                        reviewed_basis=reviewed_basis,
+                    )
+                    if candidate.pnl.value is not None:
+                        found = candidate
+                        break
+                    if conditional is None and (
+                        "unallocated_costs_excluded" in candidate.statement_estimate.assumptions
+                        and candidate.statement_estimate.pnl.value is not None
+                    ):
+                        conditional = candidate
+                if found is None:
+                    found = conditional
+                if found is not None:
+                    analysis = found
+                elif (first, last) in excluded_periods:
+                    reason = ("investment_proof_stale",)
+                    analysis = replace(
+                        analysis,
+                        pnl=Metric(None, "unavailable", reason),
+                        modified_dietz=replace(
+                            analysis.modified_dietz,
+                            value=None,
+                            status="unavailable",
+                            reason_codes=reason,
+                        ),
+                        statement_estimate=replace(
+                            analysis.statement_estimate,
+                            pnl=Metric(None, "unavailable", reason),
+                            modified_dietz=replace(
+                                analysis.statement_estimate.modified_dietz,
+                                value=None,
+                                status="unavailable",
+                                reason_codes=reason,
+                            ),
+                        ),
+                        reason_codes=tuple(sorted(set(analysis.reason_codes) | set(reason))),
+                    )
             # Instrument R2 does not grant account reconciliation/EOD authority.
             account_analyses.append(
                 analyse(views, isin, kind, first, last, events, references, gaps)
                 if kind == "bond" and reviewed_basis is not None
-                else analysis
+                else outer_analysis
             )
             analysis = replace(
                 analysis,
@@ -1365,8 +1488,8 @@ def read_instrument_returns(
                         for r in rows
                         if first <= r.analysis.opening_date and r.analysis.closing_date <= last
                     ],
-                    first,
-                    last,
+                    analysis.opening_date,
+                    analysis.closing_date,
                 ),
             )
             instruments.append(

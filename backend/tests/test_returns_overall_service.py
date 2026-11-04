@@ -504,6 +504,9 @@ def test_explicit_http_summary_matches_existing_producer_without_cards_or_xirr(d
     assert all(
         set(pair)
         == {
+            "native_period",
+            "conditional_pnl",
+            "conditional_rate",
             "scope",
             "label",
             "canonical_account_id",

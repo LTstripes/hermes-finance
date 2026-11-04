@@ -787,7 +787,8 @@ def test_transport_logs_only_sanitized_failure_kind(cause, kind, caplog):
     caplog.set_level(logging.WARNING, logger="hermes_finance.market_data.t_invest")
     assert _client(stub).fetch_quote(_stock_identity(), TODAY).status is QuoteStatus.NETWORK_ERROR
     assert [record.getMessage() for record in caplog.records] == [
-        f"T-Invest request failed: kind={kind}"
+        "T-Invest request: method=GetInstrumentBy from=unspecified to=unspecified "
+        f"status={kind} http=unavailable received=unknown"
     ]
     assert all(record.exc_info is None for record in caplog.records)
     assert TEST_TOKEN not in caplog.text
@@ -801,9 +802,37 @@ def test_http_failure_logs_only_status(caplog):
     caplog.set_level(logging.WARNING, logger="hermes_finance.market_data.t_invest")
     assert _client(stub).fetch_quote(_stock_identity(), TODAY).status is QuoteStatus.UNAVAILABLE
     assert [record.getMessage() for record in caplog.records] == [
-        "T-Invest request failed: kind=http status=403"
+        "T-Invest request: method=GetInstrumentBy from=unspecified to=unspecified "
+        "status=auth_unavailable http=403 received=unknown"
     ]
     assert TEST_TOKEN not in caplog.text
+
+
+def test_redirect_empty_body_is_not_successful_empty_payout():
+    from hermes_finance.market_data.t_invest import _Malformed
+
+    http = httpx2.Client(
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(302, json={})),
+        base_url="https://example.test",
+    )
+    with pytest.raises(_Malformed):
+        TInvestClient(token=TEST_TOKEN, client=http).request_payout_method("GetDividends", {})
+
+
+@pytest.mark.parametrize("period", ["2030-04-01T00:00:00Z", "sensitive"])
+def test_request_summary_logs_only_normalized_window_and_count(caplog, period):
+    stub = TInvestStub()
+    stub.set("GetDividends", {"dividends": ["sensitive response"]})
+    caplog.set_level(logging.INFO, logger="hermes_finance.market_data.t_invest")
+    _client(stub).request_payout_method(
+        "GetDividends", {"instrumentId": "sensitive id", "from": period, "to": period}
+    )
+    value = "invalid" if period == "sensitive" else "2030-04-01T00:00:00+00:00"
+    assert [r.getMessage() for r in caplog.records] == [
+        f"T-Invest request: method=GetDividends from={value} to={value} "
+        "status=ok http=200 received=1"
+    ]
+    assert TEST_TOKEN not in caplog.text and "sensitive" not in caplog.text
 
 
 def test_missing_token_is_unavailable_without_network() -> None:

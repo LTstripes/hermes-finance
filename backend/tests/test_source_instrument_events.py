@@ -38,6 +38,141 @@ from hermes_finance.statement_import.mybroker import NS
 CASH_RETURN = "Возврат средств по дог. № 90001 от 01.01.2030. Тестов Иван Иванович. Без НДС"
 
 
+@pytest.mark.parametrize(
+    "amount,text",
+    [
+        ("50", "Дивиденды и ведение счета"),
+        ("-2", "Дивиденды и ведение счета"),
+        ("2", "account maintenance"),
+        ("-2", "account maintenance погашение облигаций Synthetic"),
+    ],
+)
+def test_contradictory_account_cost_never_hides_cash(db, amount, text):
+    save(db, bond=None, trades=(), extra=(("Комиссия", text, amount),))
+    before = snapshot(db)
+    result = read(db)
+    assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert not result.account_reconciliation_events
+    assert result.unresolved_events
+    assert snapshot(db) == before
+
+
+def test_supported_later_period_reaches_overview_card_and_ai(db):
+    from hermes_finance.services import ai_source_returns, returns_overall
+
+    save(db, bond=("2", "2", "2000", "2100"), trades=(), stock=("10", "10", "", "1100"))
+    save(db, 5, bond=("2", "2", "2100", "2200"), trades=(), stock=("10", "10", "1100", "1200"))
+    before = snapshot(db)
+    with db.session_factory() as session:
+        native = read_instrument_returns(
+            session, source_account=ACCOUNT, available_period=True, include_monthly_history=False
+        )
+        analysis = by_isin(native)[ISIN].analysis
+        assert (analysis.opening_date, analysis.closing_date) == (
+            date(2030, 4, 30),
+            date(2030, 5, 31),
+        )
+        assert analysis.pnl.value == 10000 and analysis.modified_dietz.value is not None
+        overview = returns_overall.read_overall(session, include_instrument_details=True)
+        assert {item["isin"] for item in overview["instruments"]} == {ISIN, BOND}
+        card = returns_overall.read_instrument_card(session, ISIN, overview=overview)
+        (account,) = card["accounts"]
+        assert account["detail"]["analysis"].pnl.value == 10000
+        assert account["period"] == {"start": date(2030, 4, 30), "end": date(2030, 5, 31)}
+        section = ai_source_returns.source_returns_section(
+            session, as_of_date=date(2030, 5, 31), reporting_period=(2030, 5)
+        )
+        intervals = section["data"]["accounts"][0]["intervals"]
+        assert any(
+            i["opening_date"] == "2030-04-30" and any(t["isin"] == ISIN for t in i["instruments"])
+            for i in intervals
+        )
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("quantity", ["10", "11"])
+def test_unknown_boundary_value_is_not_a_conflicting_known_value(db, quantity):
+    save(db, bond=None, trades=(), marker="known")
+    save(db, bond=None, trades=(), stock=(quantity, "10", "", "1100"), marker="unknown")
+    analysis = by_isin(read(db))[ISIN].analysis
+    if quantity == "10":
+        assert analysis.opening.economic_value_kopecks == 100000
+        assert analysis.pnl.value == 10000
+        assert "overlapping_endpoint_conflict" not in analysis.reason_codes
+    else:
+        assert analysis.pnl.value is None
+        assert "overlapping_endpoint_conflict" in analysis.reason_codes
+
+
+def test_unallocated_negative_fee_has_separate_before_cost_result(db):
+    from hermes_finance.services import returns_overall
+
+    save(db, bond=None, trades=(), extra=(("Комиссия", "unallocated cost", "-2"),))
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_instrument_returns(session, source_account=ACCOUNT, available_period=True)
+        analysis = by_isin(result)[ISIN].analysis
+        assert analysis.pnl.value is None
+        assert analysis.statement_estimate.pnl.value == 10000
+        assert analysis.statement_estimate.modified_dietz.value == Decimal("0.1")
+        overview = returns_overall.read_overall(session, include_instrument_details=True)
+        indexed = overview["instruments"][0]["accounts"][0]
+        assert indexed["pnl"]["value"] is None
+        assert indexed["conditional_pnl"]["value"] == "10000"
+        assert "unallocated_costs_excluded" in indexed["conditional_pnl"]["reason_codes"]
+        from hermes_finance.services import ai_source_returns
+
+        refs = {}
+        section = ai_source_returns.source_returns_section(
+            session,
+            as_of_date=date(2030, 4, 30),
+            reporting_period=(2030, 4),
+            source_account_refs=refs,
+        )
+        instrument = next(
+            item
+            for period in section["data"]["accounts"][0]["intervals"]
+            for item in period["instruments"]
+            if item["isin"] == ISIN and "before_unallocated_costs" in item
+        )
+        assert instrument["metrics"]["pnl"]["value"] is None
+        assert instrument["before_unallocated_costs"]["modified_dietz"]["value"] == "10"
+        blocked = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            available_period=True,
+            include_monthly_history=False,
+            excluded_periods={(date(2030, 3, 31), date(2030, 4, 30))},
+        )
+        assert by_isin(blocked)[ISIN].analysis.statement_estimate.pnl.value is None
+    assert result.unresolved_events
+    assert snapshot(db) == before
+
+
+def test_invalid_subkopeck_boundary_cannot_borrow_other_original_value(db):
+    save(db, bond=None, trades=(), marker="valid-value")
+    save(db, bond=None, trades=(), stock=("10", "10", "1000.001", "1100"), marker="invalid-value")
+    analysis = by_isin(read(db))[ISIN].analysis
+    assert analysis.opening.economic_value_kopecks is None
+    assert analysis.pnl.value is None
+
+
+def test_repo_identity_inventory_is_reconstructed_once_per_source_read(db, monkeypatch):
+    from hermes_finance.services import source_trade_identity
+
+    save(db, mutate=_repo_source_scope, end_month=6)
+    original = source_trade_identity.repo_return_identities
+    calls = []
+
+    def counted(view):
+        calls.append(view["id"])
+        return original(view)
+
+    monkeypatch.setattr(source_trade_identity, "repo_return_identities", counted)
+    read(db)
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize("choice", [None, "unknown"])
 def test_contract_return_read_rule_preserves_saved_default_and_manual_choice(db, choice):
     intake = save(db, bond=None, trades=(), extra=(("Перевод", CASH_RETURN, "-50"),))
@@ -112,6 +247,92 @@ def _repo_source_scope(root, *, duplicate=False):
         other = deepcopy(rows[0])
         other.set("isin_reg", "RU000A000002")
         root.find("m:Trades/m:Report/m:Tablix2/m:Details_Collection", NS).append(other)
+
+
+@pytest.mark.parametrize(
+    "damage", [None, "missing_inventory", "partner_digest", "leg_marker", "account"]
+)
+def test_repo_return_identity_requires_exact_witness_and_account(db, damage):
+    from hermes_finance.services.source_trade_identity import repo_return_identities
+    from hermes_finance.statement_import.mybroker import digest
+
+    intake = save(db, mutate=_repo_source_scope)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        view = source_intake.read_intake(session, intake)
+    original = repo_return_identities(view)
+    assert set(original) == {0}
+    if damage == "missing_inventory":
+        view["observations"] = []
+    else:
+        observation = next(
+            o for o in view["observations"] if "repo_no" in o["facts"].get("native_references", {})
+        )
+        attributes = observation["facts"]["attributes"]
+        if damage == "partner_digest":
+            observation["facts"]["native_references"]["repo_no"] = "B90003"
+        if damage == "leg_marker":
+            next(a for a in attributes if a["name"] == "comment")["value_digest"] = digest(
+                "unrecognized"
+            )
+        if damage == "account":
+            account = "SYNTHETIC-SECOND-ACCOUNT"
+            view["document"]["trades"][0]["core"]["source_account"] = account
+            observation["facts"]["native_references"]["acc_code"] = account
+            next(a for a in attributes if a["name"] == "acc_code")["value_digest"] = digest(account)
+    projected = repo_return_identities(view)
+    if damage == "account":
+        assert projected[0][0] != original[0][0]
+    else:
+        assert projected == (original if damage is None else {})
+    assert snapshot(db) == before
+
+
+def test_repo_identity_collision_across_issues_cannot_choose_first_original(db):
+    def mutate(root, target):
+        _repo_source_scope(root)
+        root.find(".//m:Details[@trade_no]", NS).set("isin_reg", target)
+        for position in root.findall(".//m:Details[@ISIN1]", NS):
+            position.set("active_type", "Акции")
+
+    for marker, target in (("first-issue", BOND), ("second-issue", ISIN)):
+        save(db, bond=("2", "2", "2000", "2100"), marker=marker, mutate=lambda r: mutate(r, target))
+    before = snapshot(db)
+    result = read(db)
+    assert all(row.analysis.pnl.value is None for row in result.instruments)
+    (event,) = [e for e in result.unresolved_events if e.kind in {"BUY", "SELL"}]
+    assert event.isin is event.effective_isin is None
+    assert "overlapping_trade_conflict" in event.reason_codes
+    assert not event.counted and len(event.source_references) == 2
+    assert snapshot(db) == before
+
+
+def test_repo_conflicting_dates_remain_visible_in_alternate_date_interval(db):
+    def mutate(root, day):
+        _repo_source_scope(root)
+        trade_date(day)(root)
+
+    save(db, mutate=lambda r: mutate(r, 10), marker="earlier-repo")
+    save(db, mutate=lambda r: mutate(r, 20), marker="later-repo")
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            isin=BOND,
+            opening_date=date(2030, 4, 19),
+            closing_date=date(2030, 4, 20),
+        )
+    analysis = result.instruments[0].analysis
+    assert "overlapping_trade_conflict" in analysis.reason_codes
+    assert "repo_trade_unsupported" in analysis.reason_codes
+    assert analysis.pnl.value is analysis.modified_dietz.value is None
+    (marker,) = analysis.events
+    assert marker.event_date == date(2030, 4, 20)
+    assert marker.attribution_basis == "conflicting_trade_observation"
+    assert not marker.counted and not marker.cash_legs
+    assert len(marker.source_references) == 2
+    assert snapshot(db) == before
 
 
 def _closed_native_issue(root, *, ambiguous=False, stock_collision=False):
@@ -242,11 +463,14 @@ def test_source_scope_repo_native_reference_is_not_cash_authority(db, case):
         (event,) = [
             e
             for e in by_isin(result)[BOND].analysis.events
-            if e.attribution_basis == "native_repo_reference"
+            if e.attribution_basis == "matched_money"
         ]
-        assert event.isin == BOND and not event.counted and event.effective_isin is None
-        assert event.reason_codes == ("unmatched_trade_money",)
-        assert all(leg.ownership == event.event_key for leg in event.cash_legs)
+        assert event.isin == event.effective_isin == BOND and not event.counted
+        assert event.native_ids == ("B90001",)
+        assert "repo_trade_unsupported" in event.reason_codes
+        assert "unmatched_trade_money" not in event.reason_codes
+        assert any(leg.ownership.startswith("money:") for leg in event.cash_legs)
+        assert by_isin(result)[BOND].analysis.pnl.value is None
         assert stock.pnl.value == 10000
         assert by_isin(result)[ISIN].months[0].total_kopecks == 10000
         assert all(not e.counted for e in by_isin(result)[BOND].analysis.events)
@@ -902,7 +1126,12 @@ def test_reinvestment_two_visible_events_and_other_isin_keeps_issuer(db):
     assert {e.kind for e in a.events} == {"DIVIDEND", "BUY"}
     assert a.pnl.value == 10000 and a.modified_dietz.value == Decimal("0.1")
     assert a.events[0].gross_payout_kopecks is None
+
     # A distinct acquired security gets the BUY but not the issuer's payout.
+    def distinct_trade(root):
+        trade_date(15, price="10")(root)
+        root.find(".//m:Details[@trade_no]", NS).set("trade_no", "10000000002\n2000000002")
+
     save(
         db,
         5,
@@ -910,7 +1139,7 @@ def test_reinvestment_two_visible_events_and_other_isin_keeps_issuer(db):
         bond=("0", "1", "0", "100"),
         trades=((BOND, "1", "100", "0", "0"),),
         extra=(("Дивиденды", ISIN, "100"),),
-        mutate=trade_date(15, price="10"),
+        mutate=distinct_trade,
     )
     result = by_isin(read(db))
     assert result[ISIN].months[1].analysis.components["dividends"].value == 10000
@@ -1003,6 +1232,96 @@ def test_explicit_account_only_cost_is_not_allocated_and_tax_is_once(db):
     assert by_isin(result)[ISIN].months[0].total_kopecks == 8700
     assert a.components["taxes"].value == 1300
     assert result.account_reconciliation_events[0].cash_legs[0].account_cash_kopecks == -200
+
+
+@pytest.mark.parametrize(
+    "description,account_only", [("account maintenance", True), ("ambiguous commission", False)]
+)
+def test_overlapping_account_cost_gap_stays_with_account(db, description, account_only):
+    save(db, trades=(), extra=(("Комиссия", description, "-2"),), marker="with-cost")
+    save(db, trades=(), marker="without-cost")
+    before = snapshot(db)
+    result = read(db)
+    stock = by_isin(result)[ISIN]
+    assert stock.analysis.pnl.value == (10000 if account_only else None)
+    assert stock.months[0].total_kopecks == (10000 if account_only else None)
+    assert ("overlap_money_occurrence_missing" in stock.analysis.reason_codes) != account_only
+    # Missing account evidence remains visible and cannot reconcile to zero.
+    assert not result.reconciliation.complete
+    assert result.reconciliation.residual.value is None
+    if account_only:
+        (event,) = result.account_reconciliation_events
+        assert "overlap_money_occurrence_missing" in event.reason_codes
+        assert not stock.analysis.events
+    else:
+        assert result.unresolved_events
+    # Independent missing bond valuation is never promoted to zero/complete.
+    assert by_isin(result)[BOND].analysis.pnl.value is None
+    assert "bond_valuation_basis_unknown" in by_isin(result)[BOND].analysis.reason_codes
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "partner", "leg", "missing", "duplicate", "duplicate_same_issue"]
+)
+def test_repo_overlap_identity_preserves_references_and_unsupported_economics(db, fault):
+    money = (
+        ("Расчеты по сделке B90001", "репо ч.1", "-1000"),
+        ("Комиссия по сделке B90001", "репо ч.1", "-5"),
+    )
+    save(db, mutate=_repo_source_scope, extra=money, marker="first-repo")
+
+    def second(root):
+        _repo_source_scope(root, duplicate=fault in {"duplicate", "duplicate_same_issue"})
+        if fault == "duplicate_same_issue":
+            for row in root.findall(".//m:Details[@trade_no]", NS):
+                row.set("isin_reg", BOND)
+        row = root.find(".//m:Details[@trade_no]", NS)
+        if fault == "partner":
+            row.set("repo_no", "B90003")
+        if fault == "leg":
+            row.set("comment", "репо ч.2")
+
+    save(
+        db,
+        mutate=second,
+        trades=() if fault == "missing" else ((BOND, "1", "1020", "20", "5"),),
+        extra=money,
+        marker="second-repo",
+    )
+    before = snapshot(db)
+    result = read(db)
+    repo = by_isin(result)[BOND].analysis
+    trades = [e for e in repo.events if e.kind in {"BUY", "SELL"}]
+    assert all(not e.counted and "repo_trade_unsupported" in e.reason_codes for e in trades)
+    assert repo.pnl.value is repo.modified_dietz.value is None
+    if fault in (None, "partner", "leg", "missing"):
+        (trade,) = trades
+        assert trade.native_identity.startswith("repo:")
+        assert trade.native_ids == ("B90001",)
+        assert len(trade.source_references) == (1 if fault == "missing" else 2)
+        assert "trade_identity_unresolved" not in trade.reason_codes
+        assert ("overlapping_trade_conflict" in trade.reason_codes) == (fault in {"partner", "leg"})
+        assert ("overlap_trade_occurrence_missing" in trade.reason_codes) == (fault == "missing")
+        # The exact B Money references join the single projected event, without
+        # granting it cash authority or borrowing the partner as native ID #2.
+        assert trade.attribution_basis == (
+            "native_trade_settlement" if fault == "missing" else "matched_money"
+        )
+        assert any("unmatched_trade_money" in e.reason_codes for e in repo.events) == (
+            fault == "missing"
+        )
+        if fault != "missing":
+            assert "trade_money_cash_conflict" not in trade.reason_codes
+            assert {leg.role for leg in trade.cash_legs} == {"principal", "commission", "nkd"}
+    else:
+        assert any("trade_identity_unresolved" in e.reason_codes for e in trades)
+        assert all(e.attribution_basis != "matched_money" for e in trades)
+        assert any("money_ownership_ambiguous" in e.reason_codes for e in repo.events)
+    assert by_isin(result)[ISIN].analysis.pnl.value == (
+        None if fault in {"missing", "duplicate"} else 10000
+    )
+    assert snapshot(db) == before
 
 
 def setup_link(db):

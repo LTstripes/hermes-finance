@@ -220,6 +220,16 @@ def _instrument_metric(item, *, unit="kopecks"):
     )
 
 
+def _estimate_metric(estimate, name, *, unit="kopecks"):
+    if not hasattr(estimate, name):
+        return metric(reasons=("statement_estimate_not_applicable",), unit=unit)
+    result = _instrument_metric(getattr(estimate, name), unit=unit)
+    result["reason_codes"] = sorted(
+        set(result["reason_codes"]) | set(getattr(estimate, "assumptions", ()))
+    )
+    return result
+
+
 def _display_name(name, isin):
     from hermes_finance.services.source_investment_proofs import display_name_for_isin
 
@@ -265,6 +275,10 @@ def _instrument(row, start, end, catalogue_names):
         "coupons": _instrument_metric(analysis.components["coupons"]),
         "dividends": _instrument_metric(analysis.components["dividends"]),
         "conditional": analysis.statement_estimate.pnl.value is not None,
+        "conditional_pnl": _estimate_metric(analysis.statement_estimate, "pnl"),
+        "conditional_rate": _estimate_metric(
+            analysis.statement_estimate, "modified_dietz", unit="fraction"
+        ),
     }
 
 
@@ -459,14 +473,11 @@ def _source_view(session, account, start, end):
         periods.append(value["period"])
         if value["period"] == bounds(start, end):
             selected = value
-    historical = sorted(
-        (p for p in reports if p["history_from_zero"]),
-        key=lambda p: (p["covered_to"], p["proof_id"]),
-    )
-    if historical:
-        from hermes_finance.services.source_account_history import extend_history
+    from hermes_finance.services.source_account_history import extend_history, latest_history
 
-        extended = extend_history(historical[-1], monthly)
+    historical = latest_history(reports)
+    if historical:
+        extended = extend_history(historical, monthly)
         whole = _investment_report_result(extended)
         periods.append(whole["period"])
         if whole["period"] == bounds(start, end):
@@ -734,7 +745,7 @@ def read_overview(session, *, scope, start, end):
         return {"scope": scope, "account_link": link, **view}
 
 
-def read_detail(session, *, scope, start, end, isin):
+def read_detail(session, *, scope, start, end, isin, native_period=False):
     with source_read_snapshot(session):
         resolved = _validate_scope(session, scope)
         if not scope.startswith("source:"):
@@ -746,6 +757,7 @@ def read_detail(session, *, scope, start, end, isin):
             closing_date=end,
             isin=isin,
             include_monthly_history=False,
+            available_period=native_period,
         )
         if len(result.instruments) != 1:
             raise LookupError("returns_instrument_missing")
@@ -764,10 +776,6 @@ def read_detail(session, *, scope, start, end, isin):
             else str(analysis.closing.quantity),
             "buys": _instrument_metric(analysis.components["buys"]),
             "sells": _instrument_metric(analysis.components["sells"]),
-            "conditional_pnl": _instrument_metric(analysis.statement_estimate.pnl),
-            "conditional_rate": _instrument_metric(
-                analysis.statement_estimate.modified_dietz, unit="fraction"
-            ),
             "reason_codes": list(analysis.reason_codes),
             "events": [
                 {

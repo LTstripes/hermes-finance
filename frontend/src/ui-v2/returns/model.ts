@@ -16,6 +16,8 @@ export type Metric = {
 };
 export type AccountLink = ReturnAccountLink;
 export type Result = {
+  conditional_pnl?: Metric;
+  conditional_rate?: Metric;
   valuation_date: string | null;
   account_link?: AccountLink | null;
   period: Period;
