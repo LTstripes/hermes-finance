@@ -13,13 +13,14 @@ export function PortfolioCoverageNote({
   const pending = coverage.source_account_financial_coverage?.status === "partial";
   if (coverage.status === "complete" && !pending) return null;
   const missing = coverage.reason_codes.includes("active_account_snapshot_missing");
-  const label = pending
-    ? "Частичный известный итог: разбор источника не завершён"
-    : coverage.status === "unavailable"
+  const label =
+    coverage.status === "unavailable"
       ? "Нет снимков капитала"
-      : missing
-        ? "Частично: нет снимка счёта"
-        : "Покрытие частичное";
+      : pending
+        ? "Частичный известный итог: разбор источника не завершён"
+        : missing
+          ? "Частично: нет снимка счёта"
+          : "Покрытие частичное";
   return (
     <span className={styles.note} data-testid="portfolio-coverage-note">
       {label}

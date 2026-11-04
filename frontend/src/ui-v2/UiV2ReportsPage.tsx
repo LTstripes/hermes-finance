@@ -32,8 +32,9 @@ function ReportRowCells({ row }: { row: ArchiveReportRow }) {
   const coverage = point?.portfolio_source_coverage;
   const unavailable = coverage?.status === "unavailable";
   const partial =
-    coverage?.status === "partial" ||
-    coverage?.source_account_financial_coverage?.status === "partial";
+    !unavailable &&
+    (coverage?.status === "partial" ||
+      coverage?.source_account_financial_coverage?.status === "partial");
   return (
     <>
       <Td data-label={COLUMNS[0]}>

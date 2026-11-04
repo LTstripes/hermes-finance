@@ -98,6 +98,30 @@ test("shows five instruments by absolute result and expands or collapses the lis
   expect(names()).toHaveLength(5);
 });
 
+test("sorts and displays a native instrument period despite stale account proof", async () => {
+  const data = overallFixture();
+  data.source_accounts[0].proof_status = "stale";
+  const template = data.instruments[1];
+  data.instruments = ["100", "200", "300", "400", "500", "-900"].map((value, index) => ({
+    ...template,
+    isin: `NATIVE${index}`,
+    name: `Бумага ${index}`,
+    accounts: template.accounts.map((account) => ({
+      ...account,
+      native_period: index === 5,
+      pnl: { ...account.pnl, value },
+    })),
+  }));
+  install(data);
+  setup();
+  const section = await screen.findByRole("region", { name: "Доходность по инструментам (6)" });
+  const rows = within(section).getAllByRole("row");
+  expect(rows[1]).toHaveTextContent("Бумага 5");
+  expect(rows[1]).toHaveTextContent("−9 ₽");
+  expect(rows[1]).not.toHaveTextContent("Нужна проверка данных");
+  expect(rows[2]).toHaveTextContent("Нужна проверка данных");
+});
+
 test("default shows exact brokerage subtotal, supported graph/list, excludes deposits and lazy detail calls", async () => {
   const calls = install();
   setup();
