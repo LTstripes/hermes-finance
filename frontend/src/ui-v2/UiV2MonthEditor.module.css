@@ -115,3 +115,18 @@
 .embedded > fieldset {
   min-width: 0;
 }
+
+.budgetEntry {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.budgetEntry label {
+  display: grid;
+  gap: 4px;
+}
+.budgetEntry input,
+.budgetEntry select {
+  max-width: 100%;
+  min-width: 0;
+}
