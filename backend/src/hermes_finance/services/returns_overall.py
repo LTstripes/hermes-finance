@@ -714,7 +714,9 @@ def read_instrument_card(session, isin, *, overview=None):
             accounts, instruments, _ = _source_accounts(session, include_instrument_details=False)
             for row in instruments:
                 for account in row["accounts"]:
-                    account["canonical_account_id"] = account["account_link"]["financial_account_id"]
+                    account["canonical_account_id"] = account["account_link"][
+                        "financial_account_id"
+                    ]
             overview = {"source_accounts": accounts, "instruments": instruments}
         instrument = next((row for row in overview["instruments"] if row["isin"] == isin), None)
         if instrument is None:
