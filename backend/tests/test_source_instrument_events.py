@@ -57,11 +57,20 @@ def test_contradictory_account_cost_never_hides_cash(db, amount, text):
     assert snapshot(db) == before
 
 
-def test_supported_later_period_reaches_overview_card_and_ai(db):
+@pytest.mark.parametrize("closing_month", [5, 10])
+def test_supported_later_period_reaches_overview_card_and_ai(db, closing_month):
     from hermes_finance.services import ai_source_returns, returns_overall
 
     save(db, bond=("2", "2", "2000", "2100"), trades=(), stock=("10", "10", "", "1100"))
-    save(db, 5, bond=("2", "2", "2100", "2200"), trades=(), stock=("10", "10", "1100", "1200"))
+    save(
+        db,
+        5,
+        end_month=closing_month,
+        bond=("2", "2", "2100", "2200"),
+        trades=(),
+        stock=("10", "10", "1100", "1200"),
+    )
+    closing_date = date(2030, closing_month, 31)
     before = snapshot(db)
     with db.session_factory() as session:
         native = read_instrument_returns(
@@ -70,7 +79,7 @@ def test_supported_later_period_reaches_overview_card_and_ai(db):
         analysis = by_isin(native)[ISIN].analysis
         assert (analysis.opening_date, analysis.closing_date) == (
             date(2030, 4, 30),
-            date(2030, 5, 31),
+            closing_date,
         )
         assert analysis.pnl.value == 10000 and analysis.modified_dietz.value is not None
         overview = returns_overall.read_overall(session, include_instrument_details=True)
@@ -78,13 +87,15 @@ def test_supported_later_period_reaches_overview_card_and_ai(db):
         card = returns_overall.read_instrument_card(session, ISIN, overview=overview)
         (account,) = card["accounts"]
         assert account["detail"]["analysis"].pnl.value == 10000
-        assert account["period"] == {"start": date(2030, 4, 30), "end": date(2030, 5, 31)}
+        assert account["period"] == {"start": date(2030, 4, 30), "end": closing_date}
         section = ai_source_returns.source_returns_section(
-            session, as_of_date=date(2030, 5, 31), reporting_period=(2030, 5)
+            session, as_of_date=closing_date, reporting_period=(2030, closing_month)
         )
         intervals = section["data"]["accounts"][0]["intervals"]
         assert any(
-            i["opening_date"] == "2030-04-30" and any(t["isin"] == ISIN for t in i["instruments"])
+            i["opening_date"] == "2030-04-30"
+            and i["closing_date"] == str(closing_date)
+            and any(t["isin"] == ISIN for t in i["instruments"])
             for i in intervals
         )
     assert snapshot(db) == before
