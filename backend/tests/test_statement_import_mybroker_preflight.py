@@ -1711,7 +1711,7 @@ def test_investment_persistent_api_requires_exact_ack_and_boolean_attestation(
     assert ordinary["period"]["growth_kopecks"] == 9000
 
 
-@pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("pending", [False, True, "other"])
 def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, pending):
     from decimal import Decimal
 
@@ -1739,12 +1739,18 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, p
     )
     doc["rub_money"][0]["ending_amount"] = "991"
     if pending:
-        doc["trades"].append(
-            {**deepcopy(ordinary), "section": "pending", "state": "pending", "repo_observed": True}
-        )
+        pending_trade = {
+            **deepcopy(ordinary),
+            "section": "pending",
+            "state": "pending",
+            "repo_observed": True,
+        }
+        if pending == "other":
+            pending_trade["core"]["isin"] = "RU000A000001"
+        doc["trades"].append(pending_trade)
     result = service._interval(doc, raw, report, money, {}, {}, True)
     instrument = result["instruments"][0]
-    assert instrument["pnl"]["value"] == (None if pending else "9000")
+    assert instrument["pnl"]["value"] == (None if pending is True else "9000")
     if pending:
         assert result["pnl"]["value"] is None
         assert "repo_position_open_at_boundary" in result["reason_codes"]
@@ -1757,8 +1763,34 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, p
         )
         == 100
     )
-    assert instrument["reason_codes"] == (["repo_position_open_at_boundary"] if pending else [])
+    assert instrument["reason_codes"] == (
+        ["repo_position_open_at_boundary"] if pending is True else []
+    )
+    if pending == "other":
+        other = next(item for item in result["instruments"] if item["isin"] == "RU000A000001")
+        assert other["pnl"]["value"] is None
+        assert "repo_position_open_at_boundary" in other["reason_codes"]
     assert Decimal(instrument["closing_quantity"]) == 10
+
+
+@pytest.mark.parametrize("target", ["RU000A000000", "RU000A000001"])
+def test_pending_only_repo_withholds_own_issue_without_hiding_known_sibling(target):
+    service, doc, raw, report, money = investment_case()
+    pending = {
+        **deepcopy(doc["trades"][0]),
+        "section": "pending",
+        "state": "pending",
+        "repo_observed": True,
+    }
+    pending["core"]["isin"] = target
+    doc["trades"].append(pending)
+    result = service._interval(doc, raw, report, money, {}, {}, True)
+    by_isin = {item["isin"]: item for item in result["instruments"]}
+    assert by_isin[target]["pnl"]["value"] is None
+    assert "repo_position_open_at_boundary" in by_isin[target]["reason_codes"]
+    if target != "RU000A000000":
+        assert by_isin["RU000A000000"]["pnl"]["value"] == "9000"
+    assert result["pnl"]["value"] is None
 
 
 def test_investment_anonymous_nkd_corroborates_cash_does_not_add_it_twice():

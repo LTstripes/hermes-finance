@@ -650,7 +650,12 @@ def _interval(
             for a, i, d, q in native_evidence["cancellations"]
         ]
     repo_blockers = _repo_pair_blockers(trades, start, end)
-    if any(t.get("repo_observed") and t.get("section") != "completed" for t in document["trades"]):
+    pending_repo_isins = {
+        t["core"]["isin"]
+        for t in document["trades"]
+        if t.get("repo_observed") and t.get("section") != "completed"
+    }
+    if pending_repo_isins:
         repo_blockers.add("repo_position_open_at_boundary")
     from hermes_finance.services.source_instrument_events import _account_cost_scope
     from hermes_finance.services.source_instrument_returns import _attribute
@@ -673,6 +678,12 @@ def _interval(
     expected = defaultdict(int)
     repo_groups = set()
     issues = defaultdict(set)
+    for isin in pending_repo_isins:
+        issues[isin].add("repo_position_open_at_boundary")
+    repo_issue_blockers = {
+        isin: _repo_pair_blockers([t for t in trades if t["core"]["isin"] == isin], start, end)
+        for isin in {t["core"]["isin"] for t in trades if t.get("repo_observed")}
+    }
     for t in trades:
         isin = t["core"]["isin"]
         if (
@@ -701,7 +712,7 @@ def _interval(
             _minor(t.get("bank_commission") or "0")
         )
         if t.get("repo_observed"):
-            issues[isin].update(repo_blockers)
+            issues[isin].update(repo_issue_blockers[isin])
             repo_groups.add(key)
             repo_quantity[isin] += q
     for isin, quantity in repo_quantity.items():
@@ -959,7 +970,7 @@ def _interval(
     )
     v0total = _minor(cash[0]["beginning_amount"])
     v1total = _minor(cash[0]["ending_amount"])
-    for isin in sorted(set(positions) | set(qdelta) | set(events) | set(redemptions)):
+    for isin in sorted(set(positions) | set(qdelta) | set(events) | set(redemptions) | set(issues)):
         p = positions.get(isin)
         q0 = q1 = None
         v0 = v1 = None
