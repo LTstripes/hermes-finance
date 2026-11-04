@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal, localcontext
 
@@ -321,6 +322,10 @@ def read_events(session, views, identities, native_account, gaps):
                         raw=raw[ref],
                         views=views,
                     )
+                    if basis == "accepted_money":
+                        # The current exact receipt confirms this payout's role,
+                        # date, amount, account and instrument, not other events.
+                        flow = replace(flow, status="confirmed")
                     if isin:
                         metadata = identities[isin]
                         metadata["identifiers"].add(isin)

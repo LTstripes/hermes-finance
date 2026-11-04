@@ -1130,6 +1130,10 @@ def test_one_exact_receipt_is_counted_once_across_identical_originals(db, monkey
     result = by_isin(read(db))[ISIN].analysis
     assert result.components["dividends"].value == 1000
     assert "overlap_flow_choice_conflict" not in result.reason_codes
+    payouts = [event for event in result.events if event.kind == "DIVIDEND" and event.counted]
+    assert len(payouts) == 1
+    assert payouts[0].classification_status == "confirmed"
+    assert "income_assumed" not in payouts[0].assumptions
     assert snapshot(db) == before
 
 

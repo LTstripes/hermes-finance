@@ -100,6 +100,7 @@ def _accept_money(client, source, raw, *, confirmed):
         "wrong_account",
         "wrong_row",
         "user_choice",
+        "conflicting_user_choice",
         "multiple_owners",
         "multi_row",
         "unbound",
@@ -109,10 +110,16 @@ def _accept_money(client, source, raw, *, confirmed):
         "wrong_currency",
         "wrong_kind",
         "wrong_role",
+        "skipped_instrument",
     ],
 )
 def test_existing_payout_receipt_requires_exact_current_source_and_account(monkeypatch, case):
-    from hermes_finance.services import broker_money, broker_money_ownership, source_return_evidence
+    from hermes_finance.services import (
+        broker_money,
+        broker_money_ownership,
+        mybroker_dispositions,
+        source_return_evidence,
+    )
     from hermes_finance.services.source_instrument_events import payout_attribution
     from hermes_finance.services.source_money_classifications import source_reference
     from hermes_finance.statement_import.mybroker import digest
@@ -171,12 +178,22 @@ def test_existing_payout_receipt_requires_exact_current_source_and_account(monke
     monkeypatch.setattr(
         broker_money, "proof_blockers", lambda *_: ["stale"] if case == "stale" else []
     )
+    monkeypatch.setattr(
+        mybroker_dispositions,
+        "resolve",
+        lambda *_: (
+            [{"isin": ISIN, "effective_state": "accepted"}] if case == "skipped_instrument" else []
+        ),
+    )
     if case == "wrong_account":
         facts["account_id"] = "99"
     elif case == "wrong_row":
         occurrence["row_fingerprint"] = "different"
     elif case == "user_choice":
         saved["origin"] = "user_choice"
+    elif case == "conflicting_user_choice":
+        saved["origin"] = "user_choice"
+        saved["classification"] = "dividend"
     elif case == "multi_row":
         proof["occurrences"].append({**occurrence, "ordinal": 4})
     elif case == "wrong_date":
@@ -190,7 +207,7 @@ def test_existing_payout_receipt_requires_exact_current_source_and_account(monke
     elif case == "wrong_role":
         facts["flow_type"] = "dividend"
     result = payout_attribution(saved, resolver, {}, session=session, view=view, raw=row)
-    if case == "valid":
+    if case in {"valid", "user_choice"}:
         assert result == (ISIN, "accepted_money", ())
     else:
         assert result == (None, "persisted_link", ("payout_link_unresolved_no_match",))
@@ -216,6 +233,7 @@ def test_receipt_source_is_not_borrowed_across_overlapping_originals():
         "missing",
         "different_row",
         "user_choice",
+        "conflicting_user_choice",
         "two_proofs",
         "no_proof",
     ],
@@ -262,6 +280,9 @@ def test_overlap_receipt_requires_one_identical_unambiguous_group(monkeypatch, c
         views[1]["document"]["money"][0]["amount"] = "17.24"
     elif case == "user_choice":
         views[1]["money_classifications"][0]["origin"] = "user_choice"
+    elif case == "conflicting_user_choice":
+        views[1]["money_classifications"][0]["origin"] = "user_choice"
+        views[1]["money_classifications"][0]["classification"] = "dividend"
     monkeypatch.setattr(
         evidence,
         "effective_payout_instrument",
@@ -277,7 +298,7 @@ def test_overlap_receipt_requires_one_identical_unambiguous_group(monkeypatch, c
         views[0]["money_classifications"][0],
         None,
     )
-    assert result == (ISIN if case == "valid" else None)
+    assert result == (ISIN if case in {"valid", "user_choice"} else None)
 
 
 @pytest.mark.parametrize("confirmed", [False, True])

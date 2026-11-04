@@ -22,11 +22,12 @@ function Location() {
     </>
   );
 }
-function setup(path: string) {
+function setup(
+  path: string,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Location />
         <Routes>
@@ -38,6 +39,28 @@ function setup(path: string) {
   );
 }
 afterEach(() => vi.unstubAllGlobals());
+
+test("background refresh keeps the card and signals that data is updating", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let finish: (value: Response) => void = () => {};
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(response(instrumentCardFixture()))
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  setup("/v2/returns/instrument/RU000A000002", client);
+  await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
+  void client.invalidateQueries({ queryKey: ["returns", "instrument-card"] });
+  expect(await screen.findByText("Обновляем данные…")).toBeVisible();
+  expect(screen.getByRole("heading", { level: 1, name: "Учебная акция" })).toBeVisible();
+  await act(async () => finish(response(instrumentCardFixture())));
+  await waitFor(() => expect(screen.queryByText("Обновляем данные…")).toBeNull());
+});
 
 test("standalone entry fetches one card only, renders compact native trades and returns to filters", async () => {
   const card = instrumentCardFixture();

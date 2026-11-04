@@ -267,6 +267,8 @@ def _income(session, views, identities, gaps):
                     raw=raw[flow.source_references[0]],
                     views=views,
                 )
+                if basis == "accepted_money":
+                    flow = replace(flow, status="confirmed")
                 if basis == "registration_scope":
                     # Legacy income must not turn coverage-only identity into a payout.
                     isin = None

@@ -70,13 +70,15 @@ def effective_overlapping_payout(session, views, view, row, saved, resolver):
         return None
     relevant = (
         "classification",
-        "origin",
         "instrument_link_status",
         "instrument_id",
         "operation",
         "narrative",
     )
-    if saved.get("origin") != "default_rule" or saved.get("instrument_id") is not None:
+    if (
+        saved.get("origin") not in {"default_rule", "user_choice"}
+        or saved.get("instrument_id") is not None
+    ):
         return None
     signature = {k: v for k, v in row.items() if k not in {"ordinal", "last_update"}}
     matches = []
@@ -94,7 +96,11 @@ def effective_overlapping_payout(session, views, view, row, saved, resolver):
         choices = [
             r for r in candidate["money_classifications"] if r.get("source_reference") == ref
         ]
-        if len(choices) != 1 or any(choices[0].get(k) != saved.get(k) for k in relevant):
+        if (
+            len(choices) != 1
+            or choices[0].get("origin") not in {"default_rule", "user_choice"}
+            or any(choices[0].get(k) != saved.get(k) for k in relevant)
+        ):
             return None
         matches.append((candidate, raw[0], choices[0]))
     proven = [
@@ -125,16 +131,18 @@ def _payout_money_heads(session):
 
 
 def _effective_payout_instrument(session, view, row, saved, resolver):
+    from hermes_finance.database import snapshot_read_result
     from hermes_finance.persistence import ReportingMonth
     from hermes_finance.services import broker_money as money
     from hermes_finance.services.broker_money_ownership import owners
     from hermes_finance.services.broker_statement_provisional import _minor
+    from hermes_finance.services.mybroker_dispositions import resolve
     from hermes_finance.services.source_money_classifications import source_reference
 
     role = saved.get("classification")
     if (
         role not in {"coupon", "dividend"}
-        or saved.get("origin") != "default_rule"
+        or saved.get("origin") not in {"default_rule", "user_choice"}
         or saved.get("instrument_link_status") not in {None, "not_parsed", "unresolved_no_match"}
         or saved.get("instrument_id") is not None
         or saved.get("source_reference") != source_reference(view["id"], row)
@@ -182,6 +190,13 @@ def _effective_payout_instrument(session, view, row, saved, resolver):
         or facts.get("net_amount_kopecks") != str(_minor(row.get("amount")))
         or month is None
         or not month.period_start.isoformat() <= str(row["date"]) <= month.period_end.isoformat()
+    ):
+        return None
+    if any(
+        item["isin"] == instrument.isin and item["effective_state"] != "mapped"
+        for item in snapshot_read_result(
+            session, "source_payout_dispositions", source.id, lambda: resolve(session, source)
+        )
     ):
         return None
     return instrument.isin

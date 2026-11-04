@@ -101,6 +101,7 @@ export function ReturnsInstrumentCard({
       ) : query.isFetching && !data ? (
         <p role="status">Загружаем инструмент…</p>
       ) : null}
+      {query.isFetching && data ? <p role="status">Обновляем данные…</p> : null}
       {data && (
         <>
           <header className={styles.header}>
