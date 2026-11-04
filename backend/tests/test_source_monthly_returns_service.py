@@ -4,6 +4,7 @@ import calendar
 from dataclasses import asdict
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -21,7 +22,13 @@ from hermes_finance.domain.broker_statement_provisional import (
     ProvisionalChoice,
 )
 from hermes_finance.persistence import Base
-from hermes_finance.services import source_intake
+from hermes_finance.services import (
+    source_intake,
+    source_investment_proofs,
+    source_redemption_evidence,
+)
+from hermes_finance.services.source_money_classifications import source_reference
+from hermes_finance.services.source_monthly_internal_evidence import verified_internal_money
 from hermes_finance.services.source_monthly_returns import read_monthly_returns
 
 
@@ -90,6 +97,56 @@ def snapshot(db):
             ).fetchall()
             for table in Base.metadata.sorted_tables
         }
+
+
+@pytest.mark.parametrize("missing_closing", [False, True])
+def test_monthly_current_compensation_reuses_one_flow_without_fabricating_boundary(
+    db, monkeypatch, missing_closing
+):
+    from hermes_finance.services import source_investment_proofs, source_redemption_evidence
+    from hermes_finance.services.source_monthly_returns import _money, _selected_sources
+
+    save_month(
+        db,
+        candidate_count=0,
+        extra=(("synthetic unknown", "Synthetic compensation", "10"),),
+        missing_closing=missing_closing,
+    )
+    before = read(db)
+    with db.session_factory() as session:
+        selected, _ = _selected_sources(session, ACCOUNT)
+        view = selected[0][1]
+        unknown = [
+            (key, flow)
+            for key, flow in _money(session, view, None, [])
+            if flow.classification == "unknown"
+        ]
+        assert len(unknown) == 1
+        flow = unknown[0][1]
+        raw = next(r for r in view["document"]["money"] if r["date"] == str(flow.event_date))
+        report = {
+            "status": "current",
+            "covered_from": "2029-01-01",
+            "covered_to": "2031-12-31",
+            "interval": {
+                "account_only": [
+                    {
+                        "kind": "unallocated_compensation",
+                        "amount_kopecks": str(flow.amount_kopecks),
+                        "reference": f"{view['document_sha256']}:money:{raw['ordinal']}",
+                    }
+                ]
+            },
+        }
+    saved = snapshot(db)
+    monkeypatch.setattr(source_investment_proofs, "read_reports", lambda *a, **k: [report])
+    monkeypatch.setattr(source_redemption_evidence, "verified_redemptions", lambda *a: ({}, {}))
+    after = read(db)
+    assert any(g.code == "unrecognized_money" for g in before.gaps)
+    assert not any(g.code == "unrecognized_money" for g in after.gaps)
+    assert not after.flows
+    assert (after.months[0].result.growth_kopecks is None) == missing_closing
+    assert snapshot(db) == saved
 
 
 def save_cancellation_long(db, *, mutate=None, request_id="custody-long"):
@@ -2907,3 +2964,142 @@ def test_monthly_kernel_preserves_chain_row_without_computing_unused_xirr(monkey
     expected = chain.calculate_monthly_return_chain([opening, closing], flows).months[0]
     monkeypatch.setattr(chain, "_period_xirr", lambda *_: pytest.fail("unused XIRR was evaluated"))
     assert chain.calculate_interval_return(opening, closing, flows) == expected
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "valid",
+        "stale",
+        "choice",
+        "duplicate",
+        "missing",
+        "amount",
+        "different_timestamp",
+        "conflict",
+    ],
+)
+def test_monthly_compensation_requires_current_exact_unambiguous_group(monkeypatch, case):
+    from hermes_finance.services import source_return_evidence
+
+    monkeypatch.setattr(source_return_evidence, "_source_allows_payout", lambda *a: True)
+    day = date(2030, 5, 15)
+    account = "synthetic-account"
+    row = {"ordinal": 0, "date": str(day), "source_account": account, "last_update": "same"}
+    views = []
+    flows = []
+    for intake in (1, 2):
+        raw = dict(row)
+        if case == "different_timestamp" and intake == 2:
+            raw["last_update"] = "different"
+        ref = source_reference(intake, raw)
+        choice = {
+            "source_reference": ref,
+            "origin": "default_rule",
+            "status": "assumed",
+            "classification": "unknown",
+        }
+        if case == "choice" and intake == 2:
+            choice.update(origin="user_choice", status="confirmed")
+        rows = [raw]
+        if case == "duplicate" and intake == 2:
+            rows.append({**raw, "ordinal": 1, "last_update": "different"})
+        views.append(
+            {
+                "id": intake,
+                "document_sha256": str(intake) * 64,
+                "covered_from": "2030-05-01",
+                "covered_to": "2030-05-31",
+                "document": {"money": rows},
+                "money_classifications": [choice],
+            }
+        )
+        flows.append(
+            SimpleNamespace(
+                classification="unknown",
+                status="assumed",
+                event_date=day,
+                amount_kopecks=1000,
+                source_references=(ref,),
+            )
+        )
+    if case == "missing":
+        flows.pop()
+    proof_row = {
+        "kind": "unallocated_compensation",
+        "amount_kopecks": "1001" if case == "amount" else "1000",
+        "reference": "1" * 64 + ":money:0",
+    }
+    report = {
+        "status": "stale" if case == "stale" else "current",
+        "covered_from": "2030-05-01",
+        "covered_to": "2030-05-31",
+        "interval": {"account_only": [proof_row]},
+    }
+    monkeypatch.setattr(source_investment_proofs, "read_reports", lambda *a, **kw: [report])
+    redemption = SimpleNamespace(
+        event_date=day, isin="SYNTHETIC", cash_legs=[SimpleNamespace(account_cash_kopecks=1000)]
+    )
+    monkeypatch.setattr(
+        source_redemption_evidence,
+        "verified_redemptions",
+        lambda *a: (
+            ({(1, day.replace(day=1)): "SYNTHETIC"}, {"money:signature:0": redemption})
+            if case == "conflict"
+            else ({}, {})
+        ),
+    )
+    key = ("signature", 0)
+    result, scopes = verified_internal_money(
+        None, account, [(None, v, None) for v in views], {account}, {}, {key: flows}
+    )
+    assert result == ({key} if case == "valid" else set())
+    assert not scopes
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+def test_monthly_redemption_removes_only_matching_scopes(monkeypatch, allowed):
+    from hermes_finance.services import source_return_evidence
+
+    monkeypatch.setattr(source_return_evidence, "_source_allows_payout", lambda *a: allowed)
+    day = date(2030, 5, 15)
+    account = "synthetic-account"
+    row = {"ordinal": 0, "date": str(day), "source_account": account}
+    ref = source_reference(1, row)
+    view = {
+        "id": 1,
+        "document_sha256": "1" * 64,
+        "covered_from": "2030-05-01",
+        "covered_to": "2030-05-31",
+        "document": {"money": [row]},
+        "money_classifications": [
+            {
+                "source_reference": ref,
+                "origin": "default_rule",
+                "status": "assumed",
+                "classification": "unknown",
+            }
+        ],
+    }
+    flow = SimpleNamespace(
+        classification="unknown",
+        status="assumed",
+        event_date=day,
+        amount_kopecks=1000,
+        source_references=(ref,),
+    )
+    proof = SimpleNamespace(
+        event_date=day, isin="SYNTHETIC", cash_legs=[SimpleNamespace(account_cash_kopecks=1000)]
+    )
+    monkeypatch.setattr(source_investment_proofs, "read_reports", lambda *a, **kw: [])
+    monkeypatch.setattr(
+        source_redemption_evidence,
+        "verified_redemptions",
+        lambda *a: ({(1, day.replace(day=1)): "SYNTHETIC"}, {"money:signature:0": proof}),
+    )
+    key = ("signature", 0)
+    result, scopes = verified_internal_money(
+        None, account, [(None, view, None)], {account}, {1: (day.replace(day=1),)}, {key: [flow]}
+    )
+    assert result == ({key} if allowed else set())
+    assert scopes == ({(1, day.replace(day=1))} if allowed else set())

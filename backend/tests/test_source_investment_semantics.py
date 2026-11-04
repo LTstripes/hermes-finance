@@ -22,6 +22,7 @@ SEMANTIC_MODULES = (
     "services/source_custody_compat.py",
     "services/source_money_classifications.py",
     "services/source_redemption_evidence.py",
+    "services/source_monthly_internal_evidence.py",
     "services/source_monthly_returns.py",
     "services/source_report_preview.py",
     "services/source_return_evidence.py",
@@ -41,7 +42,7 @@ SEMANTIC_MODULES = (
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v4",
-    "a6685e1dd518a71da35388de4de489816139ccf25461ebbc962352733c983cc4",
+    "1b9304aca31242876f47c11f011b0d2b7b33e4ceadba5e4e22738fc04392e55a",
 )
 
 

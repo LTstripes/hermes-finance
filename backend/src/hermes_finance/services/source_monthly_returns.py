@@ -567,6 +567,7 @@ def _read_monthly_returns(
     uncertain_source_months = set()
     conflicting_endpoint_dates = set()
     source_flow_reasons = defaultdict(set)
+    pending_cancellations = set()
     selected, native_scope = _selected_sources(session, source_account)
     from hermes_finance.services.source_return_proofs import resolve_proof
 
@@ -624,7 +625,7 @@ def _read_monthly_returns(
                 if cancellation_dates and any(
                     day.replace(day=1) == covered_month for day in cancellation_dates
                 ):
-                    month_blockers.add("custody_cancellation_unresolved")
+                    pending_cancellations.add((original.id, covered_month))
                 if month_blockers:
                     uncertain_source_months.add(covered_month)
                     source_flow_reasons[covered_month].update(month_blockers)
@@ -692,10 +693,31 @@ def _read_monthly_returns(
             opening = closing = None
         sources.append((original.id, start, end, opening, closing))
 
+    from hermes_finance.services.source_monthly_internal_evidence import verified_internal_money
+
+    internal_keys, resolved_cancellations = (
+        verified_internal_money(
+            session,
+            source_account,
+            selected,
+            native_scope,
+            saved_dates,
+            money,
+            include_xirr=target_month is None and include_proof_xirr,
+        )
+        if not originals
+        and any(f.classification == "unknown" for group in money.values() for f in group)
+        else (set(), set())
+    )
+    for intake_id, covered_month in pending_cancellations - resolved_cancellations:
+        uncertain_source_months.add(covered_month)
+        source_flow_reasons[covered_month].add("custody_cancellation_unresolved")
+        gaps.append(SourceReturnGap("custody_cancellation_unresolved", intake_id, covered_month))
+
     flows = []
     income = defaultdict(lambda: {"coupon": 0, "dividend": 0})
     assumed_income_months = set()
-    for observations in money.values():
+    for key, observations in money.items():
         confirmed = [flow for flow in observations if flow.status == "confirmed"]
         selected = confirmed or observations
         if len({(flow.included, flow.classification) for flow in selected}) != 1:
@@ -707,7 +729,7 @@ def _read_monthly_returns(
             continue
         flow = selected[0]
         refs = tuple(ref for item in observations for ref in item.source_references)
-        if flow.classification == "unknown":
+        if flow.classification == "unknown" and key not in internal_keys:
             gaps.extend(
                 SourceReturnGap(
                     "unrecognized_money",
