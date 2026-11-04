@@ -108,7 +108,13 @@ def effective_overlapping_payout(session, views, view, row, saved, resolver):
         for v, r, s in matches
         if (value := effective_payout_instrument(session, v, r, s, resolver)) is not None
     ]
-    return proven[0] if len(proven) == 1 else None
+    if len(proven) != 1:
+        return None
+    return (
+        proven[0]
+        if all(_source_allows_payout(session, v, proven[0]) for v, _, _ in matches)
+        else None
+    )
 
 
 def effective_payout_instrument(session, view, row, saved, resolver):
@@ -130,13 +136,34 @@ def _payout_money_heads(session):
     )
 
 
-def _effective_payout_instrument(session, view, row, saved, resolver):
+def _source_allows_payout(session, view, isin):
+    """An unbound original adds no authority; explicit excluded/stale imports block it."""
     from hermes_finance.database import snapshot_read_result
+    from hermes_finance.services.mybroker_dispositions import resolve
+
+    source = bound_import(session, view)
+    if source is None:
+        return (
+            session.scalar(
+                select(MyBrokerImport).where(
+                    MyBrokerImport.document_sha256 == view["document_sha256"]
+                )
+            )
+            is None
+        )
+    dispositions = snapshot_read_result(
+        session, "source_payout_dispositions", source.id, lambda: resolve(session, source)
+    )
+    return not any(
+        item["isin"] == isin and item["effective_state"] != "mapped" for item in dispositions
+    )
+
+
+def _effective_payout_instrument(session, view, row, saved, resolver):
     from hermes_finance.persistence import ReportingMonth
     from hermes_finance.services import broker_money as money
     from hermes_finance.services.broker_money_ownership import owners
     from hermes_finance.services.broker_statement_provisional import _minor
-    from hermes_finance.services.mybroker_dispositions import resolve
     from hermes_finance.services.source_money_classifications import source_reference
 
     role = saved.get("classification")
@@ -192,12 +219,7 @@ def _effective_payout_instrument(session, view, row, saved, resolver):
         or not month.period_start.isoformat() <= str(row["date"]) <= month.period_end.isoformat()
     ):
         return None
-    if any(
-        item["isin"] == instrument.isin and item["effective_state"] != "mapped"
-        for item in snapshot_read_result(
-            session, "source_payout_dispositions", source.id, lambda: resolve(session, source)
-        )
-    ):
+    if not _source_allows_payout(session, view, instrument.isin):
         return None
     return instrument.isin
 

@@ -234,6 +234,7 @@ def test_receipt_source_is_not_borrowed_across_overlapping_originals():
         "different_row",
         "user_choice",
         "conflicting_user_choice",
+        "excluded_second_source",
         "two_proofs",
         "no_proof",
     ],
@@ -289,6 +290,11 @@ def test_overlap_receipt_requires_one_identical_unambiguous_group(monkeypatch, c
         lambda _s, v, *_: (
             ISIN if case != "no_proof" and (v["id"] == 1 or case == "two_proofs") else None
         ),
+    )
+    monkeypatch.setattr(
+        evidence,
+        "_source_allows_payout",
+        lambda _s, v, _isin: not (case == "excluded_second_source" and v["id"] == 2),
     )
     result = evidence.effective_overlapping_payout(
         None,
