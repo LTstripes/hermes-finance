@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 
 import { PortfolioCoverageNote } from "./PortfolioCoverageNote";
@@ -20,4 +20,10 @@ it("keeps complete coverage quiet and explains partial known capital", () => {
     "Частично: нет снимка счёта",
   );
   expect(screen.getByTestId("portfolio-coverage-note")).not.toHaveAttribute("title");
+  fireEvent.click(screen.getByRole("button", { name: "Подробнее" }));
+  expect(screen.getByText(/Не хватает снимка/)).toBeVisible();
+  expect(screen.getByRole("link", { name: "Открыть капитал" })).toHaveAttribute(
+    "href",
+    "/v2/capital",
+  );
 });

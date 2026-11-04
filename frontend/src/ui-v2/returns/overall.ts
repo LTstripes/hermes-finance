@@ -25,6 +25,7 @@ export type OverallInstrumentAccount = Pick<
 > & {
   canonical_account_id?: number | null;
   details_loaded: boolean;
+  native_period?: boolean;
   period: Period | null;
   scope: string;
   label: string;

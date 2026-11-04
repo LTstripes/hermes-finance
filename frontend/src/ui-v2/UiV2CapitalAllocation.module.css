@@ -195,6 +195,21 @@
   overflow-wrap: anywhere;
 }
 
+.table td.amount {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.table td:first-child {
+  min-width: 0;
+}
+
+@media (max-width: 1400px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .empty {
   margin: 18px 0;
   color: var(--muted);

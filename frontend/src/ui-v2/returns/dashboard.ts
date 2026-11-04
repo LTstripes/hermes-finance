@@ -49,7 +49,8 @@ export function instrumentSummary(data: Overall, row: OverallInstrument, scope: 
   const accounts = row.accounts.filter((a) => scope === "all" || a.scope === scope);
   const eligible = accounts.filter(
     (a) =>
-      data.source_accounts.some((s) => s.scope === a.scope && s.proof_status === "current") &&
+      (a.native_period === true ||
+        data.source_accounts.some((s) => s.scope === a.scope && s.proof_status === "current")) &&
       !data.mixed_result.components.some(
         (c) =>
           ["brokerage", "iis", "brokerage_iis"].includes(c.category) &&

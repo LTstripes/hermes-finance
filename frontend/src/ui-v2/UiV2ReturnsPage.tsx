@@ -34,6 +34,7 @@ export default function UiV2ReturnsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [names, setNames] = useState(readDisplayNames);
+  const [showAllInstruments, setShowAllInstruments] = useState(false);
   const [goldEditorTarget, setGoldEditorTarget] = useState<GoldTarget | null>(null);
   const [goldNavigation, setGoldNavigation] = useState({ dirty: false, pending: false });
   const [nextParams, setNextParams] = useState<URLSearchParams | null>(null);
@@ -47,7 +48,7 @@ export default function UiV2ReturnsPage() {
   const scope =
     params.getAll("accounts").length > 1 ? "invalid" : (params.get("accounts") ?? "all");
   const search = params.get("q") ?? "";
-  const sort = params.get("sort") ?? "pnl-desc";
+  const sort = params.get("sort") ?? "pnl-absolute";
   const kind = params.get("kind") ?? "all";
   const label = (s: string, fallback: string) => names[s] || fallback;
   const change = (updates: Record<string, string | null>) => {
@@ -85,11 +86,14 @@ export default function UiV2ReturnsPage() {
       ? a.name.localeCompare(b.name, "ru")
       : a.pnl.value === null || b.pnl.value === null
         ? a.pnl.value === b.pnl.value
-          ? a.isin.localeCompare(b.isin)
+          ? a.name.localeCompare(b.name, "ru")
           : a.pnl.value === null
             ? 1
             : -1
-        : compareDecimal(a.pnl.value, b.pnl.value) * (sort === "pnl-asc" ? 1 : -1),
+        : sort === "pnl-absolute"
+          ? compareDecimal(a.pnl.value.replace(/^-/, ""), b.pnl.value.replace(/^-/, "")) * -1 ||
+            a.name.localeCompare(b.name, "ru")
+          : compareDecimal(a.pnl.value, b.pnl.value) * (sort === "pnl-asc" ? 1 : -1),
   );
   const instrumentHref = (isin: string) =>
     `/v2/returns/instrument/${isin}?${new URLSearchParams({ back: `${location.pathname}${location.search}` })}`;
@@ -330,8 +334,7 @@ export default function UiV2ReturnsPage() {
                 )}
                 <section className={styles.panel} aria-labelledby="returns-instruments">
                   <div className={layout.heading}>
-                    <h2 id="returns-instruments">По инструментам</h2>
-                    <span className={layout.note}>{rows.length} бумаг</span>
+                    <h2 id="returns-instruments">Доходность по инструментам ({rows.length})</h2>
                   </div>
                   <div className={styles.filters}>
                     <label>
@@ -359,6 +362,7 @@ export default function UiV2ReturnsPage() {
                     <label>
                       Сортировка
                       <select value={sort} onChange={(e) => change({ sort: e.target.value })}>
+                        <option value="pnl-absolute">Результат: по величине</option>
                         <option value="pnl-desc">Результат: больше</option>
                         <option value="pnl-asc">Результат: меньше</option>
                         <option value="name">Название</option>
@@ -378,7 +382,7 @@ export default function UiV2ReturnsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((r) => (
+                          {(showAllInstruments ? rows : rows.slice(0, 5)).map((r) => (
                             <tr key={r.isin}>
                               <th>
                                 <Link
@@ -446,6 +450,11 @@ export default function UiV2ReturnsPage() {
                     </div>
                   ) : (
                     <p>Бумаги не найдены.</p>
+                  )}
+                  {rows.length > 5 && (
+                    <button type="button" onClick={() => setShowAllInstruments((shown) => !shown)}>
+                      {showAllInstruments ? "Свернуть" : "Показать все"}
+                    </button>
                   )}
                 </section>
                 {rows.some((r) => r.pnl.value !== null && r.pnl.value !== "0") && (
