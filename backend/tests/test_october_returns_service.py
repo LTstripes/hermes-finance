@@ -143,8 +143,13 @@ def test_existing_payout_receipt_requires_exact_current_source_and_account(monke
         "target_id": 11,
         "row_fingerprint": digest(row),
     }
-    owner = {"role": "coupon", "target_id": 11, "row_fingerprint": digest(row)}
-    receipt = SimpleNamespace(account_id=7, reporting_month_id=8)
+    owner = {
+        "key": [4, "money", 3],
+        "role": "coupon",
+        "target_id": 11,
+        "row_fingerprint": digest(row),
+    }
+    receipt = SimpleNamespace(account_id=7, reporting_month_id=8, request_id="synthetic-receipt")
     facts = {
         "instrument_id": "1",
         "flow_type": "coupon",
@@ -286,11 +291,14 @@ def test_overlap_receipt_requires_one_identical_unambiguous_group(monkeypatch, c
         views[1]["money_classifications"][0]["classification"] = "dividend"
     monkeypatch.setattr(
         evidence,
-        "effective_payout_instrument",
-        lambda _s, v, *_: (
-            ISIN if case != "no_proof" and (v["id"] == 1 or case == "two_proofs") else None
+        "effective_payout_match",
+        lambda _s, v, *_args, **_kwargs: (
+            (ISIN, f"receipt-{v['id']}", "coupon", 11, frozenset())
+            if case != "no_proof" and (v["id"] == 1 or case == "two_proofs")
+            else None
         ),
     )
+    monkeypatch.setattr(evidence, "bound_import", lambda *_: None)
     monkeypatch.setattr(
         evidence,
         "_source_allows_payout",
@@ -781,4 +789,97 @@ def test_saved_history_new_month_replay_and_ai_export_share_one_outer_result(dat
             session, document=raw, filename=filename, request_id="new-month"
         )
     assert replay["duplicate"]
+    assert snapshot(database) == before
+
+
+def test_real_multi_original_receipt_projects_one_confirmed_payout_without_writes(
+    database, monkeypatch
+):
+    from copy import deepcopy
+
+    from test_source_monthly_returns_service import snapshot
+    from test_statement_import_mybroker import apply, preview
+    from test_statement_import_mybroker_endpoints import (
+        _money_apply,
+        _money_decide,
+        _money_setup,
+        money_batch_xml,
+    )
+
+    from hermes_finance.services import source_intake, source_return_evidence
+    from hermes_finance.services.source_instrument_events import read_events
+    from hermes_finance.services.source_instrument_returns import _identities
+    from hermes_finance.services.source_monthly_returns import (
+        _selected_sources,
+        source_read_snapshot,
+    )
+
+    xml = money_batch_xml(coupons=("1000.00",))
+    other = money_batch_xml(coupons=("1000.00",), stamp="11")
+    _, _, intent, bond, _ = _money_setup(database, xml)
+    with database.session_factory() as session:
+        apply(session, other, preview(session, other))
+        originals = [(FILENAME, xml), (FILENAME, other)]
+        intent = _money_decide(session, intent, originals, bond, funding=False)
+        _money_apply(session, intent, originals, "multi-source-payout")
+    for index, raw_document in enumerate((xml, other)):
+        with database.session_factory() as session:
+            source_intake.save_intake(
+                session,
+                document=raw_document,
+                filename=FILENAME,
+                request_id=f"multi-source-intake-{index}",
+            )
+    before = snapshot(database)
+    with database.session_factory() as session, source_read_snapshot(session):
+        selected, native = _selected_sources(session, ACCOUNT)
+        assert native is not None and len(native) == 1
+        views = [view for _, view, error in selected if view and not error]
+        events, _ = read_events(session, views, _identities(views), next(iter(native)), [])
+        payouts = [event for event in events if event.kind == "COUPON" and event.counted]
+        assert len(payouts) == 1
+        assert payouts[0].classification_status == "confirmed"
+        assert len(payouts[0].source_references) == 2
+        missing = deepcopy(views)
+        coupon_ordinal = next(
+            i
+            for i, row in enumerate(missing[1]["money_classifications"])
+            if row["classification"] == "coupon"
+        )
+        missing[1]["document"]["money"].pop(coupon_ordinal)
+        missing_events, _ = read_events(
+            session, missing, _identities(missing), next(iter(native)), []
+        )
+        assert not any(event.kind == "COUPON" and event.counted for event in missing_events)
+        changed = deepcopy(views)
+        changed[1]["document"]["money"][coupon_ordinal]["amount"] = "1000.01"
+        changed_events, _ = read_events(
+            session, changed, _identities(changed), next(iter(native)), []
+        )
+        assert not any(event.kind == "COUPON" and event.counted for event in changed_events)
+        actual_match = source_return_evidence.effective_payout_match
+
+        def conflicting_target(*args, **kwargs):
+            result = actual_match(*args, **kwargs)
+            if result and args[1]["id"] == views[1]["id"]:
+                return (result[0], result[1], result[2], result[3] + 1, result[4])
+            return result
+
+        with monkeypatch.context() as patch:
+            patch.setattr(source_return_evidence, "effective_payout_match", conflicting_target)
+            conflict_events, _ = read_events(
+                session, views, _identities(views), next(iter(native)), []
+            )
+            assert not any(event.kind == "COUPON" and event.counted for event in conflict_events)
+        actual_allows = source_return_evidence._source_allows_payout
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                source_return_evidence,
+                "_source_allows_payout",
+                lambda s, v, isin: v["id"] != views[1]["id"] and actual_allows(s, v, isin),
+            )
+            excluded_events, _ = read_events(
+                session, views, _identities(views), next(iter(native)), []
+            )
+            assert not any(event.kind == "COUPON" and event.counted for event in excluded_events)
     assert snapshot(database) == before

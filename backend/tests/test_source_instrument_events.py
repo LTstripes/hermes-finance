@@ -1093,11 +1093,11 @@ def test_current_receipt_does_not_override_duplicate_unbound_original(db, monkey
     before = snapshot(db)
     calls = []
 
-    def accepted(*args):
+    def accepted(*args, **_kwargs):
         calls.append(1)
-        return ISIN
+        return (ISIN, f"synthetic-{args[1]['id']}", "dividend", 1, frozenset())
 
-    monkeypatch.setattr(source_return_evidence, "effective_payout_instrument", accepted)
+    monkeypatch.setattr(source_return_evidence, "effective_payout_match", accepted)
     single = by_isin(read(db))[ISIN].analysis
     assert calls
     assert single.components["dividends"].value == 1000
@@ -1121,12 +1121,16 @@ def test_one_exact_receipt_is_counted_once_across_identical_originals(db, monkey
     before = snapshot(db)
     accepted_source = []
 
-    def accepted(_session, view, *_args):
+    def accepted(_session, view, *_args, **_kwargs):
         if not accepted_source:
             accepted_source.append(view["id"])
-        return ISIN if view["id"] == accepted_source[0] else None
+        return (
+            (ISIN, "synthetic", "dividend", 1, frozenset())
+            if view["id"] == accepted_source[0]
+            else None
+        )
 
-    monkeypatch.setattr(source_return_evidence, "effective_payout_instrument", accepted)
+    monkeypatch.setattr(source_return_evidence, "effective_payout_match", accepted)
     result = by_isin(read(db))[ISIN].analysis
     assert result.components["dividends"].value == 1000
     assert "overlap_flow_choice_conflict" not in result.reason_codes

@@ -88,9 +88,7 @@ def effective_overlapping_payout(session, views, view, row, saved, resolver):
             for r in candidate["document"].get("money", [])
             if {k: v for k, v in r.items() if k not in {"ordinal", "last_update"}} == signature
         ]
-        if len(raw) != 1 or {k: v for k, v in raw[0].items() if k != "ordinal"} != {
-            k: v for k, v in row.items() if k != "ordinal"
-        }:
+        if len(raw) != 1:
             return None
         ref = source_reference(candidate["id"], raw[0])
         choices = [
@@ -106,23 +104,43 @@ def effective_overlapping_payout(session, views, view, row, saved, resolver):
     proven = [
         value
         for v, r, s in matches
-        if (value := effective_payout_instrument(session, v, r, s, resolver)) is not None
+        if (value := effective_payout_match(session, v, r, s, resolver, allow_multiple=True))
+        is not None
     ]
-    if len(proven) != 1:
+    identities = {(p[0], p[1], p[2], p[3]) for p in proven}
+    if len(identities) != 1:
         return None
-    return (
-        proven[0]
-        if all(_source_allows_payout(session, v, proven[0]) for v, _, _ in matches)
-        else None
-    )
+    # Different original timestamps are safe only when each distinct row is
+    # itself owned and verified by the same current accepted receipt.
+    if len({r.get("last_update") for _, r, _ in matches}) > 1 and len(proven) != len(matches):
+        return None
+    isin, _, _, _ = next(iter(identities))
+    # Every observation in the receipt must correspond to one exact member of
+    # this group; identical amounts or ISINs alone never collapse targets.
+    group_keys = set()
+    for candidate, raw, _ in matches:
+        source = bound_import(session, candidate)
+        if source is not None:
+            group_keys.add((source.id, "money", raw["ordinal"], digest(raw)))
+    if any(not p[4].issubset(group_keys) for p in proven):
+        return None
+    return isin if all(_source_allows_payout(session, v, isin) for v, _, _ in matches) else None
 
 
 def effective_payout_instrument(session, view, row, saved, resolver):
     """Use an exact current Money receipt, without altering intake decisions."""
+    match = effective_payout_match(session, view, row, saved, resolver)
+    return match[0] if match else None
+
+
+def effective_payout_match(session, view, row, saved, resolver, *, allow_multiple=False):
+    """Return exact receipt identity for read-only group reconciliation."""
     from hermes_finance.statement_import.mybroker import MyBrokerError
 
     try:
-        return _effective_payout_instrument(session, view, row, saved, resolver)
+        return _effective_payout_instrument(
+            session, view, row, saved, resolver, allow_multiple=allow_multiple
+        )
     except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
         return None
 
@@ -159,7 +177,7 @@ def _source_allows_payout(session, view, isin):
     )
 
 
-def _effective_payout_instrument(session, view, row, saved, resolver):
+def _effective_payout_instrument(session, view, row, saved, resolver, *, allow_multiple=False):
     from hermes_finance.persistence import ReportingMonth
     from hermes_finance.services import broker_money as money
     from hermes_finance.services.broker_money_ownership import owners
@@ -193,10 +211,27 @@ def _effective_payout_instrument(session, view, row, saved, resolver):
     cohort = [
         o for o in proof["occurrences"] if (o["role"], o["target_id"]) == (role, owner["target_id"])
     ]
-    if len(cohort) != 1 or any(cohort[0].get(k) != v for k, v in occurrence.items()):
+    own_matches = [o for o in cohort if all(o.get(k) == v for k, v in occurrence.items())]
+    if len(own_matches) != 1 or (len(cohort) != 1 and not allow_multiple):
         return None
-    if cohort[0]["row_fingerprint"] != digest(row) or money.proof_blockers(
+    if own_matches[0]["row_fingerprint"] != digest(row) or money.proof_blockers(
         session, receipt, proof, target
+    ):
+        return None
+    cohort_keys = {
+        (o["import_id"], o["section"], o["ordinal"], o["row_fingerprint"]) for o in cohort
+    }
+    if len(cohort_keys) != len(cohort):
+        return None
+    all_owners = owners(session, cohort)
+    if (
+        len(all_owners) != len(cohort)
+        or {
+            (*o["key"], o["row_fingerprint"])
+            for o in all_owners
+            if o["role"] == role and o["target_id"] == owner["target_id"]
+        }
+        != cohort_keys
     ):
         return None
     facts = target.get("facts") or {}
@@ -221,7 +256,7 @@ def _effective_payout_instrument(session, view, row, saved, resolver):
         return None
     if not _source_allows_payout(session, view, instrument.isin):
         return None
-    return instrument.isin
+    return instrument.isin, receipt.request_id, role, owner["target_id"], frozenset(cohort_keys)
 
 
 def apply_cash_gifts(session, view, rows):
