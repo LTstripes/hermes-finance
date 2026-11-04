@@ -236,7 +236,7 @@ def proof_confirm(db, preview, request_id="proof-confirmed"):
         )
 
 
-def test_durable_proof_existing_catalogue_aba_uses_v1_tail_without_duplicate_clock(db):
+def test_durable_proof_existing_catalogue_aba_uses_v1_tail_without_duplicate_clock(db, monkeypatch):
     from sqlalchemy import func, select, text
 
     from hermes_finance.persistence import SourceIntakeRevision, SourceReturnProofDependency
@@ -245,8 +245,13 @@ def test_durable_proof_existing_catalogue_aba_uses_v1_tail_without_duplicate_clo
     with db.session_factory() as session:
         account = create_account(session, name="Synthetic ABA", account_type="brokerage")
         account_id = account.id
-    _, _, preview = proof_preview(db)
-    proof_confirm(db, preview)
+    from hermes_finance.services import source_return_proofs as proofs
+
+    with monkeypatch.context() as legacy:
+        legacy.setattr(proofs, "_dependency", proofs._legacy_dependency)
+        legacy.setattr(proofs, "STRUCTURE_SEMANTICS", None)
+        _, _, preview = proof_preview(db)
+        proof_confirm(db, preview)
 
     def tokens():
         with db.session_factory() as session:
@@ -307,8 +312,13 @@ def test_custody_proof_ignores_unrelated_month_and_snapshot_but_not_source_chang
         session.add(position)
         session.commit()
         month_id, position_id = month.id, position.id
-    _, _, preview = proof_preview(db)
-    proof_confirm(db, preview)
+    from hermes_finance.services import source_return_proofs as proofs
+
+    with monkeypatch.context() as legacy:
+        legacy.setattr(proofs, "_dependency", proofs._legacy_dependency)
+        legacy.setattr(proofs, "STRUCTURE_SEMANTICS", None)
+        _, _, preview = proof_preview(db)
+        proof_confirm(db, preview)
     with db.session_factory() as session:
         session.get(ReportingMonth, month_id).snapshot_date = date(2031, 1, 30)
         session.get(PositionSnapshot, position_id).market_value_kopecks = 2
@@ -413,14 +423,20 @@ def test_instrument_reader_scopes_verified_custody_gap_to_cancellation_month(db)
         ("unknown_table", "stale"),
     ],
 )
-def test_custody_compatibility_ignores_only_nonstructural_financial_changes(db, table, expected):
+def test_custody_compatibility_ignores_only_nonstructural_financial_changes(
+    db, monkeypatch, table, expected
+):
     import json
     from datetime import UTC, datetime
 
     from hermes_finance.persistence import SourceIntakeRevision
+    from hermes_finance.services import source_return_proofs as proofs
 
-    _, _, preview = proof_preview(db)
-    proof_confirm(db, preview)
+    with monkeypatch.context() as legacy:
+        legacy.setattr(proofs, "_dependency", proofs._legacy_dependency)
+        legacy.setattr(proofs, "STRUCTURE_SEMANTICS", None)
+        _, _, preview = proof_preview(db)
+        proof_confirm(db, preview)
     with db.session_factory() as session:
         session.add(
             SourceIntakeRevision(
@@ -584,9 +600,13 @@ def test_only_exact_proven_redemption_replaces_unresolved_event():
         counted=True,
         reason_codes=(),
         classification_status="confirmed",
+        quantity_delta=Decimal("-1"),
+        depository_settlement_date=day,
     )
     converted, resolved = apply_verified_redemptions((event,), {event.event_key: proof})
     assert converted[0].kind == "REDEMPTION" and converted[0].isin == proof.isin
+    assert converted[0].quantity_delta == Decimal("-1")
+    assert converted[0].depository_settlement_date == day
     assert converted[0].cash_legs[0].account_cash_kopecks == 1000
     assert resolved == {event.event_key}
     for rejected in (
@@ -661,7 +681,8 @@ def test_durable_proof_preview_save_get_and_restart_no_xml_no_financial_writes(d
 
         row = session.get(SourceReturnProof, ack["proof"]["proof_id"])
         evidence = json.loads(row.evidence_json)
-        assert set(evidence) == {"sources", "cancellations"}
+        assert set(evidence) == {"sources", "cancellations", "dependency_kind"}
+        assert evidence["dependency_kind"] == "source_custody_structure_v2"
         assert len(evidence["sources"]) == len(originals)
         assert all(set(item) == {"intake_id", "months"} for item in evidence["cancellations"])
         assert "<" not in row.evidence_json and "growth_kopecks" not in row.evidence_json
@@ -685,15 +706,18 @@ def test_durable_proof_preview_save_get_and_restart_no_xml_no_financial_writes(d
 
 @pytest.mark.parametrize(
     "change",
-    ["classification_aba", "mapping_aba", "source_added", "parser", "physical_unavailable"],
+    ["classification_aba", "mapping_aba", "parser", "physical_unavailable"],
 )
 def test_durable_proof_dependency_changes_never_revive_old_values(db, monkeypatch, change):
     from sqlalchemy import text
 
     from hermes_finance.services import source_return_proofs as proofs
 
-    _, _, preview = proof_preview(db)
-    proof_confirm(db, preview)
+    with monkeypatch.context() as legacy:
+        legacy.setattr(proofs, "_dependency", proofs._legacy_dependency)
+        legacy.setattr(proofs, "STRUCTURE_SEMANTICS", None)
+        _, _, preview = proof_preview(db)
+        proof_confirm(db, preview)
     if change == "classification_aba":
         with db.engine.begin() as connection:
             row = connection.exec_driver_sql(
@@ -715,8 +739,6 @@ def test_durable_proof_dependency_changes_never_revive_old_values(db, monkeypatc
             connection.exec_driver_sql(
                 "DELETE FROM security_reg_isin_mappings WHERE reg_number='SYNTH-REG'"
             )
-    elif change == "source_added":
-        save_service_month(db, 7)
     elif change == "parser":
         monkeypatch.setattr(proofs, "VERSION", "future-proof-version")
     else:
@@ -3103,3 +3125,247 @@ def test_monthly_redemption_removes_only_matching_scopes(monkeypatch, allowed):
     )
     assert result == ({key} if allowed else set())
     assert scopes == ({(1, day.replace(day=1))} if allowed else set())
+
+
+@pytest.mark.parametrize("conflicting_choice", [False, True])
+def test_confirmed_investment_and_custody_feed_monthly_reader_end_to_end(
+    db, monkeypatch, conflicting_choice
+):
+    from copy import deepcopy
+    from dataclasses import replace
+
+    from test_statement_import_mybroker_preflight import investment_original, investment_text, run
+
+    from hermes_finance.services import source_investment_proofs as investments
+    from hermes_finance.services import source_report_preview
+    from hermes_finance.services.source_return_proofs import preview_proof
+    from hermes_finance.statement_import.investment_report import (
+        InvestmentPayout,
+        parse_investment_report,
+    )
+
+    root = ET.fromstring(investment_original())
+    ns = "{MyBroker}"
+    position = root.find(f".//{ns}Details[@ISIN1]")
+    position.set("real_rest", "0")
+    position.set("forward_rest", "0")
+    position.set("real_volume", "0")
+    root.find(f".//{ns}Details[@active_name='RUB']").set("real_rest", "2012")
+    collection = root.find(f".//{ns}rn_Collection")
+    template = collection.find(f"{ns}rn")
+    security = '4B02-806-12345-B-001P (Биржевые облигации АО "Synthetic") д.ф.10.01.30'
+    for narrative, amount in (
+        ("погашение купона " + security, "10"),
+        ("полное погашение номинала " + security, "1000"),
+        ("Компенсация утраченных дивидендов по акциям SYNTH дата фиксации реестра 10/01/30.", "5"),
+        ("Synthetic genuinely unknown", "7"),
+    ):
+        row = deepcopy(template)
+        op = row.find(f"{ns}oper_type")
+        op.set("oper_type", "Перевод")
+        op.find(f"{ns}comment").set("comment", narrative)
+        op.find(f".//{ns}p_code[@volume]").set("volume", amount)
+        collection.append(row)
+    root = ET.fromstring(service_structure_xml(ET.tostring(root, encoding="utf-8")))
+    transfers = root.find(f"{ns}Trades3/{ns}Report")
+    table = transfers.find(ns + "Tablix1")
+    rows = ET.SubElement(table, ns + "Details_Collection")
+    ET.SubElement(
+        rows,
+        ns + "Details",
+        settlement_date="2030-01-17T00:00:00",
+        settlement_time="07:12:34",
+        place_name="НРД",
+        oper_type="Перевод",
+        p_name="Synthetic\r\nRU000A000000",
+        comment_new="Аннулирование выпуска SYNTH001.",
+        qty="-10",
+        acc_code=ACCOUNT,
+    )
+    raw = ET.tostring(root, encoding="utf-8")
+    filename = "Брокерский 1234567 (01.01.30-28.02.30).xml"
+    with db.session_factory() as session:
+        ack = source_intake.save_intake(
+            session, document=raw, filename=filename, request_id="e2e-internal-xml"
+        )
+        expected = {
+            ack["intake_id"]: source_intake.read_intake(session, ack["intake_id"])[
+                "manifest_digest"
+            ]
+        }
+        custody = preview_proof(
+            session, source_account=ACCOUNT, documents=[(raw, filename)], expected_sources=expected
+        )
+    proof_confirm(db, custody, request_id="e2e-internal-custody")
+    report = parse_investment_report(investment_text(end="28.02.2030"), {"1234567"})
+    report = replace(
+        report,
+        payouts=(
+            InvestmentPayout(
+                "1234567", "RU000A000000", "COUPON", date(2030, 1, 17), "RUB", 1000, "synthetic"
+            ),
+        ),
+        positions={("1234567", "RU000A000000"): ("0", 0)},
+        closing={"1234567": 201200},
+        reported_pnl={"1234567": 1200},
+    )
+    monkeypatch.setattr(source_report_preview, "extract_pdf_text_layer", lambda _: None)
+    monkeypatch.setattr(source_report_preview, "parse_investment_report", lambda *_: report)
+    preview = run(db, [(filename, raw)], income_report=b"synthetic-pdf", history_from_zero=True)[
+        "source_return_preview"
+    ]
+    assert preview["persistence"]["available"]
+    with db.session_factory() as session:
+        investments.confirm(
+            session,
+            **{k: preview["persistence"][k] for k in ("form_token", "preview_digest")},
+            request_id="e2e-internal-investment",
+        )
+    if conflicting_choice:
+        from hermes_finance.services.source_money_classifications import choose_classification
+
+        with db.session_factory() as session:
+            view = source_intake.read_intake(session, ack["intake_id"])
+            redemption = next(
+                row
+                for row in view["money_classifications"]
+                if "полное погашение" in row["narrative"]
+            )
+            choose_classification(session, ack["intake_id"], redemption["source_reference"], "fee")
+    before = snapshot(db)
+    result = read(db)
+    assert result.source_proof["status"] == "current"
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    with db.session_factory() as session:
+        instrument_result = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            isin="RU000A000000",
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+        )
+    instrument = instrument_result.instruments[0]
+    january_instrument = next(m for m in instrument.months if m.month == date(2030, 1, 1))
+    if conflicting_choice:
+        assert january_instrument.coupons_kopecks is None
+    else:
+        assert january_instrument.coupons_kopecks == 1000
+        assert january_instrument.confirmed_income_kopecks == 1000
+        assert january_instrument.total_kopecks is None
+        assert instrument.analysis.components["coupons"].value == 1000
+    if conflicting_choice:
+        assert result.investment_reports[0]["status"] == "stale"
+        assert any(g.code == "custody_cancellation_unresolved" for g in result.gaps)
+        assert snapshot(db) == before
+        return
+    assert result.investment_reports[0]["status"] == "current"
+    january = next(row for row in result.months if row.result.closing_date == date(2030, 1, 31))
+    assert (
+        january.result.growth_kopecks is None
+    )  # February-wide original has no January closing EOD.
+    assert "unknown_flow" in january.flags  # The separate unknown operation remains a blocker.
+    unknown = [
+        g for g in result.gaps if g.code == "unrecognized_money" and g.month == date(2030, 1, 1)
+    ]
+    assert len(unknown) == 1
+    assert not any(g.code == "custody_cancellation_unresolved" for g in result.gaps)
+    assert snapshot(db) == before
+
+
+def test_new_source_preserves_existing_custody_without_attesting_new_cancellations(db):
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+    from hermes_finance.services.source_return_proofs import resolve_proof
+
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    before = read(db)
+    new_id, _ = save_cancellation_long(
+        db,
+        request_id="new-cancellation",
+        mutate=lambda root, row: row.set("settlement_date", "2030-07-15T00:00:00"),
+    )
+    after = read(db)
+    assert after.source_proof["status"] == "current"
+    assert after.source_proof["proof_id"] == before.source_proof["proof_id"]
+    with db.session_factory() as session:
+        selected, scope = _selected_sources(session, ACCOUNT)
+        dates, _ = resolve_proof(session, ACCOUNT, selected, scope)
+        assert new_id not in dates
+    assert any(
+        g.intake_id == new_id and g.code in {"4_Transfers_unsupported", "unparsed_source_rows"}
+        for g in after.gaps
+    )
+
+
+def test_legacy_custody_digest_search_and_memo_never_hide_relevant_change(db, monkeypatch):
+    import json
+
+    from hermes_finance.persistence import SourceReturnProof
+    from hermes_finance.services import source_return_proofs as proofs
+
+    with monkeypatch.context() as legacy:
+        legacy.setattr(proofs, "_dependency", proofs._legacy_dependency)
+        legacy.setattr(proofs, "STRUCTURE_SEMANTICS", None)
+        _, _, preview = proof_preview(db)
+        ack = proof_confirm(db, preview)
+    with db.session_factory() as session:
+        row = session.get(SourceReturnProof, ack["proof"]["proof_id"])
+        sources = json.loads(row.evidence_json)["sources"]
+        proofs._LEGACY_ANCHORS.clear()
+        assert proofs._compatible_source_only_dependency(
+            session, sources, row.dependency_digest, row.confirmed_at
+        )
+        assert proofs._LEGACY_ANCHORS
+        assert proofs._compatible_source_only_dependency(
+            session, sources, row.dependency_digest, row.confirmed_at
+        )
+    with db.engine.begin() as connection:
+        connection.exec_driver_sql(
+            "UPDATE source_intake_money_classifications SET narrative='Changed synthetic' WHERE id=(SELECT MIN(id) FROM source_intake_money_classifications)"
+        )
+    assert read(db).source_proof["status"] == "stale"
+
+
+def test_scoped_custody_survives_new_financial_import_without_reconfirmation(db):
+    from test_statement_import_mybroker import apply, fixture
+    from test_statement_import_mybroker import preview as import_preview
+
+    from hermes_finance.services import source_return_proofs as proofs
+    from hermes_finance.services.accounts import create_account
+
+    _, _, plan = proof_preview(db)
+    ack = proof_confirm(db, plan)
+    with db.session_factory() as session:
+        from hermes_finance.services.broker_identity_mappings import confirm_mapping
+        from hermes_finance.services.instruments import create_instrument
+        from hermes_finance.statement_import.mybroker import PROVIDER
+
+        account = create_account(
+            session, name="New unrelated financial account", account_type="brokerage"
+        )
+        instrument = create_instrument(
+            session, name="New synthetic instrument", instrument_type="stock", isin="RU000A000000"
+        )
+        for alias in ("1234567", ACCOUNT):
+            confirm_mapping(
+                session,
+                provider=PROVIDER,
+                subject_kind="account",
+                provider_identity=alias,
+                hermes_target_id=account.id,
+            )
+        confirm_mapping(
+            session,
+            provider=PROVIDER,
+            subject_kind="instrument",
+            provider_identity="RU000A000000",
+            hermes_target_id=instrument.id,
+            observed_isin="RU000A000000",
+        )
+        document = fixture()
+        apply(session, document, import_preview(session, document))
+    result = read(db)
+    assert result.source_proof["status"] == "current"
+    assert result.source_proof["proof_id"] == ack["proof"]["proof_id"]
+    assert result.source_proof["version"] == proofs.VERSION

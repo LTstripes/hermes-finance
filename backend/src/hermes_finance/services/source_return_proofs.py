@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections import OrderedDict
 from datetime import UTC, date, datetime
 from pathlib import Path
 from secrets import token_urlsafe
@@ -12,7 +13,9 @@ from sqlalchemy import func, select
 
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.persistence import (
+    SourceIntakeObservation,
     SourceIntakeRevision,
+    SourceMoneyClassification,
     SourceReturnProof,
     SourceReturnProofDependency,
 )
@@ -22,6 +25,7 @@ from hermes_finance.statement_import import mybroker
 from hermes_finance.statement_import import mybroker_return_structure as structure
 
 VERSION = "source_return_custody_v1"
+STRUCTURE_SEMANTICS = "source_custody_structure_v2"
 
 
 class ProofError(ValueError):
@@ -57,6 +61,10 @@ class Forms:
 
 
 FORMS = Forms()
+
+# Exact recovered anchors only; all source/identity/journal guards run on every read.
+_LEGACY_ANCHORS = OrderedDict()
+_LEGACY_ANCHORS_LOCK = Lock()
 
 
 def _epoch(session):
@@ -101,6 +109,28 @@ def _sources(selected, native_scope):
 
 
 def _dependency(session, sources):
+    """Source structure only; financial readers validate their own operands.
+
+    An ordinary release, catalogue update, new month or unrelated original is
+    not a change to these immutable custody observations. Semantic changes must
+    explicitly advance STRUCTURE_SEMANTICS and pass the semantic review guard.
+    """
+    connection = session.connection()
+    path = connection.engine.url.database
+    physical = file_incarnation(Path(path)) if path else None
+    if not physical or connection.info.get("source_proof_incarnation") != physical:
+        raise ProofError("source_return_proof_database_incarnation_unavailable")
+    return mybroker.digest(
+        {
+            "version": VERSION,
+            "code": STRUCTURE_SEMANTICS,
+            "physical_database": physical,
+            "sources": sources,
+        }
+    )
+
+
+def _legacy_dependency(session, sources):
     connection = session.connection()
     path = connection.engine.url.database
     physical = file_incarnation(Path(path)) if path else None
@@ -130,7 +160,7 @@ def _dependency(session, sources):
     )
 
 
-def _compatible_source_only_dependency(session, sources, expected, confirmed_at):
+def _compatible_source_only_dependency(session, sources, expected, confirmed_at, anchors=None):
     """Reproduce a previous digest across source-irrelevant financial changes.
 
     This attests only stored custody-month evidence, never a financial result.
@@ -140,6 +170,7 @@ def _compatible_source_only_dependency(session, sources, expected, confirmed_at)
     from hermes_finance.services.source_custody_compat import (
         CURRENT_CUSTODY_CODE_SHA256,
         LEGACY_CUSTODY_CODE_SHA256,
+        PREVIOUS_CUSTODY_CODE_SHA256,
     )
 
     current_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
@@ -149,6 +180,40 @@ def _compatible_source_only_dependency(session, sources, expected, confirmed_at)
     physical = file_incarnation(Path(path)) if path else None
     if not physical or session.connection().info.get("source_proof_incarnation") != physical:
         return False
+    source_ids = {item["intake_id"] for item in sources}
+    # A classification moved away from a bound immutable observation must not
+    # masquerade as an unrelated source. Missing/deleted rows remain barriers.
+    observations = list(
+        session.scalars(
+            select(SourceIntakeObservation).where(
+                SourceIntakeObservation.original_id.in_(source_ids),
+                SourceIntakeObservation.section == "money",
+                SourceIntakeObservation.row_class == "recognized",
+            )
+        )
+    )
+    classes = list(session.scalars(select(SourceMoneyClassification)))
+    by_observation = {row.observation_id: row for row in classes}
+    if any(
+        o.id not in by_observation or by_observation[o.id].intake_id != o.original_id
+        for o in observations
+    ):
+        return False
+    foreign_observations = {
+        row.id: row
+        for row in session.scalars(
+            select(SourceIntakeObservation).where(
+                SourceIntakeObservation.id.in_([row.observation_id for row in classes])
+            )
+        )
+    }
+    unrelated_money = {
+        row.id
+        for row in classes
+        if row.intake_id not in source_ids
+        and (observation := foreign_observations.get(row.observation_id)) is not None
+        and observation.original_id == row.intake_id
+    }
     deps = iter(
         session.scalars(
             select(SourceReturnProofDependency).order_by(SourceReturnProofDependency.seq.desc())
@@ -158,7 +223,11 @@ def _compatible_source_only_dependency(session, sources, expected, confirmed_at)
     dep_candidates = [[entry.seq, entry.token] if entry else None]
     while entry is not None:
         bits = entry.token.split(":")
-        if len(bits) != 3 or bits[0] != "p" or not bits[1].isdigit():
+        if (
+            len(bits) != 3
+            or not bits[1].isdigit()
+            or not (bits[0] == "p" or bits[0] == "m" and int(bits[1]) in unrelated_money)
+        ):
             break
         entry = next(deps, None)
         dep_candidates.append([entry.seq, entry.token] if entry else None)
@@ -169,27 +238,36 @@ def _compatible_source_only_dependency(session, sources, expected, confirmed_at)
                 SourceIntakeRevision.operation,
                 SourceIntakeRevision.payload_json,
                 SourceIntakeRevision.accepted_at,
+                SourceIntakeRevision.original_id,
             ).order_by(SourceIntakeRevision.seq.desc())
         ).yield_per(128)
     )
     entry = next(tails, None)
     tail_candidates = [(entry.seq, entry.accepted_at) if entry else (None, None)]
+    validated_journals = set()
     while entry is not None:
         payload = json.loads(entry.payload_json)
-        if (
-            entry.operation != "dependency"
-            or not isinstance(payload, dict)
-            or payload.get("table")
-            not in {
-                "position_snapshots",
-                "cash_balances",
-                "investment_cash_flows",
-                "external_flows",
-            }
-        ):
+        irrelevant_finance = (
+            entry.operation == "dependency"
+            and isinstance(payload, dict)
+            and payload.get("table")
+            in {"position_snapshots", "cash_balances", "investment_cash_flows", "external_flows"}
+        )
+        unrelated_source = (
+            entry.original_id is not None
+            and entry.original_id not in source_ids
+            and entry.operation in {"manifest", "decision", "finance_link"}
+        )
+        if unrelated_source and entry.original_id not in validated_journals:
+            source_intake._events(session, entry.original_id)
+            validated_journals.add(entry.original_id)
+        if not (irrelevant_finance or unrelated_source):
             break
         entry = next(tails, None)
         tail_candidates.append((entry.seq, entry.accepted_at) if entry else (None, None))
+    # A proof cannot predate the source heads it attests.
+    floor = max((item["head_seq"] for item in sources), default=0)
+    tail_candidates = [(seq, at) for seq, at in tail_candidates if (seq or 0) >= floor]
     # Timestamps only prioritize candidates; digest equality remains the sole
     # authority, including when clocks moved backwards or several share a second.
     when = confirmed_at.replace(tzinfo=None) if confirmed_at else None
@@ -212,24 +290,74 @@ def _compatible_source_only_dependency(session, sources, expected, confirmed_at)
     }
     codes = [
         mybroker.digest([*common_hashes, own_hash])
-        for own_hash in (current_hash, LEGACY_CUSTODY_CODE_SHA256)
+        for own_hash in (current_hash, PREVIOUS_CUSTODY_CODE_SHA256, LEGACY_CUSTODY_CODE_SHA256)
     ]
-    for tail, _ in tail_candidates:
-        for dependency in dep_candidates:
-            for code in codes:
-                if (
-                    mybroker.digest(
-                        {
-                            **base,
-                            "code": code,
-                            "dependency": dependency,
-                            "intake_tail": tail,
-                        }
-                    )
-                    == expected
-                ):
-                    return True
-    return False
+    # The canonical JSON suffix (mostly immutable sources) is identical for
+    # every pair. Encode it once, never serialize the whole source inventory
+    # D*T times. This remains exactly mybroker.digest, not a weaker checksum.
+    suffix = (
+        b","
+        + mybroker.canonical(
+            {k: v for k, v in base.items() if k not in {"version", "correction_identity_revision"}}
+        ).encode()[1:-1]
+    )
+    suffix += b',"version":' + mybroker.canonical(VERSION).encode() + b"}"
+    tails = {tail for tail, _ in tail_candidates}
+    dependencies = {mybroker.canonical(dep) for dep in dep_candidates}
+    key = (
+        physical,
+        expected,
+        mybroker.digest(sources),
+        base["correction_identity_revision"],
+        tuple(codes),
+    )
+    with _LEGACY_ANCHORS_LOCK:
+        cached = _LEGACY_ANCHORS.get(key)
+    preferred = [value for value in (anchors, cached) if isinstance(value, dict)]
+
+    def matches(code, dependency, tail):
+        prefix = {
+            "code": code,
+            "correction_identity_revision": base["correction_identity_revision"],
+            "dependency": dependency,
+            "intake_tail": tail,
+        }
+        return (
+            hashlib.sha256(mybroker.canonical(prefix).encode()[:-1] + suffix).hexdigest()
+            == expected
+        )
+
+    found = None
+    for candidate in preferred:
+        code, dependency, tail = (candidate.get(k) for k in ("code", "dependency", "intake_tail"))
+        if (
+            code in codes
+            and tail in tails
+            and mybroker.canonical(dependency) in dependencies
+            and matches(code, dependency, tail)
+        ):
+            found = candidate
+            break
+    if found is None:
+        # Hash the long common suffix in C; small per-pair serialization only.
+        for tail, _ in tail_candidates:
+            for dependency in dep_candidates:
+                for code in codes:
+                    if matches(code, dependency, tail):
+                        found = {"code": code, "dependency": dependency, "intake_tail": tail}
+                        break
+                if found is not None:
+                    break
+            if found is not None:
+                break
+    if found is None:
+        return False
+    with _LEGACY_ANCHORS_LOCK:
+        _LEGACY_ANCHORS[key] = found
+        _LEGACY_ANCHORS.move_to_end(key)
+        while len(_LEGACY_ANCHORS) > 128:
+            _LEGACY_ANCHORS.popitem(last=False)
+    return True
 
 
 def _status(row, state, reasons=(), currentness=None):
@@ -257,21 +385,30 @@ def resolve_proof(session, source_account, selected, native_scope):
         return {}, _status(None, "absent", currentness=currentness)
     currentness = None
     try:
-        sources = _sources(selected, native_scope)
-        currentness = _dependency(session, sources)
         evidence = json.loads(row.evidence_json)
+        bound_ids = {item["intake_id"] for item in evidence["sources"]}
+        sources = _sources([item for item in selected if item[0].id in bound_ids], native_scope)
+        currentness = _dependency(session, sources)
         if (
             row.proof_version != VERSION
+            or evidence.get("dependency_kind") not in {None, STRUCTURE_SEMANTICS}
             or evidence["sources"] != sources
             or (
                 row.dependency_digest != currentness
-                and not snapshot_read_result(
-                    session,
-                    "source_custody_compatible_dependency",
-                    (row.id, row.dependency_digest, mybroker.digest(sources)),
-                    lambda: _compatible_source_only_dependency(
-                        session, sources, row.dependency_digest, row.confirmed_at
-                    ),
+                and (
+                    evidence.get("dependency_kind") is not None
+                    or not snapshot_read_result(
+                        session,
+                        "source_custody_compatible_dependency",
+                        (row.id, row.dependency_digest, mybroker.digest(sources)),
+                        lambda: _compatible_source_only_dependency(
+                            session,
+                            sources,
+                            row.dependency_digest,
+                            row.confirmed_at,
+                            evidence.get("anchors"),
+                        ),
+                    )
                 )
             )
         ):
@@ -326,6 +463,7 @@ def preview_proof(session, *, source_account, documents, expected_sources):
     latest = _latest(session, source_account, native_scope)
     plan = {
         "version": VERSION,
+        "dependency_kind": STRUCTURE_SEMANTICS,
         "source_account": source_account,
         "sources": sources,
         "cancellations": cancellations,
@@ -412,7 +550,12 @@ def confirm_proof(session, *, source_account, form_token, preview_digest, reques
             proof_version=VERSION,
             dependency_digest=plan["dependency_digest"],
             evidence_json=json.dumps(
-                {"sources": sources, "cancellations": plan["cancellations"]}, sort_keys=True
+                {
+                    "sources": sources,
+                    "cancellations": plan["cancellations"],
+                    "dependency_kind": plan.get("dependency_kind"),
+                },
+                sort_keys=True,
             ),
             confirmed_at=datetime.now(UTC),
         )

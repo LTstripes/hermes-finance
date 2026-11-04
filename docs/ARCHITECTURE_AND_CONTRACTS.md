@@ -2422,14 +2422,34 @@ ordinary monthly GET, never an automatic second POST. A replay cannot reactivate
 stale evidence. Protected real-data confirmation still requires its exact
 Preview, separate Owner GO and fresh validated backup/readback.
 
-All selected sources remain present. Document-local filename/native aliases may
-share a proof only through the same single native account and exact source-set
-binding. SQL retirement revisions cover real source/head, classification,
-catalogue/mapping, correction/disposition and month changes, including ABA;
-global conservative invalidation is intentional. Parser/proof implementation
-changes invalidate old evidence too. A stale/latest-invalid proof never falls
-back to an older record or silently refreshes itself. Unrelated ordinary
-source calculations that need no custody proof retain their normal guards.
+Every originally confirmed source must remain present and unchanged. A new
+original does not inherit another original's custody evidence. Filename/native
+aliases share a proof only through one exact native account. New confirmations
+use `source_custody_structure_v2` in the existing evidence JSON and dependency
+digest: physical database incarnation, exact bound hashes/parsers/manifest heads
+and reviewed structure semantics. Catalogue, Money, reporting-month and unrelated
+source changes are not inputs to this source-only statement about custody dates.
+A separate semantic tripwire covers its parser, grammar and proof implementation;
+meaning changes require a reviewed revision. Ordinary releases preserve proofs.
+
+Legacy confirmations retain their strict exact-digest compatibility checks,
+including relevant ABA and identity history. Recovered legacy anchors are cached
+only in bounded process memory and revalidated on every read. No cap converts a
+slow search into stale evidence. The old global identity hash cannot generally
+be reconstructed after unrelated catalogue/import changes. Transition then uses
+the existing exact-original Preview/Confirm with separate Owner GO and backup,
+appending one source-only proof while preserving all old rows; it never requires
+reupload when the existing exact originals are available. No automatic financial
+Apply, re-attestation or fallback to an older proof is allowed.
+
+Custody currentness alone never proves principal, quantity or return. Redemption
+requires a separate current historical investment proof and exact source transfer,
+cash occurrence, native account, ISIN, amount and dated quantity. Conflicting
+choices, missing evidence, unavailable endpoints and unallocated costs retain
+uncertainty on their dependent results. The dated and monthly projections carry
+one redemption cash flow and the same source-booked quantity/date. Ambiguous
+payout overlap cannot contribute twice to monthly components while being rejected
+by the dated reader.
 
 Durable effectiveness additionally requires the original physical DB object:
 file identity plus creation/birth time, with a matching SQL connection stamp.
@@ -6230,11 +6250,20 @@ them. MyBroker filenames may include a positive integer duplicate suffix such as
 ` (1)` before `.xml`; interval selection follows the [S1 period policy](#c3-mybroker_s1-1).
 Acknowledged same-request replay stays read-only.
 
-Coupon and dividend monthly subtotals remain NULL whenever money classification
-or source-flow coverage is uncertain, including unrecognized money rows. This
-withholds partial known income as well as apparent zero income; a fully classified,
-covered month with no income retains zero. Missing valuations alone do not erase
-known income.
+Account-wide coupon/dividend monthly subtotals retain their source-flow coverage
+contract. Instrument monthly readers preserve observed, independently attributed
+coupon/dividend components even when the complete result is unavailable. A known
+component is not a complete component or total: income_complete/flags retain
+uncertainty, unknown costs withhold total/rate, and absent observations remain NULL
+unless coverage proves zero. Missing valuations alone do not erase known income.
+
+Instrument subintervals may reuse individual current XML/PDF payout events from
+the existing source investment proof, never its historical endpoint valuations.
+Exact source SHA/ordinal, native account, role/date/RUB amount and payout identity
+must agree. Existing saved choices, current Money receipts and every overlapping
+original must agree; missing/duplicate occurrences, unproved timestamp changes or
+conflicting current proof identities retain UNKNOWN. This is a read projection
+with financial_authority=none; it creates no links, receipts or booked payouts.
 
 Owner decision (2026-10-23): positive promo-gift Money rows default to
 `external_deposit` when a single-line narrative contains a Cyrillic word beginning

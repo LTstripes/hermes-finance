@@ -245,12 +245,37 @@ def _identities(views):
     return result
 
 
-def _income(session, views, identities, gaps, *, resolved_redemptions=frozenset()):
+def _income(
+    session,
+    views,
+    identities,
+    gaps,
+    *,
+    resolved_redemptions=frozenset(),
+    events=(),
+    historical_evidence=None,
+):
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
     from hermes_finance.services.source_instrument_events import payout_attribution
 
     resolver = MoneyInstrumentResolver(session)
     occurrences = defaultdict(list)
+    event_scopes = defaultdict(set)
+    for event in events:
+        for reference in event.source_references:
+            event_scopes[reference].add(event.isin)
+
+    def gap_scope(flows):
+        # Identity scope is not permission to count a payout. Reuse the dated
+        # reader's exact source/trade/registration evidence, including conflicts.
+        scopes = {
+            scope
+            for flow in flows
+            for ref in flow.source_references
+            for scope in event_scopes.get(ref, {None})
+        }
+        return next(iter(scopes)) if len(scopes) == 1 else None
+
     for view in views:
         saved = {r["source_reference"]: r for r in view["money_classifications"]}
         raw = {source_reference(view["id"], row): row for row in view["document"].get("money", [])}
@@ -266,8 +291,9 @@ def _income(session, views, identities, gaps, *, resolved_redemptions=frozenset(
                     view=view,
                     raw=raw[flow.source_references[0]],
                     views=views,
+                    historical_evidence=historical_evidence,
                 )
-                if basis == "accepted_money":
+                if basis in {"accepted_money", "current_source_proof"}:
                     flow = replace(flow, status="confirmed")
                 if basis == "registration_scope":
                     # Legacy income must not turn coverage-only identity into a payout.
@@ -279,6 +305,7 @@ def _income(session, views, identities, gaps, *, resolved_redemptions=frozenset(
                             view["id"],
                             flow.event_date.replace(day=1),
                             flow.source_references[0],
+                            isin=gap_scope([flow]),
                         )
                         for code in reasons
                     )
@@ -291,7 +318,12 @@ def _income(session, views, identities, gaps, *, resolved_redemptions=frozenset(
         # A confirmed cash gift is an account-level external flow, not a gap
         # in the evidence for each individual instrument.
         gaps.extend(
-            InstrumentReturnGap(**asdict(gap))
+            InstrumentReturnGap(
+                **asdict(gap),
+                isin=next(iter(event_scopes[gap.source_reference]))
+                if len(event_scopes[gap.source_reference]) == 1
+                else None,
+            )
             for gap in local_gaps
             if gap.code != "broker_gift_external_flow"
         )
@@ -301,13 +333,20 @@ def _income(session, views, identities, gaps, *, resolved_redemptions=frozenset(
         selected = confirmed or observations
         flow, isin = selected[0]
         month = flow.event_date.replace(day=1)
+        scope_isin = gap_scope([f for f, _ in selected])
         if flow.classification == "unknown" and f"money:{key[0]}:{key[1]}" in resolved_redemptions:
             continue
         if len({(f.classification, identity) for f, identity in selected}) != 1:
-            gaps.append(InstrumentReturnGap("overlap_flow_choice_conflict", month=month))
+            gaps.append(
+                InstrumentReturnGap(
+                    "overlap_flow_choice_conflict",
+                    month=month,
+                    isin=scope_isin,
+                )
+            )
             continue
         if flow.classification == "unknown":
-            gaps.append(InstrumentReturnGap("unrecognized_money", month=month))
+            gaps.append(InstrumentReturnGap("unrecognized_money", month=month, isin=scope_isin))
         if flow.classification not in {"coupon", "dividend"}:
             continue
         refs = tuple(ref for f, _ in observations for ref in f.source_references)
@@ -318,7 +357,9 @@ def _income(session, views, identities, gaps, *, resolved_redemptions=frozenset(
         )
         if isin is None:
             gaps.append(
-                InstrumentReturnGap("unattributed_income", month=month, source_reference=refs[0])
+                InstrumentReturnGap(
+                    "unattributed_income", month=month, source_reference=refs[0], isin=scope_isin
+                )
             )
     return tuple(sorted(result, key=lambda row: (row.event_date, row.source_references)))
 
@@ -632,6 +673,7 @@ _INCOME_GAPS = {
     "invalid_external_flow",
     "unrecognized_money",
     "overlap_flow_choice_conflict",
+    "overlap_money_occurrence_missing",
 }
 _SOURCE_GAPS = {
     "source_period_inferred",
@@ -658,7 +700,17 @@ def _source_gap(code):
 
 
 def _month(
-    session, views, isin, instrument_type, month, income, gaps, previous, *, reviewed_basis=None
+    session,
+    views,
+    isin,
+    instrument_type,
+    month,
+    income,
+    gaps,
+    previous,
+    *,
+    reviewed_basis=None,
+    events=(),
 ):
     from hermes_finance.services.source_instrument_events import endpoint
 
@@ -695,6 +747,34 @@ def _month(
     q0, v0 = _endpoint(relevant, isin, month, closing=False, flags=flags)
     q1, v1 = _endpoint(relevant, isin, month, closing=True, flags=flags)
     buys, sells, traded_quantity = _trades(session, views, isin, month, instrument_type, flags)
+    redemptions = [
+        e
+        for e in events
+        if e.isin == isin
+        and e.kind == "REDEMPTION"
+        and e.counted
+        and e.current
+        and not e.reason_codes
+    ]
+    redemption_cash = sum(
+        leg.account_cash_kopecks
+        for e in redemptions
+        for leg in e.cash_legs
+        if month <= leg.date <= end
+    )
+    with localcontext() as context:
+        context.prec = 100
+        if traded_quantity is not None:
+            traded_quantity += sum(
+                (
+                    e.quantity_delta
+                    for e in redemptions
+                    if e.quantity_delta is not None
+                    and e.depository_settlement_date is not None
+                    and month <= e.depository_settlement_date <= end
+                ),
+                Decimal(0),
+            )
     if not relevant or any(_source_gap(flag) for flag in flags):
         buys = sells = None
     if previous and (
@@ -738,9 +818,38 @@ def _month(
         flags.add("income_assumed")
     if any(row.status == "confirmed" for row in paid):
         flags.add("income_confirmed")
-    price = None if None in (v0, v1, buys, sells) else v1 - v0 - buys + sells
+    price = None if None in (v0, v1, buys, sells) else v1 - v0 - buys + sells + redemption_cash
     base = None if None in (v0, buys) else v0 + buys
-    total = None if price is None or not income_complete else price + income_total
+    # Preserve independent observed components, but never publish a monthly net
+    # result while a relevant non-trade cash operation is unresolved. Trade fees
+    # already belong to buys/sells; only standalone dated FEE/TAX legs go here.
+    local_events = [
+        e
+        for e in events
+        if e.isin in (None, isin)
+        and e.attribution_basis != "account_only"
+        and e.event_date is not None
+        and month <= e.event_date <= end
+        and e.kind not in {"BUY", "SELL"}
+    ]
+    cash_reasons = {reason for e in local_events for reason in e.reason_codes}
+    flags.update(cash_reasons)
+    separate_costs = sum(
+        leg.account_cash_kopecks
+        for e in local_events
+        if e.kind in {"FEE", "TAX"}
+        and e.isin == isin
+        and e.current
+        and e.counted
+        and not e.reason_codes
+        for leg in e.cash_legs
+        if month <= leg.date <= end
+    )
+    total = (
+        None
+        if price is None or not income_complete or cash_reasons
+        else price + income_total + separate_costs
+    )
     if base is not None and base <= 0:
         flags.add("nonpositive_capital_base")
     return InstrumentReturnMonth(
@@ -1101,13 +1210,63 @@ def read_instrument_returns(
     identities = _identities(views)
     event_gaps = []
     native_account = next(iter(native_scope)) if native_scope else None
+    from hermes_finance.services.source_return_evidence import historical_payout_evidence
+
+    historical_evidence = historical_payout_evidence(
+        session, source_account, selected, native_scope
+    )
     events, references = read_events(
-        session, views, identities, native_account or source_account, event_gaps
+        session,
+        views,
+        identities,
+        native_account or source_account,
+        event_gaps,
+        historical_evidence=historical_evidence,
     )
     from hermes_finance.services.source_redemption_evidence import apply_verified_redemptions
 
     events, resolved_redemptions = apply_verified_redemptions(events, redemption_evidence)
-    income = _income(session, views, identities, gaps, resolved_redemptions=resolved_redemptions)
+    resolved_scopes = {
+        (e.isin, e.depository_settlement_date.replace(day=1))
+        for e in events
+        if e.event_key in resolved_redemptions and e.depository_settlement_date is not None
+    }
+    gaps = [
+        gap
+        for gap in gaps
+        if not (
+            gap.code == "custody_cancellation_unresolved"
+            and (gap.isin, gap.month) in resolved_scopes
+        )
+    ]
+    income = _income(
+        session,
+        views,
+        identities,
+        gaps,
+        resolved_redemptions=resolved_redemptions,
+        events=events,
+        historical_evidence=historical_evidence,
+    )
+    ambiguous_payouts = {
+        ref
+        for event in events
+        if event.kind in {"COUPON", "DIVIDEND", "UNRESOLVED"}
+        and "overlap_money_occurrence_missing" in event.reason_codes
+        for ref in event.source_references
+    }
+    income = tuple(
+        row for row in income if not ambiguous_payouts.intersection(row.source_references)
+    )
+    gaps.extend(
+        InstrumentReturnGap(
+            "overlap_money_occurrence_missing",
+            month=event.event_date.replace(day=1),
+            isin=event.isin,
+        )
+        for event in events
+        if "overlap_money_occurrence_missing" in event.reason_codes and event.event_date is not None
+    )
     for gap in event_gaps:
         if gap not in gaps:
             gaps.append(gap)
@@ -1137,6 +1296,7 @@ def read_instrument_returns(
                     gaps,
                     rows[-1] if rows else None,
                     reviewed_basis=reviewed_basis,
+                    events=events,
                 )
                 rows.append(row)
                 month = _next_month(month)

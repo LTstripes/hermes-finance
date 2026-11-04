@@ -85,7 +85,9 @@ def verified_redemptions(session, source_account, selected, native_scope, cancel
             )
             if len(events) != 1:
                 continue
-            event = events[0]
+            event = replace(
+                events[0], quantity_delta=Decimal(quantity), depository_settlement_date=day
+            )
             prefix = source["document_sha256"] + ":money:"
             reference = event.source_references[0]
             if not reference.startswith(prefix) or not reference[len(prefix) :].isdigit():
@@ -128,7 +130,15 @@ def verified_redemptions(session, source_account, selected, native_scope, cancel
                 old.isin,
                 old.event_date,
                 old.cash_legs[0].account_cash_kopecks,
-            ) != (event.isin, event.event_date, event.cash_legs[0].account_cash_kopecks):
+                old.quantity_delta,
+                old.depository_settlement_date,
+            ) != (
+                event.isin,
+                event.event_date,
+                event.cash_legs[0].account_cash_kopecks,
+                event.quantity_delta,
+                event.depository_settlement_date,
+            ):
                 conflicts.add(key)
             else:
                 event_map[key] = event
@@ -169,6 +179,9 @@ def apply_verified_redemptions(events, evidence):
             and proof.counted
             and not proof.reason_codes
             and proof.classification_status == "confirmed"
+            and proof.quantity_delta is not None
+            and proof.quantity_delta < 0
+            and proof.depository_settlement_date is not None
             and event.kind == "UNRESOLVED"
             and event.classification == "unknown"
             and event.classification_origin == "default_rule"
@@ -187,6 +200,9 @@ def apply_verified_redemptions(events, evidence):
                 isin=proof.isin,
                 effective_isin=proof.isin,
                 kind="REDEMPTION",
+                quantity_delta=proof.quantity_delta,
+                depository_settlement_date=proof.depository_settlement_date,
+                cash_settlement_date=proof.cash_legs[0].date,
                 classification_status="confirmed",
                 attribution_basis="current_historical_redemption_proof",
                 current=True,

@@ -50,13 +50,13 @@ def db(tmp_path, source_returns_database_factory):
     value.engine.dispose()
 
 
-def test_outside_period_old_overlap_and_stale_custody_proof_do_not_block_october(db):
+def test_outside_period_old_overlap_preserves_custody_and_does_not_block_october(db):
     _, _, preview = proof_preview(db)
     proof_confirm(db, preview)
     save_service_month(db, 10)
     before = snapshot(db)
     result = read(db)
-    assert result.source_proof["status"] == "stale"
+    assert result.source_proof["status"] == "current"
     october = next(row for row in result.months if row.result.closing_date == date(2030, 10, 31))
     assert october.result.growth_kopecks is not None
     assert october.result.modified_dietz_return is not None

@@ -38,11 +38,12 @@ SEMANTIC_MODULES = (
 )
 
 # Pin the revision alongside the digest so bumping either alone fails the guard.
-# V4 adds exact payout receipt attribution; compatibility with older proofs
+# V5 carries dated redemption quantity and scopes structure-only confirmations;
+# compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v4",
-    "1b9304aca31242876f47c11f011b0d2b7b33e4ceadba5e4e22738fc04392e55a",
+    "source_investment_semantics_v5",
+    "558fde93fa992d8826adb17f2b90fcba0e42c8dab0688e0d1ba44ae8e2fcb30b",
 )
 
 
@@ -65,3 +66,29 @@ def test_custody_compatibility_is_bound_to_reviewed_implementation():
 
     actual = hashlib.sha256(Path(source_return_proofs.__file__).read_bytes()).hexdigest()
     assert actual == source_custody_compat.CURRENT_CUSTODY_CODE_SHA256
+
+
+# A grammar/meaning change must advance the scoped custody revision; an ordinary
+# release must not invalidate its immutable source evidence merely by file bytes.
+CUSTODY_MODULES = (
+    "services/source_return_proofs.py",
+    "statement_import/mybroker.py",
+    "statement_import/mybroker_return_structure.py",
+    "statement_import/mybroker_draft_structure.py",
+    "statement_import/mybroker_metadata.py",
+)
+CUSTODY_PIN = (
+    "source_custody_structure_v2",
+    "c03ae86d34ebfeb3fa13cca511a21c3a984d152ec520c3db1e28b7ff8a326cbf",
+)
+
+
+def test_scoped_custody_semantics_match_reviewed_grammar():
+    from hermes_finance.services import source_return_proofs
+
+    package = Path(proofs.__file__).resolve().parents[1]
+    digest = hashlib.sha256()
+    for name in CUSTODY_MODULES:
+        digest.update(name.encode() + b"\0")
+        digest.update((package / name).read_text(encoding="utf8").encode() + b"\0")
+    assert (source_return_proofs.STRUCTURE_SEMANTICS, digest.hexdigest()) == CUSTODY_PIN

@@ -743,6 +743,8 @@ def _interval(
                 kind=event_kind,
                 source_references=(row["ref"],),
                 event_date=day,
+                quantity_delta=q if event_kind == "REDEMPTION" else None,
+                depository_settlement_date=day if event_kind == "REDEMPTION" else None,
                 cash_legs=(
                     CashLeg(event_kind.lower(), day, amount, -amount, (row["ref"],), row["ref"]),
                 ),

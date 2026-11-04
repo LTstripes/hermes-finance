@@ -200,11 +200,29 @@ def _source_money_attribution(view, saved, raw, identities, native_issues):
 
 
 def payout_attribution(
-    saved, resolver, identities, *, session=None, view=None, raw=None, views=None
+    saved,
+    resolver,
+    identities,
+    *,
+    session=None,
+    view=None,
+    raw=None,
+    views=None,
+    historical_evidence=None,
 ):
     """Validate a persisted decision; never replace it with a newly possible link."""
     from hermes_finance.services.source_instrument_returns import _attribute
 
+    if historical_evidence and session is not None and view is not None and raw is not None:
+        from hermes_finance.services.source_return_evidence import effective_historical_payout
+
+        proven, conflict = effective_historical_payout(
+            session, views, view, raw, saved, resolver, historical_evidence
+        )
+        if conflict:
+            return None, "current_source_proof", ("source_payout_evidence_conflict",)
+        if proven is not None:
+            return proven, "current_source_proof", ()
     status = saved.get("instrument_link_status")
     if status != "linked" and session is not None and view is not None and raw is not None:
         from hermes_finance.services.source_return_evidence import (
@@ -260,7 +278,7 @@ def payout_attribution(
     return isin, "legacy_text", () if isin else ("unattributed_income",)
 
 
-def read_events(session, views, identities, native_account, gaps):
+def read_events(session, views, identities, native_account, gaps, *, historical_evidence=None):
     from hermes_finance.services.source_instrument_returns import (
         InstrumentReturnGap,
         _bond_total_basis,
@@ -321,8 +339,9 @@ def read_events(session, views, identities, native_account, gaps):
                         view=view,
                         raw=raw[ref],
                         views=views,
+                        historical_evidence=historical_evidence,
                     )
-                    if basis == "accepted_money":
+                    if basis in {"accepted_money", "current_source_proof"}:
                         # The current exact receipt confirms this payout's role,
                         # date, amount, account and instrument, not other events.
                         flow = replace(flow, status="confirmed")
@@ -335,7 +354,7 @@ def read_events(session, views, identities, native_account, gaps):
                             metadata["names"].add(
                                 parse_money_security(row["narrative"]).issuer_name
                             )
-                        elif basis == "accepted_money":
+                        elif basis in {"accepted_money", "current_source_proof"}:
                             metadata["types"].add(
                                 "bond" if flow.classification == "coupon" else "stock"
                             )
@@ -393,10 +412,7 @@ def read_events(session, views, identities, native_account, gaps):
         chosen = confirmed or observations
         view, flow, row, raw, isin, basis, attribution_reasons = chosen[0]
         reasons = set(attribution_reasons)
-        if (
-            len({(o[1].classification, o[4], o[2].get("instrument_link_status")) for o in chosen})
-            != 1
-        ):
+        if len({(o[1].classification, o[4]) for o in chosen}) != 1:
             reasons.add("overlap_flow_choice_conflict")
             isin = None
         # A confirmed classification does not attest another original's issue
@@ -896,7 +912,7 @@ def analyse(views, isin, kind, start, end, events, references, gaps, *, reviewed
         delta = Decimal(0)
         daily = defaultdict(Decimal)
         for e in selected:
-            if e.kind not in {"BUY", "SELL"}:
+            if e.kind not in {"BUY", "SELL", "REDEMPTION"}:
                 continue
             if not e.counted or e.quantity_delta is None or e.depository_settlement_date is None:
                 quantity_reasons.add("quantity_events_incomplete")

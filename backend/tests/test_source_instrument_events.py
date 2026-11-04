@@ -95,6 +95,7 @@ def test_source_scope_nkd_uses_full_issue_not_shared_stock_name(db, case):
         assert all(leg.ownership == event.event_key for leg in event.cash_legs)
         assert "unmatched_trade_money" in event.reason_codes
         assert stock.pnl.value == 10000
+        assert by_isin(result)[ISIN].months[0].total_kopecks == 10000
     else:
         assert result.unresolved_events and stock.pnl.value is None
     assert result.financial_authority == "none"
@@ -154,6 +155,7 @@ def test_native_trade_issue_scope_without_position_is_not_money_ownership(db, ca
         assert event.native_identity is None
         assert all(leg.ownership == event.event_key for leg in event.cash_legs)
         assert stock.pnl.value == 10000
+        assert by_isin(result)[ISIN].months[0].total_kopecks == 10000
         assert "unmatched_trade_money" not in stock.reason_codes
     else:
         assert stock.pnl.value is None
@@ -187,6 +189,7 @@ def test_native_trade_issue_scope_overlap_needs_each_original_proof(db, confirme
     ]
     assert event.isin is None and not event.counted and len(event.source_references) == 2
     assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert by_isin(result)[ISIN].months[0].total_kopecks is None
     assert snapshot(db) == before
 
 
@@ -245,6 +248,7 @@ def test_source_scope_repo_native_reference_is_not_cash_authority(db, case):
         assert event.reason_codes == ("unmatched_trade_money",)
         assert all(leg.ownership == event.event_key for leg in event.cash_legs)
         assert stock.pnl.value == 10000
+        assert by_isin(result)[ISIN].months[0].total_kopecks == 10000
         assert all(not e.counted for e in by_isin(result)[BOND].analysis.events)
     else:
         assert stock.pnl.value is None and result.unresolved_events
@@ -299,6 +303,7 @@ def test_source_scope_overlap_classification_confirmation_cannot_attest_identity
     assert event.isin is None and not event.counted and event.effective_isin is None
     assert len(event.source_references) == 2
     assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert by_isin(result)[ISIN].months[0].total_kopecks is None
     assert snapshot(db) == before
 
 
@@ -324,6 +329,8 @@ def test_registration_scope_is_identity_only_and_never_accepts_payout(db, reg, i
     assert all(leg.ownership == event.event_key for leg in event.cash_legs)
     assert "payout_link_unresolved_no_match" in event.reason_codes
     assert scoped.pnl.value is None and scoped.components["dividends"].value is None
+    assert by_isin(result)[ISIN].months[0].total_kopecks == 10000
+    assert by_isin(result)[isin].months[0].total_kopecks is None
     assert result.income[0].isin is None  # legacy projection is not silently promoted
     assert not result.reconciliation.complete
     assert snapshot(db) == before
@@ -340,6 +347,7 @@ def test_registration_scope_conflicting_explicit_crosswalk_stays_unresolved(db):
     result = read(db)
     assert result.unresolved_events[0].isin is None
     assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert by_isin(result)[ISIN].months[0].total_kopecks is None
     assert snapshot(db) == before
 
 
@@ -395,6 +403,9 @@ def test_registration_scope_never_overrides_contradictory_saved_decisions(db, ch
     else:
         assert result.unresolved_events and result.unresolved_events[0].isin is None
         assert by_isin(result)[ISIN].analysis.pnl.value is None
+    assert by_isin(result)[ISIN].months[0].total_kopecks == (
+        10000 if change == "missing_old_parse" else None
+    )
     assert snapshot(db) == before
 
 
@@ -968,6 +979,10 @@ def test_unallocated_or_misclassified_evidence_is_inspectable_not_zero(db, extra
     assert a.pnl.value is a.modified_dietz.value is None
     assert reason in a.reason_codes
     assert result.unresolved_events
+    instrument = by_isin(result)[ISIN]
+    assert instrument.months[0].total_kopecks is None
+    assert instrument.months[0].return_percent is None
+    assert instrument.all_time.total_kopecks is None
 
 
 def test_explicit_account_only_cost_is_not_allocated_and_tax_is_once(db):
@@ -985,6 +1000,7 @@ def test_explicit_account_only_cost_is_not_allocated_and_tax_is_once(db):
     result = read(db)
     a = by_isin(result)[ISIN].analysis
     assert a.pnl.value == 8700
+    assert by_isin(result)[ISIN].months[0].total_kopecks == 8700
     assert a.components["taxes"].value == 1300
     assert result.account_reconciliation_events[0].cash_legs[0].account_cash_kopecks == -200
 
@@ -1564,6 +1580,8 @@ def test_known_other_instrument_unrecognized_money_does_not_block_stock(db):
     )
     instruments = by_isin(read(db))
     assert instruments[ISIN].analysis.pnl.value == 10000
+    assert instruments[ISIN].months[0].total_kopecks == 10000
+    assert instruments[BOND].months[0].total_kopecks is None
     assert instruments[BOND].analysis.statement_estimate.pnl.value is None
     assert "unrecognized_money" in instruments[BOND].analysis.reason_codes
 
@@ -1657,4 +1675,329 @@ def test_same_day_bonds_do_not_acquire_orphan_money_nkd_ownership(db, fee):
     else:
         assert instrument.months[0].buys_cost_kopecks == 204400
     assert instrument.analysis.pnl.value is None  # EOD/ownership guards survive.
+    assert snapshot(db) == before
+
+
+def test_overlapping_ambiguous_payout_components_agree_with_dated_events(db):
+    for marker, narrative in (("first", BOND), ("second", BOND + " revised")):
+        save(db, trades=(), extra=(("Купон", narrative, "30"),), marker=marker)
+    result = by_isin(read(db))[BOND]
+    assert result.months[0].coupons_kopecks is None
+    assert result.months[0].income_kopecks is None
+    assert result.months[0].total_kopecks is None
+    assert result.analysis.components["coupons"].value is None
+    assert "overlap_money_occurrence_missing" in result.analysis.reason_codes
+
+
+def test_verified_redemption_quantity_participates_in_dated_reconciliation():
+    from unittest.mock import patch
+
+    from hermes_finance.domain.instrument_return import CashLeg, Endpoint, InstrumentEvent
+    from hermes_finance.services import source_instrument_events as reader
+
+    start, end, day = date(2030, 4, 1), date(2030, 4, 30), date(2030, 4, 15)
+    event = InstrumentEvent(
+        event_key="synthetic-redemption",
+        provider="synthetic",
+        native_source_account="synthetic",
+        isin=BOND,
+        kind="REDEMPTION",
+        event_date=day,
+        depository_settlement_date=day,
+        quantity_delta=Decimal("-2"),
+        source_references=("synthetic",),
+        cash_legs=(CashLeg("redemption", day, 200000, -200000, ("synthetic",), "synthetic"),),
+    )
+
+    def endpoint(_views, _isin, at, _kind, **_kwargs):
+        return Endpoint(
+            at,
+            Decimal("2") if at == start else Decimal("0"),
+            200000 if at == start else 0,
+            200000 if at == start else 0,
+            0,
+            "dirty",
+        )
+
+    views = [{"covered_from": "2030-04-01", "covered_to": "2030-04-30", "document": {}}]
+    with patch.object(reader, "endpoint", endpoint):
+        result = reader.analyse(views, BOND, "bond", start, end, (event,), (), ())
+    assert result.coverage["quantity"].complete
+    assert result.components["redemption"].value == 200000
+    assert result.pnl.value == 0
+
+
+@pytest.mark.parametrize("conflicting", [False, True])
+def test_current_receipt_and_matching_persisted_link_share_one_payout(db, monkeypatch, conflicting):
+    from hermes_finance.services import source_return_evidence as evidence
+    from hermes_finance.services.source_instrument_events import read_events
+    from hermes_finance.services.source_instrument_returns import _identities
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+
+    first, _ = setup_link(db)
+    save(db, bond=None, trades=(), extra=(("Перевод", DIVIDEND_SECURITY, "87"),), marker="second")
+    with db.session_factory() as session:
+        selected, native = _selected_sources(session, ACCOUNT)
+        views = [deepcopy(view) for _, view, _ in selected]
+        row = views[0]["money_classifications"][0]
+        row.update(instrument_link_status="unresolved_no_match", instrument_id=None)
+        if conflicting:
+            views[1]["money_classifications"][0]["instrument_id"] = 999999
+        monkeypatch.setattr(
+            evidence,
+            "effective_payout_match",
+            lambda _s, v, *a, **k: (
+                (ISIN, "synthetic-receipt", "dividend", 1, frozenset())
+                if v["id"] == first
+                else None
+            ),
+        )
+        monkeypatch.setattr(evidence, "bound_import", lambda *a: None)
+        events, _ = read_events(session, views, _identities(views), next(iter(native)), [])
+    counted = [e for e in events if e.kind == "DIVIDEND" and e.counted]
+    assert len(counted) == (0 if conflicting else 1)
+    if counted:
+        assert counted[0].net_payout_kopecks == 8700
+        assert not counted[0].reason_codes
+
+
+def test_month_component_counts_redemption_principal_and_quantity_once(db):
+    from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
+    from hermes_finance.services.source_instrument_returns import _month
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+
+    save(db, stock=None, bond=("2", "0", "2000", "0"), trades=())
+    day = date(2030, 4, 15)
+    event = InstrumentEvent(
+        event_key="synthetic-redemption",
+        provider="synthetic",
+        native_source_account=ACCOUNT,
+        isin=BOND,
+        kind="REDEMPTION",
+        source_references=("synthetic",),
+        event_date=day,
+        quantity_delta=Decimal("-2"),
+        depository_settlement_date=day,
+        cash_legs=(CashLeg("redemption", day, 200000, -200000, ("synthetic",), "synthetic"),),
+    )
+    with db.session_factory() as session:
+        selected, _ = _selected_sources(session, ACCOUNT)
+        result = _month(
+            session,
+            [v for _, v, _ in selected],
+            BOND,
+            "bond",
+            date(2030, 4, 1),
+            (),
+            (),
+            None,
+            events=(event,),
+        )
+    assert result.price_effect_kopecks == result.total_kopecks == 0
+    assert result.coupons_kopecks == 0
+    assert result.sells_proceeds_kopecks == 0
+    assert "seam_mismatch" not in result.flags
+
+
+def test_unallocated_cost_preserves_known_monthly_payout_components(db):
+    save(
+        db,
+        bond=None,
+        trades=(),
+        extra=(("Дивиденды", ISIN, "87"), ("Комиссия", "unallocated cost", "-2")),
+    )
+    before = snapshot(db)
+    instrument = by_isin(read(db))[ISIN]
+    row = instrument.months[0]
+    assert row.dividends_kopecks == row.income_kopecks == 8700
+    assert row.price_effect_kopecks == 10000
+    assert row.total_kopecks is row.return_percent is None
+    assert instrument.analysis.pnl.value is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "none",
+        "stale",
+        "identity_issue",
+        "account_period",
+        "other_scope_conflict",
+        "bad_ref",
+        "amount",
+        "date",
+        "account",
+        "unconfirmed",
+        "cost_gap",
+        "valuation_gap",
+    ],
+)
+def test_historical_payout_index_checks_current_exact_original(db, monkeypatch, fault):
+    from types import SimpleNamespace
+
+    from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services import source_return_evidence as evidence
+    from hermes_finance.services.source_money_classifications import source_reference
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+
+    save(db, bond=None, trades=(), extra=(("Перевод", DIVIDEND_SECURITY, "87"),))
+    with db.session_factory() as session:
+        selected, native = _selected_sources(session, ACCOUNT)
+        view = selected[0][1]
+        raw = view["document"]["money"][0]
+        ref = view["document_sha256"] + ":money:" + str(raw["ordinal"])
+        day = date.fromisoformat(raw["date"])
+        amount = 8700
+        event = InstrumentEvent(
+            event_key=ref,
+            provider="alfa_mybroker",
+            native_source_account=next(iter(native)),
+            isin=ISIN,
+            effective_isin=ISIN,
+            kind="DIVIDEND",
+            source_references=(ref,),
+            event_date=day,
+            net_payout_kopecks=amount,
+            classification="dividend",
+            classification_status="confirmed",
+            cash_legs=(CashLeg("dividend", day, amount, -amount, (ref,), ref),),
+        )
+        changes = {
+            "bad_ref": {"source_references": ("other:money:1",)},
+            "amount": {"net_payout_kopecks": 8701},
+            "date": {"event_date": date(2030, 4, 1)},
+            "account": {"native_source_account": "7654321-000"},
+            "unconfirmed": {"classification_status": "assumed"},
+        }
+        event = replace(event, **changes.get(fault, {}))
+        reasons = {
+            "identity_issue": ("pdf_xml_payout_mismatch",),
+            "account_period": ("pdf_account_period_invalid",),
+            "cost_gap": ("unresolved_account_cash_attribution",),
+            "valuation_gap": ("economic_endpoint_unavailable",),
+        }.get(fault, ())
+
+        def reports(session, *, analyses, **kwargs):
+            analyses[1] = {ISIN: SimpleNamespace(events=(event,), reason_codes=reasons)}
+            result = [{"proof_id": 1, "status": "stale" if fault == "stale" else "current"}]
+            if fault == "other_scope_conflict":
+                other = replace(event, isin="RU000A000001", effective_isin="RU000A000001")
+                analyses[2] = {other.isin: SimpleNamespace(events=(other,), reason_codes=())}
+                result.append({"proof_id": 2, "status": "current"})
+            return result
+
+        monkeypatch.setattr(proofs, "read_reports", reports)
+        monkeypatch.setattr(
+            proofs,
+            "_report_rows",
+            lambda *_: [
+                (SimpleNamespace(id=i), {"source_sha256": view["document_sha256"]})
+                for i in ([1, 2] if fault == "other_scope_conflict" else [1])
+            ],
+        )
+        result = evidence.historical_payout_evidence(session, ACCOUNT, selected, native)
+        key = source_reference(view["id"], raw)
+        if fault in {"none", "cost_gap", "valuation_gap"}:
+            assert result[key][0] == ISIN
+        elif fault in {"identity_issue", "account_period", "other_scope_conflict"}:
+            assert result[key] is None
+        else:
+            assert not result
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "single",
+        "overlap",
+        "missing",
+        "duplicate",
+        "changed_narrative",
+        "changed_timestamp",
+        "conflicting_proofs",
+        "money_conflict",
+        "money_same_isin_distinct_targets",
+        "money_extra_cohort",
+        "changed_choice",
+    ],
+)
+def test_historical_payout_projection_preserves_overlap_and_conflict_guards(db, monkeypatch, case):
+    from hermes_finance.services import source_return_evidence as evidence
+    from hermes_finance.services.source_money_classifications import source_reference
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+
+    extra = (("Перевод", DIVIDEND_SECURITY, "87"), ("Комиссия", "unallocated cost", "-2"))
+    first = save(db, bond=None, trades=(), extra=extra)
+    if case not in {"single", "money_conflict", "changed_choice", "conflicting_proofs"}:
+        second_extra = extra
+        if case == "missing":
+            second_extra = extra[1:]
+        if case == "duplicate":
+            second_extra = (extra[0], extra[0], extra[1])
+        if case == "changed_narrative":
+            second_extra = (("Перевод", DIVIDEND_SECURITY + " changed", "87"), extra[1])
+
+        def mutate(root):
+            if case == "changed_timestamp":
+                for row in root.findall(".//{MyBroker}rn"):
+                    for node in row.iter():
+                        if "last_update" in node.attrib:
+                            node.set("last_update", "2030-04-18T00:00:00")
+
+        save(db, bond=None, trades=(), extra=second_extra, marker="overlap", mutate=mutate)
+    with db.session_factory() as session:
+        selected, native = _selected_sources(session, ACCOUNT)
+        view = next(v for o, v, e in selected if o.id == first)
+        raw = next(r for r in view["document"]["money"] if r["amount"] == "87")
+        key = source_reference(first, raw)
+        values = {key: (ISIN, "dividend", raw["date"], 8700, next(iter(native)))}
+    if case == "conflicting_proofs":
+        values[key] = None
+    monkeypatch.setattr(evidence, "historical_payout_evidence", lambda *_: values)
+    if case == "money_conflict":
+        monkeypatch.setattr(
+            evidence,
+            "effective_payout_match",
+            lambda *a, **k: ("RU000A000001", "receipt", "dividend", "target", frozenset()),
+        )
+    if case == "money_same_isin_distinct_targets":
+        monkeypatch.setattr(
+            evidence,
+            "effective_payout_match",
+            lambda s, v, *a, **k: (ISIN, "receipt", "dividend", str(v["id"]), frozenset()),
+        )
+    if case == "money_extra_cohort":
+        monkeypatch.setattr(
+            evidence,
+            "effective_payout_match",
+            lambda *a, **k: (
+                ISIN,
+                "receipt",
+                "dividend",
+                "target",
+                frozenset({(999, "money", 1, "outside")}),
+            ),
+        )
+    if case == "changed_choice":
+        from hermes_finance.services.source_money_classifications import choose_classification
+
+        with db.session_factory() as session:
+            choose_classification(session, first, key, "fee")
+    before = snapshot(db)
+    result = read(db)
+    instrument = by_isin(result)[ISIN]
+    row = instrument.months[0]
+    if case in {"single", "overlap"}:
+        payouts = [e for e in instrument.analysis.events if e.kind == "DIVIDEND"]
+        assert len(payouts) == 1 and payouts[0].counted
+        assert payouts[0].attribution_basis == "current_source_proof"
+        assert row.dividends_kopecks == row.confirmed_income_kopecks == 8700
+        assert row.total_kopecks is None
+        assert instrument.analysis.components["dividends"].value == 8700
+    else:
+        assert row.total_kopecks is None
+        assert not any(e.counted for e in instrument.analysis.events if e.kind == "DIVIDEND")
+    assert result.financial_authority == "none"
     assert snapshot(db) == before
