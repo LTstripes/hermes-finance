@@ -150,7 +150,7 @@ def test_ladder_has_twelve_months_and_keeps_redemption_out_of_passive_income(
         database.engine.dispose()
 
 
-def test_undated_deposit_estimate_is_monthly_only(tmp_path: Path) -> None:
+def test_undated_deposit_estimate_enters_forecast_without_a_payment_event(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id, account_id, _, _ = build_environment(session)
@@ -174,6 +174,13 @@ def test_undated_deposit_estimate_is_monthly_only(tmp_path: Path) -> None:
             assert window.items == ()
             assert window.passive_income.kopecks == 0
             assert window.total_cash_flow.kopecks == 0
+            expected = {14: 55233, 30: 118356}[window.days]
+            assert window.deposit_interest_estimate.kopecks == expected
+            assert window.forecast_passive_income.kopecks == expected
+            assert window.forecast_total_cash_flow.kopecks == expected
+            assert len(window.deposit_estimates) == 1
+            assert window.deposit_estimates[0].deposit_id == deposit.id
+            assert not hasattr(window.deposit_estimates[0], "expected_date")
     finally:
         session.close()
         database.engine.dispose()
@@ -236,6 +243,54 @@ def test_ladder_reuses_duplicate_resolution_and_exposes_provenance(tmp_path: Pat
         assert provider_event.provider_identity_key == "n:11"
         assert provider_event.reconciliation_id is not None
         assert provider_event.counting_decision == PayoutCountingDecision.KEEP_BOTH.value
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_dated_interest_replaces_estimate_only_for_same_account_and_window(tmp_path):
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id, _ = build_environment(session)
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            name="Synthetic deposit",
+            deposit_type="deposit",
+            balance="120000.00",
+            annual_rate="12.00",
+        )
+        expected_flow(
+            session,
+            month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            flow_type=ExpectedCashFlowType.INTEREST,
+            expected_date=date(2030, 6, 1),
+            amount="100.00",
+        )
+        other = create_account(
+            session, name="Another synthetic bank", account_type=AccountType.DEPOSIT
+        )
+        create_deposit_snapshot(
+            session,
+            reporting_month_id=month_id,
+            account_id=other.id,
+            name="Another synthetic deposit",
+            deposit_type="deposit",
+            balance="120000.00",
+            annual_rate="12.00",
+        )
+        result = build_cash_flow_ladder(session, month_id)
+        assert result.upcoming_14_days.deposit_interest_estimate.kopecks == 110466
+        window = result.upcoming_30_days
+        assert window.passive_income.kopecks == 10000
+        assert len(window.deposit_estimates) == 2
+        assert not window.deposit_estimates[0].included_in_forecast
+        assert window.deposit_estimates[1].included_in_forecast
+        assert window.deposit_interest_estimate.kopecks == 118356
+        assert window.forecast_passive_income.kopecks == 128356
     finally:
         session.close()
         database.engine.dispose()

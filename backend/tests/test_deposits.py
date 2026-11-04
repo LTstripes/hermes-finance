@@ -258,3 +258,18 @@ def test_deposit_validation_rejects_bad_inputs(tmp_path: Path) -> None:
     finally:
         session.close()
         database.engine.dispose()
+
+
+def test_period_estimate_uses_actual_year_days_and_rounds_once():
+    from datetime import date
+
+    from hermes_finance.domain.deposits import estimate_deposit_interest_kopecks as estimate
+
+    assert estimate(100_00, 10000, date(2032, 2, 28), date(2032, 3, 1)) == 55
+    assert estimate(365_00, 10000, date(2031, 12, 31), date(2032, 1, 2)) == 200
+    assert estimate(100, 10000, date(2031, 1, 1), date(2031, 1, 1)) == 0
+    assert estimate(0, 100, date(2031, 1, 1), date(2031, 2, 1)) == 0
+    assert estimate(100, 0, date(2031, 1, 1), date(2031, 2, 1)) == 0
+    # Half a kopeck rounds up, including very large balances without float loss.
+    assert estimate(365, 5000, date(2031, 1, 1), date(2031, 1, 2)) == 1
+    assert estimate(365 * 10**30, 10000, date(2031, 1, 1), date(2031, 1, 2)) == 10**30

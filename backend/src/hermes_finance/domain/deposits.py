@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from calendar import isleap
+from datetime import date
 from enum import StrEnum
+from fractions import Fraction
 
 
 class DepositType(StrEnum):
@@ -35,3 +38,25 @@ def calculate_deposit_expected_monthly_interest_kopecks(
     if r * 2 >= denominator:
         q += 1
     return int(q)
+
+
+def estimate_deposit_interest_kopecks(
+    balance_kopecks: int, annual_rate_basis_points: int, from_date: date, to_date: date
+) -> int:
+    """Simple ACT/ACT estimate for [from_date, to_date), rounded once half-up.
+
+    Constant balance/rate, no compounding or tax assumption and no payment date.
+    """
+    # Share validation with the canonical monthly estimate.
+    calculate_deposit_expected_monthly_interest_kopecks(balance_kopecks, annual_rate_basis_points)
+    if to_date < from_date:
+        raise ValueError("to_date must not precede from_date")
+    years = Fraction(0)
+    current = from_date
+    while current < to_date:
+        end = min(to_date, date(current.year + 1, 1, 1))
+        years += Fraction((end - current).days, 366 if isleap(current.year) else 365)
+        current = end
+    estimate = balance_kopecks * annual_rate_basis_points * years / 10_000
+    q, r = divmod(estimate.numerator, estimate.denominator)
+    return q + (2 * r >= estimate.denominator)

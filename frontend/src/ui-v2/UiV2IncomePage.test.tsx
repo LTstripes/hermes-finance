@@ -303,6 +303,38 @@ describe("UI v2 Income and plans", () => {
     expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
   });
 
+  it("includes the server period estimate once and leaves dated and monthly amounts intact", async () => {
+    const { mount, state } = setup();
+    state.ladder.upcoming_30_days = {
+      ...state.ladder.upcoming_30_days,
+      deposit_interest_estimate: money("1234.56"),
+      forecast_passive_income: money("9734.56"),
+      forecast_total_cash_flow: money("109734.56"),
+      deposit_estimates: [
+        {
+          deposit_id: 99,
+          included_in_forecast: true,
+          name: "Синтетический вклад",
+          account_name: "Банк",
+          amount: money("1234.56"),
+        },
+      ],
+    };
+    mount();
+    expect(await screen.findByTestId("income-upcoming-passive")).toHaveTextContent("9 734,56 ₽");
+    const table = await screen.findByRole("region", { name: "Ожидаемые проценты по вкладам" });
+    expect(table).toHaveTextContent("Синтетический вклад · Банк");
+    expect(table).toHaveTextContent("1 234,56 ₽");
+    expect(table).toHaveTextContent("дата выплаты неизвестна");
+    expect(table.querySelector("time")).toBeNull();
+    expect(screen.getByTestId("income-window-30")).toHaveTextContent("8 500 ₽ пассивно");
+    fireEvent.click(screen.getByRole("button", { name: "14 дней" }));
+    expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("9 734,56 ₽");
+    expect(table).toHaveTextContent("30 дней");
+    expect(screen.getByTestId("income-coverage")).toHaveTextContent("По прогнозу");
+    expect(screen.getByTestId("income-coverage")).toHaveTextContent("прогнозный остаток");
+  });
+
   it("puts the payout ladder last before handoffs and keeps event columns semantic", async () => {
     const { mount } = setup();
     mount();

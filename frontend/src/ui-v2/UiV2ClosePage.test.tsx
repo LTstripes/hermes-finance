@@ -63,6 +63,7 @@ function setup(path = "/v2/close") {
     months: structuredClone(uiV2Months),
     workflow: structuredClone(makeUiV2Workflow()),
     workflowReads: 0,
+    monthResponse: null as null | (() => MonthCloseWorkflow["month"]),
     writes: [] as string[],
     workflowResponse: null as null | ((read: number) => MonthCloseWorkflow),
     finalizeWrite: null as null | ((status: "closed" | "draft") => void),
@@ -93,6 +94,10 @@ function setup(path = "/v2/close") {
       return jsonResponse(
         state.workflowResponse?.(state.workflowReads) ?? structuredClone(state.workflow),
       );
+    }
+    const monthMatch = /^\/api\/months\/(\d+)$/.exec(url.pathname);
+    if (monthMatch && method === "GET") {
+      return jsonResponse(state.monthResponse?.() ?? state.workflow.month);
     }
     const lifecycleMatch = /^\/api\/months\/(\d+)\/(close|reopen)$/.exec(url.pathname);
     if (lifecycleMatch && method === "POST") {
@@ -356,7 +361,7 @@ describe("native Monthly Close work mode", () => {
     expect(state.writes).toEqual([]);
   });
 
-  it("double-refetches, verifies persisted status and stays on the calm CLOSED review", async () => {
+  it("refreshes the review once, checks month identity, verifies persisted status and stays on the calm CLOSED review", async () => {
     const { fetchMock, mount, state } = setup("/v2/close?month=12&step=final_review_close");
     state.workflow = readyForClose();
     mount();
@@ -376,7 +381,7 @@ describe("native Monthly Close work mode", () => {
       ([input, init]) =>
         String(input).endsWith("/close-workflow") && (init?.method ?? "GET") === "GET",
     );
-    expect(workflowGets.length).toBeGreaterThanOrEqual(4);
+    expect(workflowGets).toHaveLength(3);
   });
 
   it("fails closed when a pre-close refetch returns another month", async () => {
@@ -448,13 +453,19 @@ describe("native Monthly Close work mode", () => {
     const draft = readyForClose();
     const wrongMonth = closedFrom(readyForClose(91));
     state.workflow = draft;
-    state.workflowResponse = (read) => (read === 4 ? wrongMonth : state.workflow);
+    state.workflowResponse = (read) => (read === 3 ? wrongMonth : state.workflow);
     mount();
 
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("состояние другого месяца");
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("alert")
+          .some((node) => node.textContent?.includes("состояние другого месяца")),
+      ).toBe(true),
+    );
     expect(state.writes).toEqual(["close"]);
   });
 
@@ -464,6 +475,7 @@ describe("native Monthly Close work mode", () => {
     const closed = closedFrom(draft);
     state.workflow = draft;
     state.workflowResponse = (read) => (read >= 3 ? closed : draft);
+    state.monthResponse = () => closed.month;
     mount();
 
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
@@ -521,7 +533,7 @@ describe("native Monthly Close work mode", () => {
     reused.month.year += 1;
     if (reused.final_review.available) reused.final_review.month_header = { ...reused.month };
     state.workflow = original;
-    state.workflowResponse = (read) => (read >= 3 ? reused : original);
+    state.monthResponse = () => reused.month;
     mount();
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
@@ -530,15 +542,15 @@ describe("native Monthly Close work mode", () => {
   });
 
   it("rejects a foreign final review arriving after the confirmation dialog opens", async () => {
-    const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
-    const original = readyForClose();
-    const foreign = structuredClone(original);
-    if (foreign.final_review.available) foreign.final_review.month_header.id = 91;
-    state.workflow = original;
-    state.workflowResponse = (read) => (read >= 3 ? foreign : original);
+    const { client, mount, state } = setup("/v2/close?month=12&step=final_review_close");
+    state.workflow = readyForClose();
     mount();
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Закрыть" }));
+    const confirm = await screen.findByRole("button", { name: "Закрыть" });
+    const foreign = structuredClone(state.workflow);
+    if (foreign.final_review.available) foreign.final_review.month_header.id = 91;
+    act(() => client.setQueryData(queryKeys.monthCloseWorkflow(12), foreign));
+    fireEvent.click(confirm);
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(state.writes).toEqual([]);
   });

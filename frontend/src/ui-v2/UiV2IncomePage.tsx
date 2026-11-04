@@ -202,7 +202,7 @@ function Headlines({
         {ladderReady && upcoming ? (
           <>
             <p className={incomeStyles.metricValue} data-testid="income-upcoming-passive">
-              {money(upcoming.passive_income)}
+              {money(upcoming.forecast_passive_income ?? upcoming.passive_income)}
             </p>
             <p className={incomeStyles.metricDetail}>
               <strong>
@@ -210,7 +210,14 @@ function Headlines({
               </strong>{" "}
               · не доход
               <br />
-              Всего поступлений: {money(upcoming.total_cash_flow)}
+              Всего поступлений:{" "}
+              {money(upcoming.forecast_total_cash_flow ?? upcoming.total_cash_flow)}
+              {Boolean(upcoming.deposit_estimates?.some((row) => row.included_in_forecast)) && (
+                <>
+                  <br />
+                  Включая расчётные проценты по вкладам: {money(upcoming.deposit_interest_estimate)}
+                </>
+              )}
             </p>
           </>
         ) : (
@@ -425,7 +432,7 @@ function LadderBlock({
       ) : (
         <>
           <div className={incomeStyles.ladderControls}>
-            <span className={incomeStyles.ladderControlsLabel}>Период выплат ниже</span>
+            <span className={incomeStyles.ladderControlsLabel}>Период датированных выплат</span>
             <fieldset
               aria-controls="income-ladder-content"
               aria-label="Окно ожидаемых выплат"
@@ -444,6 +451,7 @@ function LadderBlock({
             </fieldset>
           </div>
           <div id="income-ladder-content">
+            {window !== 12 && <h3>Датированные выплаты за период</h3>}
             {window !== 12 && selectedWindow ? (
               <div className={incomeStyles.windowSummary} data-testid={`income-window-${window}`}>
                 <div>
@@ -464,12 +472,56 @@ function LadderBlock({
                 <EventList events={selectedWindow.items} />
               </div>
             ) : null}
+            <p>Оценка по месяцам</p>
             <section aria-label="Выплаты по месяцам" className={incomeStyles.ladderList}>
               {ladder.months.map((month) => (
                 <LadderMonth key={`${month.year}-${month.month}`} month={month} />
               ))}
             </section>
           </div>
+          {Boolean(ladder.upcoming_30_days.deposit_estimates?.length) && (
+            <section
+              aria-label="Ожидаемые проценты по вкладам"
+              className={incomeStyles.depositForecast}
+            >
+              <h3>Ожидаемые проценты по вкладам · 30 дней</h3>
+              <p>
+                Расчётная сумма за {formatDate(ladder.upcoming_30_days.from_date)}–
+                {formatDate(ladder.upcoming_30_days.to_date)}; дата выплаты неизвестна. Включённые
+                оценки уже учтены в общем прогнозе.{" "}
+                <HelpTip label="Как рассчитаны проценты по вкладам">
+                  Период до конечной даты, не включая её. Остаток × годовая ставка × дни / число
+                  дней в году, при неизменных остатке и ставке, без капитализации и вычета налога.
+                  Для счетов с датированными процентами за этот период учитываются только эти
+                  выплаты.
+                </HelpTip>
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Вклад</th>
+                    <th scope="col">Оценка процентов</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ladder.upcoming_30_days.deposit_estimates?.map((row) => (
+                    <tr key={row.deposit_id}>
+                      <td>
+                        {row.name} · {row.account_name}
+                        {!row.included_in_forecast && (
+                          <small>
+                            {" "}
+                            · В общий прогноз не добавлено: на счёте есть датированные проценты
+                          </small>
+                        )}
+                      </td>
+                      <td>{money(row.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
           {ladder.warnings.length > 0 ? (
             <ul className={incomeStyles.warningList}>
               {ladder.warnings.map((warning) => (
@@ -533,16 +585,16 @@ function CoveragePlanBlock({
           ) : (
             <div className={incomeStyles.coverageGrid}>
               <div className={incomeStyles.coverageCard} data-testid="income-coverage">
-                <span>Пассивно / обязательные расходы</span>
+                <span>По прогнозу / обязательные расходы</span>
                 <strong>
                   {formatPercent(coverage.coverage_pct, { digits: 1, empty: "Недоступно" })}
                 </strong>
                 <small>
-                  расходы {money(coverage.mandatory_expenses)} · остаток{" "}
+                  расходы {money(coverage.mandatory_expenses)} · прогнозный остаток{" "}
                   {money(coverage.passive_income_minus_mandatory_expenses)}
                 </small>
                 <small>
-                  Фактическое покрытие:{" "}
+                  По среднему фактическому доходу:{" "}
                   {formatPercent(coverage.actual_mandatory_expense_coverage_pct, {
                     digits: 1,
                     empty: "Недоступно",

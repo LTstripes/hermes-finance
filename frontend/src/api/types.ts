@@ -577,6 +577,16 @@ export type CashFlowLadderMonth = {
 };
 
 export type UpcomingEventsWindow = {
+  deposit_estimates?: {
+    deposit_id: number;
+    included_in_forecast: boolean;
+    name: string;
+    account_name: string;
+    amount: MoneyValue;
+  }[];
+  deposit_interest_estimate?: MoneyValue;
+  forecast_passive_income?: MoneyValue;
+  forecast_total_cash_flow?: MoneyValue;
   days: number;
   from_date: string;
   to_date: string;

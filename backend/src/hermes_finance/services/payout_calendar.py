@@ -9,7 +9,7 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from hermes_finance.database import coherent_read_operation
+from hermes_finance.database import coherent_read_operation, snapshot_read_result
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
 from hermes_finance.persistence import (
     Account,
@@ -84,6 +84,27 @@ class MergedPayoutCalendarMonth:
 
 @coherent_read_operation
 def merged_payout_calendar(
+    session: Session,
+    *,
+    reporting_month_id: int,
+    forecast_version: str,
+    from_date: date | None = None,
+) -> tuple[MergedPayoutCalendarMonth, ...]:
+    """Reuse the same calendar only inside this immutable read snapshot."""
+    return snapshot_read_result(
+        session,
+        "merged_payout_calendar",
+        (reporting_month_id, forecast_version, from_date),
+        lambda: _merged_payout_calendar(
+            session,
+            reporting_month_id=reporting_month_id,
+            forecast_version=forecast_version,
+            from_date=from_date,
+        ),
+    )
+
+
+def _merged_payout_calendar(
     session: Session,
     *,
     reporting_month_id: int,
