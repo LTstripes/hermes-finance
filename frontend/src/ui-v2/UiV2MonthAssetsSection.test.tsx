@@ -477,6 +477,34 @@ describe("UiV2MonthAssetsSection", () => {
     expect(vi.mocked(getCashTotal).mock.calls.length).toBeGreaterThan(1);
   });
 
+  it("saves changed deposits together and retains only the failed draft", async () => {
+    deposits = [deposit, { ...deposit, id: 22, name: "Вклад Бета" }];
+    seedDepositMutations();
+    const update = vi.mocked(updateDeposit).getMockImplementation();
+    if (!update) throw new Error("Missing update mock");
+    vi.mocked(updateDeposit).mockImplementation(async (id, payload, version) => {
+      if (id === 22) throw new Error("Ошибка записи");
+      return update(id, payload, version);
+    });
+    setup();
+    const user = userEvent.setup();
+    await tables();
+    await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const first = screen.getByDisplayValue("Вклад Альфа");
+    const second = screen.getByDisplayValue("Вклад Бета");
+    await user.clear(first);
+    await user.type(first, "Альфа новая");
+    await user.clear(second);
+    await user.type(second, "Бета новая");
+    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    expect(await screen.findByText(/Сохранено: Альфа новая/)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Бета новая/);
+    expect(screen.getByDisplayValue("Бета новая")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Альфа новая")).not.toBeInTheDocument();
+    expect(vi.mocked(updateDeposit)).toHaveBeenCalledTimes(2);
+  });
+
   it("edits a deposit with optimistic concurrency and confirms via readback", async () => {
     seedDepositMutations();
     setup();
@@ -490,8 +518,8 @@ describe("UiV2MonthAssetsSection", () => {
     const balance = screen.getByDisplayValue("100000.00");
     await user.clear(balance);
     await user.type(balance, "110000.00");
-    await user.click(screen.getByRole("button", { name: "OK" }));
-    await screen.findByText(/Вклад «Вклад Альфа» сохранён; данные перечитаны/);
+    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await screen.findByText(/Сохранено: Вклад Альфа/);
 
     expect(vi.mocked(updateDeposit).mock.calls[0]).toEqual([
       21,
@@ -1004,17 +1032,17 @@ describe("UiV2MonthAssetsSection", () => {
       const scope = within(editRow);
       await mutate(scope, user);
 
-      await user.click(scope.getByRole("button", { name: "OK" }));
+      await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveTextContent(/Изменение вклада не подтверждено/);
-      expect(screen.queryByText(/Вклад «Вклад Альфа» сохранён/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Сохранено: Вклад Альфа/)).not.toBeInTheDocument();
 
       // Новейший ввод сохранён в форме — повтор возможен после корректного readback.
       expectPreserved(scope);
       vi.mocked(updateDeposit).mockReset();
       seedDepositMutations();
-      await user.click(scope.getByRole("button", { name: "OK" }));
-      await screen.findByText(/Вклад «Вклад Альфа» сохранён; данные перечитаны/);
+      await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+      await screen.findByText(/Сохранено: Вклад Альфа/);
     },
   );
 
@@ -1124,7 +1152,7 @@ describe("UiV2MonthAssetsSection", () => {
     const balance = scope.getByDisplayValue("100000.00");
     await user.clear(balance);
     await user.type(balance, "115000.00");
-    await user.click(scope.getByRole("button", { name: "OK" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
 
     await waitFor(() => expect(scope.getByDisplayValue("Вклад Альфа")).toBeDisabled());
     expect(scope.getByDisplayValue("115000.00")).toBeDisabled();
@@ -1133,7 +1161,7 @@ describe("UiV2MonthAssetsSection", () => {
     expect(scope.getByDisplayValue("115000.00")).toHaveValue("115000.00");
 
     gate.resolve();
-    await screen.findByText(/Вклад «Вклад Альфа» сохранён; данные перечитаны/);
+    await screen.findByText(/Сохранено: Вклад Альфа/);
     expect(screen.queryByDisplayValue("115000.00")).not.toBeInTheDocument();
     expect(screen.queryByText(/Изменение вклада не подтверждено/)).not.toBeInTheDocument();
   });
@@ -1187,9 +1215,9 @@ describe("UiV2MonthAssetsSection", () => {
       const rate = scope.getByDisplayValue("12.00");
       await user.clear(rate);
       await user.type(rate, submitted);
-      await user.click(scope.getByRole("button", { name: "OK" }));
+      await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
 
-      await screen.findByText(/Вклад «Вклад Альфа» сохранён; данные перечитаны/);
+      await screen.findByText(/Сохранено: Вклад Альфа/);
       expect(vi.mocked(updateDeposit).mock.calls[0][1].annual_rate).toBe(submitted);
       expect(screen.getByText(echoed)).toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();

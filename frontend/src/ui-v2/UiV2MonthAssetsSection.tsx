@@ -268,8 +268,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   const [cashDraft, setCashDraft] = useState<CashDraft>(emptyCash);
   const [depositDraftTouched, setDepositDraftTouched] = useState(false);
   const [cashDraftTouched, setCashDraftTouched] = useState(false);
-  const [editingDepositId, setEditingDepositId] = useState<number | null>(null);
-  const [editDeposit, setEditDeposit] = useState<DepositDraft | null>(null);
+  const [editDeposits, setEditDeposits] = useState<Record<number, DepositDraft> | null>(null);
+  const [editOriginals, setEditOriginals] = useState<Record<number, DepositSnapshot>>({});
   const [pendingDeleteDeposit, setPendingDeleteDeposit] = useState<DepositSnapshot | null>(null);
   const [pendingDeleteCash, setPendingDeleteCash] = useState<CashBalance | null>(null);
   const [busy, setBusy] = useState(false);
@@ -285,7 +285,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   const busyRef = useRef(false);
   const operation = useRef(0);
 
-  const localDirty = depositDraftTouched || cashDraftTouched || editingDepositId !== null;
+  const localDirty = depositDraftTouched || cashDraftTouched || editDeposits !== null;
 
   useEffect(() => {
     context.setPending?.(DIRTY_SECTION, busy || pendingCreated !== null);
@@ -551,20 +551,29 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     );
   }
 
+  function startDepositEdit() {
+    setEditOriginals(Object.fromEntries(depositRows.map((row) => [row.id, row])));
+    setEditDeposits(
+      Object.fromEntries(
+        depositRows.map((row) => [
+          row.id,
+          {
+            name: row.name,
+            account_id: String(row.account_id),
+            deposit_type: row.deposit_type,
+            balance: moneyAmount(row.balance),
+            annual_rate: row.annual_rate,
+            actual_interest: moneyAmount(row.actual_interest_received),
+          },
+        ]),
+      ),
+    );
+  }
+
   async function handleSaveDepositEdit() {
-    if (busyRef.current || readOnly) return;
-    if (editingDepositId == null || !editDeposit) return;
+    if (busyRef.current || readOnly || !editDeposits) return;
     if (depositsForeign) {
       setActionError(DEPOSITS_FOREIGN_MESSAGE);
-      void depositsQuery.refetch();
-      return;
-    }
-    const current = depositRows.find((row) => row.id === editingDepositId);
-    if (!current) {
-      setEditingDepositId(null);
-      setEditDeposit(null);
-      setActionError("Вклад исчез из выбранного месяца. Список обновлён; повтори изменение.");
-      void depositsQuery.refetch();
       return;
     }
     const token = ++operation.current;
@@ -572,51 +581,62 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setBusy(true);
     setActionError(null);
     setNotice(null);
-    try {
-      if (!editDeposit.name.trim()) {
-        throw new Error("Укажи название вклада");
-      }
-      const intent: DepositIntent = {
-        name: editDeposit.name.trim(),
-        deposit_type: editDeposit.deposit_type,
-        balance: moneyValue(editDeposit.balance, current.balance.currency),
-        annual_rate: editDeposit.annual_rate.trim() || "0.00",
-        actual_interest_received: moneyValue(
-          editDeposit.actual_interest.trim() === "" ? "0" : editDeposit.actual_interest,
-          current.actual_interest_received.currency,
-        ),
-      };
-      const changed = await updateDeposit(
-        editingDepositId,
-        {
-          name: intent.name,
-          deposit_type: intent.deposit_type,
-          balance: intent.balance,
-          annual_rate: intent.annual_rate,
-          actual_interest_received: intent.actual_interest_received,
-        },
-        current.updated_at,
-      );
-      if (changed.id !== current.id || changed.reporting_month_id !== monthId) {
-        throw new Error("Ответ сохранения не подтверждает выбранный вклад.");
-      }
-      const fresh = await refetchDepositRows();
-      const confirmed = fresh.find((row) => row.id === current.id);
-      if (!matchesDepositIntent(confirmed, intent)) {
-        // The edit stays open with the newer values so the user can retry.
-        throw new Error(DEPOSIT_EDIT_UNCONFIRMED);
-      }
-      await markDataStale();
+    const failed: Record<number, DepositDraft> = {};
+    const saved: string[] = [];
+    const errors: string[] = [];
+    for (const [idText, draft] of Object.entries(editDeposits)) {
       if (operation.current !== token) return;
-      setEditingDepositId(null);
-      setEditDeposit(null);
-      setNotice(`Вклад «${confirmed.name}» сохранён; данные перечитаны.`);
-    } catch (cause) {
-      reportFailure(token, cause);
-      void depositsQuery.refetch();
-    } finally {
-      finishAction(token);
+      const id = Number(idText);
+      const current = editOriginals[id];
+      try {
+        if (!current || !draft.name.trim()) throw new Error("Укажи название вклада");
+        const intent: DepositIntent = {
+          name: draft.name.trim(),
+          deposit_type: draft.deposit_type,
+          balance: moneyValue(draft.balance, current.balance.currency),
+          annual_rate: draft.annual_rate.trim() || "0.00",
+          actual_interest_received: moneyValue(
+            draft.actual_interest.trim() === "" ? "0" : draft.actual_interest,
+            current.actual_interest_received.currency,
+          ),
+        };
+        const unchanged =
+          draft.name === current.name &&
+          draft.deposit_type === current.deposit_type &&
+          draft.balance === moneyAmount(current.balance) &&
+          draft.annual_rate === current.annual_rate &&
+          draft.actual_interest === moneyAmount(current.actual_interest_received);
+        if (unchanged) continue;
+        const changed = await updateDeposit(id, intent, current.updated_at);
+        if (operation.current !== token) return;
+        if (changed.id !== id || changed.reporting_month_id !== monthId) {
+          throw new Error("Ответ сохранения не подтверждает выбранный вклад.");
+        }
+        const fresh = await refetchDepositRows();
+        if (
+          !matchesDepositIntent(
+            fresh.find((row) => row.id === id),
+            intent,
+          )
+        ) {
+          throw new Error(DEPOSIT_EDIT_UNCONFIRMED);
+        }
+        saved.push(intent.name);
+      } catch (cause) {
+        failed[id] = draft;
+        errors.push(`«${draft.name || id}»: ${formatApiError(cause)}`);
+      }
     }
+    if (saved.length) await markDataStale();
+    if (operation.current !== token) return;
+    setEditDeposits(Object.keys(failed).length ? failed : null);
+    if (saved.length) setNotice(`Сохранено: ${saved.join(", ")}.`);
+    else if (!errors.length) setNotice("Изменений нет.");
+    if (errors.length)
+      setActionError(
+        `Не удалось подтвердить: ${errors.join("; ")}. Проверь данные и повтори сохранение.`,
+      );
+    finishAction(token);
   }
 
   async function handleDeleteDeposit() {
@@ -814,7 +834,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       ) : null}
       {notice ? (
         <div className="inline-alert inline-alert--ok" role="status">
-          {context.workspace ? "Сохранено" : notice}
+          {notice}
         </div>
       ) : null}
 
@@ -869,16 +889,19 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 </thead>
                 <tbody>
                   {depositRows.map((row) => {
-                    const editing = editingDepositId === row.id && editDeposit;
+                    const editDeposit = editDeposits?.[row.id];
                     return (
                       <tr key={row.id}>
                         <Td data-label="Название">
-                          {editing ? (
+                          {editDeposit ? (
                             <Input
                               disabled={busy || readOnly}
                               value={editDeposit.name}
                               onChange={(event) =>
-                                setEditDeposit({ ...editDeposit, name: event.target.value })
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: { ...editDeposit, name: event.target.value },
+                                })
                               }
                             />
                           ) : (
@@ -886,12 +909,15 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           )}
                         </Td>
                         <Td data-label="Тип">
-                          {editing ? (
+                          {editDeposit ? (
                             <Select
                               disabled={busy || readOnly}
                               value={editDeposit.deposit_type}
                               onChange={(event) =>
-                                setEditDeposit({ ...editDeposit, deposit_type: event.target.value })
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: { ...editDeposit, deposit_type: event.target.value },
+                                })
                               }
                             >
                               <option value="deposit">Депозит</option>
@@ -902,13 +928,16 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           )}
                         </Td>
                         <Td numeric data-label="Баланс">
-                          {editing ? (
+                          {editDeposit ? (
                             <Input
                               className="input--money"
                               disabled={busy || readOnly}
                               value={editDeposit.balance}
                               onChange={(event) =>
-                                setEditDeposit({ ...editDeposit, balance: event.target.value })
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: { ...editDeposit, balance: event.target.value },
+                                })
                               }
                             />
                           ) : (
@@ -918,13 +947,16 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           )}
                         </Td>
                         <Td numeric data-label="Ставка %">
-                          {editing ? (
+                          {editDeposit ? (
                             <Input
                               className="input--money"
                               disabled={busy || readOnly}
                               value={editDeposit.annual_rate}
                               onChange={(event) =>
-                                setEditDeposit({ ...editDeposit, annual_rate: event.target.value })
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: { ...editDeposit, annual_rate: event.target.value },
+                                })
                               }
                             />
                           ) : (
@@ -939,15 +971,18 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           </span>
                         </Td>
                         <Td numeric data-label="Получено">
-                          {editing ? (
+                          {editDeposit ? (
                             <Input
                               className="input--money"
                               disabled={busy || readOnly}
                               value={editDeposit.actual_interest}
                               onChange={(event) =>
-                                setEditDeposit({
-                                  ...editDeposit,
-                                  actual_interest: event.target.value,
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: {
+                                    ...editDeposit,
+                                    actual_interest: event.target.value,
+                                  },
                                 })
                               }
                             />
@@ -959,44 +994,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                         </Td>
                         <Td className="month-deposits-table__actions" data-label="Действия">
                           <div className="row-actions">
-                            {editing ? (
-                              <>
-                                <Button
-                                  disabled={busy || readOnly}
-                                  onClick={() => void handleSaveDepositEdit()}
-                                  size="sm"
-                                  type="button"
-                                  variant="primary"
-                                >
-                                  OK
-                                </Button>
-                                <Button
-                                  disabled={busy}
-                                  onClick={() => {
-                                    setEditingDepositId(null);
-                                    setEditDeposit(null);
-                                  }}
-                                  size="sm"
-                                  type="button"
-                                >
-                                  Отмена
-                                </Button>
-                              </>
-                            ) : (
+                            {!editDeposits ? (
                               <OverflowMenu label={`Действия для вклада «${row.name}»`}>
                                 <OverflowMenuItem
                                   disabled={busy || readOnly}
-                                  onClick={() => {
-                                    setEditingDepositId(row.id);
-                                    setEditDeposit({
-                                      name: row.name,
-                                      account_id: String(row.account_id),
-                                      deposit_type: row.deposit_type,
-                                      balance: moneyAmount(row.balance),
-                                      annual_rate: row.annual_rate,
-                                      actual_interest: moneyAmount(row.actual_interest_received),
-                                    });
-                                  }}
+                                  onClick={startDepositEdit}
                                 >
                                   Изменить
                                 </OverflowMenuItem>
@@ -1008,7 +1010,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                                   Удалить
                                 </OverflowMenuItem>
                               </OverflowMenu>
-                            )}
+                            ) : null}
                           </div>
                         </Td>
                       </tr>
@@ -1018,6 +1020,21 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
               </Table>
             )}
 
+            {editDeposits ? (
+              <div className="row-actions">
+                <Button
+                  disabled={busy || readOnly}
+                  onClick={() => void handleSaveDepositEdit()}
+                  type="button"
+                  variant="primary"
+                >
+                  Сохранить вклады
+                </Button>
+                <Button disabled={busy} onClick={() => setEditDeposits(null)} type="button">
+                  Отмена
+                </Button>
+              </div>
+            ) : null}
             <div className="totals-bar">
               <span>
                 Баланс: <strong>{totalText(depositTotals.balance, depositTotals.currency)}</strong>
@@ -1155,7 +1172,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
             ) : cashRows.length === 0 ? (
               <EmptyState description="Наличных позиций нет." inline title="Пусто" />
             ) : (
-              <Table className="month-cash-table">
+              <Table className={`month-cash-table ${styles.cashTable}`}>
                 <thead>
                   <tr>
                     <Th>Название</Th>

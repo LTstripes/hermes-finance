@@ -948,13 +948,6 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
             </>
           )}
         </p>
-        <details open={!context.workspace}>
-          <summary>Подробнее</summary>{" "}
-          <p className={styles.hint}>
-            Отдельный план показывается только когда он действительно введён. Отсутствующий план —
-            это прочерк, а не ноль; введённый ноль остаётся нулём.
-          </p>
-        </details>
         {plan.length === 0 ? (
           <p>План пока не введён.</p>
         ) : (
@@ -1083,7 +1076,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
             </tbody>
           </Table>
         )}
-        {comparison.length > 0 ? (
+        {plan.length > 0 && comparison.length > 0 ? (
           <Table>
             <thead>
               <tr>
