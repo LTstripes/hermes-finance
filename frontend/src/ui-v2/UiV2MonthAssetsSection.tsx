@@ -282,6 +282,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   // A successful POST is retained here until confirmed: retries re-check by id
   // without ever repeating the create (duplicate-POST guard).
   const [pendingCreated, setPendingCreated] = useState<PendingCreate | null>(null);
+  // Retain attempted writes until a fresh list establishes their outcome.
+  const pendingDepositEdits = useRef(new Map<number, DepositIntent>());
   const busyRef = useRef(false);
   const operation = useRef(0);
 
@@ -351,7 +353,9 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     depositDraft.account_id || (defaultAccountId === null ? "" : String(defaultAccountId));
 
   const loading = accountsQuery.isPending || depositsQuery.isPending || cashRowsQuery.isPending;
-  const loadError = [accountsQuery, depositsQuery, cashRowsQuery].find((query) => query.isError);
+  const loadError = [accountsQuery, depositsQuery, cashRowsQuery].find(
+    (query) => query.isError && (query !== depositsQuery || query.data === undefined),
+  );
 
   // Authority of the displayed aggregates: current only after a confirmed read
   // of this month's total. Retained data behind an error, a foreign month, or
@@ -600,6 +604,35 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
             current.actual_interest_received.currency,
           ),
         };
+        const pending = pendingDepositEdits.current.get(id);
+        if (pending) {
+          const fresh = (await refetchDepositRows()).find((row) => row.id === id);
+          if (operation.current !== token) return;
+          const matchesCurrent: boolean = matchesDepositIntent(fresh, intent);
+          const matchesPending: boolean = matchesDepositIntent(fresh, pending);
+          if (matchesCurrent) {
+            pendingDepositEdits.current.delete(id);
+            saved.push(intent.name);
+            continue;
+          }
+          if (fresh && matchesPending) {
+            // The previous write landed, but the user has since changed the
+            // draft. Keep the new draft and use the confirmed version next time.
+            pendingDepositEdits.current.delete(id);
+            setEditOriginals((originals) => ({ ...originals, [id]: fresh }));
+            throw new Error(
+              "Предыдущее изменение сохранено. Новые данные оставлены в форме; сохрани их ещё раз.",
+            );
+          }
+          if (!fresh || fresh.updated_at !== current.updated_at) {
+            throw new Error(
+              "Данные вклада изменились. Проверь их перед повторным сохранением; введённые значения оставлены в форме.",
+            );
+          }
+          // The original version is still current, so the prior attempt did
+          // not change this row and a new write can use the same precondition.
+          pendingDepositEdits.current.delete(id);
+        }
         const unchanged =
           draft.name === current.name &&
           draft.deposit_type === current.deposit_type &&
@@ -607,6 +640,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           draft.annual_rate === current.annual_rate &&
           draft.actual_interest === moneyAmount(current.actual_interest_received);
         if (unchanged) continue;
+        pendingDepositEdits.current.set(id, intent);
         const changed = await updateDeposit(id, intent, current.updated_at);
         if (operation.current !== token) return;
         if (changed.id !== id || changed.reporting_month_id !== monthId) {
@@ -621,6 +655,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
         ) {
           throw new Error(DEPOSIT_EDIT_UNCONFIRMED);
         }
+        pendingDepositEdits.current.delete(id);
         saved.push(intent.name);
       } catch (cause) {
         failed[id] = draft;

@@ -505,6 +505,31 @@ describe("UiV2MonthAssetsSection", () => {
     expect(vi.mocked(updateDeposit)).toHaveBeenCalledTimes(2);
   });
 
+  it("confirms an acknowledged deposit edit by rereading after a failed readback", async () => {
+    seedDepositMutations();
+    const update = vi.mocked(updateDeposit).getMockImplementation();
+    if (!update) throw new Error("Missing update mock");
+    vi.mocked(updateDeposit).mockImplementation(async (id, payload, version) => {
+      const changed = await update(id, payload, version);
+      vi.mocked(listDeposits).mockRejectedValueOnce(new Error("Ошибка чтения"));
+      return changed;
+    });
+    setup();
+    const user = userEvent.setup();
+    await tables();
+    await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const balance = screen.getByDisplayValue("100000.00");
+    await user.clear(balance);
+    await user.type(balance, "110000.00");
+    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/не удалось перечитать/i);
+    expect(screen.getByDisplayValue("110000.00")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    expect(await screen.findByText(/Сохранено: Вклад Альфа/)).toBeInTheDocument();
+    expect(vi.mocked(updateDeposit)).toHaveBeenCalledTimes(1);
+  });
+
   it("edits a deposit with optimistic concurrency and confirms via readback", async () => {
     seedDepositMutations();
     setup();
@@ -1037,12 +1062,12 @@ describe("UiV2MonthAssetsSection", () => {
       expect(alert).toHaveTextContent(/Изменение вклада не подтверждено/);
       expect(screen.queryByText(/Сохранено: Вклад Альфа/)).not.toBeInTheDocument();
 
-      // Новейший ввод сохранён в форме — повтор возможен после корректного readback.
+      // A changed version with different values is not overwritten on retry.
       expectPreserved(scope);
-      vi.mocked(updateDeposit).mockReset();
-      seedDepositMutations();
       await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
-      await screen.findByText(/Сохранено: Вклад Альфа/);
+      expect(await screen.findByRole("alert")).toHaveTextContent(/Данные вклада изменились/);
+      expectPreserved(scope);
+      expect(vi.mocked(updateDeposit)).toHaveBeenCalledTimes(1);
     },
   );
 
