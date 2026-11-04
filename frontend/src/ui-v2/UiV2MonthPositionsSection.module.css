@@ -37,10 +37,6 @@
   padding-inline: 4px;
 }
 
-.root :global(.month-positions-table) td:global(.num) {
-  white-space: nowrap;
-}
-
 .instrumentTitle {
   display: -webkit-box;
   -webkit-box-orient: vertical;
