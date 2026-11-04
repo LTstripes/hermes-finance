@@ -1060,7 +1060,10 @@ def test_original_bound_cancellation_keeps_event_month_unknown_and_unblocks_own_
     for month in (4, 6):
         assert months[month].result.growth_kopecks == 60_000
         assert months[month].result.modified_dietz_return is not None
-        assert months[month].coupons_kopecks == 1234
+        # The overlapping long original has only a fee, not these coupon rows.
+        # Custody verification cannot prove complete payout identity/coverage.
+        assert months[month].coupons_kopecks is None
+        assert "overlap_income_ambiguous" in months[month].flags
     assert months[5].result.growth_kopecks is months[5].result.modified_dietz_return is None
     assert "custody_cancellation_unresolved" in months[5].flags
     assert bound.period.growth_kopecks is None
