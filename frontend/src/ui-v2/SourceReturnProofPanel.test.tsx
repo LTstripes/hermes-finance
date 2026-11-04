@@ -97,3 +97,27 @@ it("discards late Preview after originals change and never enables an old confir
     ).not.toBeInTheDocument(),
   );
 });
+
+it("keeps an unchecked legacy decision without requesting another upload or acceptance", () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  render(
+    <SourceReturnProofPanel
+      {...props}
+      refresh={vi.fn()}
+      proof={{
+        status: "compatibility_unchecked",
+        proof_id: 7,
+        version: "source_return_custody_v1",
+        confirmed_at: "2030-05-01T00:00:00Z",
+        currentness: null,
+        reason_codes: ["source_return_proof_compatibility_unchecked"],
+        financial_authority: "none",
+      }}
+    />,
+  );
+  expect(screen.getByRole("status")).toHaveTextContent("Подтверждение сохранено");
+  expect(screen.queryByLabelText("Оригиналы для подтверждения")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Проверить оригиналы" })).not.toBeInTheDocument();
+  expect(fetcher).not.toHaveBeenCalled();
+});

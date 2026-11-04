@@ -2432,15 +2432,29 @@ source changes are not inputs to this source-only statement about custody dates.
 A separate semantic tripwire covers its parser, grammar and proof implementation;
 meaning changes require a reviewed revision. Ordinary releases preserve proofs.
 
-Legacy confirmations retain their strict exact-digest compatibility checks,
-including relevant ABA and identity history. Recovered legacy anchors are cached
-only in bounded process memory and revalidated on every read. No cap converts a
-slow search into stale evidence. The old global identity hash cannot generally
-be reconstructed after unrelated catalogue/import changes. Transition then uses
-the existing exact-original Preview/Confirm with separate Owner GO and backup,
-appending one source-only proof while preserving all old rows; it never requires
-reupload when the existing exact originals are available. No automatic financial
-Apply, re-attestation or fallback to an older proof is allowed.
+Legacy compatibility is recovered explicitly outside GET. Until prepared,
+`compatibility_unchecked` means the original decision is preserved but its
+compatibility has not been established; it does not request reupload or new
+Owner attestation. `prepare_legacy_recovery` reads existing evidence and may
+perform an exhaustive, progress-reported search of both old journal operands.
+Timestamps order candidates only; exact old digest equality, physical DB,
+source bindings, identity revision and allowed intervening journal records are
+mandatory. Unprovable/stale dependencies refuse preparation.
+
+An authorized offline `apply_legacy_recovery` revalidates the prepared operands
+under the existing writer reservation and appends one derived custody proof in
+`SourceReturnProof`, with the original `confirmed_at`. Existing rows remain
+unchanged. Its evidence stores the parent ID/full immutable fingerprint, exact
+old digest operands and separate recovery time. This is compatibility metadata,
+not Confirm or a new Owner decision. Replay is idempotent; racing new proofs or
+changed operands refuse the plan. No new schema, ledger, receipt store or
+financial write is introduced. Ordinary GET verifies the immediate parent,
+reproduced digest and scoped physical/source dependencies, with no journal-pair
+search and no process cache required. Later catalogue changes and future
+nonoverlapping originals do not retire the recovered custody statement;
+financial readers independently validate their current evidence. Changed bound
+source heads/manifests, replacement DBs and later explicit proofs retain their
+normal retirement boundaries. O describes the maintenance command and gates.
 
 Custody currentness alone never proves principal, quantity or return. Redemption
 requires a separate current historical investment proof and exact source transfer,
@@ -2450,6 +2464,11 @@ uncertainty on their dependent results. The dated and monthly projections carry
 one redemption cash flow and the same source-booked quantity/date. Ambiguous
 payout overlap cannot contribute twice to monthly components while being rejected
 by the dated reader.
+Without a current common receipt, mismatching income occurrence sets or
+multiplicity in covering originals make only that role/month component NULL.
+This ambiguity never changes the independently balance-derived account return,
+external-flow schedule or another income role. Two genuine identical payments
+retain their occurrence multiplicity.
 
 Durable effectiveness additionally requires the original physical DB object:
 file identity plus creation/birth time, with a matching SQL connection stamp.

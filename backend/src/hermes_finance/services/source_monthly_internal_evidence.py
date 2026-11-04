@@ -10,7 +10,7 @@ def _matching_group(observations, views, native_scope):
     first = observations[0]
     if any(
         flow.classification != "unknown"
-        or flow.status != "assumed"
+        or flow.status not in {"assumed", "confirmed"}
         or flow.event_date != first.event_date
         or flow.amount_kopecks != first.amount_kopecks
         or len(flow.source_references) != 1
@@ -37,10 +37,10 @@ def _matching_group(observations, views, native_scope):
             choices[0]["origin"],
             choices[0]["status"],
             choices[0]["classification"],
-        ) != ("default_rule", "assumed", "unknown"):
+        ) not in {("default_rule", "assumed", "unknown"), ("user_choice", "confirmed", "unknown")}:
             return None
-        # A differing timestamp or a duplicate within one source is ambiguous.
-        signature = {k: v for k, v in row.items() if k != "ordinal"}
+        # Timestamp differences require independent current evidence below.
+        signature = {k: v for k, v in row.items() if k not in {"ordinal", "last_update"}}
         if (
             sum(
                 {k: v for k, v in r.items() if k not in {"ordinal", "last_update"}}
@@ -72,9 +72,8 @@ def verified_internal_money(
     from hermes_finance.services.source_redemption_evidence import verified_redemptions
     from hermes_finance.services.source_return_evidence import _source_allows_payout
 
-    if any(error or not view for _, view, error in selected):
-        return set(), set()
-    views = [view for _, view, _ in selected]
+    unavailable = [(o.covered_from, o.covered_to) for o, v, error in selected if error or not v]
+    views = [view for _, view, error in selected if view and not error]
     groups = {
         key: members
         for key, observations in money.items()
@@ -89,8 +88,12 @@ def verified_internal_money(
     resolved, resolved_scopes = set(), set()
     for key, members in groups.items():
         flow = money[key][0]
+        if any(start <= flow.event_date <= end for start, end in unavailable):
+            continue
         proof = redemptions.get(f"money:{key[0]}:{key[1]}")
         roles = set()
+        attested = set()
+        differing_stamps = len({r.get("last_update") for _, r, _ in members}) > 1
         if (
             proof is not None
             and proof.event_date == flow.event_date
@@ -101,6 +104,11 @@ def verified_internal_money(
                 "redemption"
                 if all(_source_allows_payout(session, view, proof.isin) for view, _, _ in members)
                 else "blocked"
+            )
+            attested.update(
+                ref
+                for v, r, ref in members
+                if f"{v['document_sha256']}:money:{r['ordinal']}" in proof.source_references
             )
         for report in reports:
             if report["status"] != "current" or not report["interval"]:
@@ -117,6 +125,13 @@ def verified_internal_money(
                     for v, r, _ in members
                 ):
                     roles.add("compensation")
+                    attested.update(
+                        ref
+                        for v, r, ref in members
+                        if item.get("reference") == f"{v['document_sha256']}:money:{r['ordinal']}"
+                    )
+        if differing_stamps and attested != {ref for _, _, ref in members}:
+            continue
         if len(roles) == 1 and "blocked" not in roles:
             resolved.add(key)
             if roles == {"redemption"}:
@@ -126,3 +141,50 @@ def verified_internal_money(
                     if scopes.get((view["id"], flow.event_date.replace(day=1))) == proof.isin
                 )
     return resolved, resolved_scopes
+
+
+def apply_verified_compensations(session, source_account, selected, events):
+    """Explain proven account income without assigning it to an instrument."""
+    from dataclasses import replace
+
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    references = {}
+    for _, view, error in selected:
+        if error or not view:
+            continue
+        for row in view["document"].get("money", []):
+            references[source_reference(view["id"], row)] = (
+                f"{view['document_sha256']}:money:{row['ordinal']}"
+            )
+    amounts = {}
+    for report in proofs.read_reports(session, source_account=source_account, include_xirr=False):
+        if report["status"] != "current" or not report["interval"]:
+            continue
+        for item in report["interval"].get("account_only", []):
+            if item.get("kind") == "unallocated_compensation":
+                amounts.setdefault(item.get("reference"), set()).add(item.get("amount_kopecks"))
+    result = []
+    for event in events:
+        if (
+            event.kind == "UNRESOLVED"
+            and event.classification == "unknown"
+            and event.isin is None
+            and len(event.cash_legs) == 1
+            and event.source_references
+            and (event.classification_origin, event.classification_status)
+            in {("default_rule", "assumed"), ("user_choice", "confirmed")}
+            and "unrecognized_money" in event.reason_codes
+            and set(event.reason_codes) <= {"unrecognized_money", "payout_classification_conflict"}
+            and all(
+                amounts.get(references.get(ref)) == {str(event.cash_legs[0].account_cash_kopecks)}
+                for ref in event.source_references
+            )
+        ):
+            event = replace(
+                event,
+                reason_codes=("unallocated_compensation",),
+                attribution_basis="current_account_compensation_proof",
+            )
+        result.append(event)
+    return tuple(result)

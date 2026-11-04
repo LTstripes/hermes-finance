@@ -42,8 +42,8 @@ SEMANTIC_MODULES = (
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v5",
-    "558fde93fa992d8826adb17f2b90fcba0e42c8dab0688e0d1ba44ae8e2fcb30b",
+    "source_investment_semantics_v6",
+    "e86d6418264530382ce95ef43dfa6252a7b19edf18d114221ed5e3e8bdeb89ca",
 )
 
 
@@ -79,7 +79,7 @@ CUSTODY_MODULES = (
 )
 CUSTODY_PIN = (
     "source_custody_structure_v2",
-    "c03ae86d34ebfeb3fa13cca511a21c3a984d152ec520c3db1e28b7ff8a326cbf",
+    "722f7f91e3edeaa5431657cdbe083709abe37f393c48d9856b0afe20e297da1a",
 )
 
 

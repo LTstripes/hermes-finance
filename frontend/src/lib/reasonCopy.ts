@@ -195,7 +195,13 @@ const COPY: Record<
   payout_link_unresolved_no_match: "Нужно точное сопоставление выплаты с инструментом.",
   unattributed_income: "Есть выплата без подтверждённого инструмента.",
   unallocated_instrument_cost: "Не установлена принадлежность расхода инструменту.",
+  overlap_income_ambiguous:
+    "Сумма выплат не определена: пересекающиеся выписки содержат разные записи.",
   unrecognized_money: "Есть нераспознанная денежная операция.",
+  unallocated_compensation:
+    "Доход счёта известен; его распределение между инструментами не подтверждено.",
+  source_return_proof_compatibility_unchecked:
+    "Подтверждение сохранено; совместимость с обновлением ещё не проверена.",
   repo_trade_unsupported: "Экономика REPO не поддерживается этим расчётом.",
   redemption_amortization_unsupported: "Не подтверждена экономика погашения или амортизации.",
   "4_Transfers_unsupported": {

@@ -36,8 +36,8 @@ VERSION = "source_return_investment_v1"
 # parsing, mybroker_return_structure, source_report_preview._money classification or
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
-SEMANTICS_REVISION = "source_investment_semantics_v5"
-_GIFT_COMPAT_REVISION = "source_investment_semantics_v5"
+SEMANTICS_REVISION = "source_investment_semantics_v6"
+_GIFT_COMPAT_REVISION = "source_investment_semantics_v6"
 _V3_COMPAT_CODE = "source_investment_semantics_v3"
 _GIFT_COMPAT_CODES = (
     "source_investment_semantics_v2",
@@ -193,10 +193,10 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
 
     gift_heads = broker_money.latest_proofs(session)
     for original, view, error in selected:
-        if error:
-            raise ProofError("investment_proof_source_unavailable")
         if original.covered_to < start or original.covered_from > end:
             continue
+        if error:
+            raise ProofError("investment_proof_source_unavailable")
         source = bound_import(session, view)
         if source is not None:
             for row in view["document"]["money"]:
@@ -264,15 +264,17 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
     if gift_dependencies:
         operands["gift_dependencies"] = sorted(gift_dependencies)
     current = mybroker.digest(operands)
-    # V5 carries custody quantity/date into events; account cash economics and
+    # V6 scopes unrelated unavailable sources and reuses exact payout identity; account cash economics and
     # the saved account proof's
     # _captured_money, _payout_links and _interval derivation remains unchanged.
     # Recompute all old operands including gift dependencies; never use this for
     # writes or future revisions. Older pre-gift proofs still require no gift head.
     if not reserved and read_dependency is not None and SEMANTICS_REVISION == _GIFT_COMPAT_REVISION:
-        codes = ("source_investment_semantics_v4", _V3_COMPAT_CODE) + (
-            () if gift_dependencies else _GIFT_COMPAT_CODES
-        )
+        codes = (
+            "source_investment_semantics_v5",
+            "source_investment_semantics_v4",
+            _V3_COMPAT_CODE,
+        ) + (() if gift_dependencies else _GIFT_COMPAT_CODES)
         for code in codes:
             previous = mybroker.digest({**operands, "code": code})
             if read_dependency == previous:

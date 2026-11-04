@@ -270,7 +270,9 @@ def test_durable_proof_existing_catalogue_aba_uses_v1_tail_without_duplicate_clo
         )
     after = tokens()
     assert after[0] > before[0] and after[1:] == before[1:]
-    assert read(db).source_proof["status"] == "stale"
+    with db.session_factory() as session, pytest.raises(proofs.ProofError):
+        proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
+    assert read(db).source_proof["status"] == "compatibility_unchecked"
 
 
 def test_custody_proof_ignores_unrelated_month_and_snapshot_but_not_source_changes(db, monkeypatch):
@@ -323,6 +325,11 @@ def test_custody_proof_ignores_unrelated_month_and_snapshot_but_not_source_chang
         session.get(ReportingMonth, month_id).snapshot_date = date(2031, 1, 30)
         session.get(PositionSnapshot, position_id).market_value_kopecks = 2
         session.commit()
+    with db.session_factory() as session:
+        prepared = proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
+        proofs.apply_legacy_recovery(
+            session, plan=prepared["plan"], plan_digest=prepared["plan_digest"]
+        )
     assert read(db).source_proof["status"] == "current"
     # An out-of-order system clock only changes search order, never authority.
     with db.session_factory() as session:
@@ -376,16 +383,18 @@ def test_custody_proof_ignores_unrelated_month_and_snapshot_but_not_source_chang
             assert (
                 proofs.resolve_proof(session, ACCOUNT, selected, native)[1]["status"] == "current"
             )
-        assert len(calls) == 1
+        assert len(calls) == 0
 
     with monkeypatch.context() as changed_code:
         changed_code.setattr(source_custody_compat, "CURRENT_CUSTODY_CODE_SHA256", "0" * 64)
-        assert read(db).source_proof["status"] == "stale"
+        assert read(db).source_proof["status"] == "current"
+    # Classifications are financial dependencies, not custody grammar. The
+    # historical financial proof independently checks them before counting cash.
     with db.engine.begin() as connection:
         connection.exec_driver_sql(
             "UPDATE source_intake_money_classifications SET narrative='Synthetic changed' WHERE id=(SELECT MIN(id) FROM source_intake_money_classifications)"
         )
-    assert read(db).source_proof["status"] == "stale"
+    assert read(db).source_proof["status"] == "current"
 
 
 def test_instrument_reader_scopes_verified_custody_gap_to_cancellation_month(db):
@@ -451,7 +460,18 @@ def test_custody_compatibility_ignores_only_nonstructural_financial_changes(
             )
         )
         session.commit()
-    assert read(db).source_proof["status"] == expected
+    with db.session_factory() as session:
+        if expected == "stale":
+            with pytest.raises(proofs.ProofError):
+                proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
+        else:
+            plan = proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
+            proofs.apply_legacy_recovery(
+                session, plan=plan["plan"], plan_digest=plan["plan_digest"]
+            )
+    assert read(db).source_proof["status"] == (
+        "compatibility_unchecked" if expected == "stale" else "current"
+    )
 
 
 def test_instrument_custody_gap_scopes_only_when_identity_is_proved(db, monkeypatch):
@@ -478,7 +498,15 @@ def test_instrument_custody_gap_scopes_only_when_identity_is_proved(db, monkeypa
 
 @pytest.mark.parametrize(
     "case",
-    ["valid", "stale", "wrong_account", "different_transfer", "wrong_amount", "missing_custody"],
+    [
+        "valid",
+        "two_proofs",
+        "stale",
+        "wrong_account",
+        "different_transfer",
+        "wrong_amount",
+        "missing_custody",
+    ],
 )
 def test_verified_redemption_scopes_require_current_exact_original_evidence(monkeypatch, case):
     from types import SimpleNamespace
@@ -530,8 +558,19 @@ def test_verified_redemption_scopes_require_current_exact_original_evidence(monk
     analysis = SimpleNamespace(events=[event])
 
     def reports(_session, *, analyses, **_kwargs):
+        from dataclasses import replace
+
         analyses[1] = {isin: analysis}
-        return [{"proof_id": 1, "status": "stale" if case == "stale" else "current"}]
+        if case == "two_proofs":
+            analyses[2] = {
+                isin: SimpleNamespace(
+                    events=[replace(event, source_references=("b" * 64 + ":money:0",))]
+                )
+            }
+        return [
+            {"proof_id": i, "status": "stale" if case == "stale" else "current"}
+            for i in ((1, 2) if case == "two_proofs" else (1,))
+        ]
 
     monkeypatch.setattr(proofs, "read_reports", reports)
     monkeypatch.setattr(
@@ -547,22 +586,42 @@ def test_verified_redemption_scopes_require_current_exact_original_evidence(monk
             )
         ],
     )
+    if case == "two_proofs":
+        original_rows = proofs._report_rows(None)
+        second_plan = dict(original_rows[0][1], source_sha256="b" * 64)
+        monkeypatch.setattr(
+            proofs,
+            "_report_rows",
+            lambda *a, **kw: original_rows + [(SimpleNamespace(id=2), second_plan)],
+        )
     monkeypatch.setattr(evidence, "_single_transfer", lambda view: view["transfer"])
     flow = SimpleNamespace(
         source_references=(source_reference(1, raw),),
         amount_kopecks=1001 if case == "wrong_amount" else 1000,
         event_date=day,
     )
-    monkeypatch.setattr(source_monthly_returns, "_money", lambda *_: [(("signature", 0), flow)])
+    from copy import copy
+
+    def money(_session, view, *_):
+        value = copy(flow)
+        value.source_references = (source_reference(view["id"], raw),)
+        return [(("signature", 0), value)]
+
+    monkeypatch.setattr(source_monthly_returns, "_money", money)
     dates = (
         {} if case == "missing_custody" else {1: (day.replace(day=1),), 2: (day.replace(day=1),)}
     )
     scopes, events = evidence.verified_redemptions(
         None, account, [(None, v, None) for v in views], {account}, dates
     )
-    if case == "valid":
+    if case in {"valid", "two_proofs"}:
         assert scopes == {(1, day.replace(day=1)): isin, (2, day.replace(day=1)): isin}
         assert list(events) == ["money:signature:0"]
+        if case == "two_proofs":
+            assert set(events["money:signature:0"].source_references) == {
+                sha + ":money:0",
+                "b" * 64 + ":money:0",
+            }
     elif case == "different_transfer":
         assert scopes == {(1, day.replace(day=1)): isin}
     else:
@@ -588,6 +647,7 @@ def test_only_exact_proven_redemption_replaces_unresolved_event():
         cash_legs=(leg,),
         classification="unknown",
         classification_origin="default_rule",
+        classification_status="assumed",
         current=False,
         counted=False,
         reason_codes=("redemption_amortization_unsupported", "unrecognized_money"),
@@ -743,14 +803,16 @@ def test_durable_proof_dependency_changes_never_revive_old_values(db, monkeypatc
         monkeypatch.setattr(proofs, "VERSION", "future-proof-version")
     else:
         monkeypatch.setattr(proofs, "file_incarnation", lambda _: None)
+    with db.session_factory() as session, pytest.raises(proofs.ProofError):
+        proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
     result = read(db)
-    assert result.source_proof["status"] == "stale"
+    assert result.source_proof["status"] in {"stale", "compatibility_unchecked"}
     assert all(
         row.result.growth_kopecks is None
         for row in result.months
         if row.result.closing_date.month in (4, 5, 6)
     )
-    assert proof_confirm(db, preview)["proof"]["status"] == "stale"
+    assert proof_confirm(db, preview)["proof"]["status"] in {"stale", "compatibility_unchecked"}
     assert all(
         row.result.growth_kopecks is None
         for row in read(db).months
@@ -2998,6 +3060,8 @@ def test_monthly_kernel_preserves_chain_row_without_computing_unused_xirr(monkey
         "missing",
         "amount",
         "different_timestamp",
+        "both_timestamp_proofs",
+        "external_choice",
         "conflict",
     ],
 )
@@ -3012,7 +3076,7 @@ def test_monthly_compensation_requires_current_exact_unambiguous_group(monkeypat
     flows = []
     for intake in (1, 2):
         raw = dict(row)
-        if case == "different_timestamp" and intake == 2:
+        if case in {"different_timestamp", "both_timestamp_proofs"} and intake == 2:
             raw["last_update"] = "different"
         ref = source_reference(intake, raw)
         choice = {
@@ -3052,15 +3116,22 @@ def test_monthly_compensation_requires_current_exact_unambiguous_group(monkeypat
         "amount_kopecks": "1001" if case == "amount" else "1000",
         "reference": "1" * 64 + ":money:0",
     }
+    if case == "external_choice":
+        views[1]["money_classifications"][0]["classification"] = "external_deposit"
     report = {
         "status": "stale" if case == "stale" else "current",
         "covered_from": "2030-05-01",
         "covered_to": "2030-05-31",
         "interval": {"account_only": [proof_row]},
     }
+    if case == "both_timestamp_proofs":
+        report["interval"]["account_only"].append({**proof_row, "reference": "2" * 64 + ":money:0"})
     monkeypatch.setattr(source_investment_proofs, "read_reports", lambda *a, **kw: [report])
     redemption = SimpleNamespace(
-        event_date=day, isin="SYNTHETIC", cash_legs=[SimpleNamespace(account_cash_kopecks=1000)]
+        event_date=day,
+        isin="SYNTHETIC",
+        cash_legs=[SimpleNamespace(account_cash_kopecks=1000)],
+        source_references=(),
     )
     monkeypatch.setattr(
         source_redemption_evidence,
@@ -3075,7 +3146,7 @@ def test_monthly_compensation_requires_current_exact_unambiguous_group(monkeypat
     result, scopes = verified_internal_money(
         None, account, [(None, v, None) for v in views], {account}, {}, {key: flows}
     )
-    assert result == ({key} if case == "valid" else set())
+    assert result == ({key} if case in {"valid", "choice", "both_timestamp_proofs"} else set())
     assert not scopes
 
 
@@ -3111,7 +3182,10 @@ def test_monthly_redemption_removes_only_matching_scopes(monkeypatch, allowed):
         source_references=(ref,),
     )
     proof = SimpleNamespace(
-        event_date=day, isin="SYNTHETIC", cash_legs=[SimpleNamespace(account_cash_kopecks=1000)]
+        event_date=day,
+        isin="SYNTHETIC",
+        cash_legs=[SimpleNamespace(account_cash_kopecks=1000)],
+        source_references=(),
     )
     monkeypatch.setattr(source_investment_proofs, "read_reports", lambda *a, **kw: [])
     monkeypatch.setattr(
@@ -3128,8 +3202,10 @@ def test_monthly_redemption_removes_only_matching_scopes(monkeypatch, allowed):
 
 
 @pytest.mark.parametrize("conflicting_choice", [False, True])
+@pytest.mark.parametrize("explicit_unknown", [False, True])
+@pytest.mark.parametrize("bad_source", [None, "future", "overlap"])
 def test_confirmed_investment_and_custody_feed_monthly_reader_end_to_end(
-    db, monkeypatch, conflicting_choice
+    db, monkeypatch, conflicting_choice, explicit_unknown, bad_source
 ):
     from copy import deepcopy
     from dataclasses import replace
@@ -3197,6 +3273,16 @@ def test_confirmed_investment_and_custody_feed_monthly_reader_end_to_end(
             session, source_account=ACCOUNT, documents=[(raw, filename)], expected_sources=expected
         )
     proof_confirm(db, custody, request_id="e2e-internal-custody")
+    if explicit_unknown:
+        from hermes_finance.services.source_money_classifications import choose_classification
+
+        with db.session_factory() as session:
+            view = source_intake.read_intake(session, ack["intake_id"])
+            for saved in view["money_classifications"]:
+                if saved["classification"] == "unknown":
+                    choose_classification(
+                        session, ack["intake_id"], saved["source_reference"], "unknown"
+                    )
     report = parse_investment_report(investment_text(end="28.02.2030"), {"1234567"})
     report = replace(
         report,
@@ -3232,6 +3318,19 @@ def test_confirmed_investment_and_custody_feed_monthly_reader_end_to_end(
                 if "полное погашение" in row["narrative"]
             )
             choose_classification(session, ack["intake_id"], redemption["source_reference"], "fee")
+    if bad_source:
+        from hermes_finance.services import source_monthly_returns as monthly_service
+        from hermes_finance.statement_import.mybroker import MyBrokerError
+
+        bad_id, _ = save_month(db, 4 if bad_source == "future" else 1, marker="bad-new-source")
+        actual_view = monthly_service._read_source_view
+
+        def unavailable(session, original, **kwargs):
+            if original.id == bad_id:
+                raise MyBrokerError("synthetic unreadable source")
+            return actual_view(session, original, **kwargs)
+
+        monkeypatch.setattr(monthly_service, "_read_source_view", unavailable)
     before = snapshot(db)
     result = read(db)
     assert result.source_proof["status"] == "current"
@@ -3247,14 +3346,27 @@ def test_confirmed_investment_and_custody_feed_monthly_reader_end_to_end(
         )
     instrument = instrument_result.instruments[0]
     january_instrument = next(m for m in instrument.months if m.month == date(2030, 1, 1))
-    if conflicting_choice:
+    if conflicting_choice or bad_source == "overlap":
         assert january_instrument.coupons_kopecks is None
     else:
         assert january_instrument.coupons_kopecks == 1000
         assert january_instrument.confirmed_income_kopecks == 1000
         assert january_instrument.total_kopecks is None
         assert instrument.analysis.components["coupons"].value == 1000
-    if conflicting_choice:
+        assert any(
+            "unallocated_compensation" in event.reason_codes for event in instrument.analysis.events
+        ), [
+            (
+                e.kind,
+                e.isin,
+                e.reason_codes,
+                e.classification_origin,
+                e.classification_status,
+                e.source_references,
+            )
+            for e in instrument.analysis.events
+        ]
+    if conflicting_choice or bad_source == "overlap":
         assert result.investment_reports[0]["status"] == "stale"
         assert any(g.code == "custody_cancellation_unresolved" for g in result.gaps)
         assert snapshot(db) == before
@@ -3298,7 +3410,9 @@ def test_new_source_preserves_existing_custody_without_attesting_new_cancellatio
     )
 
 
-def test_legacy_custody_digest_search_and_memo_never_hide_relevant_change(db, monkeypatch):
+def test_legacy_custody_explicit_search_and_anchor_validation_never_hide_relevant_change(
+    db, monkeypatch
+):
     import json
 
     from hermes_finance.persistence import SourceReturnProof
@@ -3312,19 +3426,20 @@ def test_legacy_custody_digest_search_and_memo_never_hide_relevant_change(db, mo
     with db.session_factory() as session:
         row = session.get(SourceReturnProof, ack["proof"]["proof_id"])
         sources = json.loads(row.evidence_json)["sources"]
-        proofs._LEGACY_ANCHORS.clear()
-        assert proofs._compatible_source_only_dependency(
-            session, sources, row.dependency_digest, row.confirmed_at
+        anchors = proofs._compatible_source_only_dependency(
+            session, sources, row.dependency_digest, row.confirmed_at, recover=True
         )
-        assert proofs._LEGACY_ANCHORS
+        assert anchors
         assert proofs._compatible_source_only_dependency(
-            session, sources, row.dependency_digest, row.confirmed_at
+            session, sources, row.dependency_digest, row.confirmed_at, anchors
         )
     with db.engine.begin() as connection:
         connection.exec_driver_sql(
             "UPDATE source_intake_money_classifications SET narrative='Changed synthetic' WHERE id=(SELECT MIN(id) FROM source_intake_money_classifications)"
         )
-    assert read(db).source_proof["status"] == "stale"
+    with db.session_factory() as session, pytest.raises(proofs.ProofError):
+        proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
+    assert read(db).source_proof["status"] == "compatibility_unchecked"
 
 
 def test_scoped_custody_survives_new_financial_import_without_reconfirmation(db):
@@ -3390,4 +3505,298 @@ def test_scoped_custody_rejects_changed_bound_source_identity(db, field):
         view[field] = "f" * 64 if field == "manifest_digest" else view[field] + 1
         dates, status = resolve_proof(session, ACCOUNT, changed, native)
         assert not dates and status["status"] == "stale"
+    assert snapshot(db) == before
+
+
+def _legacy_custody_fixture(db, monkeypatch):
+    from hermes_finance.services import source_return_proofs as proofs
+
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "_dependency", proofs._legacy_dependency)
+        patch.setattr(proofs, "STRUCTURE_SEMANTICS", None)
+        _, _, preview = proof_preview(db)
+        return proof_confirm(db, preview)
+
+
+def test_explicit_legacy_recovery_preserves_decision_and_cold_get_never_searches(db, monkeypatch):
+    import json
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from hermes_finance.persistence import (
+        SourceIntakeRevision,
+        SourceReturnProof,
+        SourceReturnProofDependency,
+    )
+    from hermes_finance.services import source_return_proofs as proofs
+
+    ack = _legacy_custody_fixture(db, monkeypatch)
+    with db.session_factory() as session:
+        parent = session.get(SourceReturnProof, ack["proof"]["proof_id"])
+        original = proofs._parent_fingerprint(parent)
+        confirmed_at = parent.confirmed_at
+        for index in range(160):
+            session.add(SourceReturnProofDependency(token=f"p:{index}:synthetic"))
+            session.add(
+                SourceIntakeRevision(
+                    request_id=f"long-clock-{index}",
+                    request_fingerprint="0" * 64,
+                    contract_version="source_intake_v1",
+                    operation="dependency",
+                    confirmation_digest="0" * 64,
+                    payload_json=json.dumps({"table": "position_snapshots", "id": index}),
+                    reviewer="system",
+                    accepted_at=datetime(2000 if index % 2 else 2100, 1, 1, tzinfo=UTC),
+                )
+            )
+        session.commit()
+    before = snapshot(db)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            proofs,
+            "_compatible_source_only_dependency",
+            lambda *a, **kw: pytest.fail("GET attempted legacy search"),
+        )
+        assert read(db).source_proof["status"] == "compatibility_unchecked"
+    assert snapshot(db) == before
+    progress = []
+    with db.session_factory() as session:
+        plan = proofs.prepare_legacy_recovery(
+            session, source_account=ACCOUNT, progress=lambda n, total: progress.append((n, total))
+        )
+    assert progress
+    assert snapshot(db) == before
+    with db.session_factory() as session:
+        result = proofs.apply_legacy_recovery(
+            session, plan=plan["plan"], plan_digest=plan["plan_digest"]
+        )
+    assert result["proof"]["status"] == "current"
+    after = snapshot(db)
+    with db.session_factory() as session:
+        assert (
+            proofs._parent_fingerprint(session.get(SourceReturnProof, ack["proof"]["proof_id"]))
+            == original
+        )
+        successor = session.get(SourceReturnProof, result["proof"]["proof_id"])
+        assert successor.confirmed_at == confirmed_at
+        assert session.scalars(select(SourceReturnProof)).all().__len__() == 2
+        replay = proofs.apply_legacy_recovery(
+            session, plan=plan["plan"], plan_digest=plan["plan_digest"]
+        )
+        assert replay["replay"]
+    assert snapshot(db) == after
+    assert {k for k in before if before[k] != after[k]} == {"source_return_proofs"}
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            proofs,
+            "_compatible_source_only_dependency",
+            lambda *a, **kw: pytest.fail("converted GET attempted legacy search"),
+        )
+        assert read(db).source_proof["status"] == "current"
+        db.engine.dispose()
+        assert read(db).source_proof["status"] == "current"
+    save_cancellation_long(
+        db,
+        request_id="recovered-next-month",
+        mutate=lambda root, row: row.set("settlement_date", "2030-07-15T00:00:00"),
+    )
+    assert read(db).source_proof["status"] == "current"
+
+
+@pytest.mark.parametrize(
+    "change", ["digest", "parent", "sources", "physical", "anchor", "classification_aba"]
+)
+def test_legacy_recovery_rejects_tampered_plan_and_relevant_aba(db, monkeypatch, change):
+    from copy import deepcopy
+
+    from sqlalchemy import text
+
+    from hermes_finance.services import source_return_proofs as proofs
+    from hermes_finance.statement_import.mybroker import digest
+
+    _legacy_custody_fixture(db, monkeypatch)
+    with db.session_factory() as session:
+        prepared = proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
+    plan = deepcopy(prepared["plan"])
+    if change == "digest":
+        prepared["plan_digest"] = "0" * 64
+    elif change == "parent":
+        plan["compatibility_recovery"]["parent_fingerprint"] = "0" * 64
+    elif change == "sources":
+        plan["sources"][0]["generation"] += 1
+    elif change == "physical":
+        plan["compatibility_recovery"]["operands"]["physical_database"] = "0" * 64
+    elif change == "anchor":
+        plan["compatibility_recovery"]["operands"]["intake_tail"] = 0
+    else:
+        with db.engine.begin() as connection:
+            row = connection.exec_driver_sql(
+                "SELECT id,narrative FROM source_intake_money_classifications LIMIT 1"
+            ).one()
+            connection.execute(
+                text(
+                    "UPDATE source_intake_money_classifications SET narrative='Changed' WHERE id=:id"
+                ),
+                {"id": row.id},
+            )
+            connection.execute(
+                text("UPDATE source_intake_money_classifications SET narrative=:n WHERE id=:id"),
+                {"n": row.narrative, "id": row.id},
+            )
+    before = snapshot(db)
+    with db.session_factory() as session, pytest.raises(proofs.ProofError):
+        proofs.apply_legacy_recovery(
+            session,
+            plan=plan,
+            plan_digest=prepared["plan_digest"] if change == "digest" else digest(plan),
+        )
+    assert snapshot(db) == before
+
+
+def test_custody_recovery_cli_prepare_is_read_only_and_private(db, monkeypatch, tmp_path, capsys):
+    import json
+
+    from hermes_finance.source_custody_recovery import main
+
+    _legacy_custody_fixture(db, monkeypatch)
+    before = snapshot(db)
+    target = tmp_path / "private-plan.json"
+    assert (
+        main(
+            [
+                "--database",
+                str(db.database_path),
+                "--prepare-account",
+                ACCOUNT,
+                "--output",
+                str(target),
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert ACCOUNT not in output and str(db.database_path) not in output
+    assert json.loads(target.read_text(encoding="utf-8"))["financial_effects"] == 0
+    assert snapshot(db) == before
+    assert main(["--database", str(db.database_path), "--apply-plan", str(target)]) == 0
+    assert read(db).source_proof["status"] == "current"
+
+
+@pytest.mark.parametrize("tamper", ["parent", "operands", "cancellations"])
+def test_recovered_witness_is_checked_on_every_read(db, monkeypatch, tamper):
+    import json
+    from copy import deepcopy
+
+    from hermes_finance.persistence import SourceReturnProof
+    from hermes_finance.services import source_return_proofs as proofs
+
+    _legacy_custody_fixture(db, monkeypatch)
+    with db.session_factory() as session:
+        plan = proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
+        ack = proofs.apply_legacy_recovery(
+            session, plan=plan["plan"], plan_digest=plan["plan_digest"]
+        )
+        row = session.get(SourceReturnProof, ack["proof"]["proof_id"])
+        evidence = deepcopy(json.loads(row.evidence_json))
+        if tamper == "parent":
+            evidence["compatibility_recovery"]["parent_fingerprint"] = "0" * 64
+        elif tamper == "operands":
+            evidence["compatibility_recovery"]["operands"]["intake_tail"] = 0
+        else:
+            evidence["cancellations"] = []
+        with pytest.raises(proofs.ProofError):
+            proofs._verify_recovery(session, row, evidence)
+        proofs._verify_recovery(session, row, json.loads(row.evidence_json))
+
+
+@pytest.mark.parametrize("tamper", ["parent", "successor", "physical_copy"])
+def test_recovered_persisted_evidence_and_database_are_rechecked_by_get(
+    db, monkeypatch, tmp_path, tamper
+):
+    import json
+    import sqlite3
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services import source_return_proofs as proofs
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+
+    original = _legacy_custody_fixture(db, monkeypatch)
+    with db.session_factory() as session:
+        plan = proofs.prepare_legacy_recovery(session, source_account=ACCOUNT)
+        ack = proofs.apply_legacy_recovery(
+            session, plan=plan["plan"], plan_digest=plan["plan_digest"]
+        )
+    tested = db
+    if tamper == "physical_copy":
+        copied = tmp_path / "other-physical.db"
+        with sqlite3.connect(db.database_path) as source, sqlite3.connect(copied) as target:
+            source.backup(target)
+        tested = create_database(copied)
+    else:
+        # Simulate external persisted corruption, then restore the exact guards.
+        # The application writer never permits these changes.
+        with db.engine.begin() as connection:
+            triggers = connection.exec_driver_sql(
+                "SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name='source_return_proofs'"
+            ).all()
+            for name, _ in triggers:
+                connection.exec_driver_sql('DROP TRIGGER "' + name.replace('"', '""') + '"')
+            target_id = (
+                original["proof"]["proof_id"] if tamper == "parent" else ack["proof"]["proof_id"]
+            )
+            saved = connection.exec_driver_sql(
+                "SELECT evidence_json FROM source_return_proofs WHERE id=?", (target_id,)
+            ).scalar_one()
+            if tamper == "parent":
+                changed = saved + " "
+            else:
+                evidence = json.loads(saved)
+                evidence["compatibility_recovery"]["operands"]["intake_tail"] = 0
+                changed = json.dumps(evidence)
+            connection.exec_driver_sql(
+                "UPDATE source_return_proofs SET evidence_json=? WHERE id=?", (changed, target_id)
+            )
+            for _, definition in triggers:
+                connection.exec_driver_sql(definition)
+    before = snapshot(tested)
+    try:
+        with tested.session_factory() as session:
+            selected, native = _selected_sources(session, ACCOUNT)
+            dates, status = proofs.resolve_proof(session, ACCOUNT, selected, native)
+            assert dates == {} and status["status"] == "stale"
+            if tamper != "physical_copy":
+                assert status["reason_codes"] == ["source_return_proof_recovery_invalid"]
+        assert snapshot(tested) == before
+    finally:
+        if tested is not db:
+            tested.engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "case", ["different_description", "different_multiplicity", "complete_overlap", "two_payments"]
+)
+def test_ambiguous_overlap_limits_only_its_income_component(db, case):
+    first_count = 2 if case in {"two_payments", "complete_overlap"} else 1
+    first = (("Купон", "Synthetic coupon", "100"),) * first_count + (
+        ("Дивиденды", "Synthetic dividend", "20"),
+    )
+    save_month(db, candidate_count=0, extra=first, marker="first-income")
+    baseline = read(db).months[0]
+    if case != "two_payments":
+        description = "Other description" if case == "different_description" else "Synthetic coupon"
+        count = 2 if case in {"complete_overlap", "different_multiplicity"} else 1
+        second = (("Купон", description, "100"),) * count + (
+            ("Дивиденды", "Synthetic dividend", "20"),
+        )
+        save_month(db, candidate_count=0, extra=second, marker="second-income")
+    before = snapshot(db)
+    row = read(db).months[0]
+    ambiguous = case in {"different_description", "different_multiplicity"}
+    assert row.coupons_kopecks == (None if ambiguous else 20000)
+    assert row.dividends_kopecks == 2000
+    assert row.result.growth_kopecks == baseline.result.growth_kopecks
+    assert row.result.growth_kopecks is not None
+    assert row.result.modified_dietz_return == baseline.result.modified_dietz_return
+    assert ("overlap_income_ambiguous" in row.flags) == ambiguous
     assert snapshot(db) == before

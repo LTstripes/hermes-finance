@@ -259,7 +259,16 @@ def _income(
     from hermes_finance.services.source_instrument_events import payout_attribution
 
     resolver = MoneyInstrumentResolver(session)
+    from hermes_finance.services.source_return_evidence import canonical_payout_groups
+
+    payout_groups = canonical_payout_groups(session, views, resolver)
     occurrences = defaultdict(list)
+    compensation_refs = {
+        ref
+        for event in events
+        if "unallocated_compensation" in event.reason_codes
+        for ref in event.source_references
+    }
     event_scopes = defaultdict(set)
     for event in events:
         for reference in event.source_references:
@@ -281,7 +290,7 @@ def _income(
         raw = {source_reference(view["id"], row): row for row in view["document"].get("money", [])}
         local_gaps = []
         try:
-            for key, flow in _money(session, view, None, local_gaps):
+            for key, flow in _money(session, view, None, local_gaps, payout_groups=payout_groups):
                 narrative = saved[flow.source_references[0]]
                 isin, basis, reasons = payout_attribution(
                     narrative,
@@ -292,6 +301,7 @@ def _income(
                     raw=raw[flow.source_references[0]],
                     views=views,
                     historical_evidence=historical_evidence,
+                    canonical_matches=payout_groups,
                 )
                 if basis in {"accepted_money", "current_source_proof"}:
                     flow = replace(flow, status="confirmed")
@@ -346,7 +356,14 @@ def _income(
             )
             continue
         if flow.classification == "unknown":
-            gaps.append(InstrumentReturnGap("unrecognized_money", month=month, isin=scope_isin))
+            code = (
+                "unallocated_compensation"
+                if all(
+                    ref in compensation_refs for f, _ in observations for ref in f.source_references
+                )
+                else "unrecognized_money"
+            )
+            gaps.append(InstrumentReturnGap(code, month=month, isin=scope_isin))
         if flow.classification not in {"coupon", "dividend"}:
             continue
         refs = tuple(ref for f, _ in observations for ref in f.source_references)
@@ -672,6 +689,7 @@ _INCOME_GAPS = {
     "invalid_money_row",
     "invalid_external_flow",
     "unrecognized_money",
+    "unallocated_compensation",
     "overlap_flow_choice_conflict",
     "overlap_money_occurrence_missing",
 }
@@ -1226,6 +1244,11 @@ def read_instrument_returns(
     from hermes_finance.services.source_redemption_evidence import apply_verified_redemptions
 
     events, resolved_redemptions = apply_verified_redemptions(events, redemption_evidence)
+    from hermes_finance.services.source_monthly_internal_evidence import (
+        apply_verified_compensations,
+    )
+
+    events = apply_verified_compensations(session, source_account, selected, events)
     resolved_scopes = {
         (e.isin, e.depository_settlement_date.replace(day=1))
         for e in events

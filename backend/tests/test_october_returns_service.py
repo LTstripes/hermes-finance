@@ -792,8 +792,9 @@ def test_saved_history_new_month_replay_and_ai_export_share_one_outer_result(dat
     assert snapshot(database) == before
 
 
+@pytest.mark.parametrize("different_description", [False, True])
 def test_real_multi_original_receipt_projects_one_confirmed_payout_without_writes(
-    database, monkeypatch
+    database, monkeypatch, different_description
 ):
     from copy import deepcopy
 
@@ -830,6 +831,19 @@ def test_real_multi_original_receipt_projects_one_confirmed_payout_without_write
                 filename=FILENAME,
                 request_id=f"multi-source-intake-{index}",
             )
+    if different_description:
+        from hermes_finance.persistence import SourceMoneyClassification
+
+        with database.session_factory() as session:
+            choice = session.scalar(
+                select(SourceMoneyClassification).where(
+                    SourceMoneyClassification.intake_id == 2,
+                    SourceMoneyClassification.classification == "coupon",
+                )
+            )
+            assert choice is not None
+            choice.narrative += " synthetic alternate saved description"
+            session.commit()
     before = snapshot(database)
     with database.session_factory() as session, source_read_snapshot(session):
         selected, native = _selected_sources(session, ACCOUNT)
@@ -840,6 +854,10 @@ def test_real_multi_original_receipt_projects_one_confirmed_payout_without_write
         assert len(payouts) == 1
         assert payouts[0].classification_status == "confirmed"
         assert len(payouts[0].source_references) == 2
+        from hermes_finance.services.source_monthly_returns import read_monthly_returns
+
+        monthly = read_monthly_returns(session, source_account=ACCOUNT)
+        assert sum(m.coupons_kopecks or 0 for m in monthly.months) == 100000
         missing = deepcopy(views)
         coupon_ordinal = next(
             i
@@ -883,3 +901,69 @@ def test_real_multi_original_receipt_projects_one_confirmed_payout_without_write
             )
             assert not any(event.kind == "COUPON" and event.counted for event in excluded_events)
     assert snapshot(database) == before
+
+
+@pytest.mark.parametrize(
+    "case", ["descriptions", "two_payments", "same_source_cohort", "stale_member"]
+)
+def test_canonical_payout_groups_preserve_exact_cohort_and_multiplicity(monkeypatch, case):
+    from types import SimpleNamespace
+
+    from hermes_finance.services import source_return_evidence as evidence
+    from hermes_finance.services.source_money_classifications import source_reference
+    from hermes_finance.statement_import.mybroker import digest
+
+    rows = [
+        {
+            "ordinal": i,
+            "date": "2030-01-17",
+            "amount": "100.00",
+            "currency": "RUB",
+            "source_account": "synthetic",
+            "narrative": "same",
+        }
+        for i in range(2)
+    ]
+    if case == "descriptions":
+        rows[1]["narrative"] = "another source description"
+    one_source = case in {"two_payments", "same_source_cohort"}
+    views = [
+        {
+            "id": i + 1,
+            "covered_from": "2030-01-01",
+            "covered_to": "2030-01-31",
+            "document": {"money": rows if one_source else [rows[i]]},
+            "money_classifications": [],
+        }
+        for i in range(1 if one_source else 2)
+    ]
+    members = []
+    for view in views:
+        for row in view["document"]["money"]:
+            ref = source_reference(view["id"], row)
+            view["money_classifications"].append(
+                {"source_reference": ref, "classification": "coupon"}
+            )
+            members.append((ref, (view["id"], "money", row["ordinal"], digest(row))))
+    cohort = frozenset(key for _, key in members)
+    monkeypatch.setattr(evidence, "bound_import", lambda _, v: SimpleNamespace(id=v["id"]))
+
+    def match(_, view, row, saved, resolver, **kwargs):
+        key = (view["id"], "money", row["ordinal"], digest(row))
+        if case == "stale_member" and view["id"] == 2:
+            return None
+        return (
+            ISIN,
+            "current-receipt",
+            "coupon",
+            row["ordinal"] if case == "two_payments" else 11,
+            frozenset({key}) if case == "two_payments" else cohort,
+        )
+
+    monkeypatch.setattr(evidence, "effective_payout_match", match)
+    result = evidence.canonical_payout_groups(None, views, object())
+    if case in {"same_source_cohort", "stale_member"}:
+        assert result == {}
+    else:
+        assert set(result) == {ref for ref, _ in members}
+        assert len(set(result.values())) == (2 if case == "two_payments" else 1)

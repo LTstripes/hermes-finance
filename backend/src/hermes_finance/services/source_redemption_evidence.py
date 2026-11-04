@@ -32,8 +32,7 @@ def verified_redemptions(session, source_account, selected, native_scope, cancel
         return {}, {}
     try:
         views = [v for _, v, error in selected if not error and v]
-        if len(views) != len(selected):
-            return {}, {}
+        unavailable = [(o.covered_from, o.covered_to) for o, v, error in selected if error or not v]
         analyses = {}
         reports = proofs.read_reports(
             session, source_account=source_account, analyses=analyses, include_xirr=False
@@ -49,7 +48,11 @@ def verified_redemptions(session, source_account, selected, native_scope, cancel
                 continue
             account, isin, day_text, quantity = native[0]
             day = date.fromisoformat(day_text)
-            if account not in native_scope or Decimal(quantity) >= 0:
+            if (
+                account not in native_scope
+                or Decimal(quantity) >= 0
+                or any(start <= day <= end for start, end in unavailable)
+            ):
                 continue
             if day.replace(day=1) not in cancellation_dates.get(source["id"], ()):
                 continue
@@ -124,6 +127,12 @@ def verified_redemptions(session, source_account, selected, native_scope, cancel
             if len(identities) != 1:
                 continue
             month, isin, key, event = matches[0]
+            event = replace(
+                event,
+                source_references=tuple(
+                    sorted({ref for _, _, _, proven in matches for ref in proven.source_references})
+                ),
+            )
             scopes[(view["id"], month)] = isin
             old = event_map.get(key)
             if old is not None and (
@@ -141,7 +150,14 @@ def verified_redemptions(session, source_account, selected, native_scope, cancel
             ):
                 conflicts.add(key)
             else:
-                event_map[key] = event
+                event_map[key] = replace(
+                    event,
+                    source_references=tuple(
+                        sorted(
+                            set(event.source_references) | set(old.source_references if old else ())
+                        )
+                    ),
+                )
         if conflicts:
             for key in conflicts:
                 event_map.pop(key, None)
@@ -184,7 +200,8 @@ def apply_verified_redemptions(events, evidence):
             and proof.depository_settlement_date is not None
             and event.kind == "UNRESOLVED"
             and event.classification == "unknown"
-            and event.classification_origin == "default_rule"
+            and (event.classification_origin, event.classification_status)
+            in {("default_rule", "assumed"), ("user_choice", "confirmed")}
             and event.isin in (None, proof.isin)
             and event.native_source_account == proof.native_source_account
             and event.event_date == proof.event_date

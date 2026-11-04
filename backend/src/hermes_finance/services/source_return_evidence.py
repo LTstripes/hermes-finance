@@ -60,10 +60,71 @@ def payout_source_unambiguous(views, view, event_date):
     return len(covered) == 1 and covered[0]["id"] == view["id"]
 
 
-def effective_overlapping_payout(session, views, view, row, saved, resolver):
+def canonical_payout_groups(session, views, resolver=None):
+    """Exact accepted cohorts, shared by account and instrument projections.
+
+    Descriptions are not identity. Every selected cohort member must independently
+    pass the existing current Money proof and saved-choice checks. Two occurrences
+    in one original never collapse through this cross-original rule.
+    """
+    from collections import defaultdict
+
+    from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+    from hermes_finance.services.source_money_classifications import source_reference
+
+    groups = defaultdict(list)
+    for view in views:
+        saved = {s["source_reference"]: s for s in view["money_classifications"]}
+        source = bound_import(session, view)
+        if source is None:
+            continue
+        if resolver is None:
+            resolver = MoneyInstrumentResolver(session)
+        for row in view["document"].get("money", []):
+            ref = source_reference(view["id"], row)
+            choice = saved.get(ref)
+            if choice is None:
+                continue
+            match = effective_payout_match(
+                session, view, row, choice, resolver, allow_multiple=True
+            )
+            if match:
+                groups[match[:4]].append(
+                    (view, row, ref, (source.id, "money", row["ordinal"], digest(row)), match[4])
+                )
+    result = {}
+    for identity, members in groups.items():
+        keys = {m[3] for m in members}
+        ids = {m[0]["id"] for m in members}
+        day = members[0][1]["date"]
+        covering = {v["id"] for v in views if v["covered_from"] <= day <= v["covered_to"]}
+        if (
+            len(ids) != len(members)
+            or len(keys) != len(members)
+            or covering != ids
+            or any(m[4] != keys for m in members)
+            or len({(m[1]["date"], m[1]["source_account"]) for m in members}) != 1
+        ):
+            continue
+        for _, _, ref, _, _ in members:
+            result[ref] = identity
+    return result
+
+
+def effective_overlapping_payout(
+    session, views, view, row, saved, resolver, *, canonical_matches=None
+):
     """Project one current receipt only across uniquely identical source rows."""
     from hermes_finance.services.source_money_classifications import source_reference
 
+    matches = (
+        canonical_matches
+        if canonical_matches is not None
+        else canonical_payout_groups(session, views, resolver)
+    )
+    exact = matches.get(source_reference(view["id"], row))
+    if exact is not None:
+        return exact[0]
     day = str(row.get("date"))
     covering = [v for v in views if v["covered_from"] <= day <= v["covered_to"]]
     if len(covering) < 2 or view["id"] not in {v["id"] for v in covering}:
@@ -329,9 +390,10 @@ def historical_payout_evidence(session, source_account, selected, native_scope):
     from hermes_finance.services.source_money_classifications import source_reference
     from hermes_finance.statement_import.money import normalize_currency
 
-    if native_scope is None or len(native_scope) != 1 or any(error for _, _, error in selected):
+    if native_scope is None or len(native_scope) != 1:
         return {}
-    views = {view["document_sha256"]: view for _, view, _ in selected}
+    views = {view["document_sha256"]: view for _, view, error in selected if view and not error}
+    unavailable = [(o.covered_from, o.covered_to) for o, v, error in selected if error or not v]
     analyses = {}
     reports = proofs.read_reports(
         session, source_account=source_account, analyses=analyses, include_xirr=False
@@ -354,6 +416,8 @@ def historical_payout_evidence(session, source_account, selected, native_scope):
             for event in analysis.events:
                 if (
                     event.kind not in {"COUPON", "DIVIDEND"}
+                    or event.event_date is None
+                    or any(start <= event.event_date <= end for start, end in unavailable)
                     or not event.current
                     or not event.counted
                     or event.reason_codes

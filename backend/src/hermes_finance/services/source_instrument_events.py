@@ -209,6 +209,7 @@ def payout_attribution(
     raw=None,
     views=None,
     historical_evidence=None,
+    canonical_matches=None,
 ):
     """Validate a persisted decision; never replace it with a newly possible link."""
     from hermes_finance.services.source_instrument_returns import _attribute
@@ -234,7 +235,9 @@ def payout_attribution(
         proven = (
             effective_payout_instrument(session, view, raw, saved, resolver)
             if views is None or payout_source_unambiguous(views, view, raw["date"])
-            else effective_overlapping_payout(session, views, view, raw, saved, resolver)
+            else effective_overlapping_payout(
+                session, views, view, raw, saved, resolver, canonical_matches=canonical_matches
+            )
         )
         if proven is not None:
             return proven, "accepted_money", ()
@@ -313,6 +316,9 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
         )
         for v in views
     )
+    from hermes_finance.services.source_return_evidence import canonical_payout_groups
+
+    payout_groups = canonical_payout_groups(session, views, resolver)
     occurrences = defaultdict(list)
     invalid_events = []
     for view in views:
@@ -326,7 +332,7 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
         local = []
         validated_refs = set()
         try:
-            for key, flow in _money(session, view, None, local):
+            for key, flow in _money(session, view, None, local, payout_groups=payout_groups):
                 ref = flow.source_references[0]
                 validated_refs.add(ref)
                 row = saved[ref]
@@ -340,6 +346,7 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                         raw=raw[ref],
                         views=views,
                         historical_evidence=historical_evidence,
+                        canonical_matches=payout_groups,
                     )
                     if basis in {"accepted_money", "current_source_proof"}:
                         # The current exact receipt confirms this payout's role,

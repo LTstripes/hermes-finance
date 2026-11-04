@@ -21,20 +21,25 @@ components without asserting incomplete totals. Interior-month payout components
 reuse current exact-original XML/PDF proof events, preserving overlapping Money
 receipt identities/cohorts and without borrowing historical valuations. New source-only custody proofs
 bind their immutable originals and explicit grammar semantics, rather than the
-entire financial catalogue. Legacy proofs retain strict historical compatibility;
-repeated validation uses checked in-memory anchors. No migration or automatic
-reconfirmation is introduced. T-Invest TLS verification, sanitized logs, table
+entire financial catalogue. Legacy compatibility now has an explicit metadata recovery path outside GET;
+ordinary reads never perform a journal-pair search. The derived witness reuses
+the existing proof table and preserves the original decision and timestamp.
+No automatic reconfirmation or financial write is introduced. T-Invest TLS verification, sanitized logs, table
 position alignment and reduced instrument-card XIRR/aggregation work remain in the same package.
 
 Before-change Owner readback covers both accounts and all existing monthly
 confirmation receipts: 16 month-apply receipts and 35 latest Money confirmations;
 all 35 remain effective. Both current October workspaces are DRAFT and bookkeeping
-ready. One legacy custody proof is stale under installed Stable; the candidate's
-reviewed compatibility resolves it without rewriting it. A read-only Preview for
-an optional explicit source-only confirmation reuses six exact existing originals
-and would add only one proof row, preserving every older confirmation. Owner
-permission remains pending; no production Confirm, financial Apply or Reopen has
-occurred. Private receipts remain outside Git.
+ready. One legacy custody proof is stale under installed Stable. Its proposed technical
+compatibility recovery must first reproduce the old digest exactly, then append
+one derived metadata row during authorized downtime. It reuses the six original
+source bindings without uploads or a repeated Owner decision. Production metadata
+write permission remains pending; no Confirm, financial Apply or Reopen has
+occurred. The complete Astra audit was subsequently provided: it exposed remaining
+gaps on `30f04cc9`, so the earlier broad code GO was withdrawn. The successor
+addresses canonical account components, explicit UNKNOWN, independently proved
+timestamp variants and unreadable future-source scoping; final review and CI
+must cover that successor. Private receipts remain outside Git.
 
 Completion gates: targeted regressions, independent final review, exact-candidate
 CI, exact-main push CI, guarded publication, verified backup, and installed Stable

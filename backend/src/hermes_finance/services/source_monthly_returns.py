@@ -354,7 +354,7 @@ def _saved_totals(document):
     return (None, None, reasons) if reasons else (*totals, reasons)
 
 
-def _money(session, view, choices, gaps, *, selected_accounts=None):
+def _money(session, view, choices, gaps, *, selected_accounts=None, payout_groups=None):
     persisted = {
         row.source_reference: row
         for row in session.scalars(
@@ -497,6 +497,9 @@ def _money(session, view, choices, gaps, *, selected_accounts=None):
                 "narrative": saved.narrative,
             }
         )
+        if identity := (payout_groups or {}).get(reference):
+            signature = digest(["accepted_money", *identity])
+            status = "confirmed"
         occurrence = counts[signature]
         counts[signature] += 1
         result.append(
@@ -572,6 +575,10 @@ def _read_monthly_returns(
     from hermes_finance.services.source_return_proofs import resolve_proof
 
     saved_dates, proof_status = resolve_proof(session, source_account, selected, native_scope)
+    from hermes_finance.services.source_return_evidence import canonical_payout_groups
+
+    payout_views = [v for _, v, error in selected if v and not error]
+    payout_groups = canonical_payout_groups(session, payout_views)
     for original, view, error in selected:
         start, end = original.covered_from, original.covered_to
         unknown_source_flows = False
@@ -674,6 +681,7 @@ def _read_monthly_returns(
                     view,
                     (assumptions or {}).get(original.id),
                     gaps,
+                    payout_groups=payout_groups,
                 ):
                     money[key].append(flow)
         except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
@@ -717,6 +725,7 @@ def _read_monthly_returns(
     flows = []
     income = defaultdict(lambda: {"coupon": 0, "dividend": 0})
     assumed_income_months = set()
+    ambiguous_income = set()
     for key, observations in money.items():
         confirmed = [flow for flow in observations if flow.status == "confirmed"]
         selected = confirmed or observations
@@ -741,6 +750,18 @@ def _read_monthly_returns(
             )
         elif flow.classification in {"coupon", "dividend"}:
             income_month = flow.event_date.replace(day=1)
+            present = {int(ref.split(":")[1]) for ref in refs}
+            if any(
+                v["covered_from"] <= str(flow.event_date) <= v["covered_to"]
+                and v["id"] not in present
+                for v in payout_views
+            ):
+                ambiguous_income.add((income_month, flow.classification))
+                gaps.append(
+                    SourceReturnGap(
+                        "overlap_income_ambiguous", month=income_month, source_reference=refs[0]
+                    )
+                )
             income[income_month][flow.classification] += flow.amount_kopecks
             if flow.status == "assumed":
                 assumed_income_months.add(income_month)
@@ -847,6 +868,8 @@ def _read_monthly_returns(
                 ),
             )
         flags = list(calculated.reason_codes)
+        if any(day == month for day, _ in ambiguous_income):
+            flags.append("overlap_income_ambiguous")
         if any(gap.code == "broker_gift_external_flow" and gap.month == month for gap in gaps):
             flags.append("broker_gift_external_flow")
         if opening is not None and previous_closing is not None and opening != previous_closing:
@@ -862,10 +885,14 @@ def _read_monthly_returns(
                 tuple(flags),
                 previous_closing,
                 income[month]["coupon"]
-                if income_covered and month not in uncertain_months
+                if income_covered
+                and month not in uncertain_months
+                and (month, "coupon") not in ambiguous_income
                 else None,
                 income[month]["dividend"]
-                if income_covered and month not in uncertain_months
+                if income_covered
+                and month not in uncertain_months
+                and (month, "dividend") not in ambiguous_income
                 else None,
                 month in assumed_income_months,
             )

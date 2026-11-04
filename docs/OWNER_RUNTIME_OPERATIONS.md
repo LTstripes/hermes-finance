@@ -1671,3 +1671,37 @@ separate operational decision and never a scheduled retry or purge.
 ## 6. Provider configuration and diagnostics
 
 Use the selected checkout's documented public environment variable names and official adapters; keep actual credentials and `.env` local. T-Invest token setup/probe uses the accepted bounded read-only market provider contract. Alfa Pro connection/probe/diagnostics are retired; [C4](ARCHITECTURE_AND_CONTRACTS.md#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19) owns historical-record compatibility. C9 owns provider entities, exact fields, units, freshness and reconciliation authority. Any live provider call needs the assigned operational authority; normal automated checks use synthetic transports.
+
+
+### Source custody compatibility maintenance
+
+For the 1.10.4 legacy custody transition, prepare exact compatibility before
+publication/Stop with the candidate Python environment. This is read-only and
+needs no original XML attachment:
+
+```powershell
+python -m hermes_finance.source_custody_recovery --database <bound-database> --prepare-account <source-account> --output <private-new-plan.json>
+```
+
+The private plan contains exact source bindings and journal operands; never
+commit it or paste its contents into GitHub/logs. Progress emits counts only.
+A refused plan is not authority to create a new confirmation. Explain the
+unproven dependency and obtain Owner input if the financial evidence must change.
+
+After explicit authorization for this metadata append, verified backup and the
+ordinary owned Stop/update sequence, run the exact candidate command while the
+old Stable runtime is stopped, before exposing the new runtime:
+
+```powershell
+python -m hermes_finance.source_custody_recovery --database <same-bound-database> --apply-plan <private-new-plan.json>
+```
+
+Apply revalidates the plan under writer reservation and appends exactly one
+source-only compatibility witness in the existing proof table. It preserves the
+old row, original decision timestamp, and all financial data. Retry returns the
+existing result; a changed latest parent/source/dependency refuses the write.
+Compare all table rows and confirmation currentness before/after: only the
+one disclosed derived proof row may differ. Perform the normal installed health,
+frontend and Returns readbacks. Neither command is run automatically by Start,
+GET, schema migration or the release updater. Ordinary later releases require
+no repeated transition for an already recovered scoped proof.
