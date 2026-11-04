@@ -1276,6 +1276,7 @@ def test_investment_semantics_rejects_legacy_digest(database, monkeypatch, prede
 @pytest.mark.parametrize(
     "old_code",
     [
+        "source_investment_semantics_v6",
         "source_investment_semantics_v2",
         "0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81",
     ],
@@ -2167,13 +2168,14 @@ def test_disclosure_preserves_decimal_lexemes_and_missing_costs():
     assert result["commission_kopecks"] is None
 
 
+@pytest.mark.parametrize("revision", ["source_investment_semantics_v6", None])
 def test_reviewed_legacy_proof_read_transition_preserves_economics_and_evidence(
-    database, monkeypatch
+    database, monkeypatch, revision
 ):
     from hermes_finance.services import source_investment_proofs as proofs
 
     original = save_semantics_proof(
-        database, monkeypatch, proofs._GIFT_COMPAT_CODES[1], "reviewed-legacy"
+        database, monkeypatch, revision or proofs._GIFT_COMPAT_CODES[1], "reviewed-legacy"
     )
     before = snapshot(database)
     before_bytes = database.database_path.read_bytes()
@@ -2204,12 +2206,13 @@ def test_reviewed_legacy_proof_read_transition_preserves_economics_and_evidence(
             assert proofs.read_reports(session)[0]["status"] == "stale"
 
 
-def test_reviewed_legacy_transition_never_admits_pending_writer(database, monkeypatch):
+@pytest.mark.parametrize("revision", ["source_investment_semantics_v6", None])
+def test_reviewed_legacy_transition_never_admits_pending_writer(database, monkeypatch, revision):
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.source_return_proofs import ProofError
 
     with monkeypatch.context() as patch:
-        patch.setattr(proofs, "SEMANTICS_REVISION", proofs._GIFT_COMPAT_CODES[1])
+        patch.setattr(proofs, "SEMANTICS_REVISION", revision or proofs._GIFT_COMPAT_CODES[1])
         preview = saved_investment_preview(database, patch)["persistence"]
     before = snapshot(database)
     with database.session_factory() as session:

@@ -166,7 +166,7 @@ def test_standard_cli_startup_migrates_database_before_serving_db_endpoint(
     database_path = tmp_path / "clean-install" / "finance.db"
     observed: dict[str, object] = {}
 
-    def capture_run(app: str, *, host: str, port: int, reload: bool) -> None:
+    def capture_run(app: str, *, host: str, port: int, reload: bool, log_config: dict) -> None:
         observed.update(app=app, host=host, port=port, reload=reload)
         connection = sqlite3.connect(database_path)
         try:
@@ -207,7 +207,7 @@ def test_standard_cli_startup_upgrades_database_from_previous_revision(
     observed: dict[str, object] = {}
     starts = 0
 
-    def capture_run(_app: str, *, host: str, port: int, reload: bool) -> None:
+    def capture_run(_app: str, *, host: str, port: int, reload: bool, log_config: dict) -> None:
         nonlocal starts
         starts += 1
         connection = sqlite3.connect(database_path)

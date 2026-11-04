@@ -600,7 +600,8 @@ def test_bounded_repo_service_display_does_not_hide_events_or_poison_later_stock
             .analysis
         )
     assert repo.pnl.value is None and repo.modified_dietz.value is None
-    assert {"repo_trade_unsupported", "trade_identity_unresolved"} <= set(repo.reason_codes)
+    assert "repo_trade_unsupported" in repo.reason_codes
+    assert "trade_identity_unresolved" not in repo.reason_codes
     assert any(not event.counted and event.native_ids == ("B9001",) for event in repo.events)
     assert snapshot(db) == before
 

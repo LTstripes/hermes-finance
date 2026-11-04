@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import uvicorn
@@ -11,6 +12,17 @@ from hermes_finance.services.recovery_process import file_identity_token
 from hermes_finance.settings import Settings
 
 _TOKEN_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def _market_data_log_config():
+    """Send bounded provider summaries to the normal server log at INFO."""
+    config = deepcopy(uvicorn.config.LOGGING_CONFIG)
+    for name in (
+        "hermes_finance.market_data.t_invest",
+        "hermes_finance.market_data.t_invest_payout",
+    ):
+        config["loggers"][name] = {"handlers": ["default"], "level": "INFO", "propagate": False}
+    return config
 
 
 def upgrade_database(database_path: Path) -> None:
@@ -78,6 +90,7 @@ def main(arguments: list[str] | None = None) -> None:
                 host=settings.host,
                 port=settings.port,
                 reload=settings.reload,
+                log_config=_market_data_log_config(),
             )
         finally:
             database.engine.dispose()

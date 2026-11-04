@@ -269,6 +269,12 @@ def _income(
         if "unallocated_compensation" in event.reason_codes
         for ref in event.source_references
     }
+    account_only_refs = {
+        ref
+        for event in events
+        if event.attribution_basis == "account_only"
+        for ref in event.source_references
+    }
     event_scopes = defaultdict(set)
     for event in events:
         for reference in event.source_references:
@@ -345,6 +351,8 @@ def _income(
         month = flow.event_date.replace(day=1)
         scope_isin = gap_scope([f for f, _ in selected])
         if flow.classification == "unknown" and f"money:{key[0]}:{key[1]}" in resolved_redemptions:
+            continue
+        if all(ref in account_only_refs for f, _ in observations for ref in f.source_references):
             continue
         if len({(f.classification, identity) for f, identity in selected}) != 1:
             gaps.append(
@@ -561,12 +569,26 @@ def _trade_cash_total(amount, nkd, fee, quantity, basis):
 
 
 def _trades(session, views, isin, month, instrument_type, flags):
+    from hermes_finance.services.source_trade_identity import repo_return_identities
+
     groups = defaultdict(list)
     documents = defaultdict(list)
     for view in views:
+        repo_ids = None
         for trade in view["document"].get("trades", []):
             if trade["core"]["isin"] == isin:
-                key = trade.get("identity") or object()
+                if repo_ids is None and trade.get("repo_observed"):
+                    repo_ids = repo_return_identities(view)
+                repo_identity = (
+                    (repo_ids or {}).get(trade["ordinal"])
+                    if trade["section"] == "completed"
+                    else None
+                )
+                if repo_identity:
+                    trade = dict(
+                        trade, return_identity=repo_identity[0], repo_signature=repo_identity[1]
+                    )
+                key = trade.get("identity") or trade.get("return_identity") or object()
                 documents[key].append(view["document"])
                 # Keep unresolved occurrences separate solely to flag their months;
                 # they are never eligible for counting or deduplication.
@@ -600,7 +622,11 @@ def _trades(session, views, isin, month, instrument_type, flags):
             ]
             if not relevant:
                 continue
-            if any(not t.get("identity") or len(t.get("ids", [])) != 2 for t in relevant):
+            if any(
+                not t.get("return_identity")
+                and (not t.get("identity") or len(t.get("ids", [])) != 2)
+                for t in relevant
+            ):
                 flags.add("trade_identity_unresolved")
                 invalid = True
                 continue
@@ -617,6 +643,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
                             "bank_commission",
                             "accrued_interest",
                             "repo_observed",
+                            "repo_signature",
                             "face_value",
                         )
                     }
@@ -1288,7 +1315,9 @@ def read_instrument_returns(
             isin=event.isin,
         )
         for event in events
-        if "overlap_money_occurrence_missing" in event.reason_codes and event.event_date is not None
+        if "overlap_money_occurrence_missing" in event.reason_codes
+        and event.event_date is not None
+        and event.attribution_basis != "account_only"
     )
     for gap in event_gaps:
         if gap not in gaps:

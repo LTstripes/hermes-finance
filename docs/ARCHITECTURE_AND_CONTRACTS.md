@@ -6921,6 +6921,38 @@ or other contradictory saved classifications produce a gap, never silent zero
 income or automatic repair. Explicit account-only costs stay outside instruments;
 ambiguous possible instrument costs block completeness.
 
+Account-only scope must agree across all overlapping occurrences before it can
+exclude a cost from instrument coverage. An occurrence missing from another
+covering original or a conflicting fee/tax choice remains an account
+reconciliation gap, visible in `account_reconciliation_events`; it does not
+become an unknown expense of every ISIN. A conflicting possible payout or unknown
+scope cannot acquire this exclusion. Unallocated possible instrument costs keep
+their existing blockers.
+
+For the already recognized completed single-B-ID REPO grammar, the return reader
+may derive a `repo:` projection identity from provider, native account and the
+own B ID. It requires agreement between the frozen native references and their
+attribute digests, a distinct B partner, an explicit first/second-leg marker and
+one occurrence of the own ID in that original. The partner and leg marker are
+overlap consistency operands; neither is invented as native economic ID #2.
+All original references survive grouping. Exact B-reference settlement and fee
+Money rows may join this projected occurrence, preserving their own cash
+ownership. `native_ids` remains the single original ID; `native_identity` carries
+the prefixed projection identity. Missing witnesses, duplicate IDs, changed
+partners/markers, absent overlapping occurrences and cash conflicts remain gaps.
+Conflicting issue identities stay at root scope; conflicting dates retain
+uncounted dated markers so a narrow interval cannot hide an alternate
+observation. An unresolved same-B owner prevents stronger Money ownership.
+This supplies identity only: `repo_trade_unsupported`, uncounted cash/quantity,
+and unavailable full economic returns remain. Frozen parsers and financial
+receipt identities are unchanged.
+
+The instrument-reader change advances the reviewed semantic tripwire to v7.
+Saved account-proof `_captured_money`, `_payout_links`, `_interval` and dependency
+operands retain their meaning. Read-only v6 compatibility recomputes the exact
+old digest with all original, physical, classification, clock and gift operands;
+it neither reissues a receipt nor applies to writers or unknown future revisions.
+
 Economic bond endpoints require evidenced dirty value or clean plus boundary NKD.
 Saved source facts alone do not provide that proof: `reported_unknown` and
 `bond_valuation_basis_unknown` keep full economic P/MD NULL without the separately
@@ -12293,6 +12325,23 @@ After a local read-only token is configured, you can:
 5. inspect the preview. Nothing is applied to snapshots in this task.
 
 There is no background refresh and no trading.
+
+T-Invest request diagnostics contain only an allowlisted method, normalized
+requested timestamps, outcome/HTTP status and received collection count.
+Payout diagnostics add the provider-filter window, calendar window, parsed-event
+and returned-event counts and failure count. Unknown received counts remain
+`unknown`, rather than zero. Tokens, account/instrument identifiers, request
+bodies, raw replies, URLs and exception text are excluded.
+
+Successful payout responses with an explicit empty collection are empty coverage,
+not a provider error. The exact empty success object `{}` also represents an
+omitted empty repeated field under
+[ProtoJSON defaults](https://protobuf.dev/programming-guides/json/#presence-and-default-values)
+for the documented [GetDividends response](https://developer.tinkoff.ru/invest/api/instruments-service-get-dividends)
+and bond event methods. Other missing collections, wrong types, invalid rows,
+error envelopes and transport/HTTP failures retain unsuccessful or invalid
+coverage. Empty coverage only describes the requested provider-filter period;
+it is not evidence that no dividend will ever be announced, paid or received.
 
 
 <a id="c9-t-invest-market-data-1-provider-capabilities"></a>

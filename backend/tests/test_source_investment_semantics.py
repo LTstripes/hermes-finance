@@ -19,6 +19,7 @@ SEMANTIC_MODULES = (
     "services/source_investment_proofs.py",
     "services/source_instrument_events.py",
     "services/source_instrument_returns.py",
+    "services/source_trade_identity.py",
     "services/source_custody_compat.py",
     "services/source_money_classifications.py",
     "services/source_redemption_evidence.py",
@@ -42,8 +43,8 @@ SEMANTIC_MODULES = (
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v6",
-    "e86d6418264530382ce95ef43dfa6252a7b19edf18d114221ed5e3e8bdeb89ca",
+    "source_investment_semantics_v7",
+    "70005f228a0038a96f59805791e2102f495bc3a0478d0314708e6213987f5c7c",
 )
 
 

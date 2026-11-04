@@ -25,8 +25,16 @@ class StubEngine:
 def test_cli_uses_environment_for_server(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     call: dict[str, object] = {}
 
-    def capture_run(app: str, *, host: str, port: int, reload: bool) -> None:
+    def capture_run(app: str, *, host: str, port: int, reload: bool, log_config: dict) -> None:
         call.update(app=app, host=host, port=port, reload=reload)
+        for name in ("t_invest", "t_invest_payout"):
+            assert log_config["loggers"][f"hermes_finance.market_data.{name}"] == {
+                "handlers": ["default"],
+                "level": "INFO",
+                "propagate": False,
+            }
+        assert "hermes_finance.market_data.t_invest" not in uvicorn.config.LOGGING_CONFIG["loggers"]
+        assert "root" not in log_config
 
     monkeypatch.setenv("HERMES_FINANCE_HOST", "127.0.0.1")
     monkeypatch.setenv("HERMES_FINANCE_PORT", "9001")
