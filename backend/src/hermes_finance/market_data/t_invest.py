@@ -57,7 +57,7 @@ def t_invest_tls_context() -> ssl.SSLContext:
     """Add the verified official root only to this client's TLS context."""
     pem = (
         files("hermes_finance.market_data")
-        .joinpath("russian_trusted_root_ca.pem")
+        .joinpath("russian_trusted_root_ca.crt")
         .read_text(encoding="ascii")
     )
     fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()

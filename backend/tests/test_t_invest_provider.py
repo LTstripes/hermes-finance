@@ -50,7 +50,7 @@ def test_verified_tinvest_root_is_scoped_to_the_official_client(monkeypatch):
     before = set(ssl.create_default_context().get_ca_certs(binary_form=True))
     context = t_invest.t_invest_tls_context()
     assert context.check_hostname and context.verify_mode == ssl.CERT_REQUIRED
-    pem = files("hermes_finance.market_data").joinpath("russian_trusted_root_ca.pem").read_text()
+    pem = files("hermes_finance.market_data").joinpath("russian_trusted_root_ca.crt").read_text()
     assert ssl.PEM_cert_to_DER_cert(pem) in context.get_ca_certs(binary_form=True)
     assert set(ssl.create_default_context().get_ca_certs(binary_form=True)) == before
     calls = []
@@ -63,10 +63,10 @@ def test_verified_tinvest_root_is_scoped_to_the_official_client(monkeypatch):
 
 
 def test_tinvest_root_fingerprint_mismatch_fails_closed(monkeypatch, tmp_path):
-    pem = files("hermes_finance.market_data").joinpath("russian_trusted_root_ca.pem").read_text()
+    pem = files("hermes_finance.market_data").joinpath("russian_trusted_root_ca.crt").read_text()
     lines = pem.splitlines()
     lines[1] = ("A" if lines[1][0] != "A" else "B") + lines[1][1:]
-    (tmp_path / "russian_trusted_root_ca.pem").write_text("\n".join(lines) + "\n")
+    (tmp_path / "russian_trusted_root_ca.crt").write_text("\n".join(lines) + "\n")
     monkeypatch.setattr(t_invest, "files", lambda _: tmp_path)
     with pytest.raises(ValueError, match="fingerprint mismatch"):
         t_invest.t_invest_tls_context()
