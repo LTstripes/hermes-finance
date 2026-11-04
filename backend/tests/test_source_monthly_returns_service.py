@@ -211,6 +211,243 @@ def test_durable_proof_existing_catalogue_aba_uses_v1_tail_without_duplicate_clo
     assert read(db).source_proof["status"] == "stale"
 
 
+def test_custody_proof_ignores_unrelated_month_and_snapshot_but_not_source_changes(db, monkeypatch):
+    from hermes_finance.persistence import Account, Instrument, PositionSnapshot, ReportingMonth
+
+    with db.session_factory() as session:
+        account = Account(name="Synthetic unrelated", account_type="brokerage")
+        instrument = Instrument(name="Synthetic unrelated", instrument_type="stock")
+        month = ReportingMonth(
+            year=2031,
+            month=1,
+            period_start=date(2031, 1, 1),
+            period_end=date(2031, 1, 31),
+            snapshot_date=date(2031, 1, 31),
+        )
+        session.add_all([account, instrument, month])
+        session.flush()
+        position = PositionSnapshot(
+            reporting_month_id=month.id,
+            account_id=account.id,
+            instrument_id=instrument.id,
+            quantity=Decimal("1"),
+            average_cost_per_unit_kopecks=1,
+            market_price_per_unit_kopecks=1,
+            market_value_kopecks=1,
+            cost_basis_kopecks=1,
+            unrealized_result_kopecks=0,
+            price_date=date(2031, 1, 31),
+        )
+        session.add(position)
+        session.commit()
+        month_id, position_id = month.id, position.id
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    with db.session_factory() as session:
+        session.get(ReportingMonth, month_id).snapshot_date = date(2031, 1, 30)
+        session.get(PositionSnapshot, position_id).market_value_kopecks = 2
+        session.commit()
+    assert read(db).source_proof["status"] == "current"
+    from hermes_finance.services import source_custody_compat
+
+    with monkeypatch.context() as changed_code:
+        changed_code.setattr(source_custody_compat, "CURRENT_CUSTODY_CODE_SHA256", "0" * 64)
+        assert read(db).source_proof["status"] == "stale"
+    with db.engine.begin() as connection:
+        connection.exec_driver_sql(
+            "UPDATE source_intake_money_classifications SET narrative='Synthetic changed' WHERE id=(SELECT MIN(id) FROM source_intake_money_classifications)"
+        )
+    assert read(db).source_proof["status"] == "stale"
+
+
+def test_instrument_reader_scopes_verified_custody_gap_to_cancellation_month(db):
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_instrument_returns(session, source_account=ACCOUNT)
+    related = [
+        gap
+        for gap in result.gaps
+        if gap.code
+        in {
+            "custody_cancellation_unresolved",
+            "4_Transfers_unsupported",
+            "5_UFSR_unsupported",
+            "unparsed_source_rows",
+        }
+    ]
+    assert related
+    assert {gap.month for gap in related} == {date(2030, 5, 1)}
+    assert {gap.code for gap in related} == {"custody_cancellation_unresolved"}
+    assert snapshot(db) == before
+
+
+def test_instrument_custody_gap_scopes_only_when_identity_is_proved(db, monkeypatch):
+    from hermes_finance.services import source_redemption_evidence
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    target = "RU000A000000"
+
+    def scoped(_session, _account, _selected, _native, cancellation_dates):
+        return {
+            (source, month): target
+            for source, months in cancellation_dates.items()
+            for month in months
+        }, {}
+
+    monkeypatch.setattr(source_redemption_evidence, "verified_redemptions", scoped)
+    with db.session_factory() as session:
+        result = read_instrument_returns(session, source_account=ACCOUNT)
+    gaps = [g for g in result.gaps if g.code == "custody_cancellation_unresolved"]
+    assert gaps and all(g.isin == target and g.month == date(2030, 5, 1) for g in gaps)
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["valid", "stale", "wrong_account", "different_transfer", "wrong_amount", "missing_custody"],
+)
+def test_verified_redemption_scopes_require_current_exact_original_evidence(monkeypatch, case):
+    from types import SimpleNamespace
+
+    from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
+    from hermes_finance.services import (
+        source_investment_proofs as proofs,
+    )
+    from hermes_finance.services import source_monthly_returns
+    from hermes_finance.services import (
+        source_redemption_evidence as evidence,
+    )
+    from hermes_finance.services.source_money_classifications import source_reference
+    from hermes_finance.statement_import.mybroker import digest
+
+    day = date(2030, 5, 15)
+    isin, account, sha = "RU000A000000", "synthetic-account", "a" * 64
+    transfer = {
+        "acc_code": digest(account),
+        "settlement_date": digest("2030-05-15T00:00:00"),
+        "qty": digest("-1"),
+    }
+    raw = {"ordinal": 0, "date": str(day), "amount": "10", "currency": "RUB"}
+    views = [
+        {"id": 1, "document_sha256": sha, "document": {"money": [raw]}, "transfer": transfer},
+        {
+            "id": 2,
+            "document_sha256": "b" * 64,
+            "document": {"money": [raw]},
+            "transfer": dict(transfer),
+        },
+    ]
+    if case == "different_transfer":
+        views[1]["transfer"]["qty"] = digest("-2")
+    if case == "wrong_account":
+        transfer["acc_code"] = digest("another-account")
+    leg = CashLeg("redemption", day, 1000, -1000, ("synthetic",), "synthetic")
+    event = InstrumentEvent(
+        event_key="synthetic",
+        provider="synthetic",
+        native_source_account=account,
+        isin=isin,
+        kind="REDEMPTION",
+        source_references=(sha + ":money:0",),
+        event_date=day,
+        cash_legs=(leg,),
+        classification_status="confirmed",
+    )
+    analysis = SimpleNamespace(events=[event])
+
+    def reports(_session, *, analyses, **_kwargs):
+        analyses[1] = {isin: analysis}
+        return [{"proof_id": 1, "status": "stale" if case == "stale" else "current"}]
+
+    monkeypatch.setattr(proofs, "read_reports", reports)
+    monkeypatch.setattr(
+        proofs,
+        "_report_rows",
+        lambda *_a, **_k: [
+            (
+                SimpleNamespace(id=1),
+                {
+                    "source_sha256": sha,
+                    "native": {"cancellations": [[account, isin, str(day), "-1"]]},
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(evidence, "_single_transfer", lambda view: view["transfer"])
+    flow = SimpleNamespace(
+        source_references=(source_reference(1, raw),),
+        amount_kopecks=1001 if case == "wrong_amount" else 1000,
+        event_date=day,
+    )
+    monkeypatch.setattr(source_monthly_returns, "_money", lambda *_: [(("signature", 0), flow)])
+    dates = (
+        {} if case == "missing_custody" else {1: (day.replace(day=1),), 2: (day.replace(day=1),)}
+    )
+    scopes, events = evidence.verified_redemptions(
+        None, account, [(None, v, None) for v in views], {account}, dates
+    )
+    if case == "valid":
+        assert scopes == {(1, day.replace(day=1)): isin, (2, day.replace(day=1)): isin}
+        assert list(events) == ["money:signature:0"]
+    elif case == "different_transfer":
+        assert scopes == {(1, day.replace(day=1)): isin}
+    else:
+        assert scopes == {} and events == {}
+
+
+def test_only_exact_proven_redemption_replaces_unresolved_event():
+    from dataclasses import replace
+
+    from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
+    from hermes_finance.services.source_redemption_evidence import apply_verified_redemptions
+
+    day = date(2030, 5, 15)
+    leg = CashLeg("unknown", day, 1000, -1000, ("synthetic",), "synthetic")
+    event = InstrumentEvent(
+        event_key="money:key:0",
+        provider="synthetic",
+        native_source_account="account",
+        isin=None,
+        kind="UNRESOLVED",
+        source_references=("synthetic",),
+        event_date=day,
+        cash_legs=(leg,),
+        classification="unknown",
+        classification_origin="default_rule",
+        current=False,
+        counted=False,
+        reason_codes=("redemption_amortization_unsupported", "unrecognized_money"),
+    )
+    proof = replace(
+        event,
+        isin="RU000A000000",
+        kind="REDEMPTION",
+        current=True,
+        counted=True,
+        reason_codes=(),
+        classification_status="confirmed",
+    )
+    converted, resolved = apply_verified_redemptions((event,), {event.event_key: proof})
+    assert converted[0].kind == "REDEMPTION" and converted[0].isin == proof.isin
+    assert converted[0].cash_legs[0].account_cash_kopecks == 1000
+    assert resolved == {event.event_key}
+    for rejected in (
+        replace(event, classification_origin="user_choice"),
+        replace(event, reason_codes=event.reason_codes + ("overlap_money_occurrence_missing",)),
+        replace(
+            event,
+            cash_legs=(replace(leg, account_cash_kopecks=1001, instrument_flow_kopecks=-1001),),
+        ),
+    ):
+        result, resolved = apply_verified_redemptions((rejected,), {event.event_key: proof})
+        assert result == (rejected,) and not resolved
+
+
 @pytest.mark.parametrize("failure", ["missing", "extra", "generic", "bad_manifest", "bad_token"])
 def test_durable_proof_rejected_preview_or_intent_has_no_writes(db, failure):
     from hermes_finance.services import source_return_proofs as proofs

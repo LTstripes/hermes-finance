@@ -245,7 +245,7 @@ def _identities(views):
     return result
 
 
-def _income(session, views, identities, gaps):
+def _income(session, views, identities, gaps, *, resolved_redemptions=frozenset()):
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
     from hermes_finance.services.source_instrument_events import payout_attribution
 
@@ -296,11 +296,13 @@ def _income(session, views, identities, gaps):
             if gap.code != "broker_gift_external_flow"
         )
     result = []
-    for observations in occurrences.values():
+    for key, observations in occurrences.items():
         confirmed = [pair for pair in observations if pair[0].status == "confirmed"]
         selected = confirmed or observations
         flow, isin = selected[0]
         month = flow.event_date.replace(day=1)
+        if flow.classification == "unknown" and f"money:{key[0]}:{key[1]}" in resolved_redemptions:
+            continue
         if len({(f.classification, identity) for f, identity in selected}) != 1:
             gaps.append(InstrumentReturnGap("overlap_flow_choice_conflict", month=month))
             continue
@@ -635,6 +637,7 @@ _SOURCE_GAPS = {
     "source_period_inferred",
     # Structure gaps affect both trades and income; currency/REPO gaps do not.
     "4_Transfers_unsupported",
+    "custody_cancellation_unresolved",
     "5_UFSR_unsupported",
     "source_reader_unavailable",
     "native_source_scope_ambiguous",
@@ -1001,6 +1004,7 @@ def read_instrument_returns(
     gaps = []
     selected, native_scope = _selected_sources(session, source_account)
     from hermes_finance.services.source_investment_proofs import instrument_result
+    from hermes_finance.services.source_return_proofs import resolve_proof
 
     investment = instrument_result(
         session, source_account, selected, requested_isin, opening_date, closing_date
@@ -1010,6 +1014,19 @@ def read_instrument_returns(
     link = account_link(session, source_account)
     if investment is not None:
         return replace(investment, account_link=link)
+    cancellation_dates, _ = resolve_proof(session, source_account, selected, native_scope)
+    from hermes_finance.services.source_redemption_evidence import verified_redemptions
+
+    relevant_cancellation = any(
+        (opening_date is None or month <= closing_date and _month_end(month) > opening_date)
+        for months in cancellation_dates.values()
+        for month in months
+    )
+    cancellation_scopes, redemption_evidence = (
+        verified_redemptions(session, source_account, selected, native_scope, cancellation_dates)
+        if relevant_cancellation
+        else ({}, {})
+    )
     if session.info.get(FILE_PATH_KEY) is not None:
         # The ordinary API and Returns share this path. A configured file is
         # authoritative for this call; failure cannot revive a caller's packet.
@@ -1028,13 +1045,29 @@ def read_instrument_returns(
                 raise MyBrokerError("native_source_scope_ambiguous")
             views.append(view)
             period_inferred = "period_inferred_from_content" in view["document"].get("warnings", [])
+            blockers = set(source_return_blockers(view))
+            proven_cancellations = cancellation_dates.get(original.id)
+            if proven_cancellations is not None:
+                blockers -= {
+                    "unparsed_source_rows",
+                    "4_Transfers_unsupported",
+                    "5_UFSR_unsupported",
+                }
             month = original.covered_from.replace(day=1)
             while month <= original.covered_to:
+                month_blockers = blockers | (
+                    {"custody_cancellation_unresolved"}
+                    if proven_cancellations and month in proven_cancellations
+                    else set()
+                )
                 gaps.extend(
                     InstrumentReturnGap(
                         code,
                         original.id,
                         month,
+                        isin=cancellation_scopes.get((original.id, month))
+                        if code == "custody_cancellation_unresolved"
+                        else None,
                         message=SOURCE_PERIOD_INFERRED_MESSAGE
                         if code == "source_period_inferred"
                         else None,
@@ -1042,7 +1075,7 @@ def read_instrument_returns(
                     for code in sorted(
                         {
                             *(("source_period_inferred",) if period_inferred else ()),
-                            *source_return_blockers(view),
+                            *month_blockers,
                             *(
                                 code
                                 for code in (
@@ -1071,7 +1104,10 @@ def read_instrument_returns(
     events, references = read_events(
         session, views, identities, native_account or source_account, event_gaps
     )
-    income = _income(session, views, identities, gaps)
+    from hermes_finance.services.source_redemption_evidence import apply_verified_redemptions
+
+    events, resolved_redemptions = apply_verified_redemptions(events, redemption_evidence)
+    income = _income(session, views, identities, gaps, resolved_redemptions=resolved_redemptions)
     for gap in event_gaps:
         if gap not in gaps:
             gaps.append(gap)

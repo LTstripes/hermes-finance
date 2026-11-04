@@ -57,6 +57,23 @@ test("missing detail never becomes zero or a conditional or partial result", () 
   expect(screen.getAllByText("—")).toHaveLength(2);
   expect(screen.queryByText(/76 543|12 345|0 ₽/)).toBeNull();
 });
+
+test("shows observed partial payouts without presenting them as total result", () => {
+  const detail = detailFixture();
+  detail.pnl = m(null);
+  detail.rate = m(null, "fraction", "modified_dietz");
+  detail.analysis.components.coupons = {
+    ...detail.analysis.components.coupons,
+    status: "partial",
+    value: "12345",
+  };
+  detail.analysis.components.dividends.value = null;
+  setup({ result: detail, analysis: detail.analysis });
+  expect(screen.getByText("Найденные выплаты — данные могут быть неполными")).toBeVisible();
+  expect(screen.getByText("123,45 ₽")).toBeVisible();
+  expect(screen.getAllByText("—")).toHaveLength(2);
+  expect(screen.queryByText("Дивиденды")).toBeNull();
+});
 test("assumptions on analysis, metrics and events remain visible and deduplicated", () => {
   const detail = detailFixture();
   detail.analysis.assumptions = ["face_value_assumed"];

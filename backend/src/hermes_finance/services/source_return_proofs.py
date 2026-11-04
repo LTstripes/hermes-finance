@@ -130,6 +130,83 @@ def _dependency(session, sources):
     )
 
 
+def _compatible_source_only_dependency(session, sources, expected):
+    """Reproduce a previous digest across source-irrelevant position/month changes.
+
+    This attests only stored custody-month evidence, never a financial result.
+    Every original, manifest, identity, parser, physical database and other
+    intervening dependency still has to match exactly.
+    """
+    from hermes_finance.services.source_custody_compat import (
+        CURRENT_CUSTODY_CODE_SHA256,
+        LEGACY_CUSTODY_CODE_SHA256,
+    )
+
+    current_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    if current_hash != CURRENT_CUSTODY_CODE_SHA256:
+        return False
+    path = session.connection().engine.url.database
+    physical = file_incarnation(Path(path)) if path else None
+    if not physical or session.connection().info.get("source_proof_incarnation") != physical:
+        return False
+    deps = list(
+        session.scalars(
+            select(SourceReturnProofDependency)
+            .order_by(SourceReturnProofDependency.seq.desc())
+            .limit(65)
+        )
+    )
+    tails = list(
+        session.scalars(
+            select(SourceIntakeRevision).order_by(SourceIntakeRevision.seq.desc()).limit(65)
+        )
+    )
+    dep_candidates = [[deps[0].seq, deps[0].token] if deps else None]
+    for index, entry in enumerate(deps[:64]):
+        bits = entry.token.split(":")
+        if len(bits) != 3 or bits[0] != "p" or not bits[1].isdigit():
+            break
+        dep_candidates.append(
+            [deps[index + 1].seq, deps[index + 1].token] if index + 1 < len(deps) else None
+        )
+    tail_candidates = [tails[0].seq if tails else None]
+    for index, entry in enumerate(tails[:64]):
+        payload = json.loads(entry.payload_json)
+        if (
+            entry.operation != "dependency"
+            or not isinstance(payload, dict)
+            or payload.get("table") != "position_snapshots"
+        ):
+            break
+        tail_candidates.append(tails[index + 1].seq if index + 1 < len(tails) else None)
+    common_hashes = [
+        hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        for path in (structure.__file__, mybroker.__file__)
+    ]
+    base = {
+        "version": VERSION,
+        "physical_database": physical,
+        "sources": sources,
+        "correction_identity_revision": mybroker_identity._revision(session),
+    }
+    for own_hash in (current_hash, LEGACY_CUSTODY_CODE_SHA256):
+        for dependency in dep_candidates:
+            for tail in tail_candidates:
+                if (
+                    mybroker.digest(
+                        {
+                            **base,
+                            "code": mybroker.digest([*common_hashes, own_hash]),
+                            "dependency": dependency,
+                            "intake_tail": tail,
+                        }
+                    )
+                    == expected
+                ):
+                    return True
+    return False
+
+
 def _status(row, state, reasons=(), currentness=None):
     return {
         "status": state,
@@ -159,7 +236,10 @@ def resolve_proof(session, source_account, selected, native_scope):
         if (
             row.proof_version != VERSION
             or evidence["sources"] != sources
-            or row.dependency_digest != currentness
+            or (
+                row.dependency_digest != currentness
+                and not _compatible_source_only_dependency(session, sources, row.dependency_digest)
+            )
         ):
             raise ProofError("source_return_proof_dependencies_changed")
         dates = {}

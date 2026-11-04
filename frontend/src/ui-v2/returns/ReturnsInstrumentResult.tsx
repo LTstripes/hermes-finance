@@ -1,7 +1,7 @@
 import type { InstrumentAnalysis } from "../../api/sourceReturns";
 import { reasonCopy } from "../../lib/reasonCopy";
 import styles from "./InstrumentResult.module.css";
-import { type Metric, unavailable } from "./model";
+import { displayMetric, type Metric, unavailable } from "./model";
 import { Explanation, Value, visibleReturnReasons } from "./ReturnsInfo";
 
 function Notes({ label, codes }: { label: string; codes: string[] }) {
@@ -54,6 +54,14 @@ export function ReturnsInstrumentResult({
         .flatMap((event) => event.assumptions) ?? []),
     ]),
   ];
+  const observedPayouts = (
+    [
+      ["Купоны", analysis?.components.coupons],
+      ["Дивиденды", analysis?.components.dividends],
+    ] as const
+  ).filter(
+    ([, value]) => value?.value != null && value.value !== "0" && value.status !== "unavailable",
+  );
   return (
     <div className={styles.result}>
       <dl className={styles.metrics}>
@@ -73,6 +81,19 @@ export function ReturnsInstrumentResult({
       {rate.method === "modified_dietz" && <small>Modified Dietz · за период, не годовая</small>}
       {(pnl.value === null || rate.value === null) && (
         <p className={styles.notice}>Нужна проверка данных</p>
+      )}
+      {pnl.value === null && observedPayouts.length > 0 && (
+        <div>
+          <p>Найденные выплаты — данные могут быть неполными</p>
+          <dl>
+            {observedPayouts.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{displayMetric({ ...unavailable, value: value?.value ?? null })}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       )}
       <Notes label="Причины" codes={reasons} />
       <Notes label="Допущения" codes={usedAssumptions} />

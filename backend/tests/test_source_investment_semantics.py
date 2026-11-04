@@ -19,7 +19,9 @@ SEMANTIC_MODULES = (
     "services/source_investment_proofs.py",
     "services/source_instrument_events.py",
     "services/source_instrument_returns.py",
+    "services/source_custody_compat.py",
     "services/source_money_classifications.py",
+    "services/source_redemption_evidence.py",
     "services/source_monthly_returns.py",
     "services/source_report_preview.py",
     "services/source_return_evidence.py",
@@ -39,7 +41,7 @@ SEMANTIC_MODULES = (
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v4",
-    "97594ffbfd85cad8e09fe19158b6ecdb129a7dcd1d574b704b759901c977cca3",
+    "991da975da7e9e8a7a63a48f73d1ecc6a9d1731db161fc8fefd866e6371ac976",
 )
 
 
@@ -55,3 +57,10 @@ def test_investment_semantic_modules_match_revision_pin():
         "Investment semantic modules changed: bump SEMANTICS_REVISION and update "
         f"SEMANTICS_PIN after reviewing the semantic module list. Actual: {actual!r}"
     )
+
+
+def test_custody_compatibility_is_bound_to_reviewed_implementation():
+    from hermes_finance.services import source_custody_compat, source_return_proofs
+
+    actual = hashlib.sha256(Path(source_return_proofs.__file__).read_bytes()).hexdigest()
+    assert actual == source_custody_compat.CURRENT_CUSTODY_CODE_SHA256
