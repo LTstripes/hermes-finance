@@ -45,7 +45,7 @@ export function ReturnsInstrumentCard({
     queryFn: ({ signal }) => getInstrumentCard(isin, signal),
     staleTime: 0,
   });
-  const data = !query.isFetching && !query.isError ? query.data : undefined;
+  const data = !query.isError ? query.data : undefined;
   const limitedAccounts =
     data?.accounts
       .map((account) => ({
@@ -56,7 +56,7 @@ export function ReturnsInstrumentCard({
             ...(account.detail?.pnl.value === null ? account.detail.pnl.reason_codes : []),
             ...(account.detail?.rate.value === null ? account.detail.rate.reason_codes : []),
           ]),
-        ],
+        ].filter((code) => code !== "broker_gift_external_flow"),
       }))
       .filter(({ account, codes }) => !account.included || !account.detail || codes.length > 0) ??
     [];
@@ -98,7 +98,7 @@ export function ReturnsInstrumentCard({
             Повторить
           </button>
         </p>
-      ) : query.isFetching ? (
+      ) : query.isFetching && !data ? (
         <p role="status">Загружаем инструмент…</p>
       ) : null}
       {data && (
@@ -216,6 +216,7 @@ export function ReturnsInstrumentCard({
                             </td>
                             <td colSpan={2}>
                               <ReturnsInstrumentResult
+                                hideAccountGift
                                 result={account.detail}
                                 analysis={account.detail.analysis}
                                 reasonCodes={[
@@ -228,6 +229,7 @@ export function ReturnsInstrumentCard({
                         ) : (
                           <td colSpan={3}>
                             <ReturnsInstrumentResult
+                              hideAccountGift
                               result={null}
                               reasonCodes={account.reason_codes}
                             />

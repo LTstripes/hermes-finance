@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { expect, test } from "vitest";
+import { reasonCopy } from "../../lib/reasonCopy";
 import { detailFixture, m } from "./fixtures";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 
@@ -10,6 +11,24 @@ const setup = (props: Parameters<typeof ReturnsInstrumentResult>[0]) =>
       <ReturnsInstrumentResult {...props} />
     </MemoryRouter>,
   );
+
+test("instrument card hides the account gift disclosure but keeps real missing-data reasons", () => {
+  const detail = detailFixture();
+  detail.pnl = { ...m(null), reason_codes: ["broker_gift_external_flow", "source_proof_stale"] };
+  detail.rate = { ...m(null, "fraction"), reason_codes: ["broker_gift_external_flow"] };
+  setup({
+    result: detail,
+    reasonCodes: ["broker_gift_external_flow", "source_proof_stale"],
+    hideAccountGift: true,
+  });
+  expect(screen.queryByText(reasonCopy("broker_gift_external_flow").message)).toBeNull();
+  expect(
+    screen.getAllByText(
+      (_, node) => node?.textContent?.includes(reasonCopy("source_proof_stale").message) ?? false,
+    ).length,
+  ).toBeGreaterThan(0);
+  expect(screen.getAllByText("—")).toHaveLength(2);
+});
 
 test("preserves exact large money and negative period rate from the server", () => {
   setup({

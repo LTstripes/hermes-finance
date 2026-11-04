@@ -685,7 +685,14 @@ def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(
     monkeypatch.setattr(overall.returns_view, "read_detail", detail)
     with db.session_factory() as session:
         value = overall.read_instrument_card(session, ISIN, overview=view)
-    assert calls == ["source:native-a"]
+        monkeypatch.setattr(
+            overall,
+            "_source_accounts",
+            lambda session, **kwargs: (view["source_accounts"], view["instruments"], {}),
+        )
+        monkeypatch.setattr(overall, "read_overall", lambda *args, **kwargs: pytest.fail("unused"))
+        assert overall.read_instrument_card(session, ISIN) == value
+    assert calls == ["source:native-a", "source:native-a"]
     assert value["summary"]["pnl"]["value"] == "100"
     assert value["summary"]["quantity"]["value"] == "0"  # sold is retained
     assert value["summary"]["rate"]["value"] is None

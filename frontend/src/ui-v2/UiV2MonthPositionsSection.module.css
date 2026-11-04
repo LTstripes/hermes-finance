@@ -12,8 +12,10 @@
 }
 
 .root :global(.position-price) {
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-grid;
+  grid-template-columns: max-content 1.25rem;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .root :global(.month-positions-table) {
@@ -33,6 +35,10 @@
 .root :global(.month-positions-table) th,
 .root :global(.month-positions-table) td {
   padding-inline: 4px;
+}
+
+.root :global(.month-positions-table) td:global(.num) {
+  white-space: nowrap;
 }
 
 .instrumentTitle {

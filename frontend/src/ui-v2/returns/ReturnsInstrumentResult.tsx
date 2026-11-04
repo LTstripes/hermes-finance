@@ -27,21 +27,27 @@ export function ReturnsInstrumentResult({
   result,
   analysis,
   reasonCodes = [],
+  hideAccountGift = false,
 }: {
   result: { pnl: Metric; rate: Metric } | null;
   analysis?: InstrumentAnalysis<string>;
   reasonCodes?: string[];
+  hideAccountGift?: boolean;
 }) {
-  const pnl = result?.pnl ?? unavailable;
-  const rate = result?.rate ?? { ...unavailable, unit: "fraction" as const };
-  const reasons = [
+  const visible = (codes: string[]) =>
+    hideAccountGift ? codes.filter((code) => code !== "broker_gift_external_flow") : codes;
+  const originalPnl = result?.pnl ?? unavailable;
+  const originalRate = result?.rate ?? { ...unavailable, unit: "fraction" as const };
+  const pnl = { ...originalPnl, reason_codes: visible(originalPnl.reason_codes) };
+  const rate = { ...originalRate, reason_codes: visible(originalRate.reason_codes) };
+  const reasons = visible([
     ...new Set([
       ...reasonCodes,
       ...pnl.reason_codes,
       ...rate.reason_codes,
       ...(analysis?.reason_codes ?? []),
     ]),
-  ];
+  ]);
   const usedAssumptions = [
     ...new Set([
       ...(analysis?.assumptions ?? []),

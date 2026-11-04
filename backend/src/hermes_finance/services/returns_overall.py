@@ -708,7 +708,14 @@ def _component_metric(item, *, current_source=False):
 def read_instrument_card(session, isin, *, overview=None):
     """Compose one lazy exact-ISIN card from the ordinary, guarded detail reader."""
     with source_read_snapshot(session):
-        overview = overview if overview is not None else read_overall(session)
+        if overview is None:
+            # The instrument card needs the source index only; deposits, gold,
+            # and aggregate income from the overall page are not its inputs.
+            accounts, instruments, _ = _source_accounts(session, include_instrument_details=False)
+            for row in instruments:
+                for account in row["accounts"]:
+                    account["canonical_account_id"] = account["account_link"]["financial_account_id"]
+            overview = {"source_accounts": accounts, "instruments": instruments}
         instrument = next((row for row in overview["instruments"] if row["isin"] == isin), None)
         if instrument is None:
             raise LookupError("returns_instrument_missing")
