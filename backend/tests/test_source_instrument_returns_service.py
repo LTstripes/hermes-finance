@@ -343,6 +343,9 @@ def test_stock_dividend_bond_coupon_nkd_purchase_sale_and_all_time(db, accepted_
         stock=("10", "6", "1100", "690"),
         bond=("3", "3", "3150", "3180"),
         trades=((ISIN, "-4", "460", None, "2"),),
+        mutate=lambda root: root.find(".//m:Details[@trade_no]", NS).set(
+            "trade_no", "10000000002\n2000000002"
+        ),
     )
     before = snapshot(db)
     result = read(db)
