@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import socket
 import ssl
@@ -9,6 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from importlib.resources import files
 from typing import Final
 from uuid import UUID
 
@@ -48,6 +50,22 @@ DEFAULT_TIMEOUT: Final = httpx2.Timeout(20.0, connect=5.0, read=10.0, write=10.0
 DEFAULT_MAX_DISCOVERY: Final = 10
 TOKEN_UNAVAILABLE_MESSAGE: Final = "T-Invest read-only token is not configured or is unavailable"
 logger = logging.getLogger(__name__)
+_T_INVEST_ROOT_SHA256: Final = "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31"
+
+
+def t_invest_tls_context() -> ssl.SSLContext:
+    """Add the verified official root only to this client's TLS context."""
+    pem = (
+        files("hermes_finance.market_data")
+        .joinpath("russian_trusted_root_ca.pem")
+        .read_text(encoding="ascii")
+    )
+    fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest()
+    if fingerprint != _T_INVEST_ROOT_SHA256:
+        raise ValueError("T-Invest root certificate fingerprint mismatch")
+    context = ssl.create_default_context()
+    context.load_verify_locations(cadata=pem)
+    return context
 
 
 def _transport_failure_kind(error: BaseException) -> str:
@@ -333,10 +351,15 @@ class TInvestClient:
         cleaned = token.strip() if token is not None else ""
         self._token = cleaned or None
         if client is None:
+            normalized_base = base_url.rstrip("/")
+            options = (
+                {"verify": t_invest_tls_context()} if normalized_base == DEFAULT_BASE_URL else {}
+            )
             self._http = httpx2.Client(
-                base_url=base_url.rstrip("/"),
+                base_url=normalized_base,
                 timeout=timeout,
                 headers={"Accept": "application/json", "Content-Type": "application/json"},
+                **options,
             )
             self._owns_client = True
         else:

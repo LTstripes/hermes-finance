@@ -7,6 +7,7 @@ import logging
 import socket
 import ssl
 from datetime import date, datetime, timezone
+from importlib.resources import files
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ import httpx2
 import pytest
 
 from hermes_finance.domain import InstrumentType
+from hermes_finance.market_data import t_invest
 from hermes_finance.market_data.dto import (
     T_INVEST_PROVIDER,
     MarketIdentity,
@@ -42,6 +44,32 @@ BOND_UID = "33333333-3333-3333-3333-333333333333"
 STOCK_ISIN = "RU000SYNTH01"
 BOND_ISIN = "RU000SYNTH03"
 TEST_TOKEN = "test-token"
+
+
+def test_verified_tinvest_root_is_scoped_to_the_official_client(monkeypatch):
+    before = set(ssl.create_default_context().get_ca_certs(binary_form=True))
+    context = t_invest.t_invest_tls_context()
+    assert context.check_hostname and context.verify_mode == ssl.CERT_REQUIRED
+    pem = files("hermes_finance.market_data").joinpath("russian_trusted_root_ca.pem").read_text()
+    assert ssl.PEM_cert_to_DER_cert(pem) in context.get_ca_certs(binary_form=True)
+    assert set(ssl.create_default_context().get_ca_certs(binary_form=True)) == before
+    calls = []
+    monkeypatch.setattr(t_invest.httpx2, "Client", lambda **kwargs: calls.append(kwargs))
+    TInvestClient(token=TEST_TOKEN)
+    TInvestClient(token=TEST_TOKEN, base_url="https://example.test/rest")
+    assert calls[0]["verify"].check_hostname
+    assert calls[0]["verify"].verify_mode == ssl.CERT_REQUIRED
+    assert "verify" not in calls[1]
+
+
+def test_tinvest_root_fingerprint_mismatch_fails_closed(monkeypatch, tmp_path):
+    pem = files("hermes_finance.market_data").joinpath("russian_trusted_root_ca.pem").read_text()
+    lines = pem.splitlines()
+    lines[1] = ("A" if lines[1][0] != "A" else "B") + lines[1][1:]
+    (tmp_path / "russian_trusted_root_ca.pem").write_text("\n".join(lines) + "\n")
+    monkeypatch.setattr(t_invest, "files", lambda _: tmp_path)
+    with pytest.raises(ValueError, match="fingerprint mismatch"):
+        t_invest.t_invest_tls_context()
 
 
 def _quotation(units: int | str, nano: int = 0) -> dict[str, object]:

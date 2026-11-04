@@ -12,10 +12,11 @@
 }
 
 .root :global(.position-price) {
-  display: inline-grid;
-  grid-template-columns: max-content 1.25rem;
+  display: flex;
+  flex-direction: row-reverse;
+  flex-wrap: wrap;
   align-items: center;
-  white-space: nowrap;
+  justify-content: flex-start;
 }
 
 .root :global(.month-positions-table) {

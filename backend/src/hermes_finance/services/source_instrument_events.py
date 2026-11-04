@@ -198,11 +198,17 @@ def _source_money_attribution(view, saved, raw, identities, native_issues):
     return _attribute(saved["operation"] + " " + saved["narrative"], identities), "legacy_text"
 
 
-def payout_attribution(saved, resolver, identities):
+def payout_attribution(saved, resolver, identities, *, session=None, view=None, raw=None):
     """Validate a persisted decision; never replace it with a newly possible link."""
     from hermes_finance.services.source_instrument_returns import _attribute
 
     status = saved.get("instrument_link_status")
+    if status != "linked" and session is not None and view is not None and raw is not None:
+        from hermes_finance.services.source_return_evidence import effective_payout_instrument
+
+        proven = effective_payout_instrument(session, view, raw, saved, resolver)
+        if proven is not None:
+            return proven, "accepted_money", ()
     if status == "linked":
         security = parse_money_security(saved["narrative"])
         if (
@@ -253,6 +259,7 @@ def read_events(session, views, identities, native_account, gaps):
         _trade_cash_total,
         _trade_core,
     )
+    from hermes_finance.services.source_return_evidence import payout_source_unambiguous
 
     resolver = MoneyInstrumentResolver(session)
     dependencies = _fingerprint(
@@ -296,7 +303,16 @@ def read_events(session, views, identities, native_account, gaps):
                 validated_refs.add(ref)
                 row = saved[ref]
                 if flow.classification in {"coupon", "dividend"}:
-                    isin, basis, reasons = payout_attribution(row, resolver, identities)
+                    isin, basis, reasons = payout_attribution(
+                        row,
+                        resolver,
+                        identities,
+                        session=session
+                        if payout_source_unambiguous(views, view, flow.event_date)
+                        else None,
+                        view=view,
+                        raw=raw[ref],
+                    )
                     if isin:
                         metadata = identities[isin]
                         metadata["identifiers"].add(isin)
@@ -305,6 +321,10 @@ def read_events(session, views, identities, native_account, gaps):
                             metadata["types"].add("stock")
                             metadata["names"].add(
                                 parse_money_security(row["narrative"]).issuer_name
+                            )
+                        elif basis == "accepted_money":
+                            metadata["types"].add(
+                                "bond" if flow.classification == "coupon" else "stock"
                             )
                         elif target:
                             metadata["types"].add(target.instrument_type)

@@ -4,6 +4,7 @@ import json
 from copy import deepcopy
 from datetime import UTC, date, datetime
 from decimal import Decimal, localcontext
+from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -89,6 +90,121 @@ def _accept_money(client, source, raw, *, confirmed):
     )
     assert saved.status_code == 200, saved.text
     assert all(t["effective"] for t in saved.json()["targets"])
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "valid",
+        "stale",
+        "wrong_account",
+        "wrong_row",
+        "user_choice",
+        "multiple_owners",
+        "multi_row",
+        "unbound",
+        "no_receipt",
+        "wrong_date",
+        "wrong_amount",
+        "wrong_currency",
+        "wrong_kind",
+        "wrong_role",
+    ],
+)
+def test_existing_payout_receipt_requires_exact_current_source_and_account(monkeypatch, case):
+    from hermes_finance.services import broker_money, broker_money_ownership, source_return_evidence
+    from hermes_finance.services.source_instrument_events import payout_attribution
+    from hermes_finance.services.source_money_classifications import source_reference
+    from hermes_finance.statement_import.mybroker import digest
+
+    row = {"ordinal": 3, "date": "2030-01-23", "amount": "17.23", "currency": "RUB"}
+    view = {"id": 9}
+    saved = {
+        "classification": "coupon",
+        "origin": "default_rule",
+        "instrument_link_status": "unresolved_no_match",
+        "instrument_id": None,
+        "source_reference": source_reference(view["id"], row),
+        "operation": "coupon",
+        "narrative": "synthetic",
+    }
+    occurrence = {
+        "import_id": 4,
+        "section": "money",
+        "ordinal": 3,
+        "role": "coupon",
+        "target_id": 11,
+        "row_fingerprint": digest(row),
+    }
+    owner = {"role": "coupon", "target_id": 11, "row_fingerprint": digest(row)}
+    receipt = SimpleNamespace(account_id=7, reporting_month_id=8)
+    facts = {
+        "instrument_id": "1",
+        "flow_type": "coupon",
+        "account_id": "7",
+        "reporting_month_id": "8",
+        "currency": "RUB",
+        "event_date": "2030-01-23",
+        "net_amount_kopecks": "1723",
+    }
+    proof = {"occurrences": [occurrence]}
+    target = {"role": "coupon", "target_id": 11, "facts": facts}
+    instrument = SimpleNamespace(isin=ISIN, instrument_type="bond", currency="RUB")
+    resolver = SimpleNamespace(instruments={1: instrument})
+    month = SimpleNamespace(period_start=date(2030, 1, 1), period_end=date(2030, 1, 31))
+    session = SimpleNamespace(get=lambda *_: month)
+    monkeypatch.setattr(
+        source_return_evidence,
+        "bound_import",
+        lambda *_: None if case == "unbound" else SimpleNamespace(id=4),
+    )
+    monkeypatch.setattr(
+        broker_money_ownership,
+        "owners",
+        lambda *_: [owner, owner] if case == "multiple_owners" else [owner],
+    )
+    monkeypatch.setattr(
+        broker_money,
+        "latest_proofs",
+        lambda *_: {} if case == "no_receipt" else {("coupon", 11): (receipt, proof, target)},
+    )
+    monkeypatch.setattr(
+        broker_money, "proof_blockers", lambda *_: ["stale"] if case == "stale" else []
+    )
+    if case == "wrong_account":
+        facts["account_id"] = "99"
+    elif case == "wrong_row":
+        occurrence["row_fingerprint"] = "different"
+    elif case == "user_choice":
+        saved["origin"] = "user_choice"
+    elif case == "multi_row":
+        proof["occurrences"].append({**occurrence, "ordinal": 4})
+    elif case == "wrong_date":
+        facts["event_date"] = "2030-01-24"
+    elif case == "wrong_amount":
+        facts["net_amount_kopecks"] = "1724"
+    elif case == "wrong_currency":
+        facts["currency"] = "USD"
+    elif case == "wrong_kind":
+        instrument.instrument_type = "stock"
+    elif case == "wrong_role":
+        facts["flow_type"] = "dividend"
+    result = payout_attribution(saved, resolver, {}, session=session, view=view, raw=row)
+    if case == "valid":
+        assert result == (ISIN, "accepted_money", ())
+    else:
+        assert result == (None, "persisted_link", ("payout_link_unresolved_no_match",))
+
+
+def test_receipt_source_is_not_borrowed_across_overlapping_originals():
+    from hermes_finance.services.source_return_evidence import payout_source_unambiguous
+
+    first = {"id": 1, "covered_from": "2030-01-01", "covered_to": "2030-01-31"}
+    overlap = {"id": 2, "covered_from": "2030-01-15", "covered_to": "2030-02-15"}
+    assert payout_source_unambiguous([first, overlap], first, date(2030, 1, 14))
+    assert not payout_source_unambiguous([first, overlap], first, date(2030, 1, 15))
+    assert not payout_source_unambiguous([first, overlap], overlap, date(2030, 1, 15))
+    assert payout_source_unambiguous([first, overlap], overlap, date(2030, 2, 1))
 
 
 @pytest.mark.parametrize("confirmed", [False, True])

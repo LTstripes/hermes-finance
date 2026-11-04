@@ -1085,6 +1085,33 @@ def test_overlap_occurrence_multiplicity_missing_conflict_and_unrelated_account(
     assert a.pnl.value is None and "overlap_money_occurrence_missing" in a.reason_codes
 
 
+def test_current_receipt_does_not_override_duplicate_unbound_original(db, monkeypatch):
+    from hermes_finance.services import source_return_evidence
+
+    extra = (("Дивиденды", "Synthetic unidentified payout", "10"),)
+    save(db, bond=None, trades=(), extra=extra)
+    before = snapshot(db)
+    calls = []
+
+    def accepted(*args):
+        calls.append(1)
+        return ISIN
+
+    monkeypatch.setattr(source_return_evidence, "effective_payout_instrument", accepted)
+    single = by_isin(read(db))[ISIN].analysis
+    assert calls
+    assert single.components["dividends"].value == 1000
+    assert snapshot(db) == before
+    save(db, bond=None, trades=(), extra=extra, marker="overlap")
+    before = snapshot(db)
+    calls.clear()
+    overlap = by_isin(read(db))[ISIN].analysis
+    assert not calls
+    assert overlap.components["dividends"].value is None
+    assert "unattributed_income" in overlap.reason_codes
+    assert snapshot(db) == before
+
+
 def test_same_isin_different_native_accounts_never_share_events(db):
     save(db, bond=None, trades=(), extra=(("Дивиденды", ISIN, "10"),))
 

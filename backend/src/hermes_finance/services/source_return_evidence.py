@@ -53,6 +53,85 @@ def effective_bonus(session, source, row):
     ) and not money.proof_blockers(session, receipt, proof, target)
 
 
+def payout_source_unambiguous(views, view, event_date):
+    """Only use a receipt directly when no other selected source covers the date."""
+    day = str(event_date)
+    covered = [v for v in views if v["covered_from"] <= day <= v["covered_to"]]
+    return len(covered) == 1 and covered[0]["id"] == view["id"]
+
+
+def effective_payout_instrument(session, view, row, saved, resolver):
+    """Use an exact current Money receipt, without altering intake decisions."""
+    from hermes_finance.statement_import.mybroker import MyBrokerError
+
+    try:
+        return _effective_payout_instrument(session, view, row, saved, resolver)
+    except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
+        return None
+
+
+def _effective_payout_instrument(session, view, row, saved, resolver):
+    from hermes_finance.persistence import ReportingMonth
+    from hermes_finance.services import broker_money as money
+    from hermes_finance.services.broker_money_ownership import owners
+    from hermes_finance.services.broker_statement_provisional import _minor
+    from hermes_finance.services.source_money_classifications import source_reference
+
+    role = saved.get("classification")
+    if (
+        role not in {"coupon", "dividend"}
+        or saved.get("origin") != "default_rule"
+        or saved.get("instrument_link_status") not in {None, "not_parsed", "unresolved_no_match"}
+        or saved.get("instrument_id") is not None
+        or saved.get("source_reference") != source_reference(view["id"], row)
+    ):
+        return None
+    source = bound_import(session, view)
+    if source is None:
+        return None
+    occurrence = {"import_id": source.id, "section": "money", "ordinal": row["ordinal"]}
+    owned = owners(session, [occurrence])
+    if len(owned) != 1:
+        return None
+    owner = owned[0]
+    if owner["role"] != role or owner["row_fingerprint"] != digest(row):
+        return None
+    entry = money.latest_proofs(session).get((role, owner["target_id"]))
+    if entry is None:
+        return None
+    receipt, proof, target = entry
+    cohort = [
+        o for o in proof["occurrences"] if (o["role"], o["target_id"]) == (role, owner["target_id"])
+    ]
+    if len(cohort) != 1 or any(cohort[0].get(k) != v for k, v in occurrence.items()):
+        return None
+    if cohort[0]["row_fingerprint"] != digest(row) or money.proof_blockers(
+        session, receipt, proof, target
+    ):
+        return None
+    facts = target.get("facts") or {}
+    month = session.get(ReportingMonth, receipt.reporting_month_id)
+    instrument_id = facts.get("instrument_id")
+    instrument = resolver.instruments.get(int(instrument_id)) if instrument_id is not None else None
+    expected_kind = "bond" if role == "coupon" else "stock"
+    if (
+        not instrument
+        or not instrument.isin
+        or instrument.instrument_type != expected_kind
+        or instrument.currency != "RUB"
+        or facts.get("flow_type") != role
+        or facts.get("account_id") != str(receipt.account_id)
+        or facts.get("reporting_month_id") != str(receipt.reporting_month_id)
+        or facts.get("currency") != "RUB"
+        or facts.get("event_date") != str(row.get("date"))
+        or facts.get("net_amount_kopecks") != str(_minor(row.get("amount")))
+        or month is None
+        or not month.period_start.isoformat() <= str(row["date"]) <= month.period_end.isoformat()
+    ):
+        return None
+    return instrument.isin
+
+
 def apply_cash_gifts(session, view, rows):
     """Project only current exact cash gifts; never mutate saved source rows."""
     source = bound_import(session, view)

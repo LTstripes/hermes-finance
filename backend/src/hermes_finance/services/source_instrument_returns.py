@@ -23,6 +23,7 @@ from hermes_finance.domain.instrument_return import (
 from hermes_finance.persistence import ExecutedTrade
 from hermes_finance.services import broker_trade_money
 from hermes_finance.services.broker_statement_provisional import _minor
+from hermes_finance.services.source_money_classifications import source_reference
 from hermes_finance.services.source_monthly_returns import (
     SOURCE_PERIOD_INFERRED_MESSAGE,
     SourceReturnGap,
@@ -247,16 +248,27 @@ def _identities(views):
 def _income(session, views, identities, gaps):
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
     from hermes_finance.services.source_instrument_events import payout_attribution
+    from hermes_finance.services.source_return_evidence import payout_source_unambiguous
 
     resolver = MoneyInstrumentResolver(session)
     occurrences = defaultdict(list)
     for view in views:
         saved = {r["source_reference"]: r for r in view["money_classifications"]}
+        raw = {source_reference(view["id"], row): row for row in view["document"].get("money", [])}
         local_gaps = []
         try:
             for key, flow in _money(session, view, None, local_gaps):
                 narrative = saved[flow.source_references[0]]
-                isin, basis, reasons = payout_attribution(narrative, resolver, identities)
+                isin, basis, reasons = payout_attribution(
+                    narrative,
+                    resolver,
+                    identities,
+                    session=session
+                    if payout_source_unambiguous(views, view, flow.event_date)
+                    else None,
+                    view=view,
+                    raw=raw[flow.source_references[0]],
+                )
                 if basis == "registration_scope":
                     # Legacy income must not turn coverage-only identity into a payout.
                     isin = None
