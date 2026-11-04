@@ -212,7 +212,16 @@ def test_durable_proof_existing_catalogue_aba_uses_v1_tail_without_duplicate_clo
 
 
 def test_custody_proof_ignores_unrelated_month_and_snapshot_but_not_source_changes(db, monkeypatch):
-    from hermes_finance.persistence import Account, Instrument, PositionSnapshot, ReportingMonth
+    import json
+    from datetime import UTC, datetime
+
+    from hermes_finance.persistence import (
+        Account,
+        Instrument,
+        PositionSnapshot,
+        ReportingMonth,
+        SourceIntakeRevision,
+    )
 
     with db.session_factory() as session:
         account = Account(name="Synthetic unrelated", account_type="brokerage")
@@ -248,7 +257,59 @@ def test_custody_proof_ignores_unrelated_month_and_snapshot_but_not_source_chang
         session.get(PositionSnapshot, position_id).market_value_kopecks = 2
         session.commit()
     assert read(db).source_proof["status"] == "current"
+    # An out-of-order system clock only changes search order, never authority.
+    with db.session_factory() as session:
+        for index, year in enumerate((2000, 2100)):
+            session.add(
+                SourceIntakeRevision(
+                    request_id=f"synthetic-clock-{index}",
+                    request_fingerprint="0" * 64,
+                    contract_version="source_intake_v1",
+                    operation="dependency",
+                    confirmation_digest="0" * 64,
+                    payload_json=json.dumps({"table": "position_snapshots", "id": position_id}),
+                    reviewer="system",
+                    accepted_at=datetime(year, 1, 1, tzinfo=UTC),
+                )
+            )
+        session.commit()
+    assert read(db).source_proof["status"] == "current"
+    # Exceed the former 64-record cap in both append-only journals. The
+    # financial values are irrelevant to this source-structure evidence.
+    with db.session_factory() as session:
+        for index in range(80):
+            session.get(ReportingMonth, month_id).snapshot_date = date(
+                2031, 1, 30 if index % 2 else 31
+            )
+            session.get(PositionSnapshot, position_id).market_value_kopecks = 2 if index % 2 else 1
+            session.flush()
+        session.commit()
+    assert read(db).source_proof["status"] == "current"
     from hermes_finance.services import source_custody_compat
+    from hermes_finance.services import source_return_proofs as proofs
+    from hermes_finance.services.source_monthly_returns import (
+        _selected_sources,
+        source_read_snapshot,
+    )
+
+    calls = []
+    original_compat = proofs._compatible_source_only_dependency
+
+    def counted(*args):
+        calls.append(1)
+        return original_compat(*args)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "_compatible_source_only_dependency", counted)
+        with db.session_factory() as session, source_read_snapshot(session):
+            selected, native = _selected_sources(session, ACCOUNT)
+            assert (
+                proofs.resolve_proof(session, ACCOUNT, selected, native)[1]["status"] == "current"
+            )
+            assert (
+                proofs.resolve_proof(session, ACCOUNT, selected, native)[1]["status"] == "current"
+            )
+        assert len(calls) == 1
 
     with monkeypatch.context() as changed_code:
         changed_code.setattr(source_custody_compat, "CURRENT_CUSTODY_CODE_SHA256", "0" * 64)
@@ -283,6 +344,41 @@ def test_instrument_reader_scopes_verified_custody_gap_to_cancellation_month(db)
     assert {gap.month for gap in related} == {date(2030, 5, 1)}
     assert {gap.code for gap in related} == {"custody_cancellation_unresolved"}
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    ("table", "expected"),
+    [
+        ("cash_balances", "current"),
+        ("investment_cash_flows", "current"),
+        ("external_flows", "current"),
+        ("accounts", "stale"),
+        ("unknown_table", "stale"),
+    ],
+)
+def test_custody_compatibility_ignores_only_nonstructural_financial_changes(db, table, expected):
+    import json
+    from datetime import UTC, datetime
+
+    from hermes_finance.persistence import SourceIntakeRevision
+
+    _, _, preview = proof_preview(db)
+    proof_confirm(db, preview)
+    with db.session_factory() as session:
+        session.add(
+            SourceIntakeRevision(
+                request_id="synthetic-dependency-" + table,
+                request_fingerprint="0" * 64,
+                contract_version="source_intake_v1",
+                operation="dependency",
+                confirmation_digest="0" * 64,
+                payload_json=json.dumps({"table": table, "id": 1}),
+                reviewer="system",
+                accepted_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    assert read(db).source_proof["status"] == expected
 
 
 def test_instrument_custody_gap_scopes_only_when_identity_is_proved(db, monkeypatch):
@@ -2792,3 +2888,22 @@ def test_bounded_month_result_matches_full_history_without_period_xirr(db, monke
             is None
         )
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("case", ["normal", "same_day", "unknown", "missing", "large"])
+def test_monthly_kernel_preserves_chain_row_without_computing_unused_xirr(monkeypatch, case):
+    from hermes_finance.domain import monthly_return_chain as chain
+
+    opening = (
+        date(2030, 4, 30),
+        None if case == "missing" else 10**20 if case == "large" else 100000,
+    )
+    closing = (date(2030, 5, 31), 10**20 + 12345 if case == "large" else 120000)
+    flows = [(date(2030, 5, 10), 300, "confirmed"), (date(2030, 5, 10), -100, "assumed")]
+    if case == "unknown":
+        flows.append((date(2030, 5, 20), 10, "unknown"))
+    if case == "same_day":
+        flows.reverse()
+    expected = chain.calculate_monthly_return_chain([opening, closing], flows).months[0]
+    monkeypatch.setattr(chain, "_period_xirr", lambda *_: pytest.fail("unused XIRR was evaluated"))
+    assert chain.calculate_interval_return(opening, closing, flows) == expected

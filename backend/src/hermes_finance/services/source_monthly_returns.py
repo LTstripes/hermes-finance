@@ -787,18 +787,13 @@ def _read_monthly_returns(
 
         opening = endpoint(3, lambda source: source[1] == month)
         closing = endpoint(4, lambda source: source[2] == end)
-        # The monthly row never needs the chain's period XIRR. Use its same
-        # canonical monthly kernel directly for the bounded projection.
-        if target_month is not None:
-            from hermes_finance.domain.monthly_return_chain import calculate_interval_return
+        # The row uses only the shared monthly kernel; the chain's period
+        # XIRR is calculated separately for actual periods and segments.
+        from hermes_finance.domain.monthly_return_chain import calculate_interval_return
 
-            calculated = calculate_interval_return(
-                (month - timedelta(days=1), opening), (end, closing), schedule
-            )
-        else:
-            calculated = calculate_monthly_return_chain(
-                [(month - timedelta(days=1), opening), (end, closing)], schedule
-            ).months[0]
+        calculated = calculate_interval_return(
+            (month - timedelta(days=1), opening), (end, closing), schedule
+        )
         if {month - timedelta(days=1), end} & conflicting_endpoint_dates:
             calculated = replace(
                 calculated, reason_codes=(*calculated.reason_codes, "duplicate_position")

@@ -130,8 +130,8 @@ def _dependency(session, sources):
     )
 
 
-def _compatible_source_only_dependency(session, sources, expected):
-    """Reproduce a previous digest across source-irrelevant position/month changes.
+def _compatible_source_only_dependency(session, sources, expected, confirmed_at):
+    """Reproduce a previous digest across source-irrelevant financial changes.
 
     This attests only stored custody-month evidence, never a financial result.
     Every original, manifest, identity, parser, physical database and other
@@ -149,36 +149,57 @@ def _compatible_source_only_dependency(session, sources, expected):
     physical = file_incarnation(Path(path)) if path else None
     if not physical or session.connection().info.get("source_proof_incarnation") != physical:
         return False
-    deps = list(
+    deps = iter(
         session.scalars(
-            select(SourceReturnProofDependency)
-            .order_by(SourceReturnProofDependency.seq.desc())
-            .limit(65)
-        )
+            select(SourceReturnProofDependency).order_by(SourceReturnProofDependency.seq.desc())
+        ).yield_per(128)
     )
-    tails = list(
-        session.scalars(
-            select(SourceIntakeRevision).order_by(SourceIntakeRevision.seq.desc()).limit(65)
-        )
-    )
-    dep_candidates = [[deps[0].seq, deps[0].token] if deps else None]
-    for index, entry in enumerate(deps[:64]):
+    entry = next(deps, None)
+    dep_candidates = [[entry.seq, entry.token] if entry else None]
+    while entry is not None:
         bits = entry.token.split(":")
         if len(bits) != 3 or bits[0] != "p" or not bits[1].isdigit():
             break
-        dep_candidates.append(
-            [deps[index + 1].seq, deps[index + 1].token] if index + 1 < len(deps) else None
-        )
-    tail_candidates = [tails[0].seq if tails else None]
-    for index, entry in enumerate(tails[:64]):
+        entry = next(deps, None)
+        dep_candidates.append([entry.seq, entry.token] if entry else None)
+    tails = iter(
+        session.execute(
+            select(
+                SourceIntakeRevision.seq,
+                SourceIntakeRevision.operation,
+                SourceIntakeRevision.payload_json,
+                SourceIntakeRevision.accepted_at,
+            ).order_by(SourceIntakeRevision.seq.desc())
+        ).yield_per(128)
+    )
+    entry = next(tails, None)
+    tail_candidates = [(entry.seq, entry.accepted_at) if entry else (None, None)]
+    while entry is not None:
         payload = json.loads(entry.payload_json)
         if (
             entry.operation != "dependency"
             or not isinstance(payload, dict)
-            or payload.get("table") != "position_snapshots"
+            or payload.get("table")
+            not in {
+                "position_snapshots",
+                "cash_balances",
+                "investment_cash_flows",
+                "external_flows",
+            }
         ):
             break
-        tail_candidates.append(tails[index + 1].seq if index + 1 < len(tails) else None)
+        entry = next(tails, None)
+        tail_candidates.append((entry.seq, entry.accepted_at) if entry else (None, None))
+    # Timestamps only prioritize candidates; digest equality remains the sole
+    # authority, including when clocks moved backwards or several share a second.
+    when = confirmed_at.replace(tzinfo=None) if confirmed_at else None
+    if when:
+        tail_candidates.sort(
+            key=lambda item: (
+                item[1] is None or item[1].replace(tzinfo=None) > when,
+                -(item[0] or 0),
+            )
+        )
     common_hashes = [
         hashlib.sha256(Path(path).read_bytes()).hexdigest()
         for path in (structure.__file__, mybroker.__file__)
@@ -189,14 +210,18 @@ def _compatible_source_only_dependency(session, sources, expected):
         "sources": sources,
         "correction_identity_revision": mybroker_identity._revision(session),
     }
-    for own_hash in (current_hash, LEGACY_CUSTODY_CODE_SHA256):
+    codes = [
+        mybroker.digest([*common_hashes, own_hash])
+        for own_hash in (current_hash, LEGACY_CUSTODY_CODE_SHA256)
+    ]
+    for tail, _ in tail_candidates:
         for dependency in dep_candidates:
-            for tail in tail_candidates:
+            for code in codes:
                 if (
                     mybroker.digest(
                         {
                             **base,
-                            "code": mybroker.digest([*common_hashes, own_hash]),
+                            "code": code,
                             "dependency": dependency,
                             "intake_tail": tail,
                         }
@@ -221,6 +246,8 @@ def _status(row, state, reasons=(), currentness=None):
 
 def resolve_proof(session, source_account, selected, native_scope):
     """Latest proof only. A retired proof never falls back to an earlier record."""
+    from hermes_finance.database import snapshot_read_result
+
     row = _latest(session, source_account, native_scope)
     if row is None:
         try:
@@ -238,7 +265,14 @@ def resolve_proof(session, source_account, selected, native_scope):
             or evidence["sources"] != sources
             or (
                 row.dependency_digest != currentness
-                and not _compatible_source_only_dependency(session, sources, row.dependency_digest)
+                and not snapshot_read_result(
+                    session,
+                    "source_custody_compatible_dependency",
+                    (row.id, row.dependency_digest, mybroker.digest(sources)),
+                    lambda: _compatible_source_only_dependency(
+                        session, sources, row.dependency_digest, row.confirmed_at
+                    ),
+                )
             )
         ):
             raise ProofError("source_return_proof_dependencies_changed")
