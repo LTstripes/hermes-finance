@@ -17,6 +17,8 @@ SEMANTIC_MODULES = (
     "domain/xirr_roots.py",
     "services/mybroker_money_candidates.py",
     "services/source_investment_proofs.py",
+    "services/source_instrument_events.py",
+    "services/source_instrument_returns.py",
     "services/source_money_classifications.py",
     "services/source_monthly_returns.py",
     "services/source_report_preview.py",
@@ -33,11 +35,11 @@ SEMANTIC_MODULES = (
 )
 
 # Pin the revision alongside the digest so bumping either alone fails the guard.
-# Saved XML/PDF gift interpretation changes in v3 and requires independent
-# compatibility review for older proofs.
+# V4 adds exact payout receipt attribution; compatibility with older proofs
+# requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v3",
-    "4dda7287fd3966a622d4b3361c52e5f8f69b7f74891fd009773aa711991f8f72",
+    "source_investment_semantics_v4",
+    "268db805e9b083a8141c472d6ed7ac46555b7e07a90166efc648330443c9c684",
 )
 
 

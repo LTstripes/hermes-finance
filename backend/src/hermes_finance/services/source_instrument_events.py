@@ -198,15 +198,25 @@ def _source_money_attribution(view, saved, raw, identities, native_issues):
     return _attribute(saved["operation"] + " " + saved["narrative"], identities), "legacy_text"
 
 
-def payout_attribution(saved, resolver, identities, *, session=None, view=None, raw=None):
+def payout_attribution(
+    saved, resolver, identities, *, session=None, view=None, raw=None, views=None
+):
     """Validate a persisted decision; never replace it with a newly possible link."""
     from hermes_finance.services.source_instrument_returns import _attribute
 
     status = saved.get("instrument_link_status")
     if status != "linked" and session is not None and view is not None and raw is not None:
-        from hermes_finance.services.source_return_evidence import effective_payout_instrument
+        from hermes_finance.services.source_return_evidence import (
+            effective_overlapping_payout,
+            effective_payout_instrument,
+            payout_source_unambiguous,
+        )
 
-        proven = effective_payout_instrument(session, view, raw, saved, resolver)
+        proven = (
+            effective_payout_instrument(session, view, raw, saved, resolver)
+            if views is None or payout_source_unambiguous(views, view, raw["date"])
+            else effective_overlapping_payout(session, views, view, raw, saved, resolver)
+        )
         if proven is not None:
             return proven, "accepted_money", ()
     if status == "linked":
@@ -259,7 +269,6 @@ def read_events(session, views, identities, native_account, gaps):
         _trade_cash_total,
         _trade_core,
     )
-    from hermes_finance.services.source_return_evidence import payout_source_unambiguous
 
     resolver = MoneyInstrumentResolver(session)
     dependencies = _fingerprint(
@@ -307,11 +316,10 @@ def read_events(session, views, identities, native_account, gaps):
                         row,
                         resolver,
                         identities,
-                        session=session
-                        if payout_source_unambiguous(views, view, flow.event_date)
-                        else None,
+                        session=session,
                         view=view,
                         raw=raw[ref],
+                        views=views,
                     )
                     if isin:
                         metadata = identities[isin]

@@ -36,8 +36,9 @@ VERSION = "source_return_investment_v1"
 # parsing, mybroker_return_structure, source_report_preview._money classification or
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
-SEMANTICS_REVISION = "source_investment_semantics_v3"
-_GIFT_COMPAT_REVISION = "source_investment_semantics_v3"
+SEMANTICS_REVISION = "source_investment_semantics_v4"
+_GIFT_COMPAT_REVISION = "source_investment_semantics_v4"
+_V3_COMPAT_CODE = "source_investment_semantics_v3"
 _GIFT_COMPAT_CODES = (
     "source_investment_semantics_v2",
     "0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81",
@@ -263,15 +264,13 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
     if gift_dependencies:
         operands["gift_dependencies"] = sorted(gift_dependencies)
     current = mybroker.digest(operands)
-    # Read-only, direct compatibility only when no relevant gift proof exists.
-    # Recompute every old operand; no writer or future semantic revision is admitted.
-    if (
-        not reserved
-        and read_dependency is not None
-        and not gift_dependencies
-        and SEMANTICS_REVISION == _GIFT_COMPAT_REVISION
-    ):
-        for code in _GIFT_COMPAT_CODES:
+    # Instrument payout attribution changes in v4, but the saved account proof's
+    # _captured_money, _payout_links and _interval derivation remains unchanged.
+    # Recompute all old operands including gift dependencies; never use this for
+    # writes or future revisions. Older pre-gift proofs still require no gift head.
+    if not reserved and read_dependency is not None and SEMANTICS_REVISION == _GIFT_COMPAT_REVISION:
+        codes = (_V3_COMPAT_CODE,) + (() if gift_dependencies else _GIFT_COMPAT_CODES)
+        for code in codes:
             previous = mybroker.digest({**operands, "code": code})
             if read_dependency == previous:
                 current = previous

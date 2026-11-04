@@ -152,7 +152,7 @@ def test_existing_payout_receipt_requires_exact_current_source_and_account(monke
     instrument = SimpleNamespace(isin=ISIN, instrument_type="bond", currency="RUB")
     resolver = SimpleNamespace(instruments={1: instrument})
     month = SimpleNamespace(period_start=date(2030, 1, 1), period_end=date(2030, 1, 31))
-    session = SimpleNamespace(get=lambda *_: month)
+    session = SimpleNamespace(get=lambda *_: month, info={})
     monkeypatch.setattr(
         source_return_evidence,
         "bound_import",
@@ -205,6 +205,79 @@ def test_receipt_source_is_not_borrowed_across_overlapping_originals():
     assert not payout_source_unambiguous([first, overlap], first, date(2030, 1, 15))
     assert not payout_source_unambiguous([first, overlap], overlap, date(2030, 1, 15))
     assert payout_source_unambiguous([first, overlap], overlap, date(2030, 2, 1))
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "valid",
+        "duplicate",
+        "duplicate_update",
+        "missing",
+        "different_row",
+        "user_choice",
+        "two_proofs",
+        "no_proof",
+    ],
+)
+def test_overlap_receipt_requires_one_identical_unambiguous_group(monkeypatch, case):
+    from hermes_finance.services import source_return_evidence as evidence
+    from hermes_finance.services.source_money_classifications import source_reference
+
+    row = {
+        "ordinal": 1,
+        "date": "2030-01-23",
+        "amount": "17.23",
+        "currency": "RUB",
+        "source_account": "synthetic",
+    }
+    views = []
+    for source_id in (1, 2):
+        raw = dict(row)
+        saved = {
+            "classification": "coupon",
+            "origin": "default_rule",
+            "instrument_link_status": "not_parsed",
+            "instrument_id": None,
+            "operation": "coupon",
+            "narrative": "synthetic",
+            "source_reference": source_reference(source_id, raw),
+        }
+        views.append(
+            {
+                "id": source_id,
+                "covered_from": "2030-01-01",
+                "covered_to": "2030-01-31",
+                "document": {"money": [raw]},
+                "money_classifications": [saved],
+            }
+        )
+    if case == "duplicate":
+        views[1]["document"]["money"].append({**row, "ordinal": 2})
+    elif case == "duplicate_update":
+        views[1]["document"]["money"].append({**row, "ordinal": 2, "last_update": "later"})
+    elif case == "missing":
+        views[1]["document"]["money"].clear()
+    elif case == "different_row":
+        views[1]["document"]["money"][0]["amount"] = "17.24"
+    elif case == "user_choice":
+        views[1]["money_classifications"][0]["origin"] = "user_choice"
+    monkeypatch.setattr(
+        evidence,
+        "effective_payout_instrument",
+        lambda _s, v, *_: (
+            ISIN if case != "no_proof" and (v["id"] == 1 or case == "two_proofs") else None
+        ),
+    )
+    result = evidence.effective_overlapping_payout(
+        None,
+        views,
+        views[0],
+        views[0]["document"]["money"][0],
+        views[0]["money_classifications"][0],
+        None,
+    )
+    assert result == (ISIN if case == "valid" else None)
 
 
 @pytest.mark.parametrize("confirmed", [False, True])

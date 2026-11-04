@@ -60,6 +60,51 @@ def payout_source_unambiguous(views, view, event_date):
     return len(covered) == 1 and covered[0]["id"] == view["id"]
 
 
+def effective_overlapping_payout(session, views, view, row, saved, resolver):
+    """Project one current receipt only across uniquely identical source rows."""
+    from hermes_finance.services.source_money_classifications import source_reference
+
+    day = str(row.get("date"))
+    covering = [v for v in views if v["covered_from"] <= day <= v["covered_to"]]
+    if len(covering) < 2 or view["id"] not in {v["id"] for v in covering}:
+        return None
+    relevant = (
+        "classification",
+        "origin",
+        "instrument_link_status",
+        "instrument_id",
+        "operation",
+        "narrative",
+    )
+    if saved.get("origin") != "default_rule" or saved.get("instrument_id") is not None:
+        return None
+    signature = {k: v for k, v in row.items() if k not in {"ordinal", "last_update"}}
+    matches = []
+    for candidate in covering:
+        raw = [
+            r
+            for r in candidate["document"].get("money", [])
+            if {k: v for k, v in r.items() if k not in {"ordinal", "last_update"}} == signature
+        ]
+        if len(raw) != 1 or {k: v for k, v in raw[0].items() if k != "ordinal"} != {
+            k: v for k, v in row.items() if k != "ordinal"
+        }:
+            return None
+        ref = source_reference(candidate["id"], raw[0])
+        choices = [
+            r for r in candidate["money_classifications"] if r.get("source_reference") == ref
+        ]
+        if len(choices) != 1 or any(choices[0].get(k) != saved.get(k) for k in relevant):
+            return None
+        matches.append((candidate, raw[0], choices[0]))
+    proven = [
+        value
+        for v, r, s in matches
+        if (value := effective_payout_instrument(session, v, r, s, resolver)) is not None
+    ]
+    return proven[0] if len(proven) == 1 else None
+
+
 def effective_payout_instrument(session, view, row, saved, resolver):
     """Use an exact current Money receipt, without altering intake decisions."""
     from hermes_finance.statement_import.mybroker import MyBrokerError
@@ -68,6 +113,15 @@ def effective_payout_instrument(session, view, row, saved, resolver):
         return _effective_payout_instrument(session, view, row, saved, resolver)
     except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
         return None
+
+
+def _payout_money_heads(session):
+    from hermes_finance.database import snapshot_read_result
+    from hermes_finance.services import broker_money as money
+
+    return snapshot_read_result(
+        session, "source_payout_money_heads", (), lambda: money.latest_proofs(session)
+    )
 
 
 def _effective_payout_instrument(session, view, row, saved, resolver):
@@ -96,7 +150,8 @@ def _effective_payout_instrument(session, view, row, saved, resolver):
     owner = owned[0]
     if owner["role"] != role or owner["row_fingerprint"] != digest(row):
         return None
-    entry = money.latest_proofs(session).get((role, owner["target_id"]))
+    heads = _payout_money_heads(session)
+    entry = heads.get((role, owner["target_id"]))
     if entry is None:
         return None
     receipt, proof, target = entry

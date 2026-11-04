@@ -1106,9 +1106,30 @@ def test_current_receipt_does_not_override_duplicate_unbound_original(db, monkey
     before = snapshot(db)
     calls.clear()
     overlap = by_isin(read(db))[ISIN].analysis
-    assert not calls
+    assert calls
     assert overlap.components["dividends"].value is None
     assert "unattributed_income" in overlap.reason_codes
+    assert snapshot(db) == before
+
+
+def test_one_exact_receipt_is_counted_once_across_identical_originals(db, monkeypatch):
+    from hermes_finance.services import source_return_evidence
+
+    extra = (("Дивиденды", "Synthetic unidentified payout", "10"),)
+    save(db, bond=None, trades=(), extra=extra)
+    save(db, bond=None, trades=(), extra=extra, marker="overlap")
+    before = snapshot(db)
+    accepted_source = []
+
+    def accepted(_session, view, *_args):
+        if not accepted_source:
+            accepted_source.append(view["id"])
+        return ISIN if view["id"] == accepted_source[0] else None
+
+    monkeypatch.setattr(source_return_evidence, "effective_payout_instrument", accepted)
+    result = by_isin(read(db))[ISIN].analysis
+    assert result.components["dividends"].value == 1000
+    assert "overlap_flow_choice_conflict" not in result.reason_codes
     assert snapshot(db) == before
 
 

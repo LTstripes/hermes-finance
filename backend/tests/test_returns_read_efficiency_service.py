@@ -66,6 +66,27 @@ def test_proved_scope_map_reuses_only_one_snapshot_and_returns_owned_maps(db, mo
         assert actual["1234567"] == ACCOUNT
 
 
+def test_payout_heads_reused_only_within_snapshot_and_are_owned(db, monkeypatch):
+    from hermes_finance.services import broker_money, source_return_evidence
+
+    calls = []
+
+    def latest(_session):
+        calls.append(1)
+        return {"key": {"value": len(calls)}}
+
+    monkeypatch.setattr(broker_money, "latest_proofs", latest)
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            first = source_return_evidence._payout_money_heads(session)
+            first["key"]["value"] = 99
+            assert source_return_evidence._payout_money_heads(session)["key"]["value"] == 1
+            assert len(calls) == 1
+        with source_read_snapshot(session):
+            assert source_return_evidence._payout_money_heads(session)["key"]["value"] == 2
+        assert len(calls) == 2
+
+
 def test_failed_scope_read_does_not_leave_reusable_state(db, monkeypatch):
     basket_source(db)
     original = returns_view._selected_sources
@@ -114,6 +135,31 @@ def _saved_investment(db, monkeypatch):
             **{k: persistence[k] for k in ("form_token", "preview_digest")},
             request_id="read-efficiency-proof",
         )
+
+
+def test_v3_proof_remains_current_only_with_exact_unchanged_dependencies(db, monkeypatch):
+    with monkeypatch.context() as previous:
+        previous.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_v3")
+        _saved_investment(db, previous)
+        with db.session_factory() as session:
+            old = proofs.read_reports(session, source_account=ACCOUNT)[0]
+    before = snapshot(db)
+    with db.session_factory() as session:
+        current = proofs.read_reports(session, source_account=ACCOUNT)[0]
+    assert old["status"] == current["status"] == "current"
+    assert old["interval"] == current["interval"]
+    assert snapshot(db) == before
+    with db.session_factory() as session:
+        selected, _ = _selected_sources(session, ACCOUNT)
+        view = selected[0][1]
+        decision = view["money_classifications"][0]
+        intake_id = view["id"]
+    with db.session_factory() as writer:
+        choose_classification(writer, intake_id, decision["source_reference"], "fee")
+    with db.session_factory() as session:
+        changed = proofs.read_reports(session, source_account=ACCOUNT)[0]
+    assert changed["status"] == "stale"
+    assert "investment_proof_dependencies_changed" in changed["reason_codes"]
 
 
 def _append_stale_proof(db, *, other_period=False):

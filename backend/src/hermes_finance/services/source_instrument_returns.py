@@ -248,7 +248,6 @@ def _identities(views):
 def _income(session, views, identities, gaps):
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
     from hermes_finance.services.source_instrument_events import payout_attribution
-    from hermes_finance.services.source_return_evidence import payout_source_unambiguous
 
     resolver = MoneyInstrumentResolver(session)
     occurrences = defaultdict(list)
@@ -263,11 +262,10 @@ def _income(session, views, identities, gaps):
                     narrative,
                     resolver,
                     identities,
-                    session=session
-                    if payout_source_unambiguous(views, view, flow.event_date)
-                    else None,
+                    session=session,
                     view=view,
                     raw=raw[flow.source_references[0]],
+                    views=views,
                 )
                 if basis == "registration_scope":
                     # Legacy income must not turn coverage-only identity into a payout.
