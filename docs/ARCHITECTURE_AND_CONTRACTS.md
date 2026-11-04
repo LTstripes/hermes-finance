@@ -419,6 +419,25 @@ identity, исходную позицию и все revisions. Новую исп
 
 Даты открытия и окончания в MVP необязательны.
 
+Income's 14/30-day planning windows additionally expose an undated deposit
+estimate over the exact `[from_date, to_date)` interval: snapshot balance × annual
+basis-point rate × actual days / days in the respective calendar year (365/366).
+Split year crossings before adding exact fractions, then round HALF_UP once per
+deposit to kopecks. Assume unchanged balance/rate, no compounding and no tax
+deduction; this is an accrual estimate, never a known payment date or credited
+income. Existing monthly `balance × rate / 12` forecasts remain unchanged.
+
+`UpcomingEventsWindow` keeps its dated `items`, `passive_income` and
+`total_cash_flow` meanings. Additive `deposit_estimates` list snapshot identity,
+name, account, amount and `included_in_forecast`; `deposit_interest_estimate`
+sums included rows only. `forecast_passive_income` and `forecast_total_cash_flow`
+add that estimate exactly once to the corresponding dated subtotal. If an account
+has dated interest inside this window, exclude all its snapshot estimates from
+the combined forecast: no deposit-level attribution exists to prove a finer
+allocation. Retain excluded estimates visibly in the table with an explanation.
+Monthly amounts are never added wholesale to a differently dated window.
+
+
 
 <a id="c2-master_spec-295-910-cash_balances"></a>
 #### 9.10. `cash_balances`

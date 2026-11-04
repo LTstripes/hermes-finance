@@ -684,3 +684,42 @@
     text-align: right;
   }
 }
+
+.depositForecast {
+  margin-top: 20px;
+}
+
+.depositForecast > p {
+  margin: 6px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.depositForecast table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.depositForecast th,
+.depositForecast td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e4e9ee;
+}
+
+.depositForecast th:last-child,
+.depositForecast td:last-child {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.depositForecast td:first-child {
+  overflow-wrap: anywhere;
+}
+
+.depositForecast small {
+  display: block;
+  color: var(--muted);
+}

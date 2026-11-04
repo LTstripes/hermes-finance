@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain import ExpectedCashFlowType, RubleAmount
+from hermes_finance.domain.deposits import estimate_deposit_interest_kopecks
 from hermes_finance.persistence import Account, DepositSnapshot, ReportingMonth
 from hermes_finance.services.payout_calendar import (
     INCOMPLETE_PAYOUT_WARNING,
@@ -74,6 +75,15 @@ class CashFlowLadderMonth:
 
 
 @dataclass(frozen=True, slots=True)
+class DepositInterestEstimate:
+    deposit_id: int
+    name: str
+    account_name: str
+    amount: RubleAmount
+    included_in_forecast: bool
+
+
+@dataclass(frozen=True, slots=True)
 class UpcomingEventsWindow:
     days: int
     from_date: date
@@ -82,6 +92,10 @@ class UpcomingEventsWindow:
     redemption_principal: RubleAmount
     total_cash_flow: RubleAmount
     items: tuple[CashFlowLadderEvent, ...]
+    deposit_estimates: tuple[DepositInterestEstimate, ...]
+    deposit_interest_estimate: RubleAmount
+    forecast_passive_income: RubleAmount
+    forecast_total_cash_flow: RubleAmount
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +128,7 @@ def _window(
     *,
     as_of_date: date,
     days: int,
+    deposit_rows: list,
 ) -> UpcomingEventsWindow:
     to_date = as_of_date + timedelta(days=days)
     selected = tuple(event for event in events if as_of_date <= event.expected_date < to_date)
@@ -127,6 +142,26 @@ def _window(
         for event in selected
         if event.component == "redemption_principal"
     )
+    # There is no deposit-level link on dated interest. Conservatively let a
+    # dated interest row replace estimates for its account in this exact window.
+    dated_interest_accounts = {
+        item.account_id for item in selected if item.component == "deposit_interest"
+    }
+    estimates = tuple(
+        DepositInterestEstimate(
+            deposit_id=snapshot.id,
+            name=snapshot.name,
+            account_name=account_name,
+            included_in_forecast=snapshot.account_id not in dated_interest_accounts,
+            amount=RubleAmount(
+                estimate_deposit_interest_kopecks(
+                    snapshot.balance_kopecks, snapshot.annual_rate_basis_points, as_of_date, to_date
+                )
+            ),
+        )
+        for snapshot, account_name in deposit_rows
+    )
+    estimate = sum(row.amount.kopecks for row in estimates if row.included_in_forecast)
     return UpcomingEventsWindow(
         days=days,
         from_date=as_of_date,
@@ -135,6 +170,10 @@ def _window(
         redemption_principal=RubleAmount(redemption),
         total_cash_flow=RubleAmount(passive + redemption),
         items=selected,
+        deposit_estimates=estimates,
+        deposit_interest_estimate=RubleAmount(estimate),
+        forecast_passive_income=RubleAmount(passive + estimate),
+        forecast_total_cash_flow=RubleAmount(passive + redemption + estimate),
     )
 
 
@@ -262,8 +301,12 @@ def build_cash_flow_ladder(
         as_of_date=as_of_date,
         forecast_version=version,
         months=tuple(ladder_months),
-        upcoming_14_days=_window(all_events, as_of_date=as_of_date, days=14),
-        upcoming_30_days=_window(all_events, as_of_date=as_of_date, days=30),
+        upcoming_14_days=_window(
+            all_events, as_of_date=as_of_date, days=14, deposit_rows=deposit_rows
+        ),
+        upcoming_30_days=_window(
+            all_events, as_of_date=as_of_date, days=30, deposit_rows=deposit_rows
+        ),
         warnings=tuple(warnings),
     )
 

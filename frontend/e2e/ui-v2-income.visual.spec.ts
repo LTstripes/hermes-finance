@@ -228,7 +228,7 @@ async function installIncomeApi(page: Page, scene: IncomeScene = "normal") {
           : { error: { code: "synthetic_error", message: "Synthetic failure", details: [] } },
     });
   });
-  return { errors, reads, unexpected };
+  return { errors, reads, unexpected, state };
 }
 
 async function assertBounded(page: Page) {
@@ -397,3 +397,43 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
     expect(evidence.errors).toEqual([]);
   });
 }
+
+test("ui-v2 deposit period forecast and table @viewport-owned", async ({ page }, testInfo) => {
+  const evidence = await installIncomeApi(page);
+  evidence.state.ladder.upcoming_30_days = {
+    ...evidence.state.ladder.upcoming_30_days,
+    deposit_interest_estimate: money("1234.56"),
+    forecast_passive_income: money("9734.56"),
+    forecast_total_cash_flow: money("109734.56"),
+    deposit_estimates: [
+      {
+        deposit_id: 101,
+        included_in_forecast: true,
+        name: "Синтетический накопительный вклад с длинным названием",
+        account_name: "Банк",
+        amount: money("1234.56"),
+      },
+      {
+        deposit_id: 102,
+        included_in_forecast: false,
+        name: "Синтетический вклад с известными процентами",
+        account_name: "Другой банк",
+        amount: money("900.00"),
+      },
+    ],
+  };
+  await page.goto("/v2/income");
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 734,56 ₽");
+  const deposits = page.getByRole("region", { name: "Ожидаемые проценты по вкладам" });
+  await expect(deposits.getByRole("row")).toHaveCount(3);
+  await expect(deposits).toContainText("дата выплаты неизвестна");
+  await expect(deposits).toContainText("В общий прогноз не добавлено");
+  await page.getByRole("button", { name: "14 дней" }).click();
+  await expect(page.getByTestId("income-window-14")).toBeVisible();
+  await expect(deposits).toContainText("30 дней");
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 734,56 ₽");
+  await assertBounded(page);
+  await capture(page, testInfo, "deposit-period-forecast");
+  expect(evidence.errors).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+});

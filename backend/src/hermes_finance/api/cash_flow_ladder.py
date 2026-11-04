@@ -62,9 +62,23 @@ class CashFlowLadderMonthOut(BaseModel):
     items: list[CashFlowLadderEventOut]
 
 
+class DepositInterestEstimateOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deposit_id: int
+    name: str
+    account_name: str
+    amount: MoneyValue
+    included_in_forecast: bool
+
+
 class UpcomingEventsWindowOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    deposit_estimates: list[DepositInterestEstimateOut]
+    deposit_interest_estimate: MoneyValue
+    forecast_passive_income: MoneyValue
+    forecast_total_cash_flow: MoneyValue
     days: int
     from_date: date
     to_date: date
@@ -132,6 +146,19 @@ def _month_out(month: CashFlowLadderMonth) -> CashFlowLadderMonthOut:
 
 def _window_out(window: UpcomingEventsWindow) -> UpcomingEventsWindowOut:
     return UpcomingEventsWindowOut(
+        deposit_estimates=[
+            DepositInterestEstimateOut(
+                deposit_id=row.deposit_id,
+                name=row.name,
+                account_name=row.account_name,
+                amount=_money(row.amount),
+                included_in_forecast=row.included_in_forecast,
+            )
+            for row in window.deposit_estimates
+        ],
+        deposit_interest_estimate=_money(window.deposit_interest_estimate),
+        forecast_passive_income=_money(window.forecast_passive_income),
+        forecast_total_cash_flow=_money(window.forecast_total_cash_flow),
         days=window.days,
         from_date=window.from_date,
         to_date=window.to_date,
