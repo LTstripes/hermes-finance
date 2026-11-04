@@ -524,6 +524,12 @@ def read_monthly_returns(
 
 
 @coherent_read_operation
+def read_monthly_for_card_history(session, *, source_account):
+    """Private account-history input; optional proof XIRRs are not card inputs."""
+    return _read_monthly_returns(session, source_account=source_account, include_proof_xirr=False)
+
+
+@coherent_read_operation
 def read_monthly_result(session, *, source_account, opening_date, closing_date):
     """The ordinary month's operands, without unrelated periods or XIRR.
 
@@ -543,7 +549,13 @@ def read_monthly_result(session, *, source_account, opening_date, closing_date):
 
 
 def _read_monthly_returns(
-    session, *, source_account, originals=None, assumptions=None, target_month=None
+    session,
+    *,
+    source_account,
+    originals=None,
+    assumptions=None,
+    target_month=None,
+    include_proof_xirr=True,
 ):
     """Read persisted classifications; isolate bad originals/months and retain gaps."""
     from hermes_finance.services.returns_account_link import account_link
@@ -841,7 +853,9 @@ def _read_monthly_returns(
     from hermes_finance.services.source_investment_proofs import read_reports
 
     if target_month is None:
-        investment_reports = read_reports(session, source_account=source_account)
+        investment_reports = read_reports(
+            session, source_account=source_account, include_xirr=include_proof_xirr
+        )
     else:
         from hermes_finance.services.source_investment_proofs import read_account_summaries
 

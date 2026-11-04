@@ -731,6 +731,40 @@ def _named_investment(
     return unnamed
 
 
+def test_card_history_defers_only_unused_proof_xirr_without_changing_response(db, monkeypatch):
+    from hermes_finance.services import returns_overall, source_monthly_returns
+
+    _named_investment(db, monkeypatch, source_labels=("Synthetic title",))
+    save(db, 2)
+    before = snapshot(db)
+    original = proofs._derive
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(kwargs.get("include_xirr"))
+        return original(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "_derive", counted)
+        patch.setattr(
+            source_monthly_returns,
+            "read_monthly_for_card_history",
+            source_monthly_returns.read_monthly_returns,
+        )
+        with db.session_factory() as session:
+            baseline = returns_overall.read_instrument_card(session, "RU000A000000")
+        baseline_calls = list(calls)
+    calls.clear()
+    with monkeypatch.context() as patch:
+        patch.setattr(proofs, "_derive", counted)
+        with db.session_factory() as session:
+            candidate = returns_overall.read_instrument_card(session, "RU000A000000")
+        candidate_calls = list(calls)
+    assert candidate == baseline
+    assert baseline_calls.count(True) > candidate_calls.count(True)
+    assert snapshot(db) == before
+
+
 @pytest.mark.parametrize(
     "source_labels,pdf_labels,expected",
     [
