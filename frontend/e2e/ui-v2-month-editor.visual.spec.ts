@@ -1254,3 +1254,51 @@ test("month sources collapse historical overlaps and isolate saved draft payouts
   }
   expect(calls.every((call) => call.startsWith("GET "))).toBe(true);
 });
+
+test("cash table fits the month workspace with a long amount", async ({ page }) => {
+  await installApi(page);
+  await page.route("**/api/cash-balances?**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 41,
+          reporting_month_id: 7,
+          account_id: null,
+          name: "Синтетический кошелёк",
+          amount: { amount: "123456789012.34", currency: "RUB" },
+          currency: "RUB",
+          include_in_capital: true,
+          notes: null,
+        },
+      ],
+    }),
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/v2/close?month=7&panel=assets");
+  const table = page.locator(".month-cash-table");
+  await expect(table).toBeVisible();
+  const row = table.getByRole("row").nth(1);
+  const amount = row.getByRole("cell").nth(1);
+  await expect(amount).toContainText(/123\s*456\s*789\s*012,34\s*₽/);
+  const dimensions = await table.evaluate((element) => {
+    const wrap = element.parentElement;
+    const cell = element.querySelector("tbody td.num");
+    if (!wrap || !cell) throw new Error("Cash table is missing its wrapper or amount cell");
+    const cellBox = cell.getBoundingClientRect();
+    const tableBox = element.getBoundingClientRect();
+    return {
+      scroll: wrap.scrollWidth,
+      width: wrap.clientWidth,
+      cellWidth: cell.scrollWidth,
+      visibleCell: cell.clientWidth,
+      left: cellBox.left,
+      right: cellBox.right,
+      tableLeft: tableBox.left,
+      tableRight: tableBox.right,
+    };
+  });
+  expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width + 1);
+  expect(dimensions.cellWidth).toBeLessThanOrEqual(dimensions.visibleCell + 1);
+  expect(dimensions.left).toBeGreaterThanOrEqual(dimensions.tableLeft);
+  expect(dimensions.right).toBeLessThanOrEqual(dimensions.tableRight + 1);
+});

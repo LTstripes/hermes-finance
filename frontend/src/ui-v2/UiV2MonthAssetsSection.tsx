@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { createAccount, listAccounts } from "../api/accounts";
-import { formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import {
   createCashBalance,
   deleteCashBalance,
@@ -100,6 +100,18 @@ function sameMoney(left: string | null | undefined, right: string | null | undef
   return a !== null && b !== null && a === b;
 }
 
+/** A typed client rejection confirms the server did not accept this write. */
+function isDefiniteWriteRejection(cause: unknown): boolean {
+  return (
+    cause instanceof ApiClientError &&
+    cause.status >= 400 &&
+    cause.status < 500 &&
+    cause.status !== 408 &&
+    cause.status !== 429 &&
+    cause.code !== "http_error"
+  );
+}
+
 /** A total is rendered only when every component amount is valid; otherwise — never a zero. */
 function totalText(value: string | null, currency: string | null | undefined): string {
   return value === null ? "—" : formatMoney(value, { currency: currencySuffix(currency) });
@@ -130,6 +142,19 @@ type DepositIntent = {
   balance: MoneyValue;
   annual_rate: string;
   actual_interest_received: MoneyValue;
+};
+
+type DepositRecovery = {
+  unconfirmed: boolean;
+  version: number;
+  pendingCreate: PendingCreate | null;
+  createDraft: DepositDraft | null;
+  edits: Map<number, DepositIntent>;
+  otherWrites: Map<
+    number,
+    | { kind: "create"; id: number | null; intent: DepositIntent; draft: DepositDraft }
+    | { kind: "delete"; id: number }
+  >;
 };
 
 /**
@@ -264,12 +289,53 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     queryFn: ({ signal }) => getDashboard(monthId, signal, false),
   });
 
-  const [depositDraft, setDepositDraft] = useState<DepositDraft>(emptyDeposit);
+  // Query-scoped recovery survives leaving and returning to this month within
+  // the same client, without retaining data outside the local session.
+  const depositRecovery = useQuery({
+    queryKey: ["deposit-readback-recovery", monthId],
+    queryFn: (): DepositRecovery => ({
+      unconfirmed: false,
+      version: 0,
+      pendingCreate: null,
+      createDraft: null,
+      edits: new Map(),
+      otherWrites: new Map(),
+    }),
+    enabled: false,
+    gcTime: Infinity,
+    initialData: (): DepositRecovery => ({
+      unconfirmed: false,
+      version: 0,
+      pendingCreate: null,
+      createDraft: null,
+      edits: new Map(),
+      otherWrites: new Map(),
+    }),
+  }).data;
+
+  const unresolvedCreate = [...depositRecovery.otherWrites.values()].find(
+    (item) => item.kind === "create" && item.id === null,
+  );
+  const [depositDraft, setDepositDraft] = useState<DepositDraft>(
+    () =>
+      ((depositRecovery.pendingCreate || unresolvedCreate) && depositRecovery.createDraft) ||
+      depositRecovery.pendingCreate?.draft ||
+      (unresolvedCreate?.kind === "create" ? unresolvedCreate.draft : emptyDeposit()),
+  );
   const [cashDraft, setCashDraft] = useState<CashDraft>(emptyCash);
-  const [depositDraftTouched, setDepositDraftTouched] = useState(false);
+  const [depositDraftTouched, setDepositDraftTouched] = useState(
+    Boolean(depositRecovery.pendingCreate || unresolvedCreate),
+  );
+  const [depositTotalsUnconfirmed, setDepositTotalsUnconfirmedState] = useState(
+    depositRecovery.unconfirmed,
+  );
+  function setDepositTotalsUnconfirmed(value: boolean) {
+    depositRecovery.unconfirmed = value;
+    setDepositTotalsUnconfirmedState(value);
+  }
   const [cashDraftTouched, setCashDraftTouched] = useState(false);
-  const [editingDepositId, setEditingDepositId] = useState<number | null>(null);
-  const [editDeposit, setEditDeposit] = useState<DepositDraft | null>(null);
+  const [editDeposits, setEditDeposits] = useState<Record<number, DepositDraft> | null>(null);
+  const [editOriginals, setEditOriginals] = useState<Record<number, DepositSnapshot>>({});
   const [pendingDeleteDeposit, setPendingDeleteDeposit] = useState<DepositSnapshot | null>(null);
   const [pendingDeleteCash, setPendingDeleteCash] = useState<CashBalance | null>(null);
   const [busy, setBusy] = useState(false);
@@ -281,11 +347,23 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   const [totalWarning, setTotalWarning] = useState<string | null>(null);
   // A successful POST is retained here until confirmed: retries re-check by id
   // without ever repeating the create (duplicate-POST guard).
-  const [pendingCreated, setPendingCreated] = useState<PendingCreate | null>(null);
+  const [pendingCreated, setPendingCreatedState] = useState<PendingCreate | null>(
+    depositRecovery.pendingCreate,
+  );
+  function setPendingCreated(value: PendingCreate | null) {
+    depositRecovery.pendingCreate = value;
+    setPendingCreatedState(value);
+  }
+  useEffect(() => {
+    depositRecovery.createDraft = pendingCreated || unresolvedCreate ? depositDraft : null;
+  }, [depositDraft, depositRecovery, pendingCreated, unresolvedCreate]);
+  // Retain attempted writes until a fresh list establishes their outcome.
+  const pendingDepositEdits = useRef(depositRecovery.edits);
+  const pendingOtherDepositWrites = useRef(depositRecovery.otherWrites);
   const busyRef = useRef(false);
   const operation = useRef(0);
 
-  const localDirty = depositDraftTouched || cashDraftTouched || editingDepositId !== null;
+  const localDirty = depositDraftTouched || cashDraftTouched || editDeposits !== null;
 
   useEffect(() => {
     context.setPending?.(DIRTY_SECTION, busy || pendingCreated !== null);
@@ -351,7 +429,9 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     depositDraft.account_id || (defaultAccountId === null ? "" : String(defaultAccountId));
 
   const loading = accountsQuery.isPending || depositsQuery.isPending || cashRowsQuery.isPending;
-  const loadError = [accountsQuery, depositsQuery, cashRowsQuery].find((query) => query.isError);
+  const loadError = [accountsQuery, depositsQuery, cashRowsQuery].find(
+    (query) => query.isError && (query !== depositsQuery || query.data === undefined),
+  );
 
   // Authority of the displayed aggregates: current only after a confirmed read
   // of this month's total. Retained data behind an error, a foreign month, or
@@ -386,11 +466,49 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   }
 
   async function refetchDepositRows(): Promise<DepositSnapshot[]> {
+    const version = depositRecovery.version;
     const result = await depositsQuery.refetch();
     if (!result.isSuccess || !result.data) {
       throw new Error("Список вкладов не удалось перечитать.");
     }
-    return requireMonthRows(result.data, monthId, "вкладов");
+    if (version !== depositRecovery.version) {
+      throw new Error("Список вкладов изменился во время чтения. Обнови данные ещё раз.");
+    }
+    const rows = requireMonthRows(result.data, monthId, "вкладов");
+    const editsConfirmed = [...pendingDepositEdits.current].every(([id, intent]) =>
+      matchesDepositIntent(
+        rows.find((row) => row.id === id),
+        intent,
+      ),
+    );
+    for (const [token, other] of pendingOtherDepositWrites.current) {
+      const confirmed =
+        other.kind === "delete"
+          ? !rows.some((row) => row.id === other.id)
+          : other.id !== null &&
+            matchesDepositIntent(
+              rows.find((row) => row.id === other.id),
+              other.intent,
+            );
+      if (confirmed) pendingOtherDepositWrites.current.delete(token);
+    }
+    setDepositTotalsUnconfirmed(!editsConfirmed || pendingOtherDepositWrites.current.size > 0);
+    return rows;
+  }
+
+  async function refreshDepositDisplay() {
+    if (busyRef.current) return;
+    const token = ++operation.current;
+    busyRef.current = true;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await refetchDepositRows();
+    } catch (cause) {
+      reportFailure(token, cause);
+    } finally {
+      finishAction(token);
+    }
   }
 
   async function refetchCashRows(): Promise<CashBalance[]> {
@@ -455,7 +573,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
 
   async function handleCreateDeposit(event: FormEvent) {
     event.preventDefault();
-    if (busyRef.current) return;
+    if (busyRef.current || unresolvedCreate) return;
     if (readOnly) {
       setActionError("Месяц закрыт: изменения активов недоступны.");
       return;
@@ -465,6 +583,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setBusy(true);
     setActionError(null);
     setNotice(null);
+    let writeId: number | null = null;
+    let writeAcknowledged = false;
     try {
       if (pendingCreated) {
         // Identity retained from a successful POST: confirm by id only — a
@@ -492,6 +612,14 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           "RUB",
         ),
       };
+      writeId = ++depositRecovery.version;
+      pendingOtherDepositWrites.current.set(writeId, {
+        kind: "create",
+        id: null,
+        intent,
+        draft: { ...depositDraft },
+      });
+      setDepositTotalsUnconfirmed(true);
       const created = await createDeposit({
         reporting_month_id: monthId,
         account_id: accountId,
@@ -501,9 +629,16 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
         annual_rate: intent.annual_rate,
         actual_interest_received: intent.actual_interest_received,
       });
+      writeAcknowledged = true;
       if (created.reporting_month_id !== monthId) {
         throw new Error("API сохранил вклад в другом месяце.");
       }
+      pendingOtherDepositWrites.current.set(writeId, {
+        kind: "create",
+        id: created.id,
+        intent,
+        draft: { ...depositDraft },
+      });
       const pending: PendingCreate = {
         id: created.id,
         accountId,
@@ -513,8 +648,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       setPendingCreated(pending);
       await confirmCreatedDeposit(pending, token);
     } catch (cause) {
+      if (writeId !== null && !writeAcknowledged && isDefiniteWriteRejection(cause)) {
+        pendingOtherDepositWrites.current.delete(writeId);
+      }
       reportFailure(token, cause);
-      void depositsQuery.refetch();
+      void refetchDepositRows().catch(() => {});
     } finally {
       finishAction(token);
     }
@@ -551,20 +689,29 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     );
   }
 
+  function startDepositEdit() {
+    setEditOriginals(Object.fromEntries(depositRows.map((row) => [row.id, row])));
+    setEditDeposits(
+      Object.fromEntries(
+        depositRows.map((row) => [
+          row.id,
+          {
+            name: row.name,
+            account_id: String(row.account_id),
+            deposit_type: row.deposit_type,
+            balance: moneyAmount(row.balance),
+            annual_rate: row.annual_rate,
+            actual_interest: moneyAmount(row.actual_interest_received),
+          },
+        ]),
+      ),
+    );
+  }
+
   async function handleSaveDepositEdit() {
-    if (busyRef.current || readOnly) return;
-    if (editingDepositId == null || !editDeposit) return;
+    if (busyRef.current || readOnly || !editDeposits) return;
     if (depositsForeign) {
       setActionError(DEPOSITS_FOREIGN_MESSAGE);
-      void depositsQuery.refetch();
-      return;
-    }
-    const current = depositRows.find((row) => row.id === editingDepositId);
-    if (!current) {
-      setEditingDepositId(null);
-      setEditDeposit(null);
-      setActionError("Вклад исчез из выбранного месяца. Список обновлён; повтори изменение.");
-      void depositsQuery.refetch();
       return;
     }
     const token = ++operation.current;
@@ -572,51 +719,99 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setBusy(true);
     setActionError(null);
     setNotice(null);
-    try {
-      if (!editDeposit.name.trim()) {
-        throw new Error("Укажи название вклада");
-      }
-      const intent: DepositIntent = {
-        name: editDeposit.name.trim(),
-        deposit_type: editDeposit.deposit_type,
-        balance: moneyValue(editDeposit.balance, current.balance.currency),
-        annual_rate: editDeposit.annual_rate.trim() || "0.00",
-        actual_interest_received: moneyValue(
-          editDeposit.actual_interest.trim() === "" ? "0" : editDeposit.actual_interest,
-          current.actual_interest_received.currency,
-        ),
-      };
-      const changed = await updateDeposit(
-        editingDepositId,
-        {
-          name: intent.name,
-          deposit_type: intent.deposit_type,
-          balance: intent.balance,
-          annual_rate: intent.annual_rate,
-          actual_interest_received: intent.actual_interest_received,
-        },
-        current.updated_at,
-      );
-      if (changed.id !== current.id || changed.reporting_month_id !== monthId) {
-        throw new Error("Ответ сохранения не подтверждает выбранный вклад.");
-      }
-      const fresh = await refetchDepositRows();
-      const confirmed = fresh.find((row) => row.id === current.id);
-      if (!matchesDepositIntent(confirmed, intent)) {
-        // The edit stays open with the newer values so the user can retry.
-        throw new Error(DEPOSIT_EDIT_UNCONFIRMED);
-      }
-      await markDataStale();
+    const failed: Record<number, DepositDraft> = {};
+    const saved: string[] = [];
+    const errors: string[] = [];
+    for (const [idText, draft] of Object.entries(editDeposits)) {
       if (operation.current !== token) return;
-      setEditingDepositId(null);
-      setEditDeposit(null);
-      setNotice(`Вклад «${confirmed.name}» сохранён; данные перечитаны.`);
-    } catch (cause) {
-      reportFailure(token, cause);
-      void depositsQuery.refetch();
-    } finally {
-      finishAction(token);
+      const id = Number(idText);
+      const current = editOriginals[id];
+      let writeAcknowledged = false;
+      try {
+        if (!current || !draft.name.trim()) throw new Error("Укажи название вклада");
+        const intent: DepositIntent = {
+          name: draft.name.trim(),
+          deposit_type: draft.deposit_type,
+          balance: moneyValue(draft.balance, current.balance.currency),
+          annual_rate: draft.annual_rate.trim() || "0.00",
+          actual_interest_received: moneyValue(
+            draft.actual_interest.trim() === "" ? "0" : draft.actual_interest,
+            current.actual_interest_received.currency,
+          ),
+        };
+        const pending = pendingDepositEdits.current.get(id);
+        if (pending) {
+          const fresh = (await refetchDepositRows()).find((row) => row.id === id);
+          if (operation.current !== token) return;
+          const matchesCurrent: boolean = matchesDepositIntent(fresh, intent);
+          const matchesPending: boolean = matchesDepositIntent(fresh, pending);
+          if (matchesCurrent) {
+            pendingDepositEdits.current.delete(id);
+            saved.push(intent.name);
+            continue;
+          }
+          if (fresh && matchesPending) {
+            // The previous write landed, but the user has since changed the
+            // draft. Keep the new draft and use the confirmed version next time.
+            pendingDepositEdits.current.delete(id);
+            setEditOriginals((originals) => ({ ...originals, [id]: fresh }));
+            throw new Error(
+              "Предыдущее изменение сохранено. Новые данные оставлены в форме; сохрани их ещё раз.",
+            );
+          }
+          if (!fresh || fresh.updated_at !== current.updated_at) {
+            throw new Error(
+              "Данные вклада изменились. Проверь их перед повторным сохранением; введённые значения оставлены в форме.",
+            );
+          }
+          // The original version is still current, so the prior attempt did
+          // not change this row and a new write can use the same precondition.
+          pendingDepositEdits.current.delete(id);
+        }
+        const unchanged =
+          draft.name === current.name &&
+          draft.deposit_type === current.deposit_type &&
+          draft.balance === moneyAmount(current.balance) &&
+          draft.annual_rate === current.annual_rate &&
+          draft.actual_interest === moneyAmount(current.actual_interest_received);
+        if (unchanged) continue;
+        depositRecovery.version += 1;
+        pendingDepositEdits.current.set(id, intent);
+        setDepositTotalsUnconfirmed(true);
+        const changed = await updateDeposit(id, intent, current.updated_at);
+        writeAcknowledged = true;
+        if (operation.current !== token) return;
+        if (changed.id !== id || changed.reporting_month_id !== monthId) {
+          throw new Error("Ответ сохранения не подтверждает выбранный вклад.");
+        }
+        const fresh = await refetchDepositRows();
+        if (
+          !matchesDepositIntent(
+            fresh.find((row) => row.id === id),
+            intent,
+          )
+        ) {
+          throw new Error(DEPOSIT_EDIT_UNCONFIRMED);
+        }
+        pendingDepositEdits.current.delete(id);
+        saved.push(intent.name);
+      } catch (cause) {
+        if (!writeAcknowledged && isDefiniteWriteRejection(cause))
+          pendingDepositEdits.current.delete(id);
+        failed[id] = draft;
+        errors.push(`«${draft.name || id}»: ${formatApiError(cause)}`);
+      }
     }
+    if (saved.length) await markDataStale();
+    if (operation.current !== token) return;
+    setEditDeposits(Object.keys(failed).length ? failed : null);
+    if (saved.length) setNotice(`Сохранено: ${saved.join(", ")}.`);
+    else if (!errors.length) setNotice("Изменений нет.");
+    if (errors.length)
+      setActionError(
+        `Не удалось подтвердить: ${errors.join("; ")}. Проверь данные и повтори сохранение.`,
+      );
+    finishAction(token);
   }
 
   async function handleDeleteDeposit() {
@@ -633,8 +828,14 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     setActionError(null);
     setNotice(null);
     setPendingDeleteDeposit(null);
+    let writeId: number | null = null;
+    let writeAcknowledged = false;
     try {
+      writeId = ++depositRecovery.version;
+      pendingOtherDepositWrites.current.set(writeId, { kind: "delete", id: target.id });
+      setDepositTotalsUnconfirmed(true);
       await deleteDeposit(target.id);
+      writeAcknowledged = true;
       const fresh = await refetchDepositRows();
       if (fresh.some((row) => row.id === target.id)) {
         throw new Error("Удаление не подтверждено перечитыванием списка.");
@@ -643,8 +844,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       if (operation.current !== token) return;
       setNotice(`Вклад «${target.name}» удалён; данные перечитаны.`);
     } catch (cause) {
+      if (writeId !== null && !writeAcknowledged && isDefiniteWriteRejection(cause)) {
+        pendingOtherDepositWrites.current.delete(writeId);
+      }
       reportFailure(token, cause);
-      void depositsQuery.refetch();
+      void refetchDepositRows().catch(() => {});
     } finally {
       finishAction(token);
     }
@@ -814,7 +1018,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       ) : null}
       {notice ? (
         <div className="inline-alert inline-alert--ok" role="status">
-          {context.workspace ? "Сохранено" : notice}
+          {notice}
         </div>
       ) : null}
 
@@ -831,8 +1035,8 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           <Panel
             action={
               <Badge>
-                {depositsForeign ? (
-                  <>итог — · снимок не подтверждён</>
+                {depositsForeign || depositTotalsUnconfirmed ? (
+                  <>итог — · данные уточняются</>
                 ) : (
                   <>
                     итог {totalText(depositTotals.balance, depositTotals.currency)} ·{" "}
@@ -869,16 +1073,19 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 </thead>
                 <tbody>
                   {depositRows.map((row) => {
-                    const editing = editingDepositId === row.id && editDeposit;
+                    const editDeposit = editDeposits?.[row.id];
                     return (
                       <tr key={row.id}>
                         <Td data-label="Название">
-                          {editing ? (
+                          {editDeposit ? (
                             <Input
                               disabled={busy || readOnly}
                               value={editDeposit.name}
                               onChange={(event) =>
-                                setEditDeposit({ ...editDeposit, name: event.target.value })
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: { ...editDeposit, name: event.target.value },
+                                })
                               }
                             />
                           ) : (
@@ -886,12 +1093,15 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           )}
                         </Td>
                         <Td data-label="Тип">
-                          {editing ? (
+                          {editDeposit ? (
                             <Select
                               disabled={busy || readOnly}
                               value={editDeposit.deposit_type}
                               onChange={(event) =>
-                                setEditDeposit({ ...editDeposit, deposit_type: event.target.value })
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: { ...editDeposit, deposit_type: event.target.value },
+                                })
                               }
                             >
                               <option value="deposit">Депозит</option>
@@ -902,13 +1112,16 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           )}
                         </Td>
                         <Td numeric data-label="Баланс">
-                          {editing ? (
+                          {editDeposit ? (
                             <Input
                               className="input--money"
                               disabled={busy || readOnly}
                               value={editDeposit.balance}
                               onChange={(event) =>
-                                setEditDeposit({ ...editDeposit, balance: event.target.value })
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: { ...editDeposit, balance: event.target.value },
+                                })
                               }
                             />
                           ) : (
@@ -918,13 +1131,16 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           )}
                         </Td>
                         <Td numeric data-label="Ставка %">
-                          {editing ? (
+                          {editDeposit ? (
                             <Input
                               className="input--money"
                               disabled={busy || readOnly}
                               value={editDeposit.annual_rate}
                               onChange={(event) =>
-                                setEditDeposit({ ...editDeposit, annual_rate: event.target.value })
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: { ...editDeposit, annual_rate: event.target.value },
+                                })
                               }
                             />
                           ) : (
@@ -939,15 +1155,18 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           </span>
                         </Td>
                         <Td numeric data-label="Получено">
-                          {editing ? (
+                          {editDeposit ? (
                             <Input
                               className="input--money"
                               disabled={busy || readOnly}
                               value={editDeposit.actual_interest}
                               onChange={(event) =>
-                                setEditDeposit({
-                                  ...editDeposit,
-                                  actual_interest: event.target.value,
+                                setEditDeposits({
+                                  ...editDeposits,
+                                  [row.id]: {
+                                    ...editDeposit,
+                                    actual_interest: event.target.value,
+                                  },
                                 })
                               }
                             />
@@ -959,44 +1178,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                         </Td>
                         <Td className="month-deposits-table__actions" data-label="Действия">
                           <div className="row-actions">
-                            {editing ? (
-                              <>
-                                <Button
-                                  disabled={busy || readOnly}
-                                  onClick={() => void handleSaveDepositEdit()}
-                                  size="sm"
-                                  type="button"
-                                  variant="primary"
-                                >
-                                  OK
-                                </Button>
-                                <Button
-                                  disabled={busy}
-                                  onClick={() => {
-                                    setEditingDepositId(null);
-                                    setEditDeposit(null);
-                                  }}
-                                  size="sm"
-                                  type="button"
-                                >
-                                  Отмена
-                                </Button>
-                              </>
-                            ) : (
+                            {!editDeposits ? (
                               <OverflowMenu label={`Действия для вклада «${row.name}»`}>
                                 <OverflowMenuItem
                                   disabled={busy || readOnly}
-                                  onClick={() => {
-                                    setEditingDepositId(row.id);
-                                    setEditDeposit({
-                                      name: row.name,
-                                      account_id: String(row.account_id),
-                                      deposit_type: row.deposit_type,
-                                      balance: moneyAmount(row.balance),
-                                      annual_rate: row.annual_rate,
-                                      actual_interest: moneyAmount(row.actual_interest_received),
-                                    });
-                                  }}
+                                  onClick={startDepositEdit}
                                 >
                                   Изменить
                                 </OverflowMenuItem>
@@ -1008,7 +1194,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                                   Удалить
                                 </OverflowMenuItem>
                               </OverflowMenu>
-                            )}
+                            ) : null}
                           </div>
                         </Td>
                       </tr>
@@ -1018,16 +1204,58 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
               </Table>
             )}
 
+            {editDeposits ? (
+              <div className="row-actions">
+                <Button
+                  disabled={busy || readOnly}
+                  onClick={() => void handleSaveDepositEdit()}
+                  type="button"
+                  variant="primary"
+                >
+                  Сохранить вклады
+                </Button>
+                <Button disabled={busy} onClick={() => setEditDeposits(null)} type="button">
+                  Отмена
+                </Button>
+              </div>
+            ) : null}
+            {depositTotalsUnconfirmed ? (
+              <p className={styles.hint} role="status">
+                {unresolvedCreate
+                  ? "Не удалось подтвердить создание вклада. Проверь список вкладов и перезапусти приложение перед повторным добавлением."
+                  : "Итоги вкладов уточняются."}{" "}
+                <button disabled={busy} onClick={() => void refreshDepositDisplay()} type="button">
+                  Обновить
+                </button>
+              </p>
+            ) : null}
             <div className="totals-bar">
               <span>
-                Баланс: <strong>{totalText(depositTotals.balance, depositTotals.currency)}</strong>
+                Баланс:{" "}
+                <strong>
+                  {totalText(
+                    depositTotalsUnconfirmed ? null : depositTotals.balance,
+                    depositTotals.currency,
+                  )}
+                </strong>
               </span>
               <span>
                 Прогноз / мес:{" "}
-                <strong>{totalText(depositTotals.expected, depositTotals.currency)}</strong>
+                <strong>
+                  {totalText(
+                    depositTotalsUnconfirmed ? null : depositTotals.expected,
+                    depositTotals.currency,
+                  )}
+                </strong>
               </span>
               <span>
-                Получено: <strong>{totalText(depositTotals.actual, depositTotals.currency)}</strong>
+                Получено:{" "}
+                <strong>
+                  {totalText(
+                    depositTotalsUnconfirmed ? null : depositTotals.actual,
+                    depositTotals.currency,
+                  )}
+                </strong>
               </span>
             </div>
             {depositTotals.mixed ? (
@@ -1125,7 +1353,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                     />
                   </Field>
                 </div>
-                <Button disabled={busy || readOnly} type="submit" variant="primary">
+                <Button
+                  disabled={busy || readOnly || Boolean(unresolvedCreate)}
+                  type="submit"
+                  variant="primary"
+                >
                   {pendingCreated ? "Проверить создание" : "Добавить вклад"}
                 </Button>
                 <details className="field-details">
@@ -1155,7 +1387,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
             ) : cashRows.length === 0 ? (
               <EmptyState description="Наличных позиций нет." inline title="Пусто" />
             ) : (
-              <Table className="month-cash-table">
+              <Table className={`month-cash-table ${styles.cashTable}`}>
                 <thead>
                   <tr>
                     <Th>Название</Th>

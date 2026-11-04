@@ -124,18 +124,12 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
       },
     ]);
     renderLeaf(contextWith());
-    const planSection = await screen.findByRole("region", { name: "План бюджета месяца" });
-    const candidates = await within(planSection).findAllByText("Еда");
-    const row = candidates
-      .map((cell) => cell.closest("tr"))
-      .find(
-        (candidate) =>
-          candidate && within(candidate as HTMLElement).getAllByRole("cell").length === 4,
-      );
-    expect(row).not.toBeUndefined();
-    const cells = within(row as HTMLElement).getAllByRole("cell");
-    expect(cells[2].textContent).toMatch(/48\s*000/);
-    expect(cells[3].textContent).toBe("—");
+    const expenseSection = await screen.findByRole("region", { name: "Расходы месяца" });
+    const row = within(expenseSection).getByText("Еда").closest("tr") as HTMLElement;
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[2].textContent).toBe("—");
+    expect(cells[3].textContent).toMatch(/48\s*000/);
+    expect(within(expenseSection).getAllByRole("table")).toHaveLength(1);
   });
 
   it("renders fact-only with a missing plan gap instead of zero", async () => {
@@ -150,16 +144,13 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     ]);
     renderLeaf(contextWith());
     const planSection = await screen.findByRole("region", { name: "План бюджета месяца" });
-    const row = await within(planSection)
-      .findByText("Такси")
-      .then((cell) => cell.closest("tr"));
-    expect(row).not.toBeNull();
-    const cells = within(row as HTMLElement).getAllByRole("cell");
-    expect(cells[2].textContent).toBe("—");
-    expect(cells[3].textContent).toMatch(/12\s*000/);
+    expect(within(planSection).queryByRole("table")).not.toBeInTheDocument();
+    const expenses = screen.getByRole("region", { name: "Расходы месяца" });
+    expect(within(expenses).getByText(expenseFoodMandatory.category)).toBeInTheDocument();
   });
 
   it("renders plan+fact and keeps explicit zero distinct from missing", async () => {
+    vi.mocked(listPlannedBudget).mockResolvedValue([planRow]);
     vi.mocked(plannedVsActual).mockResolvedValue([
       {
         category: "Еда",
@@ -181,22 +172,71 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
       },
     ]);
     renderLeaf(contextWith());
-    const planSection = await screen.findByRole("region", { name: "План бюджета месяца" });
+    const section = await screen.findByRole("region", { name: "Расходы месяца" });
+    expect(within(section).getAllByRole("table")).toHaveLength(1);
+    const fullCells = within(
+      within(section).getByText("Еда").closest("tr") as HTMLElement,
+    ).getAllByRole("cell");
+    expect(fullCells[2].textContent).toMatch(/50\s*000/);
+    expect(fullCells[3].textContent).toMatch(/48\s*000/);
+    const zeroCells = within(
+      within(section).getByText("Подписки").closest("tr") as HTMLElement,
+    ).getAllByRole("cell");
+    expect(zeroCells[2].textContent).toBe("—");
+    expect(zeroCells[3].textContent).toMatch(/^0\s*₽$/);
+    const missingCells = within(
+      within(section).getByText("Такси").closest("tr") as HTMLElement,
+    ).getAllByRole("cell");
+    expect(missingCells[2].textContent).toMatch(/12\s*000/);
+    expect(missingCells[3].textContent).toBe("—");
+  });
 
-    const fullRow = within(planSection).getByText("Еда").closest("tr");
-    const fullCells = within(fullRow as HTMLElement).getAllByRole("cell");
-    expect(fullCells[2].textContent).toMatch(/48\s*000/);
-    expect(fullCells[3].textContent).toMatch(/50\s*000/);
-
-    const zeroRow = within(planSection).getByText("Подписки").closest("tr");
-    const zeroCells = within(zeroRow as HTMLElement).getAllByRole("cell");
-    expect(zeroCells[2].textContent).toMatch(/^0\s*₽$/);
-    expect(zeroCells[3].textContent).toBe("—");
-
-    const missingRow = within(planSection).getByText("Такси").closest("tr");
-    const missingCells = within(missingRow as HTMLElement).getAllByRole("cell");
-    expect(missingCells[2].textContent).toBe("—");
-    expect(missingCells[3].textContent).toMatch(/12\s*000/);
+  it("groups repeated records without losing separate edit and delete actions", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listExpenses).mockResolvedValue([
+      { ...expenseFoodMandatory, notes: "Первая покупка" },
+      {
+        ...expenseFoodMandatory,
+        id: 13,
+        amount: { amount: "2000.00", currency: "RUB" },
+        notes: "Вторая покупка",
+      },
+    ]);
+    vi.mocked(listPlannedBudget).mockResolvedValue([
+      { ...planRow, notes: "Основной план" },
+      {
+        ...planRow,
+        id: 32,
+        planned_amount: { amount: "0.00", currency: "RUB" },
+        notes: "Дополнение",
+      },
+    ]);
+    vi.mocked(plannedVsActual).mockResolvedValue([
+      {
+        category: "Еда",
+        expense_type: "mandatory",
+        actual: { amount: "52000.00", currency: "RUB" },
+        planned: { amount: "48000.00", currency: "RUB" },
+      },
+    ]);
+    renderLeaf(contextWith());
+    const section = await screen.findByRole("region", { name: "Расходы месяца" });
+    const table = within(section).getByRole("table");
+    const cells = within(within(table).getByText("Еда").closest("tr") as HTMLElement).getAllByRole(
+      "cell",
+    );
+    expect(cells[2]).toHaveTextContent(/52\s*000/);
+    expect(cells[3]).toHaveTextContent(/48\s*000/);
+    await user.click(within(cells[2]).getByText("Расходы: 2"));
+    await user.click(within(cells[3]).getByText("План: 2"));
+    expect(within(cells[2]).getByText(/Первая покупка/)).toBeVisible();
+    expect(within(cells[2]).getByText(/Вторая покупка/)).toBeVisible();
+    expect(within(cells[3]).getByText(/Основной план/)).toBeVisible();
+    expect(within(cells[3]).getByText(/Дополнение/)).toBeVisible();
+    expect(within(cells[2]).getAllByRole("button", { name: "Удалить" })).toHaveLength(2);
+    expect(within(cells[3]).getAllByRole("button", { name: "Удалить" })).toHaveLength(2);
+    await user.click(within(cells[3]).getAllByRole("button", { name: "Изменить" })[1]);
+    expect(within(cells[3]).getByLabelText("Сумма плана")).toHaveValue("0.00");
   });
 
   it("keeps row identity by id when category repeats with different expense_type", async () => {
@@ -447,8 +487,9 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
     });
     renderLeaf(contextWith());
 
-    const planSection = await screen.findByRole("region", { name: "План бюджета месяца" });
-    await user.click(within(planSection).getByRole("button", { name: "Изменить" }));
+    const section = await screen.findByRole("region", { name: "Расходы месяца" });
+    await user.click(within(section).getByText("План: 1"));
+    await user.click(within(section).getByRole("button", { name: "Изменить" }));
     const editingRow = screen.getByDisplayValue("Еда").closest("tr") as HTMLElement;
     const amount = within(editingRow).getByLabelText("Сумма плана");
     await user.clear(amount);
@@ -517,8 +558,9 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
     vi.mocked(listPlannedBudget).mockResolvedValue([{ ...planRow }]);
     renderLeaf(contextWith());
 
-    const planSection = await screen.findByRole("region", { name: "План бюджета месяца" });
-    await user.click(within(planSection).getByRole("button", { name: "Удалить" }));
+    const section = await screen.findByRole("region", { name: "Расходы месяца" });
+    await user.click(within(section).getByText("План: 1"));
+    await user.click(within(section).getByRole("button", { name: "Удалить" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Удалить план?" });
     await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
 

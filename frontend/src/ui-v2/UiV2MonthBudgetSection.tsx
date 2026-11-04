@@ -262,6 +262,34 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     [plan],
   );
 
+  // Keep each record editable by id while the displayed totals come from the
+  // existing plan/fact contract, which groups exact category/type pairs.
+  const budgetGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        category: string;
+        expenseType: string;
+        actual: ExpenseEntry[];
+        planned: PlannedBudgetLine[];
+        comparison?: PlanVsActualRow;
+      }
+    >();
+    function group(category: string, expenseType: string) {
+      const key = JSON.stringify([category, expenseType]);
+      let value = groups.get(key);
+      if (!value) {
+        value = { category, expenseType, actual: [], planned: [] };
+        groups.set(key, value);
+      }
+      return value;
+    }
+    for (const row of expenses) group(row.category, row.expense_type).actual.push(row);
+    for (const row of plan) group(row.category, row.expense_type).planned.push(row);
+    for (const row of comparison) group(row.category, row.expense_type).comparison = row;
+    return [...groups.values()];
+  }, [expenses, plan, comparison]);
+
   function isStale(token: number, target: number): boolean {
     return operation.current !== token || month.id !== target;
   }
@@ -754,7 +782,272 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
           Обязательные: <strong>{formatMoney(mandatoryTotal)}</strong>
           {" · "}Комфортные и прочие: <strong>{formatMoney(otherExpenseTotal)}</strong>
         </p>
-        {expenses.length === 0 ? (
+        {plan.length > 0 ? (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Категория</Th>
+                <Th>Тип</Th>
+                <Th>Факт</Th>
+                <Th>План</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {budgetGroups.map((group) => {
+                const actual =
+                  group.comparison?.actual ??
+                  (group.actual.length
+                    ? {
+                        amount: sumMoneyAmounts(group.actual.map((row) => moneyAmount(row.amount))),
+                        currency: "RUB",
+                      }
+                    : null);
+                const planned =
+                  group.comparison?.planned ??
+                  (group.planned.length
+                    ? {
+                        amount: sumMoneyAmounts(
+                          group.planned.map((row) => moneyAmount(row.planned_amount)),
+                        ),
+                        currency: "RUB",
+                      }
+                    : null);
+                return (
+                  <tr key={JSON.stringify([group.category, group.expenseType])}>
+                    <Td>{group.category}</Td>
+                    <Td>{labelOf(EXPENSE_TYPE_LABELS, group.expenseType)}</Td>
+                    <Td>
+                      {actual === null ? "—" : formatMoney(moneyAmount(actual))}
+                      {group.actual.length ? (
+                        <details open={group.actual.some((row) => row.id === editingExpenseId)}>
+                          <summary>Расходы: {group.actual.length}</summary>
+                          {group.actual.map((row) => (
+                            <div className={styles.budgetEntry} key={row.id}>
+                              {editingExpenseId === row.id && editExpense ? (
+                                <>
+                                  <label>
+                                    Категория расхода
+                                    <input
+                                      value={editExpense.category}
+                                      onChange={(event) =>
+                                        setEditExpense({
+                                          ...editExpense,
+                                          category: event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Тип расхода
+                                    <select
+                                      value={editExpense.expense_type}
+                                      onChange={(event) =>
+                                        setEditExpense({
+                                          ...editExpense,
+                                          expense_type: event.target.value,
+                                        })
+                                      }
+                                    >
+                                      <option value="mandatory">Обязательный</option>
+                                      <option value="comfortable">Комфортный</option>
+                                      <option value="other">Прочее</option>
+                                    </select>
+                                  </label>
+                                  <label>
+                                    Сумма расхода
+                                    <input
+                                      value={editExpense.amount}
+                                      onChange={(event) =>
+                                        setEditExpense({
+                                          ...editExpense,
+                                          amount: event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Комментарий расхода
+                                    <input
+                                      value={editExpense.notes}
+                                      onChange={(event) =>
+                                        setEditExpense({
+                                          ...editExpense,
+                                          notes: event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <button
+                                    disabled={busy || readOnly}
+                                    onClick={() => void handleSaveExpenseEdit()}
+                                    type="button"
+                                  >
+                                    OK
+                                  </button>
+                                  <button
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setEditingExpenseId(null);
+                                      setEditExpense(null);
+                                    }}
+                                    type="button"
+                                  >
+                                    Отмена
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span>
+                                    {formatMoney(moneyAmount(row.amount))}
+                                    {row.notes ? ` · ${row.notes}` : ""}
+                                  </span>
+                                  <div>
+                                    <button
+                                      disabled={busy || readOnly}
+                                      onClick={() => {
+                                        setEditingExpenseId(row.id);
+                                        setEditExpense({
+                                          category: row.category,
+                                          expense_type: row.expense_type,
+                                          amount: moneyAmount(row.amount),
+                                          notes: row.notes ?? "",
+                                        });
+                                      }}
+                                      type="button"
+                                    >
+                                      Изменить
+                                    </button>
+                                    <button
+                                      disabled={busy || readOnly}
+                                      onClick={() => setDelExpense(row)}
+                                      type="button"
+                                    >
+                                      Удалить
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </details>
+                      ) : null}
+                    </Td>
+                    <Td>
+                      {planned === null ? "—" : formatMoney(moneyAmount(planned))}
+                      {group.planned.length ? (
+                        <details open={group.planned.some((row) => row.id === editingPlanId)}>
+                          <summary>План: {group.planned.length}</summary>
+                          {group.planned.map((row) => (
+                            <div className={styles.budgetEntry} key={row.id}>
+                              {editingPlanId === row.id && editPlan ? (
+                                <>
+                                  <label>
+                                    Категория плана
+                                    <input
+                                      value={editPlan.category}
+                                      onChange={(event) =>
+                                        setEditPlan({ ...editPlan, category: event.target.value })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Тип плана
+                                    <select
+                                      value={editPlan.expense_type}
+                                      onChange={(event) =>
+                                        setEditPlan({
+                                          ...editPlan,
+                                          expense_type: event.target.value,
+                                        })
+                                      }
+                                    >
+                                      <option value="mandatory">Обязательный</option>
+                                      <option value="comfortable">Комфортный</option>
+                                      <option value="other">Прочее</option>
+                                    </select>
+                                  </label>
+                                  <label>
+                                    Сумма плана
+                                    <input
+                                      value={editPlan.planned_amount}
+                                      onChange={(event) =>
+                                        setEditPlan({
+                                          ...editPlan,
+                                          planned_amount: event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Комментарий плана
+                                    <input
+                                      value={editPlan.notes}
+                                      onChange={(event) =>
+                                        setEditPlan({ ...editPlan, notes: event.target.value })
+                                      }
+                                    />
+                                  </label>
+                                  <button
+                                    disabled={busy || readOnly}
+                                    onClick={() => void handleSavePlanEdit()}
+                                    type="button"
+                                  >
+                                    OK
+                                  </button>
+                                  <button
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setEditingPlanId(null);
+                                      setEditPlan(null);
+                                    }}
+                                    type="button"
+                                  >
+                                    Отмена
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span>
+                                    {formatMoney(moneyAmount(row.planned_amount))}
+                                    {row.notes ? ` · ${row.notes}` : ""}
+                                  </span>
+                                  <div>
+                                    <button
+                                      disabled={busy || readOnly}
+                                      onClick={() => {
+                                        setEditingPlanId(row.id);
+                                        setEditPlan({
+                                          category: row.category,
+                                          expense_type: row.expense_type,
+                                          planned_amount: moneyAmount(row.planned_amount),
+                                          notes: row.notes ?? "",
+                                        });
+                                      }}
+                                      type="button"
+                                    >
+                                      Изменить
+                                    </button>
+                                    <button
+                                      disabled={busy || readOnly}
+                                      onClick={() => setDelPlan(row)}
+                                      type="button"
+                                    >
+                                      Удалить
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </details>
+                      ) : null}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        ) : expenses.length === 0 ? (
           <p>Расходов пока нет.</p>
         ) : (
           <Table>
@@ -935,229 +1228,69 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
             </button>
           </form>
         ) : null}
-      </section>
-
-      <section aria-label="План бюджета месяца" className={styles.panel}>
-        <h2>План бюджета</h2>
-        <p>
-          {plan.length === 0 ? (
-            "План не задан"
-          ) : (
-            <>
+        <section aria-label="План бюджета месяца">
+          {plan.length ? (
+            <p>
               План: <strong>{formatMoney(plannedTotal)}</strong>
-            </>
-          )}
-        </p>
-        <details open={!context.workspace}>
-          <summary>Подробнее</summary>{" "}
-          <p className={styles.hint}>
-            Отдельный план показывается только когда он действительно введён. Отсутствующий план —
-            это прочерк, а не ноль; введённый ноль остаётся нулём.
-          </p>
-        </details>
-        {plan.length === 0 ? (
-          <p>План пока не введён.</p>
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Категория</Th>
-                <Th>Тип</Th>
-                <Th numeric>Сумма плана</Th>
-                <Th>Комментарий</Th>
-                <Th>Действия</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {plan.map((row) => {
-                const editing = editingPlanId === row.id && editPlan;
-                return (
-                  <tr key={row.id}>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Категория плана"
-                          onChange={(event) =>
-                            setEditPlan({ ...editPlan, category: event.target.value })
-                          }
-                          value={editPlan.category}
-                        />
-                      ) : (
-                        row.category
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <select
-                          aria-label="Тип плана"
-                          onChange={(event) =>
-                            setEditPlan({ ...editPlan, expense_type: event.target.value })
-                          }
-                          value={editPlan.expense_type}
-                        >
-                          <option value="mandatory">Обязательный</option>
-                          <option value="comfortable">Комфортный</option>
-                          <option value="other">Прочее</option>
-                        </select>
-                      ) : (
-                        labelOf(EXPENSE_TYPE_LABELS, row.expense_type)
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Сумма плана"
-                          onChange={(event) =>
-                            setEditPlan({ ...editPlan, planned_amount: event.target.value })
-                          }
-                          value={editPlan.planned_amount}
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.planned_amount))
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Комментарий плана"
-                          onChange={(event) =>
-                            setEditPlan({ ...editPlan, notes: event.target.value })
-                          }
-                          value={editPlan.notes}
-                        />
-                      ) : (
-                        (row.notes ?? "—")
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => void handleSavePlanEdit()}
-                            type="button"
-                          >
-                            OK
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => {
-                              setEditingPlanId(null);
-                              setEditPlan(null);
-                            }}
-                            type="button"
-                          >
-                            Отмена
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => {
-                              setEditingPlanId(row.id);
-                              setEditPlan({
-                                category: row.category,
-                                expense_type: row.expense_type,
-                                planned_amount: moneyAmount(row.planned_amount),
-                                notes: row.notes ?? "",
-                              });
-                            }}
-                            type="button"
-                          >
-                            Изменить
-                          </button>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => setDelPlan(row)}
-                            type="button"
-                          >
-                            Удалить
-                          </button>
-                        </>
-                      )}
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        )}
-        {comparison.length > 0 ? (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Категория</Th>
-                <Th>Тип</Th>
-                <Th numeric>План</Th>
-                <Th numeric>Факт</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {comparison.map((row) => (
-                <tr key={`${row.category}::${row.expense_type}`}>
-                  <Td>{row.category}</Td>
-                  <Td>{labelOf(EXPENSE_TYPE_LABELS, row.expense_type)}</Td>
-                  <Td>{row.planned === null ? "—" : formatMoney(moneyAmount(row.planned))}</Td>
-                  <Td>{row.actual === null ? "—" : formatMoney(moneyAmount(row.actual))}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        ) : null}
-        {!readOnly ? (
-          <form className={styles.form} onSubmit={(event) => void addPlan(event)}>
-            <label>
-              Категория плана
-              <input
-                onChange={(event) => {
-                  setPlanCategory(event.target.value);
-                  setPlanDraftTouched(true);
-                }}
-                required
-                value={planCategory}
-              />
-            </label>
-            <label>
-              Тип плана
-              <select
-                onChange={(event) => {
-                  setPlanType(event.target.value);
-                  setPlanDraftTouched(true);
-                }}
-                value={planType}
-              >
-                <option value="mandatory">Обязательный</option>
-                <option value="comfortable">Комфортный</option>
-                <option value="other">Прочее</option>
-              </select>
-            </label>
-            <label>
-              Сумма плана
-              <input
-                onChange={(event) => {
-                  setPlanAmount(event.target.value);
-                  setPlanDraftTouched(true);
-                }}
-                required
-                value={planAmount}
-              />
-            </label>
-            <label>
-              Комментарий плана
-              <input
-                onChange={(event) => {
-                  setPlanNotes(event.target.value);
-                  setPlanDraftTouched(true);
-                }}
-                value={planNotes}
-              />
-            </label>
-            <button disabled={busy} type="submit">
-              Добавить в план
-            </button>
-          </form>
-        ) : null}
+            </p>
+          ) : null}
+          {!readOnly ? (
+            <details>
+              <summary>Добавить план</summary>
+              <form className={styles.form} onSubmit={(event) => void addPlan(event)}>
+                <label>
+                  Категория плана
+                  <input
+                    onChange={(event) => {
+                      setPlanCategory(event.target.value);
+                      setPlanDraftTouched(true);
+                    }}
+                    required
+                    value={planCategory}
+                  />
+                </label>
+                <label>
+                  Тип плана
+                  <select
+                    onChange={(event) => {
+                      setPlanType(event.target.value);
+                      setPlanDraftTouched(true);
+                    }}
+                    value={planType}
+                  >
+                    <option value="mandatory">Обязательный</option>
+                    <option value="comfortable">Комфортный</option>
+                    <option value="other">Прочее</option>
+                  </select>
+                </label>
+                <label>
+                  Сумма плана
+                  <input
+                    onChange={(event) => {
+                      setPlanAmount(event.target.value);
+                      setPlanDraftTouched(true);
+                    }}
+                    required
+                    value={planAmount}
+                  />
+                </label>
+                <label>
+                  Комментарий плана
+                  <input
+                    onChange={(event) => {
+                      setPlanNotes(event.target.value);
+                      setPlanDraftTouched(true);
+                    }}
+                    value={planNotes}
+                  />
+                </label>
+                <button disabled={busy} type="submit">
+                  Добавить в план
+                </button>
+              </form>
+            </details>
+          ) : null}
+        </section>
       </section>
 
       <section aria-label="Накопления месяца" className={styles.panel}>
