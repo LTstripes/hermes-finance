@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import socket
+import ssl
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -44,6 +47,29 @@ DEFAULT_BASE_URL: Final = "https://invest-public-api.tbank.ru/rest"
 DEFAULT_TIMEOUT: Final = httpx2.Timeout(20.0, connect=5.0, read=10.0, write=10.0, pool=5.0)
 DEFAULT_MAX_DISCOVERY: Final = 10
 TOKEN_UNAVAILABLE_MESSAGE: Final = "T-Invest read-only token is not configured or is unavailable"
+logger = logging.getLogger(__name__)
+
+
+def _transport_failure_kind(error: BaseException) -> str:
+    """Classify exception types only; messages can contain secrets or URLs."""
+    pending = [error]
+    seen: set[int] = set()
+    kinds: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLError):
+            kinds.add("tls")
+        if isinstance(current, socket.gaierror):
+            kinds.add("dns")
+        if isinstance(current, (httpx2.TimeoutException, TimeoutError)):
+            kinds.add("timeout")
+        pending.extend(x for x in (current.__cause__, current.__context__) if x is not None)
+        pending.extend(x for x in current.args if isinstance(x, BaseException))
+    return next((kind for kind in ("tls", "dns", "timeout") if kind in kinds), "connection")
+
 
 _INSTRUMENTS = "InstrumentsService"
 _MARKET_DATA = "MarketDataService"
@@ -797,10 +823,16 @@ class TInvestClient:
                 headers={"Authorization": f"Bearer {self._token}"},
             )
         except httpx2.TimeoutException as error:
+            logger.warning("T-Invest request failed: kind=%s", _transport_failure_kind(error))
             raise _NetworkFailure("T-Invest request timed out") from error
         except httpx2.TransportError as error:
+            logger.warning("T-Invest request failed: kind=%s", _transport_failure_kind(error))
             raise _NetworkFailure("T-Invest network error") from error
         status = response.status_code
+        if status >= 400 and not (
+            status == 404 and method in {_GET_LAST_PRICES, _GET_CANDLES, _FIND_INSTRUMENT}
+        ):
+            logger.warning("T-Invest request failed: kind=http status=%d", status)
         if status in {401, 403}:
             raise _AuthUnavailable()
         if status == 404:

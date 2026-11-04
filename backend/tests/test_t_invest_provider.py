@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
+import socket
+import ssl
 from datetime import date, datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -736,6 +739,43 @@ def test_historical_bond_conversion() -> None:
     assert result.quote_kind is QuoteKind.HISTORY
     assert result.price_date == date(2026, 8, 11)
     assert result.proposed_price_kopecks == 98_000
+
+
+@pytest.mark.parametrize(
+    ("cause", "kind"),
+    [
+        (ssl.SSLCertVerificationError("sensitive tls detail"), "tls"),
+        (socket.gaierror("sensitive dns detail"), "dns"),
+        (OSError("sensitive connection detail"), "connection"),
+        (TimeoutError("sensitive timeout detail"), "timeout"),
+    ],
+)
+def test_transport_logs_only_sanitized_failure_kind(cause, kind, caplog):
+    stub = TInvestStub()
+    _prime_stock(stub)
+    error = httpx2.ConnectError("sensitive outer detail")
+    error.__cause__ = cause
+    stub.errors["GetInstrumentBy"] = error
+    caplog.set_level(logging.WARNING, logger="hermes_finance.market_data.t_invest")
+    assert _client(stub).fetch_quote(_stock_identity(), TODAY).status is QuoteStatus.NETWORK_ERROR
+    assert [record.getMessage() for record in caplog.records] == [
+        f"T-Invest request failed: kind={kind}"
+    ]
+    assert all(record.exc_info is None for record in caplog.records)
+    assert TEST_TOKEN not in caplog.text
+    assert "sensitive" not in caplog.text
+
+
+def test_http_failure_logs_only_status(caplog):
+    stub = TInvestStub()
+    _prime_stock(stub)
+    stub.status_codes["GetInstrumentBy"] = 403
+    caplog.set_level(logging.WARNING, logger="hermes_finance.market_data.t_invest")
+    assert _client(stub).fetch_quote(_stock_identity(), TODAY).status is QuoteStatus.UNAVAILABLE
+    assert [record.getMessage() for record in caplog.records] == [
+        "T-Invest request failed: kind=http status=403"
+    ]
+    assert TEST_TOKEN not in caplog.text
 
 
 def test_missing_token_is_unavailable_without_network() -> None:
