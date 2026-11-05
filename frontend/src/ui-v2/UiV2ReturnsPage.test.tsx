@@ -314,11 +314,11 @@ test("instrument results retain each account's money, rate and own dates, includ
   const row = within(table).getByRole("row", { name: /Учебная акция/ });
   const a = within(row).getByRole("region", { name: "Учебный счёт А" });
   const b = within(row).getByRole("region", { name: "Учебный счёт Б" });
-  expect(a.querySelector("summary")).toHaveTextContent("Доходность недоступна");
+  expect(a.querySelector("summary")).toHaveTextContent("Не хватает стоимости на границе периода");
   fireEvent.click(within(a).getByText("Учебный счёт А"));
   fireEvent.click(within(b).getByText("Учебный счёт Б"));
   expect(a).toHaveTextContent("0 ₽");
-  expect(a).toHaveTextContent("Доходность недоступна");
+  expect(a).toHaveTextContent("Не хватает стоимости на границе периода");
   expect(a).toHaveTextContent("30.04.2030 — 31.05.2030");
   expect(b).toHaveTextContent("−4 ₽");
   expect(b).toHaveTextContent("−4,00%");
@@ -343,4 +343,28 @@ test("shows the server's conditional result with its cost limitation, without re
   expect(section.querySelector("summary")).toHaveTextContent("Без нераспределённых расходов счёта");
   fireEvent.click(within(section).getByText("Учебный счёт А"));
   expect(within(section).getByText("Полный результат недоступен")).toBeVisible();
+});
+
+test("does not show conditional values without the cost marker or for an ineligible account", async () => {
+  const data = overallFixture();
+  const account = data.instruments[0].accounts[0];
+  account.pnl = { ...account.pnl, value: null, reason_codes: ["missing_endpoint"] };
+  account.conditional_pnl = { ...account.pnl, value: "12345", reason_codes: [] };
+  install(data);
+  const view = setup();
+  let row = within(await screen.findByRole("table")).getByRole("row", { name: /Учебная акция/ });
+  let section = within(row).getByRole("region", { name: "Учебный счёт А" });
+  expect(section.querySelector("summary")).toHaveTextContent(
+    "Не хватает стоимости на границе периода",
+  );
+  expect(section.querySelector("summary")).not.toHaveTextContent("123,45");
+  view.unmount();
+  account.conditional_pnl.reason_codes = ["unallocated_costs_excluded"];
+  data.source_accounts[0].proof_status = "stale";
+  install(data);
+  setup();
+  row = within(await screen.findByRole("table")).getByRole("row", { name: /Учебная акция/ });
+  section = within(row).getByRole("region", { name: "Учебный счёт А" });
+  expect(section.querySelector("summary")).toHaveTextContent("Результат недоступен");
+  expect(section.querySelector("summary")).not.toHaveTextContent("123,45");
 });

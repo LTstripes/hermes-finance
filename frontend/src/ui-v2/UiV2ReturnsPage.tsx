@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
+import { reasonCopy } from "../lib/reasonCopy";
 import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
@@ -19,6 +20,7 @@ import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
 import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
 import { ReturnsInstrumentResult } from "./returns/ReturnsInstrumentResult";
+import { visibleReturnReasons } from "./returns/ReturnsInfo";
 import { ReturnsResultMeta } from "./returns/ReturnsResultMeta";
 import { UiV2Shell } from "./UiV2Shell";
 
@@ -51,6 +53,10 @@ export default function UiV2ReturnsPage() {
   const sort = params.get("sort") ?? "pnl-absolute";
   const kind = params.get("kind") ?? "all";
   const label = (s: string, fallback: string) => names[s] || fallback;
+  const metricStatus = (codes: string[], fallback: string) => {
+    const code = visibleReturnReasons(codes)[0];
+    return code ? reasonCopy(code, { surface: "returns" }).message : fallback;
+  };
   const change = (updates: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
     for (const [k, v] of Object.entries(updates)) {
@@ -435,11 +441,23 @@ export default function UiV2ReturnsPage() {
                                             {" "}
                                             · {displayMetric(a.rate)}
                                             {a.rate.value === null && (
-                                              <small> Доходность недоступна</small>
+                                              <small>
+                                                {metricStatus(
+                                                  a.rate.reason_codes,
+                                                  "Доходность недоступна",
+                                                )}
+                                              </small>
                                             )}
                                           </>
                                         ) : (
-                                          <small>Результат недоступен</small>
+                                          <small>
+                                            {a.resultAvailable
+                                              ? metricStatus(
+                                                  a.pnl.reason_codes,
+                                                  "Результат недоступен",
+                                                )
+                                              : "Результат недоступен"}
+                                          </small>
                                         )}
                                       </summary>
                                       <ReturnsInstrumentResult

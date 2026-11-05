@@ -563,7 +563,7 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
     const a = row.getByRole("region", { name: "Учебный счёт А" });
     const b = row.getByRole("region", { name: "Учебный счёт Б" });
     await expect(a).toContainText("0 ₽");
-    await expect(a).toContainText("Доходность недоступна");
+    await expect(a).toContainText("Не хватает стоимости на границе периода");
     await expect(a).toContainText("30.04.2030 — 31.05.2030");
     await expect(b).toContainText("−4,00%");
     await expect(b).toContainText("31.03.2030 — 30.04.2030");
