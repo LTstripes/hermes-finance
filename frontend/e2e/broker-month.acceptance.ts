@@ -629,7 +629,7 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
     needs_review: 0,
     error: 0,
   });
-  await expect(page.getByText(/Позиций обновлено: 0; без изменений: 2/)).toBeVisible();
+  await expect(page.getByText(/Обновлено позиций: 0; без изменений: 2/)).toBeVisible();
   expect(
     (await (await request.get("/api/synthetic-broker-inventory")).json()).table_digests,
   ).toEqual(savedForecasts.table_digests);
@@ -638,9 +638,10 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   ).toEqual(forecasts);
   const providerCalls = await (await request.get("/api/synthetic-draft-provider-calls")).json();
   await reloadWorkspace(page);
-  await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(
-    /25\s*₽/,
-  );
+  await expect(page.getByRole("link", { name: "Календарь выплат" })).toBeVisible();
+  expect(
+    await (await request.get("/api/payouts/calendar?month_id=1&forecast_version=v1")).json(),
+  ).toEqual(forecasts);
   expect(await (await request.get("/api/synthetic-draft-provider-calls")).json()).toEqual(
     providerCalls,
   );
