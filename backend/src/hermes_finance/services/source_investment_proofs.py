@@ -36,8 +36,8 @@ VERSION = "source_return_investment_v1"
 # parsing, mybroker_return_structure, source_report_preview._money classification or
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
-SEMANTICS_REVISION = "source_investment_semantics_v8"
-_GIFT_COMPAT_REVISION = "source_investment_semantics_v8"
+SEMANTICS_REVISION = "source_investment_semantics_v9"
+_GIFT_COMPAT_REVISION = "source_investment_semantics_v9"
 _V3_COMPAT_CODE = "source_investment_semantics_v3"
 _GIFT_COMPAT_CODES = (
     "source_investment_semantics_v2",
@@ -317,19 +317,22 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
         for original, view, error in selected
         if view and not error and original.covered_to >= start and original.covered_from <= end
     )
-    if (
-        not reserved
-        and read_dependency is not None
-        and unchanged_scope
-        and SEMANTICS_REVISION == _GIFT_COMPAT_REVISION
-    ):
-        codes = (
+    if not reserved and read_dependency is not None and SEMANTICS_REVISION == _GIFT_COMPAT_REVISION:
+        # V9 retains additional uncounted native Money observations and marks
+        # explicit unclassified tax for the clean instrument projection. The
+        # investment proof derivation uses _account_cost_scope, not those event
+        # projections; V8 receipts can therefore be checked against all exact
+        # unchanged live dependencies, including REPO and gift scopes.
+        codes = ("source_investment_semantics_v8",)
+        older_codes = (
             "source_investment_semantics_v7",
             "source_investment_semantics_v6",
             "source_investment_semantics_v5",
             "source_investment_semantics_v4",
             _V3_COMPAT_CODE,
         ) + (() if gift_dependencies else _GIFT_COMPAT_CODES)
+        if unchanged_scope:
+            codes += older_codes
         for code in codes:
             previous = mybroker.digest({**operands, "code": code})
             if read_dependency == previous:

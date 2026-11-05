@@ -1318,6 +1318,7 @@ def test_investment_semantics_rejects_legacy_digest(database, monkeypatch, prede
 @pytest.mark.parametrize(
     "old_code",
     [
+        "source_investment_semantics_v8",
         "source_investment_semantics_v7",
         "source_investment_semantics_v6",
         "source_investment_semantics_v2",
@@ -1345,6 +1346,24 @@ def test_gift_v3_compatibility_preserves_exact_old_proof_without_gift(
         report = proofs.read_reports(session)[0]
         assert report["status"] == "stale"
         assert report["reason_codes"] == ["investment_proof_dependencies_changed"]
+
+
+@pytest.mark.parametrize(
+    "revision,expected",
+    [("source_investment_semantics_v8", "current"), ("source_investment_semantics_v7", "stale")],
+)
+def test_v9_compatibility_preserves_v8_even_when_older_cost_scope_is_incompatible(
+    database, monkeypatch, revision, expected
+):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    save_semantics_proof(database, monkeypatch, revision, "old-cost-scope")
+    before = snapshot(database)
+    monkeypatch.setattr(proofs, "_old_cost_meaning_unchanged", lambda _: False)
+    with database.session_factory() as session:
+        report = proofs.read_reports(session)[0]
+        assert report["status"] == expected
+    assert snapshot(database) == before
 
 
 def test_new_intersecting_original_stales_proof_without_rewriting_decision(database, monkeypatch):
@@ -1783,7 +1802,10 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, p
         # This original-bound fixture has grouped Money without a unique native
         # principal disclosure. It must not be relabelled as a clean trade.
         assert clean.pnl.value is None
-        assert clean.known_result.status == "partial"
+        # The endpoint value alone is not a return when the purchase amount
+        # is unavailable; known independent components remain separately exposed.
+        assert clean.known_result.status == "unavailable"
+        assert clean.known_result.value is None
 
 
 @pytest.mark.parametrize("target", ["RU000A000000", "RU000A000001"])

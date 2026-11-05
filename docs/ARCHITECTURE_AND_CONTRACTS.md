@@ -2611,6 +2611,14 @@ from-zero proof supplies its exact historical interval. Any unsupported code,
 dependency or database-incarnation change requires fresh original Preview and confirmation.
 No prepared valuation packet is activated by these routes.
 
+The v9 investment semantic revision retains additional uncounted native Money
+observations for the clean instrument reader. Investment proof economics still
+use the unchanged investment-report derivation and account-cost classifier.
+The read-only v8 compatibility edge therefore recomputes all exact live v8
+dependencies, including for REPO or gift scopes, without rewriting receipts.
+Earlier compatibility edges retain their existing narrower scope restrictions.
+This compatibility requires independent review before release.
+
 The read-only compatibility edge admits exactly the released 1.9.4 producing
 implementation (`a381dbf1`, package digest
 `0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81`)
