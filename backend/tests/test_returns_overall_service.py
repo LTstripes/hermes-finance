@@ -653,6 +653,88 @@ def test_lazy_income_uses_actual_cash_legs_not_forecast_or_repeated_event(
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("kind", ["coupon", "dividend"])
+@pytest.mark.parametrize(
+    "conflict,count,expected", [(True, 2, None), (False, 2, "5000"), (True, 1, "2500")]
+)
+def test_clean_income_does_not_sum_conflicting_source_accounts(
+    db, monkeypatch, kind, conflict, count, expected
+):
+    from hermes_finance.services import clean_instrument_return, source_instrument_returns
+
+    period = {"start": date(2030, 3, 31), "end": date(2030, 4, 30)}
+    scopes = ["source:native-a", "source:native-b"][:count]
+    part = {"value": "2500", "status": "supported", "reason_codes": [], "assumptions": []}
+    accounts = [
+        {
+            "scope": scope,
+            "label": scope,
+            "period": period,
+            "result": {
+                "instruments": [
+                    {"isin": ISIN, "name": "Synthetic", "coupons": part, "dividends": part}
+                ]
+            },
+        }
+        for scope in scopes
+    ]
+    monkeypatch.setattr(
+        clean_instrument_return, "read_clean_overview", lambda *a, **k: {"accounts": accounts}
+    )
+    monkeypatch.setattr(
+        overall,
+        "read_clean_overall",
+        lambda *a, **k: {
+            "coupon_income": {
+                "known_total": overall.returns_view.metric(),
+                "partial": True,
+                "selected_accounts": count,
+                "included_accounts": count,
+                "accounts": [],
+                "reason_codes": [],
+            },
+            "dividend_income": {
+                "known_total": overall.returns_view.metric(),
+                "partial": True,
+                "selected_accounts": count,
+                "included_accounts": count,
+                "accounts": [],
+                "reason_codes": [],
+            },
+            "mixed_result": {
+                "components": [
+                    {"id": scope, "coverage": {"status": "conflict" if conflict else "partial"}}
+                    for scope in scopes
+                ]
+            },
+        },
+    )
+    monkeypatch.setattr(
+        source_instrument_returns,
+        "read_instrument_returns",
+        lambda *a, **k: SimpleNamespace(instruments=[]),
+    )
+    with db.session_factory() as session:
+        result = overall.read_clean_income(session, kind=kind)
+    item = result["instruments"][0]
+    assert [row["amount"]["value"] for row in item["accounts"]] == ["2500"] * count
+    assert item["amount"]["value"] == expected
+    if conflict and count > 1:
+        assert "source_account_identity_mapping_conflict" in item["amount"]["reason_codes"]
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    response = TestClient(app).get("/api/returns/income", params={"kind": kind})
+    assert response.status_code == 200, response.text
+    assert response.json()["contract_version"] == "returns_income_v2"
+    assert response.json()["instruments"][0]["amount"]["value"] == expected
+
+
 def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(db, monkeypatch):
     source_fixture(monkeypatch, stale_second=True)
     view = read(db).model_dump(mode="python")

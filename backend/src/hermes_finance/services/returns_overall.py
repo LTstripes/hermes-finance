@@ -1180,6 +1180,11 @@ def read_clean_income(session, *, kind):
         overview = read_clean_overall(session, include_instrument_details=True)
         clean = read_clean_overview(session)
         summary = overview["coupon_income" if kind == "coupon" else "dividend_income"]
+        identity_conflicts = {
+            component["id"]
+            for component in overview["mixed_result"]["components"]
+            if component["coverage"]["status"] == "conflict"
+        }
         items = {}
         events = []
         for account in clean["accounts"]:
@@ -1243,8 +1248,13 @@ def read_clean_income(session, *, kind):
             amounts = [a["amount"] for a in item["accounts"]]
             known = [int(a["value"]) for a in amounts if a["value"] is not None]
             partial = any(a["value"] is None or a["estimate"] for a in amounts)
+            conflicted = len(item["accounts"]) > 1 and any(
+                account["scope"] in identity_conflicts for account in item["accounts"]
+            )
             item["amount"] = (
-                _unknown("instrument_account_periods_differ")
+                _unknown("source_account_identity_mapping_conflict")
+                if conflicted
+                else _unknown("instrument_account_periods_differ")
                 if len(periods) > 1
                 else returns_view.metric(
                     sum(known) if known else None,
@@ -1259,7 +1269,15 @@ def read_clean_income(session, *, kind):
             "summary": summary,
             "instruments": [items[key] for key in sorted(items)],
             "events": events,
-            "reason_codes": ["source_only_not_financial_close"],
+            "reason_codes": ["source_only_not_financial_close"]
+            + (
+                ["source_account_identity_mapping_conflict"]
+                if any(
+                    "source_account_identity_mapping_conflict" in item["amount"]["reason_codes"]
+                    for item in items.values()
+                )
+                else []
+            ),
         }
 
 

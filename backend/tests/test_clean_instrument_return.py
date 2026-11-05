@@ -155,5 +155,129 @@ def test_projection_keeps_foreign_redemption_and_account_cost_outside_security()
     )
 
 
+@pytest.mark.parametrize("role", ["commission", "nkd"])
+def test_outside_trade_with_cost_leg_inside_does_not_break_clean_quantity(role, monkeypatch):
+    from hermes_finance.services import source_instrument_events
+
+    start, end = date(2030, 1, 31), date(2030, 2, 28)
+    prior, fee_date = date(2030, 1, 16), date(2030, 2, 3)
+    buy = replace(
+        trade("BUY", 102000, 2000),
+        quantity_delta=Decimal(1),
+        event_date=prior,
+        cash_settlement_date=prior,
+        depository_settlement_date=prior,
+        cash_legs=(
+            CashLeg("principal", prior, -100000, 100000, ("principal",), "principal"),
+            CashLeg(role, fee_date, -2000, 2000, ("cost",), "cost"),
+        ),
+    )
+    endpoints = {
+        start: Endpoint(start, Decimal(1), 110000, 110000, 0, "dirty"),
+        end: Endpoint(end, Decimal(1), 120000, 120000, 0, "dirty"),
+    }
+    monkeypatch.setattr(
+        source_instrument_events, "endpoint", lambda views, isin, day, kind, **kw: endpoints[day]
+    )
+    views = [
+        {"covered_from": "2030-02-01", "covered_to": "2030-02-28", "document": {"warnings": []}}
+    ]
+    analysis = source_instrument_events.analyse(
+        views, "ZZ0000000011", "stock", start, end, (buy,), (), ()
+    )
+    assert "cross_boundary_settlement" in analysis.coverage["quantity"].reason_codes
+    clean = project_clean_analysis(analysis, "ZZ0000000011")
+    assert clean.pnl.value == 10000
+
+
+def test_real_principal_and_delivery_crossing_still_blocks_clean_result():
+    prior = date(2029, 12, 20)
+    buy = replace(
+        trade("BUY", 102000, 2000),
+        quantity_delta=Decimal(1),
+        cash_settlement_date=DAY,
+        depository_settlement_date=prior,
+        cash_legs=(CashLeg("principal", DAY, -100000, 100000, ("principal",), "principal"),),
+    )
+    coverage = {name: Coverage(True) for name in ("events", "quantity", "payouts")}
+    coverage["quantity"] = Coverage(False, ("cross_boundary_settlement",))
+    analysis = SimpleNamespace(
+        opening_date=START,
+        closing_date=END,
+        opening=Endpoint(START, Decimal(1), 100000, 100000, 0, "dirty"),
+        closing=Endpoint(END, Decimal(1), 110000, 110000, 0, "dirty"),
+        events=(buy,),
+        coverage=coverage,
+    )
+    clean = project_clean_analysis(analysis, "ZZ0000000011")
+    assert clean.pnl.value is None and clean.known_result.value is None
+
+
+def test_cost_boundary_recheck_does_not_erase_unrelated_missing_trade():
+    prior = date(2029, 12, 20)
+    buy = replace(
+        trade("BUY", 102000, 2000),
+        quantity_delta=Decimal(1),
+        event_date=prior,
+        cash_settlement_date=prior,
+        depository_settlement_date=prior,
+        cash_legs=(
+            CashLeg("principal", prior, -100000, 100000, ("principal",), "principal"),
+            CashLeg("commission", DAY, -100, 100, ("fee",), "fee"),
+        ),
+    )
+    unresolved = replace(
+        trade("BUY", 102000, 2000),
+        event_key="unresolved",
+        kind="UNRESOLVED",
+        isin=None,
+        counted=False,
+        reason_codes=("trade_components_missing",),
+    )
+    coverage = {name: Coverage(True) for name in ("events", "quantity", "payouts")}
+    coverage["events"] = Coverage(False, ("trade_components_missing",))
+    coverage["quantity"] = Coverage(False, ("cross_boundary_settlement",))
+    analysis = SimpleNamespace(
+        opening_date=START,
+        closing_date=END,
+        opening=Endpoint(START, Decimal(1), 100000, 100000, 0, "dirty"),
+        closing=Endpoint(END, Decimal(1), 110000, 110000, 0, "dirty"),
+        events=(buy, unresolved),
+        coverage=coverage,
+    )
+    clean = project_clean_analysis(analysis, "ZZ0000000011")
+    assert clean.pnl.value is None and clean.known_result.value is None
+
+
+def test_positive_tax_does_not_block_clean_trade_result(monkeypatch):
+    from hermes_finance.services import source_instrument_events
+
+    tax = replace(cash("TAX", 100), counted=False, reason_codes=("cost_sign_conflict",))
+    buy = replace(
+        trade("BUY", 102000, 2000),
+        quantity_delta=Decimal(1),
+        depository_settlement_date=DAY,
+        cash_legs=(CashLeg("principal", DAY, -100000, 100000, ("principal",), "principal"),),
+    )
+    endpoints = {
+        START: Endpoint(START, Decimal(0), 0, 0, 0, "dirty"),
+        END: Endpoint(END, Decimal(1), 110000, 110000, 0, "dirty"),
+    }
+    monkeypatch.setattr(
+        source_instrument_events,
+        "endpoint",
+        lambda views, isin, day, kind, **kw: endpoints[day],
+    )
+    views = [
+        {"covered_from": "2030-01-02", "covered_to": "2030-01-31", "document": {"warnings": []}}
+    ]
+    analysis = source_instrument_events.analyse(
+        views, "ZZ0000000011", "stock", START, END, (buy, tax), (), ()
+    )
+    assert "cost_sign_conflict" in analysis.coverage["events"].reason_codes
+    clean = project_clean_analysis(analysis, "ZZ0000000011")
+    assert clean.pnl.value == 10000
+
+
 def replace_namespace(value, **changes):
     return SimpleNamespace(**(vars(value) | changes))

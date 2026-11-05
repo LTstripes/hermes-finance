@@ -65,6 +65,9 @@ def clean_gold_metric(observed, *, current=True):
 def project_clean_analysis(analysis, isin, *, instrument_type=None):
     """Do not change or attest the events, the account bridge, or source receipts."""
     ignored_cost_reasons = {"unallocated_instrument_cost", "native_commission_unavailable"}
+    cost_sign_events = [e for e in analysis.events if "cost_sign_conflict" in e.reason_codes]
+    if cost_sign_events and all(e.kind in {"FEE", "TAX"} for e in cost_sign_events):
+        ignored_cost_reasons.add("cost_sign_conflict")
     unresolved_money = [e for e in analysis.events if "unrecognized_money" in e.reason_codes]
     if unresolved_money and all(
         e.attribution_basis == "explicit_tax_unclassified" for e in unresolved_money
@@ -97,12 +100,18 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         ):
             event = replace(event, native_total_basis="excludes_paid_nkd")
         events.append(event)
-    fee_only_reconciled = _fee_only_quantity_reconciled(analysis, events, isin)
+    quantity_reconciled = _clean_quantity_reconciled(analysis, events, isin)
     conflicts = [
         event for event in analysis.events if "trade_money_cash_conflict" in event.reason_codes
     ]
     fee_conflicts_only = bool(conflicts) and all(
         event.isin == isin and fee_only_trade_conflict(event) for event in conflicts
+    )
+    missing_components = [
+        event for event in analysis.events if "trade_components_missing" in event.reason_codes
+    ]
+    fee_missing_only = bool(missing_components) and all(
+        event.isin == isin and cost_only_trade(event) for event in missing_components
     )
 
     def clean_complete(name):
@@ -116,13 +125,18 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
                 for reason in reasons
                 if not reason.startswith("payout_link_") and reason != "unattributed_income"
             }
-        if fee_only_reconciled:
+        if quantity_reconciled:
             if name == "events":
-                reasons.discard("trade_components_missing")
+                if fee_missing_only:
+                    reasons.discard("trade_components_missing")
                 if fee_conflicts_only:
                     reasons.discard("trade_money_cash_conflict")
             if name == "quantity":
-                reasons -= {"quantity_events_incomplete", "quantity_reconciliation_mismatch"}
+                reasons -= {
+                    "quantity_events_incomplete",
+                    "quantity_reconciliation_mismatch",
+                    "cross_boundary_settlement",
+                }
         return (coverage.complete or bool(coverage.reason_codes)) and not reasons
 
     return calculate_clean_return(
@@ -138,12 +152,14 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
     )
 
 
-def _fee_only_quantity_reconciled(analysis, events, isin):
-    """Recheck quantity before disregarding a legacy missing-fee blocker."""
+def _clean_quantity_reconciled(analysis, events, isin):
+    """Recheck principal dates and holdings before removing cost-only blockers."""
     from collections import defaultdict
     from decimal import Decimal, localcontext
 
-    if not any(cost_only_trade(event) for event in events):
+    if not any(cost_only_trade(event) for event in events) and (
+        "cross_boundary_settlement" not in analysis.coverage["quantity"].reason_codes
+    ):
         return False
     if any(
         event.isin != isin and event.kind in {"BUY", "SELL", "REDEMPTION"}
@@ -166,14 +182,15 @@ def _fee_only_quantity_reconciled(analysis, events, isin):
                 or event.depository_settlement_date is None
             ):
                 return False
-            cash_inside = any(
-                analysis.opening_date < leg.date <= analysis.closing_date for leg in event.cash_legs
-            )
-            if cost_only_trade(event):
+            if event.kind in {"BUY", "SELL"}:
                 principal_day = clean_trade_date(event)
-                cash_inside = (
-                    principal_day is not None
-                    and analysis.opening_date < principal_day <= analysis.closing_date
+                if principal_day is None:
+                    return False
+                cash_inside = analysis.opening_date < principal_day <= analysis.closing_date
+            else:
+                cash_inside = any(
+                    analysis.opening_date < leg.date <= analysis.closing_date
+                    for leg in event.cash_legs
                 )
             depo_inside = (
                 analysis.opening_date < event.depository_settlement_date <= analysis.closing_date

@@ -6819,6 +6819,12 @@ independently observed receipts remain available. A missing or conflicting
 commission does not invalidate clean principal only after linked principal and
 NKD amounts, ownership, settlement dates, and position quantities have been
 checked. Conflicting or ambiguous principal remains unknown.
+Commission and NKD posting dates do not substitute for a security principal
+settlement when checking a period boundary; genuine principal and delivery
+crossings still remain incomplete. Fee- and tax-only sign conflicts remain
+visible as source facts but do not invalidate clean security operands. Income
+drilldowns retain per-source receipts and withhold cross-source instrument
+totals when account identity mappings conflict.
 
 The existing account-specific `/api/returns/overview` and
 `/api/returns/instrument` use `returns_source_v2` and
