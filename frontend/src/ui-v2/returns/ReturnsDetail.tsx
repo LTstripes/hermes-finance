@@ -52,7 +52,10 @@ export function ReturnsDetailBody({ detail: d }: { detail: Detail }) {
           valuationDate={d.valuation_date}
           accountLink={d.account_link}
         />
-        <p>Количество: {d.opening_quantity === null ? "—" : formatQuantity(d.opening_quantity)} → {d.closing_quantity === null ? "—" : formatQuantity(d.closing_quantity)}</p>
+        <p>
+          Количество: {d.opening_quantity === null ? "—" : formatQuantity(d.opening_quantity)} →{" "}
+          {d.closing_quantity === null ? "—" : formatQuantity(d.closing_quantity)}
+        </p>
         <ReturnsInstrumentResult result={d.clean ? d : null} reasonCodes={d.reason_codes} />
         {d.clean && (
           <details>
