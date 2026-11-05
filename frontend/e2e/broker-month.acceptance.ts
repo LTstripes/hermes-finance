@@ -1907,7 +1907,24 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   // Back restores URL scope; the disclosure may have remounted closed.
   await openDisclosure(page, "Подробности");
   await expect(picker).toHaveValue("7452034");
-  await reloadWorkspace(page);
+  const reloadedSourceList = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      url.pathname === "/api/broker-months/intakes" &&
+      url.searchParams.get("include_unbound") === "true" &&
+      !url.searchParams.has("reporting_month_id")
+    );
+  });
+  await page.reload();
+  const sourceListResponse = await reloadedSourceList;
+  expect(sourceListResponse.ok()).toBe(true);
+  const reloadedSources = await sourceListResponse.json();
+  expect(reloadedSources.map((row: { id: number }) => row.id)).toEqual(
+    expect.arrayContaining(saved.map((row: { id: number }) => row.id)),
+  );
+  await openDisclosure(page, "Подробности");
+  await showSourceReview(page);
   await expect(page).toHaveURL(sourceAccountAUrl);
   await expect(picker).toHaveValue("7452034");
   await sourcePanel.getByRole("link", { name: "Облигации и доходность · 7452034" }).click();
