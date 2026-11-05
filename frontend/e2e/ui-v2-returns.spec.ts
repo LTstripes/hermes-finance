@@ -565,7 +565,7 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
     const a = row.getByRole("region", { name: "Учебный счёт А" });
     const b = row.getByRole("region", { name: "Учебный счёт Б" });
     await expect(a).toContainText("0 ₽");
-    await expect(a).toContainText("Не все показатели доступны");
+    await expect(a).toContainText("Не хватает стоимости на границе периода");
     await expect(a).toContainText("30.04.2030 — 31.05.2030");
     await expect(b).toContainText("−4,00%");
     await expect(b).toContainText("31.03.2030 — 30.04.2030");
@@ -581,10 +581,9 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
     await expect(accounts).toContainText("+12 ₽");
     cardReads = calls.filter((call) => call.endsWith("instrument-card")).length;
     await expect(accounts).toContainText("−4,00%");
-    await expect(accounts.getByText(/^Причины:/)).toBeVisible();
-    await expect(accounts.getByText(/^Причины:/)).toContainText(
-      "Номинал сделки принят с допущением",
-    );
+    const resultInfo = accounts.getByLabel("Подробнее: Результат инструмента").first();
+    await resultInfo.click();
+    await expect(resultInfo.locator("..")).toContainText("Номинал сделки принят с допущением");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
@@ -595,7 +594,7 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
     await expect(instruments).toBeVisible();
     await page.goto("/v2/returns/account?scope=source:SYNTH-A");
     const missing = page.getByRole("row").filter({ hasText: "Учебная облигация" });
-    await expect(missing).toContainText("Не все показатели доступны");
+    await expect(missing).toContainText("Не хватает стоимости на границе периода");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );

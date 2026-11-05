@@ -8,6 +8,7 @@ import {
   displayMetric,
   getContext,
   getOverview,
+  isPartialResult,
   type Instrument,
   type Period,
   periodKey,
@@ -205,6 +206,9 @@ function Instruments({
           </fieldset>
         </div>
         <div className={styles.tops}>
+          {mode === "pnl" && rows.some((row) => isPartialResult(row.pnl)) && (
+            <p>Порядок основан на показанных суммах; часть результатов неполна.</p>
+          )}
           {[true, false].map((positive) => {
             const top = ranked(rows, period, mode, positive);
             return (
@@ -224,6 +228,7 @@ function Instruments({
                           {r.name !== r.isin && <small>{r.isin}</small>}
                         </span>
                         <strong className={positive ? styles.positive : styles.negative}>
+                          {mode === "pnl" && isPartialResult(r.pnl) ? "Известная часть: " : ""}
                           {displayMetric(r[mode], true)}
                         </strong>
                       </li>

@@ -93,15 +93,26 @@ export function instrumentSummary(data: Overall, row: OverallInstrument, scope: 
           (c) => c.id === a.scope && c.coverage.status === "conflict",
         ),
       ));
+  const subtotal = (name: "pnl" | "coupons" | "dividends") => {
+    if (aggregationUnsafe) return unavailable;
+    const value = knownMoney(values.map((account) => account[name]));
+    return values.length !== accounts.length && value.value !== null
+      ? {
+          ...value,
+          estimate: true,
+          reason_codes: [...new Set([...value.reason_codes, "selected_components_incomplete"])],
+        }
+      : value;
+  };
   return {
     ...row,
     accounts: accounts.map((a) => ({
       ...a,
       resultAvailable: eligible.includes(a) && a.details_loaded,
     })),
-    pnl: aggregationUnsafe ? unavailable : knownMoney(values.map((a) => a.pnl)),
-    coupons: aggregationUnsafe ? unavailable : knownMoney(values.map((a) => a.coupons)),
-    dividends: aggregationUnsafe ? unavailable : knownMoney(values.map((a) => a.dividends)),
+    pnl: subtotal("pnl"),
+    coupons: subtotal("coupons"),
+    dividends: subtotal("dividends"),
     rate:
       values.length === 1 && accounts.length === 1
         ? values[0].rate

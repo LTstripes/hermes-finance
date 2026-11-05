@@ -5,20 +5,12 @@ import { displayMetric, type Metric, unavailable } from "./model";
 import { Explanation, Value, visibleReturnReasons } from "./ReturnsInfo";
 
 function Notes({ label, codes }: { label: string; codes: string[] }) {
-  const messages = [
-    ...new Set(codes.map((code) => reasonCopy(code, { surface: "returns" }).message)),
-  ];
-  if (!messages.length) return null;
+  if (!codes.length) return null;
   return (
-    <div className={styles.notes}>
-      <span>
-        {label}: {messages.slice(0, 2).join(" ")}
-      </span>
-      <details>
-        <summary>Подробнее: {label.toLocaleLowerCase("ru")}</summary>
-        <Explanation codes={codes} />
-      </details>
-    </div>
+    <details className={styles.notes}>
+      <summary>{label}</summary>
+      <Explanation codes={codes} />
+    </details>
   );
 }
 
@@ -37,13 +29,12 @@ export function ReturnsInstrumentResult({
   const pnl = { ...originalPnl, reason_codes: visibleReturnReasons(originalPnl.reason_codes) };
   const rate = { ...originalRate, reason_codes: visibleReturnReasons(originalRate.reason_codes) };
   const reasons = visibleReturnReasons([
-    ...new Set([
-      ...reasonCodes,
-      ...pnl.reason_codes,
-      ...rate.reason_codes,
-      ...(analysis?.reason_codes ?? []),
-    ]),
-  ]);
+    ...new Set([...reasonCodes, ...(analysis?.reason_codes ?? [])]),
+  ]).filter((code) => !pnl.reason_codes.includes(code) && !rate.reason_codes.includes(code));
+  const status = (metric: Metric, fallback: string) =>
+    metric.reason_codes.length
+      ? reasonCopy(metric.reason_codes[0], { surface: "returns" }).message
+      : fallback;
   const usedAssumptions = [
     ...new Set([
       ...(analysis?.assumptions ?? []),
@@ -62,21 +53,8 @@ export function ReturnsInstrumentResult({
   ).filter(
     ([, value]) => value?.value != null && value.value !== "0" && value.status !== "unavailable",
   );
-  const beforeCosts =
-    pnl.value === null &&
-    result?.conditional_pnl?.value != null &&
-    result.conditional_pnl.reason_codes.includes("unallocated_costs_excluded");
   return (
     <div className={styles.result}>
-      {beforeCosts && (
-        <section aria-label="Результат без нераспределённых расходов">
-          <p>Без нераспределённых расходов счёта</p>
-          <strong>{displayMetric(result!.conditional_pnl!, true)}</strong>
-          {" · "}
-          {result?.conditional_rate && displayMetric(result.conditional_rate)}
-          <small>Полный результат после распределения расходов пока неизвестен.</small>
-        </section>
-      )}
       <dl className={styles.metrics}>
         <div>
           <dt>
@@ -86,19 +64,18 @@ export function ReturnsInstrumentResult({
           </dt>
           <dd>
             <Value metric={pnl} label="Результат инструмента" signed />
+            {pnl.value === null && <small>{status(pnl, "Результат недоступен")}</small>}
           </dd>
         </div>
         <div>
           <dt>Доходность %</dt>
           <dd>
             <Value metric={rate} label="Доходность инструмента" />
+            {rate.value === null && <small>{status(rate, "Доходность недоступна")}</small>}
           </dd>
         </div>
       </dl>
       {rate.method === "modified_dietz" && <small>Modified Dietz · за период, не годовая</small>}
-      {(pnl.value === null || rate.value === null) && (
-        <p className={styles.notice}>Не все показатели доступны</p>
-      )}
       {pnl.value === null && observedPayouts.length > 0 && (
         <div>
           <p>Найденные выплаты — данные могут быть неполными</p>

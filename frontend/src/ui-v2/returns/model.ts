@@ -161,18 +161,28 @@ export function displayMetric(m: Metric, signed = false) {
   if (!/^-?\d+$/.test(m.value)) return "—";
   return (signed ? formatMoneyDelta : formatMoney)(fromKopecks(BigInt(m.value)));
 }
+export function isPartialResult(metric: Metric) {
+  return (
+    metric.value !== null &&
+    metric.reason_codes.some((code) =>
+      ["clean_partial_result", "selected_components_incomplete"].includes(code),
+    )
+  );
+}
 export function ranked(
   rows: Instrument[],
   period: Period,
   mode: "pnl" | "rate",
   positive: boolean,
 ) {
-  const method = mode === "pnl" ? "instrument_return_v2" : "modified_dietz";
+  const methods =
+    mode === "pnl" ? ["instrument_return_v2", "clean_instrument_return_v1"] : ["modified_dietz"];
   return rows
     .filter(
       (r) =>
         samePeriod(r.period, period) &&
-        r[mode].method === method &&
+        methods.includes(r[mode].method) &&
+        (mode !== "rate" || !isPartialResult(r.rate)) &&
         r[mode].unit === (mode === "pnl" ? "kopecks" : "fraction") &&
         r[mode].value != null &&
         decimal(r[mode].value) &&

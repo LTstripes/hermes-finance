@@ -30,3 +30,26 @@ test("tops exclude zeros, NULL, incompatible period, unit, method and conditiona
     ranked([row("RU000A000008", "negative zero", "0", "-0.0")], may, "rate", false),
   ).toHaveLength(0);
 });
+
+test("clean source results participate in money rankings with partial status preserved", () => {
+  const full = row("RU000A000011", "Known full", "10000", "0.1");
+  full.pnl = { ...full.pnl, method: "clean_instrument_return_v1", reason_codes: [] };
+  const loss = row("RU000A000012", "Known loss", "-5000", "-0.05");
+  loss.pnl = { ...loss.pnl, method: "clean_instrument_return_v1", reason_codes: [] };
+  const partial = row("RU000A000013", "Partial", "50000", null);
+  partial.pnl = {
+    ...partial.pnl,
+    method: "clean_instrument_return_v1",
+    reason_codes: ["clean_partial_result"],
+  };
+  expect(ranked([partial, full, loss], may, "pnl", true).map((r) => r.name)).toEqual([
+    "Partial",
+    "Known full",
+  ]);
+  expect(ranked([partial, full, loss], may, "pnl", true)[0].pnl.reason_codes).toContain(
+    "clean_partial_result",
+  );
+  expect(ranked([partial, full, loss], may, "pnl", false).map((r) => r.name)).toEqual([
+    "Known loss",
+  ]);
+});

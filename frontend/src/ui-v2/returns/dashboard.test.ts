@@ -49,6 +49,7 @@ test("a stale sibling is excluded independently and never creates a common rate"
   const summary = instrumentSummary(data, data.instruments[0], "all");
   expect(summary.pnl.value).toBe("1200");
   expect(summary.partial).toBe(true);
+  expect(summary.pnl.reason_codes).toContain("selected_components_incomplete");
   expect(summary.rate.value).toBeNull();
 });
 test("explicit mapping conflict excludes instrument numbers despite a current proof", () => {

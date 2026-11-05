@@ -121,7 +121,7 @@ test("sorts and displays a native instrument period despite stale account proof"
   expect(rows[1]).toHaveTextContent("Бумага 5");
   expect(rows[1]).toHaveTextContent("−9 ₽");
   expect(rows[1]).not.toHaveTextContent("Нет доступного результата");
-  fireEvent.click(within(rows[1]).getByText(/Учебный счёт А ·/));
+  fireEvent.click(within(rows[1]).getByText("Учебный счёт А"));
   expect(within(rows[1]).getByText(/30\.04\.2030 — 31\.10\.2030/)).toBeVisible();
   expect(rows[2]).toHaveTextContent("Нет доступного результата");
 });
@@ -141,6 +141,54 @@ test("different account periods stay separate and preserve the instrument list",
   expect(screen.queryByText("Фактически полученные выплаты")).toBeNull();
   expect(calls).toEqual(["/api/returns/overall?include_instrument_summaries=true"]);
   expect(screen.queryByRole("region", { name: "Доходность периода" })).toBeNull();
+});
+
+test("collapsed account row identifies a known partial result without hiding it", async () => {
+  const data = overallFixture();
+  const [partial, complete] = data.instruments[0].accounts;
+  partial.pnl.reason_codes = ["clean_partial_result"];
+  partial.pnl.value = "1200";
+  complete.pnl.reason_codes = [];
+  install(data);
+  setup();
+  const section = await screen.findByRole("region", { name: /Доходность по инструментам/ });
+  const row = within(section).getByRole("row", { name: /Учебная акция/ });
+  const partialAccount = within(row).getByRole("region", { name: "Учебный счёт А" });
+  const completeAccount = within(row).getByRole("region", { name: "Учебный счёт Б" });
+  expect(partialAccount.querySelector("details")).not.toHaveAttribute("open");
+  expect(partialAccount.querySelector("summary")).toHaveTextContent("Известная часть: +12 ₽");
+  expect(completeAccount.querySelector("summary")).not.toHaveTextContent("Известная часть");
+  fireEvent.click(within(partialAccount).getByText(/Известная часть:/));
+  expect(within(partialAccount).getByText("Известная часть результата ₽")).toBeVisible();
+});
+
+test("comparison and leaders label a known partial amount, including zero", async () => {
+  const data = overallFixture();
+  data.instruments = data.instruments.map((instrument) => ({
+    ...instrument,
+    accounts: instrument.accounts.map((account) => ({
+      ...account,
+      pnl: { ...account.pnl },
+    })),
+  }));
+  for (const instrument of data.instruments) {
+    instrument.accounts[0].period = data.instruments[0].accounts[0].period;
+  }
+  data.instruments[0].accounts[0].pnl.reason_codes = ["clean_partial_result"];
+  data.instruments[0].accounts[0].pnl.value = "1200";
+  data.instruments[1].accounts[0].pnl.reason_codes = ["clean_partial_result"];
+  data.instruments[1].accounts[0].pnl.value = "0";
+  install(data);
+  setup("/v2/returns?accounts=source%3ASYNTH-A");
+  const table = await screen.findByRole("table");
+  const zeroRow = within(table).getByRole("row", { name: /Проданная облигация/ });
+  expect(zeroRow.querySelector("summary")).toHaveTextContent("Известная часть: 0 ₽");
+  expect(screen.getByRole("region", { name: "Вклад инструментов" })).toHaveTextContent(
+    "Известная часть: +12 ₽",
+  );
+  const leaders = screen.getByRole("region", { name: "Лидеры и отстающие" });
+  expect(leaders).toHaveTextContent("Известная часть: +12 ₽");
+  expect(leaders).toHaveTextContent("часть результатов неполна");
 });
 test("one account selection keeps its own period without inventing an aggregate rate", async () => {
   const data = overallFixture();
@@ -316,11 +364,11 @@ test("instrument results retain each account's money, rate and own dates, includ
   const row = within(table).getByRole("row", { name: /Учебная акция/ });
   const a = within(row).getByRole("region", { name: "Учебный счёт А" });
   const b = within(row).getByRole("region", { name: "Учебный счёт Б" });
-  expect(within(a).getByText(/Не все показатели доступны/)).not.toBeVisible();
-  fireEvent.click(within(a).getByText(/Учебный счёт А ·/));
-  fireEvent.click(within(b).getByText(/Учебный счёт Б ·/));
+  expect(within(a).getAllByText("Не хватает стоимости на границе периода.")[0]).toBeVisible();
+  fireEvent.click(within(a).getByText("Учебный счёт А"));
+  fireEvent.click(within(b).getByText("Учебный счёт Б"));
   expect(a).toHaveTextContent("0 ₽");
-  expect(a).toHaveTextContent("Не все показатели доступны");
+  expect(a).toHaveTextContent("Не хватает стоимости на границе периода");
   expect(a).toHaveTextContent("30.04.2030 — 31.05.2030");
   expect(b).toHaveTextContent("−4 ₽");
   expect(b).toHaveTextContent("−4,00%");

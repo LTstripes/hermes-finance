@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
+import { reasonCopy } from "../lib/reasonCopy";
 import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
@@ -13,7 +14,13 @@ import {
   selectedIncome,
 } from "./returns/dashboard";
 import resultStyles from "./returns/InstrumentResult.module.css";
-import { compareDecimal, dateLabel, displayMetric, periodLabel } from "./returns/model";
+import {
+  compareDecimal,
+  dateLabel,
+  displayMetric,
+  isPartialResult,
+  periodLabel,
+} from "./returns/model";
 import { capitalGoldTarget, goldTargets } from "./returns/navigation";
 import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
@@ -330,7 +337,10 @@ export default function UiV2ReturnsPage() {
                                 }}
                               />
                             </div>
-                            <strong>{displayMetric(r.pnl, true)}</strong>
+                            <strong>
+                              {isPartialResult(r.pnl) ? "Известная часть: " : ""}
+                              {displayMetric(r.pnl, true)}
+                            </strong>
                           </div>
                         );
                       })}
@@ -413,10 +423,41 @@ export default function UiV2ReturnsPage() {
                                   >
                                     <details>
                                       <summary>
-                                        {label(a.scope, a.label)} ·{" "}
-                                        {a.resultAvailable
-                                          ? `${displayMetric(a.pnl, true)} · ${displayMetric(a.rate)}`
-                                          : "Нет доступного результата"}
+                                        <span className={layout.instrumentAccountName}>
+                                          {label(a.scope, a.label)}
+                                        </span>{" "}
+                                        ·{" "}
+                                        {a.resultAvailable ? (
+                                          <>
+                                            <strong>
+                                              {isPartialResult(a.pnl) ? "Известная часть: " : ""}
+                                              {displayMetric(a.pnl, true)}
+                                            </strong>{" "}
+                                            · {displayMetric(a.rate)}
+                                          </>
+                                        ) : (
+                                          "Нет доступного результата"
+                                        )}
+                                        {a.resultAvailable && a.pnl.value === null && (
+                                          <small>
+                                            {a.pnl.reason_codes.length
+                                              ? reasonCopy(a.pnl.reason_codes[0], {
+                                                  surface: "returns",
+                                                }).message
+                                              : "Результат недоступен"}
+                                          </small>
+                                        )}
+                                        {a.resultAvailable &&
+                                          a.pnl.value !== null &&
+                                          a.rate.value === null && (
+                                            <small>
+                                              {a.rate.reason_codes.length
+                                                ? reasonCopy(a.rate.reason_codes[0], {
+                                                    surface: "returns",
+                                                  }).message
+                                                : "Доходность недоступна"}
+                                            </small>
+                                          )}
                                       </summary>
                                       <ReturnsInstrumentResult
                                         result={a.resultAvailable ? a : null}
@@ -466,6 +507,9 @@ export default function UiV2ReturnsPage() {
                   rows.some((r) => r.pnl.value !== null && r.pnl.value !== "0") && (
                     <section className={styles.panel} aria-label="Лидеры и отстающие">
                       <h2>Лидеры и отстающие</h2>
+                      {rows.some((r) => isPartialResult(r.pnl)) && (
+                        <p>Порядок основан на показанных суммах; часть результатов неполна.</p>
+                      )}
                       <div className={layout.leaders}>
                         {([true, false] as const)
                           .filter((positive) =>
@@ -503,6 +547,7 @@ export default function UiV2ReturnsPage() {
                                         {r.name}
                                       </Link>
                                       <strong className={layout.leaderAmount}>
+                                        {isPartialResult(r.pnl) ? "Известная часть: " : ""}
                                         {displayMetric(r.pnl, true)}
                                       </strong>
                                     </li>

@@ -56,10 +56,7 @@ export function ReturnsInstrumentCard({
           ]),
         ]),
       }))
-      .filter(
-        ({ account, codes }) =>
-          !account.clean && (!account.included || !account.detail || codes.length > 0),
-      ) ?? [];
+      .filter(({ account }) => !account.clean && (!account.included || !account.detail)) ?? [];
   const id = canonicalId(capitalAccount);
   const matches =
     data?.accounts.filter((account) => id !== null && account.canonical_account_id === id) ?? [];
