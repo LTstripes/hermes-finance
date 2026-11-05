@@ -22,6 +22,10 @@
   margin: 4px 0 0;
   font-weight: 600;
 }
+.list > tbody > tr > td:first-child > a {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
 .notice,
 .notes {
   margin: 8px 0 0;

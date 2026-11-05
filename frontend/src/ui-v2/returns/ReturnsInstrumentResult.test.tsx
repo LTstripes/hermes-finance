@@ -57,10 +57,14 @@ test("known zero remains numeric while a missing percentage has a visible explan
   setup({ result: { pnl: m("0"), rate: m(null, "fraction", "modified_dietz") } });
   expect(screen.getByText("0 ₽")).toBeVisible();
   expect(screen.getByText("—")).toBeVisible();
-  expect(screen.getByText("Нужна проверка данных")).toBeVisible();
-  expect(screen.getByText(/^Причины:/)).toHaveTextContent(
-    "Не хватает стоимости на границе периода",
-  );
+  expect(
+    screen
+      .getAllByText("Не хватает стоимости на границе периода.")
+      .some((node) => node.tagName === "SMALL"),
+  ).toBe(true);
+  expect(
+    screen.getByLabelText("Подробнее: Доходность инструмента").parentElement,
+  ).toHaveTextContent("Не хватает стоимости на границе периода");
 });
 test("missing detail never becomes zero or a conditional or partial result", () => {
   const detail = detailFixture();
@@ -95,16 +99,16 @@ test("assumptions on analysis, metrics and events remain visible and deduplicate
   detail.analysis.pnl.assumptions = ["face_value_assumed"];
   detail.analysis.events[0].assumptions = ["income_assumed"];
   setup({ result: detail, analysis: detail.analysis });
-  const notes = screen.getByText(/^Допущения:/);
-  expect(notes).toBeVisible();
+  const notes = screen.getByText("Допущения").parentElement;
+  expect(screen.getByText("Допущения")).toBeVisible();
   expect(notes).toHaveTextContent("Номинал сделки принят с допущением");
   expect(notes).toHaveTextContent("Классификация выплаты основана на правиле по умолчанию");
-  expect(notes.textContent?.match(/Номинал сделки/g)).toHaveLength(1);
+  expect(notes?.textContent?.match(/Номинал сделки/g)).toHaveLength(1);
 });
 test("absent result shows two unavailable values and a review status", () => {
   const { container } = setup({ result: null });
   expect(within(container).getAllByText("—")).toHaveLength(2);
-  expect(screen.getByText("Нужна проверка данных")).toBeVisible();
+  expect(screen.getByText("Полный результат недоступен")).toBeVisible();
   expect(screen.queryByText("0 ₽")).toBeNull();
 });
 
@@ -113,5 +117,5 @@ test("excluded or stale events do not label the result with unused assumptions",
   detail.analysis.events[0].assumptions = ["income_assumed"];
   detail.analysis.events[0].current = false;
   setup({ result: detail, analysis: detail.analysis });
-  expect(screen.queryByText(/^Допущения:/)).toBeNull();
+  expect(screen.queryByText("Допущения")).toBeNull();
 });

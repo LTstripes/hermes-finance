@@ -121,9 +121,9 @@ test("sorts and displays a native instrument period despite stale account proof"
   expect(rows[1]).toHaveTextContent("Бумага 5");
   expect(rows[1]).toHaveTextContent("−9 ₽");
   expect(rows[1]).not.toHaveTextContent("Нужна проверка данных");
-  fireEvent.click(within(rows[1]).getByText(/Учебный счёт А ·/));
+  fireEvent.click(within(rows[1]).getByText("Учебный счёт А"));
   expect(within(rows[1]).getByText(/30\.04\.2030 — 31\.10\.2030/)).toBeVisible();
-  expect(rows[2]).toHaveTextContent("Нужна проверка данных");
+  expect(rows[2]).toHaveTextContent("Результат недоступен");
 });
 
 test("default shows exact brokerage subtotal, supported graph/list, excludes deposits and lazy detail calls", async () => {
@@ -314,14 +314,33 @@ test("instrument results retain each account's money, rate and own dates, includ
   const row = within(table).getByRole("row", { name: /Учебная акция/ });
   const a = within(row).getByRole("region", { name: "Учебный счёт А" });
   const b = within(row).getByRole("region", { name: "Учебный счёт Б" });
-  expect(within(a).getByText(/Нужна проверка данных/)).not.toBeVisible();
-  fireEvent.click(within(a).getByText(/Учебный счёт А ·/));
-  fireEvent.click(within(b).getByText(/Учебный счёт Б ·/));
+  expect(a.querySelector("summary")).toHaveTextContent("Доходность недоступна");
+  fireEvent.click(within(a).getByText("Учебный счёт А"));
+  fireEvent.click(within(b).getByText("Учебный счёт Б"));
   expect(a).toHaveTextContent("0 ₽");
-  expect(a).toHaveTextContent("Нужна проверка данных");
+  expect(a).toHaveTextContent("Доходность недоступна");
   expect(a).toHaveTextContent("30.04.2030 — 31.05.2030");
   expect(b).toHaveTextContent("−4 ₽");
   expect(b).toHaveTextContent("−4,00%");
   expect(b).toHaveTextContent("31.03.2030 — 30.04.2030");
   expect(calls).toEqual(["/api/returns/overall?include_instrument_summaries=true"]);
+});
+
+test("shows the server's conditional result with its cost limitation, without replacing the full result", async () => {
+  const data = overallFixture();
+  const account = data.instruments[0].accounts[0];
+  account.pnl.value = null;
+  account.conditional_pnl = {
+    ...account.pnl,
+    value: "12345",
+    reason_codes: ["unallocated_costs_excluded"],
+  };
+  install(data);
+  setup();
+  const row = within(await screen.findByRole("table")).getByRole("row", { name: /Учебная акция/ });
+  const section = within(row).getByRole("region", { name: "Учебный счёт А" });
+  expect(section.querySelector("summary")).toHaveTextContent("+123,45 ₽");
+  expect(section.querySelector("summary")).toHaveTextContent("Без нераспределённых расходов счёта");
+  fireEvent.click(within(section).getByText("Учебный счёт А"));
+  expect(within(section).getByText("Полный результат недоступен")).toBeVisible();
 });

@@ -22,7 +22,6 @@ export function ReturnsInstrumentCard({
   revision,
   capitalAccount,
   capitalRequested = false,
-  selectedScope,
   close,
   standalone = false,
   accountLabels = {},
@@ -58,8 +57,7 @@ export function ReturnsInstrumentCard({
           ]),
         ]),
       }))
-      .filter(({ account, codes }) => !account.included || !account.detail || codes.length > 0) ??
-    [];
+      .filter(({ account }) => !account.included || !account.detail) ?? [];
   const id = canonicalId(capitalAccount);
   const matches =
     data?.accounts.filter((account) => id !== null && account.canonical_account_id === id) ?? [];
@@ -345,10 +343,7 @@ export function ReturnsInstrumentCard({
             </details>
           )}
           {limitedAccounts.length > 0 && (
-            <details
-              className={`${styles.panel} ${styles.details}`}
-              open={!!selectedScope || undefined}
-            >
+            <details className={`${styles.panel} ${styles.details}`}>
               <summary>Что ограничивает расчёт</summary>
               {limitedAccounts.map(({ account, codes }) => (
                 <section key={account.scope}>

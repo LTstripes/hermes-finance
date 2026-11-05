@@ -46,6 +46,10 @@
   border-left: 3px solid #9fbcb2;
   padding: 6px 16px;
 }
+.account > a {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
 .account strong {
   display: block;
   margin: 8px 0;
@@ -233,6 +237,19 @@
 
 .instrumentAccount {
   min-width: 0;
+}
+.instrumentAccountName {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.instrumentAccount strong {
+  font-size: 1.05rem;
+}
+.instrumentAccount summary small {
+  display: block;
+  margin: 3px 0 0 14px;
+  font-size: 0.8rem;
+  font-weight: 400;
 }
 .instrumentAccount + .instrumentAccount {
   border-top: 1px solid #dfe6ed;

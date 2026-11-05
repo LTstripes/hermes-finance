@@ -408,10 +408,39 @@ export default function UiV2ReturnsPage() {
                                   >
                                     <details>
                                       <summary>
-                                        {label(a.scope, a.label)} ·{" "}
-                                        {a.resultAvailable
-                                          ? `${displayMetric(a.pnl, true)} · ${displayMetric(a.rate)}`
-                                          : "Нужна проверка данных"}
+                                        <span className={layout.instrumentAccountName}>
+                                          {label(a.scope, a.label)}
+                                        </span>
+                                        {" · "}
+                                        <strong>
+                                          {a.resultAvailable && a.pnl.value !== null
+                                            ? displayMetric(a.pnl, true)
+                                            : a.resultAvailable &&
+                                                a.conditional_pnl?.value != null &&
+                                                a.conditional_pnl.reason_codes.includes(
+                                                  "unallocated_costs_excluded",
+                                                )
+                                              ? displayMetric(a.conditional_pnl, true)
+                                              : "—"}
+                                        </strong>{" "}
+                                        {a.resultAvailable &&
+                                        a.pnl.value === null &&
+                                        a.conditional_pnl?.value != null &&
+                                        a.conditional_pnl.reason_codes.includes(
+                                          "unallocated_costs_excluded",
+                                        ) ? (
+                                          <small>Без нераспределённых расходов счёта</small>
+                                        ) : a.resultAvailable && a.pnl.value !== null ? (
+                                          <>
+                                            {" "}
+                                            · {displayMetric(a.rate)}
+                                            {a.rate.value === null && (
+                                              <small> Доходность недоступна</small>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <small>Результат недоступен</small>
+                                        )}
                                       </summary>
                                       <ReturnsInstrumentResult
                                         result={a.resultAvailable ? a : null}
