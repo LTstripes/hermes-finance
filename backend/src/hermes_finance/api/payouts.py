@@ -151,6 +151,7 @@ class DraftPayoutContextOut(BaseModel):
     snapshot_date: date
     status: Literal["draft", "closed"]
     context_digest: str
+    view_digest: str
     eligible_positions: int
     items: list[DraftPayoutPositionOut]
 
@@ -167,6 +168,7 @@ class DraftPayoutResultOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reporting_month_id: int
+    readback_digest: str | None = None
     items: list[DraftPayoutItemOut]
     summary: dict[DraftPayoutStatus, int]
 

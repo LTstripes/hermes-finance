@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain import InstrumentType, MarketMappingState
 from hermes_finance.market_data.dto import T_INVEST_PROVIDER, QuoteStatus
+from hermes_finance.market_data.payout import PayoutEventKind
 from hermes_finance.market_data.payout_protocol import PayoutFetchRequest
 from hermes_finance.persistence import (
     Account,
@@ -193,14 +194,16 @@ def _context(session, month_id):
             }
         )
     source_token = broker_months._dependencies(session)
-    return {
+    context = {
         "reporting_month_id": month_id,
         "snapshot_date": month.snapshot_date.isoformat(),
         "status": month.status,
         "context_digest": digest([source_token, _forecast_token(session)]),
         "eligible_positions": sum(item["eligible"] for item in items),
         "items": items,
-    }, source_token
+    }
+    context["view_digest"] = digest(context)
+    return context, source_token
 
 
 def read_context(session, month_id):
@@ -341,6 +344,23 @@ def _actual_review(session, row, states):
     return None
 
 
+def _empty_coverage_valid(fetched, instrument_type, request):
+    required = (
+        {PayoutEventKind.DIVIDEND}
+        if instrument_type == "stock"
+        else {PayoutEventKind.COUPON, PayoutEventKind.REDEMPTION}
+    )
+    covered = {
+        c.event_kind
+        for c in fetched.coverage
+        if c.successful
+        and c.structurally_valid
+        and c.requested_from <= request.calendar_from
+        and c.requested_to >= request.calendar_to
+    }
+    return required <= covered
+
+
 def _refresh_position(session, item, month_id, version, source_token, mapping_token, provider):
     with coherent_read_snapshot(session):
         if (
@@ -371,6 +391,7 @@ def _refresh_position(session, item, month_id, version, source_token, mapping_to
             # accepted mapping cannot prove these are independent future events.
             return "needs_review", ["saved_provider_identity_changed"], []
         context_token = _forecast_token(session)
+        instrument_type = session.get(Instrument, item["instrument_id"]).instrument_type
     request = PayoutFetchRequest(
         instrument_uid=uid, calendar_from=start, calendar_to=end - timedelta(days=1)
     )
@@ -378,7 +399,17 @@ def _refresh_position(session, item, month_id, version, source_token, mapping_to
     if fetched.provider != T_INVEST_PROVIDER or fetched.instrument_uid != uid or fetched.failures:
         return "error", ["provider_error"], []
     if not fetched.events:
-        return "needs_review", ["provider_empty"], []
+        if not _empty_coverage_valid(fetched, instrument_type, request):
+            return "error", ["provider_error"], []
+        with coherent_read_snapshot(session):
+            if (
+                not _source_current(session, month_id, source_token)
+                or _forecast_token(session) != context_token
+                or _mapping_token(session, item["instrument_id"]) != mapping_token
+            ):
+                return "needs_review", ["draft_changed"], []
+        # A valid empty window is not authority to retire saved events.
+        return "unchanged", [], []
     with coherent_read_snapshot(session):
         if (
             not _source_current(session, month_id, source_token)
@@ -546,9 +577,16 @@ def _refresh(
                 session.rollback()
                 result.update(status="error", reason_codes=["refresh_unconfirmed"])
         items.append(result)
+    with coherent_read_snapshot(session):
+        readback_digest = (
+            _context(session, month_id)[0]["view_digest"]
+            if _source_current(session, month_id, source_token)
+            else None
+        )
     return {
         "reporting_month_id": month_id,
         "items": items,
+        "readback_digest": readback_digest,
         "summary": {
             status: sum(
                 i["status"] == status

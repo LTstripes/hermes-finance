@@ -581,17 +581,13 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   });
   await monthPanel(page, "payouts");
   const forecast = page.getByRole("button", {
-    name: "Получить и сохранить прогнозы Т-Инвест",
+    name: "Обновить прогноз Т-Инвест",
     exact: true,
   });
   await expect(forecast).toBeEnabled();
-  // These reads must already contain the automatic result, before any manual POST.
-  await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(
-    /25\s*₽/,
-  );
-  await expect(
-    page.getByRole("table", { name: "Возврат номинала · отдельно от дохода" }),
-  ).toContainText(/10\s000\s*₽/);
+  // The month provides a compact entry point; details stay in the calendar.
+  await expect(page.getByRole("link", { name: "Календарь выплат" })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toHaveCount(0);
   const forecasts = await (
     await request.get("/api/payouts/calendar?month_id=1&forecast_version=v1")
   ).json();
@@ -626,7 +622,7 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
     needs_review: 0,
     error: 0,
   });
-  await expect(page.getByText(/Позиций обновлено: 0; без изменений: 2/)).toBeVisible();
+  await expect(page.getByText(/Обновлено позиций: 0; без изменений: 2/)).toBeVisible();
   expect(
     (await (await request.get("/api/synthetic-broker-inventory")).json()).table_digests,
   ).toEqual(savedForecasts.table_digests);
@@ -635,9 +631,10 @@ test("source-first original → reviewed atomic DRAFT → GET → global Close; 
   ).toEqual(forecasts);
   const providerCalls = await (await request.get("/api/synthetic-draft-provider-calls")).json();
   await reloadWorkspace(page);
-  await expect(page.getByRole("table", { name: "Ожидаемые купоны и дивиденды" })).toContainText(
-    /25\s*₽/,
-  );
+  await expect(page.getByRole("link", { name: "Календарь выплат" })).toBeVisible();
+  expect(
+    await (await request.get("/api/payouts/calendar?month_id=1&forecast_version=v1")).json(),
+  ).toEqual(forecasts);
   expect(await (await request.get("/api/synthetic-draft-provider-calls")).json()).toEqual(
     providerCalls,
   );

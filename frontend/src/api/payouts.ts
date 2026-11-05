@@ -216,12 +216,14 @@ export type DraftPayoutContext = {
   snapshot_date: string;
   status: "draft" | "closed";
   context_digest: string;
+  view_digest: string;
   eligible_positions: number;
   items: DraftPayoutPosition[];
 };
 
 export type DraftPayoutResult = {
   reporting_month_id: number;
+  readback_digest: string | null;
   summary: Record<"updated" | "unchanged" | "unsupported" | "needs_review" | "error", number>;
   items: (DraftPayoutPosition & { status: string; saved_payout_ids: number[] })[];
 };
@@ -230,7 +232,11 @@ export async function getDraftPayoutContext(monthId: number, signal?: AbortSigna
   const value = await apiRequest<DraftPayoutContext>(`/api/months/${monthId}/draft-payouts`, {
     signal,
   });
-  if (value.reporting_month_id !== monthId || !Array.isArray(value.items))
+  if (
+    value.reporting_month_id !== monthId ||
+    !Array.isArray(value.items) ||
+    !/^[a-f0-9]{64}$/.test(value.view_digest)
+  )
     throw new Error("Сохранённый финансовый DRAFT не подтверждён.");
   return value;
 }

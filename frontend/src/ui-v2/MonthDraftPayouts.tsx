@@ -1,31 +1,40 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 import { formatApiError } from "../api/client";
 import {
   type DraftPayoutResult,
   getDraftPayoutContext,
+  getPayoutRefreshStatus,
   listPayoutCalendar,
   refreshDraftPayouts,
 } from "../api/payouts";
-import { Button, Table, Td, Th } from "../components/ui";
-import { formatDate, formatMoney } from "../lib/format";
+import { Button } from "../components/ui";
+import { formatDate } from "../lib/format";
 import { reasonCopy } from "../lib/reasonCopy";
 import styles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
+
+type PayoutOperation = {
+  busy: boolean;
+  unconfirmed: boolean;
+  unknownResult?: boolean;
+  result: DraftPayoutResult | null;
+  resultDigest?: string;
+  resultSourceVersion?: string;
+  notice: string | null;
+};
 
 export function MonthDraftPayouts({
   monthId,
   closed,
   disabled = false,
   sourceVersion,
-  onPendingChange,
 }: {
   monthId: number;
   closed: boolean;
   disabled?: boolean;
   sourceVersion?: string;
-  onPendingChange?: (pending: boolean) => void;
 }) {
   const client = useQueryClient();
   const location = useLocation();
@@ -39,6 +48,12 @@ export function MonthDraftPayouts({
     queryFn: ({ signal }) => getDraftPayoutContext(monthId, signal),
     retry: false,
   });
+  const refreshStatus = useQuery({
+    queryKey: ["payout-refresh-status", monthId],
+    queryFn: () => getPayoutRefreshStatus(monthId),
+    retry: false,
+    refetchInterval: 5000,
+  });
   const calendar = useQuery({
     queryKey: ["draft-payout-calendar", monthId],
     queryFn: async ({ signal }) => {
@@ -49,10 +64,61 @@ export function MonthDraftPayouts({
     },
     retry: false,
   });
-  const [busy, setBusy] = useState(false);
-  const [unconfirmed, setUnconfirmed] = useState(false);
-  const [result, setResult] = useState<DraftPayoutResult | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const operationKey = ["draft-payout-operation", monthId] as const;
+  const storageKey = `draft-payout-unconfirmed:${monthId}`;
+  const wasUnconfirmed = (() => {
+    try {
+      return sessionStorage.getItem(storageKey);
+    } catch {
+      return null;
+    }
+  })();
+  const operation = useQuery({
+    queryKey: operationKey,
+    queryFn: () =>
+      ({ busy: false, unconfirmed: false, result: null, notice: null }) as PayoutOperation,
+    enabled: false,
+    initialData: {
+      busy: false,
+      unconfirmed: Boolean(wasUnconfirmed && wasUnconfirmed !== "unknown-reviewed"),
+      unknownResult: Boolean(wasUnconfirmed && wasUnconfirmed !== "readback"),
+      result: null,
+      notice:
+        wasUnconfirmed && wasUnconfirmed !== "unknown-reviewed"
+          ? "Результат предыдущего запроса не подтверждён."
+          : null,
+    } as PayoutOperation,
+    gcTime: Infinity,
+  }).data;
+  const { busy, unconfirmed, notice } = operation;
+  const result =
+    !context.isFetching &&
+    operation.resultDigest === context.data?.view_digest &&
+    operation.resultSourceVersion === sourceVersion
+      ? operation.result
+      : null;
+  const setOperation = (patch: Partial<PayoutOperation>) => {
+    const previous = client.getQueryData<PayoutOperation>(operationKey);
+    const next = {
+      busy: false,
+      unconfirmed: false,
+      result: null,
+      notice: null,
+      ...previous,
+      ...patch,
+    };
+    try {
+      if (next.unknownResult)
+        sessionStorage.setItem(storageKey, next.unconfirmed ? "unknown" : "unknown-reviewed");
+      else if (next.unconfirmed) sessionStorage.setItem(storageKey, "readback");
+      else sessionStorage.removeItem(storageKey);
+    } catch {
+      /* Cache still protects navigation within this session. */
+    }
+    client.setQueryData<PayoutOperation>(operationKey, next);
+  };
+  const sourceVersionRef = useRef(sourceVersion);
+  sourceVersionRef.current = sourceVersion;
   const generation = useRef(0);
   const inFlight = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a changed month invalidates pending callbacks even when React reuses this instance.
@@ -62,10 +128,6 @@ export function MonthDraftPayouts({
       generation.current++;
     };
   }, [monthId]);
-  useEffect(() => {
-    onPendingChange?.(busy || unconfirmed);
-    return () => onPendingChange?.(false);
-  }, [busy, unconfirmed, onPendingChange]);
   useEffect(() => {
     const dependencies = [
       "broker-months",
@@ -139,10 +201,13 @@ export function MonthDraftPayouts({
   }, [client, monthId]);
 
   async function readSaved() {
-    await Promise.all([
+    const [currentContext] = await Promise.all([
       context.refetch({ throwOnError: true }),
       calendar.refetch({ throwOnError: true }),
+      refreshStatus.refetch(),
     ]);
+    if (!currentContext.data) throw new Error("Сохранённые данные не подтверждены.");
+    return currentContext.data;
   }
 
   async function recover() {
@@ -150,18 +215,23 @@ export function MonthDraftPayouts({
     try {
       await readSaved();
       if (current === generation.current) {
-        setUnconfirmed(false);
-        setNotice(
-          "Сохранённые прогнозы перечитаны. Незавершённый пакет не считается полностью успешным; новый запрос выполняется только по кнопке.",
-        );
+        setOperation({ unconfirmed: false, notice: null });
       }
     } catch (error) {
-      if (current === generation.current) setNotice(formatApiError(error));
+      if (current === generation.current) setOperation({ notice: formatApiError(error) });
     }
   }
 
   async function refresh() {
-    if (inFlight.current || !ready || !context.data) return;
+    const currentOperation = client.getQueryData<PayoutOperation>(operationKey);
+    if (
+      inFlight.current ||
+      currentOperation?.busy ||
+      currentOperation?.unconfirmed ||
+      !ready ||
+      !context.data
+    )
+      return;
     if (
       (window.history.state?.key ?? "default") !== location.key ||
       window.location.pathname !== location.pathname ||
@@ -169,28 +239,51 @@ export function MonthDraftPayouts({
       window.location.hash !== location.hash
     )
       return;
-    const current = generation.current;
+    const priorUnknown = Boolean(currentOperation?.unknownResult);
     inFlight.current = true;
-    setBusy(true);
-    setResult(null);
-    setNotice(null);
-    setUnconfirmed(true);
+    setOperation({
+      busy: true,
+      result: null,
+      notice: null,
+      unconfirmed: true,
+      unknownResult: true,
+    });
+    const guardUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guardUnload);
     try {
       const saved = await refreshDraftPayouts(monthId, context.data.context_digest);
-      await readSaved();
-      if (current === generation.current) {
-        setResult(saved);
-        setUnconfirmed(false);
+      setOperation({ unknownResult: priorUnknown });
+      const readback = await readSaved();
+      if (
+        !saved.readback_digest ||
+        readback.view_digest !== saved.readback_digest ||
+        sourceVersionRef.current !== sourceVersion
+      ) {
+        setOperation({
+          result: null,
+          unconfirmed: false,
+          notice:
+            "Данные изменились во время обновления. Перечитанные данные доступны в календаре.",
+        });
+      } else {
+        setOperation({
+          result: saved,
+          resultDigest: readback.view_digest,
+          resultSourceVersion: sourceVersion,
+          unconfirmed: false,
+        });
       }
     } catch (error) {
-      if (current === generation.current) {
-        setNotice(
-          `Результат всего запроса не подтверждён. Часть прогнозов могла сохраниться. ${formatApiError(error)}`,
-        );
-      }
+      setOperation({
+        notice: `Результат всего запроса не подтверждён. Часть прогнозов могла сохраниться. ${formatApiError(error)}`,
+      });
     } finally {
+      window.removeEventListener("beforeunload", guardUnload);
       inFlight.current = false;
-      if (current === generation.current) setBusy(false);
+      setOperation({ busy: false });
     }
   }
 
@@ -205,10 +298,6 @@ export function MonthDraftPayouts({
     !calendar.isError &&
     context.data?.status === "draft" &&
     context.data.eligible_positions > 0;
-  const rows =
-    calendar.data
-      ?.flatMap((month) => month.items)
-      .filter((item) => item.source_kind === "provider") ?? [];
   const canResolveReason =
     !closed &&
     !disabled &&
@@ -226,155 +315,143 @@ export function MonthDraftPayouts({
     <UiV2Panel
       id="month-draft-payouts"
       testIdPrefix="month"
-      title="Сохранённые прогнозы Т-Инвест"
-      eyebrow="После финансового DRAFT"
+      title="Будущие выплаты"
+      eyebrow=""
       wide
     >
       <div className={styles.forecastContent}>
         <p>
-          Все подходящие позиции всех принятых брокерских счетов и ИИС этого месяца. Количество
-          берётся из сохранённого финансового DRAFT; фильтр источников его не меняет.
+          {refreshStatus.data?.forecast_as_of
+            ? `Дата сохранённого прогноза: ${formatDate(refreshStatus.data.forecast_as_of.slice(0, 10))}`
+            : "Дата сохранённого прогноза неизвестна."}
         </p>
         <div className={styles.forecastActions}>
           <Button variant="primary" type="button" disabled={!ready} onClick={() => void refresh()}>
-            {busy ? "Получаем и сохраняем прогнозы…" : "Получить и сохранить прогнозы Т-Инвест"}
+            {busy ? "Обновляем прогноз…" : "Обновить прогноз Т-Инвест"}
           </Button>
-          <Button type="button" disabled={busy || reading} onClick={() => void recover()}>
-            Обновить чтение сохранённых прогнозов
-          </Button>
+          <Link to={`/v2/data/payouts?month=${monthId}`}>Календарь выплат</Link>
         </div>
+        {unconfirmed && !busy && (
+          <Button type="button" disabled={reading} onClick={() => void recover()}>
+            Проверить сохранённые прогнозы
+          </Button>
+        )}
         {closed || context.data?.status === "closed" ? (
           <p>Месяц закрыт. Доступно чтение сохранённых прогнозов.</p>
-        ) : !context.data?.eligible_positions && !context.isPending ? (
+        ) : context.data && !context.data.eligible_positions ? (
           <p>
-            Сначала исправь исключения и сохрани финансовый DRAFT:{" "}
-            <Link to={`/v2/close?${sourceParams}#month-source-review`}>
-              Брокерские выписки → Исправления и сохранение месяца
-            </Link>
-            . Одной загрузки XML недостаточно.
+            Сначала сохрани позиции из брокерских выписок:{" "}
+            <Link to={`/v2/close?${sourceParams}#month-source-review`}>Брокерские выписки</Link>.
           </p>
         ) : null}
-        {reading && <p role="status">Читаем финансовый DRAFT и сохранённый календарь…</p>}
+        {reading && <p role="status">Читаем сохранённые данные…</p>}
         {(context.isError || calendar.isError) && (
-          <p role="alert">
-            Чтение не подтверждено: {formatApiError(context.error ?? calendar.error)}
+          <div role="alert">
+            Не удалось прочитать сохранённые данные.
+            <details>
+              <summary>Подробнее об ошибке</summary>
+              {formatApiError(context.error ?? calendar.error)}
+            </details>
+          </div>
+        )}
+        {refreshStatus.isError && (
+          <div role="alert">
+            Не удалось прочитать статус автоматического обновления.
+            <details>
+              <summary>Подробнее об ошибке</summary>
+              {formatApiError(refreshStatus.error)}
+            </details>
+          </div>
+        )}
+        {operation.unknownResult && !busy && (
+          <p role="status">
+            Результат предыдущего запроса неизвестен: он может ещё выполняться. Перечитывание
+            показывает сохранённые данные, но не подтверждает его завершение.
           </p>
         )}
-        {notice && <p role="alert">{notice}</p>}
+        {notice && (
+          <div role="alert">
+            Не удалось подтвердить результат. Часть данных могла сохраниться.
+            <details>
+              <summary>Подробнее об ошибке</summary>
+              {notice}
+            </details>
+          </div>
+        )}
         {result && (
-          <p role="status">{`Позиций обновлено: ${result.summary.updated}; без изменений: ${result.summary.unchanged}; не поддержано: ${result.summary.unsupported}; требуют проверки: ${result.summary.needs_review}; ошибок: ${result.summary.error}.`}</p>
+          <p role="status">{`Обновлено позиций: ${result.summary.updated}; без изменений: ${result.summary.unchanged}.`}</p>
         )}
-        {issues.length > 0 && (
-          <details open>
-            <summary>Что требует проверки ({issues.length})</summary>
-            <ul>
-              {issues.map((item) => (
-                <li key={item.position_snapshot_id}>
-                  {item.account_name} · {item.instrument_name} · {item.isin}:{" "}
-                  {item.reason_codes.map((code) => {
-                    const copy = reasonCopy(code, {
-                      surface: "draftPayouts",
-                      closed,
-                      actions: {
-                        instrumentMapping: {
-                          available: canResolveReason,
-                          href: "/v2/data/catalogs",
-                        },
-                        payouts: {
-                          available: canResolveReason,
-                          href: `/v2/data/payouts?month=${monthId}`,
-                        },
-                      },
-                    });
-                    return (
-                      <p key={code}>
-                        {copy.message}
-                        {copy.action && (
-                          <>
-                            {" "}
-                            <Link to={copy.action.href}>{copy.action.label}</Link>
-                          </>
-                        )}
-                      </p>
-                    );
-                  })}
-                  <details>
-                    <summary>Подробности</summary>
-                    <code>{item.reason_codes.join(", ")}</code>
-                  </details>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-        <p>
-          <Link to="/v2/data/catalogs">Справочник и сопоставления бумаг</Link>
-          {" · "}
-          <Link to={`/v2/data/payouts?month=${monthId}`}>Проверка сохранённых выплат</Link>
-        </p>
-        <p>
-          Объявлено/прогноз (налог неизвестен). Это не подтверждённая сумма после личного налога и
-          не факт получения выплаты.
-        </p>
-        {calendar.data?.some((month) => month.actual_attribution_coverage === "unknown") && (
-          <p role="alert">
-            Часть событий требует сверки с фактическими выплатами. Здесь показана только
-            подтверждённая часть будущего календаря.
-          </p>
-        )}
-        {!calendar.isError &&
-          !calendar.isPending &&
-          [false, true].map((principal) => (
-            <div
-              key={String(principal)}
-              className={`${styles.instrumentTable} ${styles.forecastContent}`}
-            >
-              <h3>
-                {principal
-                  ? "Возврат номинала · отдельно от дохода"
-                  : "Ожидаемые купоны и дивиденды"}
-              </h3>
-              <Table
-                aria-label={
-                  principal
-                    ? "Возврат номинала · отдельно от дохода"
-                    : "Ожидаемые купоны и дивиденды"
-                }
-              >
-                <thead>
-                  <tr>
-                    <Th>Счёт / бумага</Th>
-                    <Th>Дата</Th>
-                    <Th>Выплата</Th>
-                    <Th numeric>Объявлено/прогноз</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows
-                    .filter((item) => (item.flow_type === "redemption") === principal)
-                    .map((item) => (
-                      <tr key={item.source_id}>
-                        <Td>
-                          {item.account_name} · {item.instrument_name}
-                        </Td>
-                        <Td>{formatDate(item.expected_date)}</Td>
-                        <Td>
-                          {item.flow_type === "coupon"
-                            ? "Купон"
-                            : item.flow_type === "dividend"
-                              ? "Дивиденд"
-                              : "Номинал"}
-                        </Td>
-                        <Td numeric>{formatMoney(item.expected_net_amount.amount)}</Td>
-                      </tr>
-                    ))}
-                </tbody>
-              </Table>
+        {refreshStatus.data?.automatic_refresh &&
+          ["error", "partial", "needs_review"].includes(
+            refreshStatus.data.automatic_refresh.status,
+          ) && (
+            <div role="alert">
+              При автоматическом обновлении часть данных могла остаться прежней.
+              <details>
+                <summary>Подробнее об ошибке</summary>
+                {refreshStatus.data.automatic_refresh.reason_codes.map((code) => (
+                  <p key={code}>{reasonCopy(code, { surface: "draftPayouts", closed }).message}</p>
+                ))}
+              </details>
             </div>
-          ))}
-        {!calendar.isError && !calendar.isPending && !rows.length && (
-          <p>Сохранённых будущих событий нет. Это не обещание нулевых выплат.</p>
-        )}
+          )}
+        {[true, false].map((isError) => {
+          const group = issues.filter(
+            (item) => ("status" in item && item.status === "error") === isError,
+          );
+          return (
+            group.length > 0 && (
+              <div role="alert" key={String(isError)}>
+                <p>
+                  {isError
+                    ? "Не удалось обновить часть данных; они могли остаться прежними."
+                    : "Некоторые данные требуют проверки и могли остаться прежними."}
+                </p>
+                <details>
+                  <summary>{isError ? "Подробнее об ошибке" : "Подробнее"}</summary>
+                  <ul>
+                    {group.map((item) => (
+                      <li key={item.position_snapshot_id}>
+                        {item.account_name} · {item.instrument_name} · {item.isin}:{" "}
+                        {item.reason_codes.map((code) => {
+                          const copy = reasonCopy(code, {
+                            surface: "draftPayouts",
+                            closed,
+                            actions: {
+                              instrumentMapping: {
+                                available: canResolveReason,
+                                href: "/v2/data/catalogs",
+                              },
+                              payouts: {
+                                available: canResolveReason,
+                                href: `/v2/data/payouts?month=${monthId}`,
+                              },
+                            },
+                          });
+                          return (
+                            <p key={code}>
+                              {copy.message}
+                              {copy.action && (
+                                <>
+                                  {" "}
+                                  <Link to={copy.action.href}>{copy.action.label}</Link>
+                                </>
+                              )}
+                            </p>
+                          );
+                        })}
+                        <details>
+                          <summary>Подробности</summary>
+                          <code>{item.reason_codes.join(", ")}</code>
+                        </details>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+            )
+          );
+        })}
       </div>
     </UiV2Panel>
   );

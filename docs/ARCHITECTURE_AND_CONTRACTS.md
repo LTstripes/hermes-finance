@@ -12092,8 +12092,10 @@ T-Invest market data, Alfa current snapshots, MyBroker historical originals, PDF
 <a id="explicit-financial-draft-forecast-refresh"></a>
 #### Financial-DRAFT forecast refresh
 
-`GET /api/months/{id}/draft-payouts` returns eligibility and a dependency digest;
-`POST /api/months/{id}/draft-payouts/refresh` remains the explicit provider action.
+`GET /api/months/{id}/draft-payouts` returns eligibility, a dependency digest and a
+digest of the full presented context. A completed refresh returns that full digest
+only when its pinned source remains current; the UI compares it to the independent
+reread before showing the result. `POST /api/months/{id}/draft-payouts/refresh` remains the explicit provider action.
 Successful new strict financial SOURCE acceptance through `POST /api/broker-months/apply`
 also triggers this same refresh after rereading current positions in a new session.
 A process-local response callback coalesces each month until 750 ms after the last
@@ -12103,7 +12105,7 @@ duplicate acceptance recovery and GET/Reload do not schedule writes.
 `GET /api/months/{id}/payout-refresh-status` additionally reports transient automatic
 status and reason codes, plus `forecast_as_of`: the oldest fetched date among the
 latest saved revisions of active T-Invest payouts, or NULL without complete evidence.
-Provider failures preserve those revisions and dates. Attempt status resets to idle
+Provider failures preserve those revisions and dates. A successful structurally valid empty window with coverage of every applicable event kind is an unchanged result, not an error; it does not retire saved events or establish zero beyond the requested window. Missing or invalid coverage is an error. Attempt status resets to idle
 on process restart; restart never replays pending work.
 Eligibility requires a current strict broker-month SOURCE receipt and its native
 positive `PositionSnapshot`, active broker/IIS account, stock/bond ISIN and RUB.
@@ -12128,8 +12130,12 @@ an unrelated concurrent write. An active saved APP under a different accepted UI
 in the same month/account/instrument requires manual review before any new save.
 Only complete unambiguous NEW/REVISED future RUB events can be selected; repeated unchanged
 events create no revision. Omission/error does not erase persisted forecasts.
-Mixed success reports both saved rows and exceptions; lost acknowledgement is
-recovered by GET, then a new explicit request with the fresh digest.
+Mixed success reports both saved rows and exceptions. After a lost acknowledgement,
+GET rereads saved data before a new explicit request with the fresh digest; it does
+not prove the earlier request has finished. There is no automatic retry. The current
+API has no manual-request completion receipt, so a late earlier request can overlap
+a subsequent manual retry. Per-position writer, currentness and identity guards
+still apply; do not present the reread as confirmation of the earlier outcome.
 
 Manual candidates, inactive forecasts and actual payout competitors remain review
 items. Current paid events are skipped; canonical actual lineage, including

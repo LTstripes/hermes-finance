@@ -30,8 +30,13 @@ from hermes_finance.market_data.dto import (
     MarketIdentity,
     QuoteStatus,
 )
-from hermes_finance.market_data.payout import PayoutEvent, PayoutEventKind, PayoutEventStatus
-from hermes_finance.market_data.payout_protocol import PayoutFetchResult
+from hermes_finance.market_data.payout import (
+    PayoutCoverage,
+    PayoutEvent,
+    PayoutEventKind,
+    PayoutEventStatus,
+)
+from hermes_finance.market_data.payout_protocol import PayoutFetchRequest, PayoutFetchResult
 from hermes_finance.persistence import (
     AppliedPayoutRevision,
     AppliedProviderPayout,
@@ -58,6 +63,7 @@ class Provider:
         self.fail = False
         self.ambiguous = False
         self.events = None
+        self.valid_coverage = True
 
     def discover_candidates(self, **kwargs):
         self.discovery.append(kwargs)
@@ -95,6 +101,21 @@ class Provider:
             provider="t_invest",
             instrument_uid=request.instrument_uid,
             events=(event,) if self.events is None else self.events(event),
+            coverage=(
+                PayoutCoverage(
+                    "t_invest",
+                    "GetDividends",
+                    request.instrument_uid,
+                    PayoutEventKind.DIVIDEND,
+                    request.calendar_from,
+                    request.calendar_to,
+                    "record_date",
+                    True,
+                    True,
+                ),
+            )
+            if self.valid_coverage
+            else (),
         )
 
 
@@ -202,6 +223,7 @@ def test_source_quantity_change_during_fetch_blocks_write(database, when):
     provider.on_fetch = change
     result = refresh(client, month)
     assert result["summary"]["updated"] == 0
+    assert result["readback_digest"] is None
     assert result["items"][0]["reason_codes"] in (["draft_changed"], ["preview_changed"])
     assert calendar(client, month) == []
 
@@ -558,7 +580,11 @@ def test_later_incomplete_response_or_changed_position_never_erases_saved_rows(d
             session.commit()
     result = refresh(client, month)
     saved = _all_month_tables(database)
-    assert result["summary"]["needs_review"] + result["summary"]["error"] > 0
+    if case == "empty":
+        assert result["summary"]["unchanged"] == 1
+        assert result["summary"]["needs_review"] == result["summary"]["error"] == 0
+    else:
+        assert result["summary"]["needs_review"] + result["summary"]["error"] > 0
     for table in (
         "investment_cash_flows",
         "expected_cash_flows",
@@ -870,3 +896,82 @@ def test_month_closed_during_acceptance_debounce_never_refreshes(database, monke
     assert status["reason_codes"] == ["draft_changed"]
     assert provider.requests == provider.discovery == []
     assert _all_month_tables(database) == before
+
+
+def test_empty_without_valid_coverage_is_error(database):
+    provider = Provider()
+    client, month = setup(database, provider)
+    provider.events = lambda event: ()
+    provider.valid_coverage = False
+    result = refresh(client, month)
+    assert result["summary"]["error"] == 1
+    assert result["items"][0]["reason_codes"] == ["provider_error"]
+    assert calendar(client, month) == []
+
+
+@pytest.mark.parametrize(
+    "kind,kinds",
+    [
+        ("stock", (PayoutEventKind.DIVIDEND,)),
+        ("bond", (PayoutEventKind.COUPON, PayoutEventKind.REDEMPTION)),
+    ],
+)
+def test_empty_requires_complete_valid_window_for_each_instrument(kind, kinds):
+    request = PayoutFetchRequest(UID, date(2030, 2, 1), date(2031, 1, 31))
+    coverage = tuple(
+        PayoutCoverage(
+            "t_invest",
+            "method",
+            UID,
+            k,
+            request.calendar_from,
+            request.calendar_to,
+            "date",
+            True,
+            True,
+        )
+        for k in kinds
+    )
+    result = PayoutFetchResult("t_invest", UID, coverage=coverage)
+    assert draft_payouts._empty_coverage_valid(result, kind, request)
+    assert not draft_payouts._empty_coverage_valid(
+        replace(result, coverage=coverage[:-1]), kind, request
+    )
+    invalid = replace(coverage[-1], structurally_valid=False)
+    assert not draft_payouts._empty_coverage_valid(
+        replace(result, coverage=coverage[:-1] + (invalid,)), kind, request
+    )
+
+
+def test_forecast_result_digest_matches_independent_readback(database):
+    provider = Provider()
+    client, month = setup(database, provider)
+    before = client.get(f"/api/months/{month}/draft-payouts").json()
+    result = refresh(client, month)
+    assert result["summary"]["updated"] == 1
+    after = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert before["context_digest"] != after["context_digest"]
+    assert before["view_digest"] != after["view_digest"]
+    assert result["readback_digest"] == after["view_digest"]
+
+
+def test_readback_digest_detects_account_and_mapping_changes(database):
+    from hermes_finance.persistence import Account, InstrumentMarketMapping
+
+    provider = Provider()
+    client, month = setup(database, provider)
+    result = refresh(client, month)
+    initial = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert result["readback_digest"] == initial["view_digest"]
+    with database.session_factory() as session:
+        account = session.scalar(select(Account))
+        account.name = "Renamed synthetic account"
+        session.commit()
+    changed = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert changed["view_digest"] != result["readback_digest"]
+    with database.session_factory() as session:
+        mapping = session.scalar(select(InstrumentMarketMapping))
+        mapping.provider_instrument_id = "00000000-0000-0000-0000-000000000000"
+        session.commit()
+    changed_mapping = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert changed_mapping["view_digest"] != changed["view_digest"]
