@@ -337,6 +337,9 @@ test("unconfirmed result survives leaving the panel and prevents a repeat until 
   await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: cta }));
   view.unmount();
+  const unloading = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(unloading);
+  expect(unloading.defaultPrevented).toBe(true);
   show({}, client);
   expect(screen.getByRole("button", { name: /Обновляем прогноз/ })).toBeDisabled();
   await act(async () => {
@@ -374,4 +377,38 @@ test("status readback failure after a confirmed refresh is shown without replay"
   expect(await screen.findByText(/Обновлено позиций: 2/)).toBeVisible();
   expect(screen.getByText("Не удалось прочитать статус автоматического обновления.")).toBeVisible();
   expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
+});
+
+test("a changed context hides an earlier result and shows current issues", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  show({}, client);
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: cta }));
+  expect(await screen.findByText(/Обновлено позиций: 2/)).toBeVisible();
+  await act(async () => {
+    client.setQueryData(["draft-payouts", 1, undefined], {
+      ...context,
+      context_digest: "b".repeat(64),
+      items: [{ ...context.items[0], eligible: false, reason_codes: ["mapping_ambiguous"] }],
+    });
+  });
+  await waitFor(() => expect(screen.queryByText(/Обновлено позиций: 2/)).not.toBeInTheDocument());
+  expect(screen.getByText(/Некоторые данные требуют проверки/)).toBeVisible();
+});
+
+test("fresh unconfirmed state blocks a click from a stale rendered button", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  show({}, client);
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  const button = screen.getByRole("button", { name: cta });
+  act(() => {
+    client.setQueryData(["draft-payout-operation", 1], {
+      busy: false,
+      unconfirmed: true,
+      result: null,
+      notice: null,
+    });
+    fireEvent.click(button);
+  });
+  expect(refreshDraftPayouts).not.toHaveBeenCalled();
 });

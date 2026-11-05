@@ -19,6 +19,8 @@ type PayoutOperation = {
   busy: boolean;
   unconfirmed: boolean;
   result: DraftPayoutResult | null;
+  resultDigest?: string;
+  resultSourceVersion?: string;
   notice: string | null;
 };
 
@@ -83,7 +85,13 @@ export function MonthDraftPayouts({
     } as PayoutOperation,
     gcTime: Infinity,
   }).data;
-  const { busy, unconfirmed, result, notice } = operation;
+  const { busy, unconfirmed, notice } = operation;
+  const result =
+    !context.isFetching &&
+    operation.resultDigest === context.data?.context_digest &&
+    operation.resultSourceVersion === sourceVersion
+      ? operation.result
+      : null;
   const setOperation = (patch: Partial<PayoutOperation>) => {
     if (patch.unconfirmed !== undefined) {
       try {
@@ -204,9 +212,11 @@ export function MonthDraftPayouts({
   }
 
   async function refresh() {
+    const currentOperation = client.getQueryData<PayoutOperation>(operationKey);
     if (
       inFlight.current ||
-      client.getQueryData<PayoutOperation>(operationKey)?.busy ||
+      currentOperation?.busy ||
+      currentOperation?.unconfirmed ||
       !ready ||
       !context.data
     )
@@ -220,15 +230,26 @@ export function MonthDraftPayouts({
       return;
     inFlight.current = true;
     setOperation({ busy: true, result: null, notice: null, unconfirmed: true });
+    const guardUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guardUnload);
     try {
       const saved = await refreshDraftPayouts(monthId, context.data.context_digest);
       await readSaved();
-      setOperation({ result: saved, unconfirmed: false });
+      setOperation({
+        result: saved,
+        resultDigest: context.data.context_digest,
+        resultSourceVersion: sourceVersion,
+        unconfirmed: false,
+      });
     } catch (error) {
       setOperation({
         notice: `Результат всего запроса не подтверждён. Часть прогнозов могла сохраниться. ${formatApiError(error)}`,
       });
     } finally {
+      window.removeEventListener("beforeunload", guardUnload);
       inFlight.current = false;
       setOperation({ busy: false });
     }
