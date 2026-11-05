@@ -117,6 +117,8 @@ export function MonthDraftPayouts({
     }
     client.setQueryData<PayoutOperation>(operationKey, next);
   };
+  const sourceVersionRef = useRef(sourceVersion);
+  sourceVersionRef.current = sourceVersion;
   const generation = useRef(0);
   const inFlight = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a changed month invalidates pending callbacks even when React reuses this instance.
@@ -199,11 +201,13 @@ export function MonthDraftPayouts({
   }, [client, monthId]);
 
   async function readSaved() {
-    await Promise.all([
+    const [currentContext] = await Promise.all([
       context.refetch({ throwOnError: true }),
       calendar.refetch({ throwOnError: true }),
       refreshStatus.refetch(),
     ]);
+    if (!currentContext.data) throw new Error("Сохранённые данные не подтверждены.");
+    return currentContext.data;
   }
 
   async function recover() {
@@ -252,13 +256,25 @@ export function MonthDraftPayouts({
     try {
       const saved = await refreshDraftPayouts(monthId, context.data.context_digest);
       setOperation({ unknownResult: priorUnknown });
-      await readSaved();
-      setOperation({
-        result: saved,
-        resultDigest: context.data.context_digest,
-        resultSourceVersion: sourceVersion,
-        unconfirmed: false,
-      });
+      const readback = await readSaved();
+      if (
+        readback.source_digest !== context.data.source_digest ||
+        sourceVersionRef.current !== sourceVersion
+      ) {
+        setOperation({
+          result: null,
+          unconfirmed: false,
+          notice:
+            "Данные источника изменились во время обновления. Перечитанные данные доступны в календаре.",
+        });
+      } else {
+        setOperation({
+          result: saved,
+          resultDigest: readback.context_digest,
+          resultSourceVersion: sourceVersion,
+          unconfirmed: false,
+        });
+      }
     } catch (error) {
       setOperation({
         notice: `Результат всего запроса не подтверждён. Часть прогнозов могла сохраниться. ${formatApiError(error)}`,

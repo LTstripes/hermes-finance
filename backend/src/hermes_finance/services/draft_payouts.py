@@ -199,6 +199,7 @@ def _context(session, month_id):
         "snapshot_date": month.snapshot_date.isoformat(),
         "status": month.status,
         "context_digest": digest([source_token, _forecast_token(session)]),
+        "source_digest": source_token,
         "eligible_positions": sum(item["eligible"] for item in items),
         "items": items,
     }, source_token

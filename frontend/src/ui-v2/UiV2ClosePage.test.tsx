@@ -82,6 +82,7 @@ function setup(path = "/v2/close") {
         reporting_month_id: 12,
         status: "draft",
         context_digest: "a".repeat(64),
+        source_digest: "c".repeat(64),
         eligible_positions: 0,
         items: [],
       });

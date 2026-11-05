@@ -25,6 +25,7 @@ const context: DraftPayoutContext = {
   snapshot_date: "2030-01-31",
   status: "draft",
   context_digest: "a".repeat(64),
+  source_digest: "c".repeat(64),
   eligible_positions: 2,
   items: [1, 2].map((id) => ({
     account_id: id,
@@ -436,4 +437,54 @@ test("unknown outcome remains explicit after reread and reload; retry is manual"
   expect(await screen.findByText(/Обновлено позиций: 2/)).toBeVisible();
   expect(screen.getByText(/не подтверждает его завершение/)).toBeVisible();
   expect(refreshDraftPayouts).toHaveBeenCalledTimes(2);
+});
+
+test("shows partial result after forecast changes digest, but hides it if source changes", async () => {
+  const nextContext = { ...context, context_digest: "b".repeat(64) };
+  vi.mocked(getDraftPayoutContext).mockResolvedValueOnce(context).mockResolvedValue(nextContext);
+  vi.mocked(refreshDraftPayouts).mockResolvedValue({
+    ...saved,
+    summary: { updated: 1, unchanged: 0, unsupported: 0, needs_review: 0, error: 1 },
+    items: [
+      saved.items[0],
+      {
+        ...saved.items[1],
+        status: "error",
+        reason_codes: ["provider_error"],
+        saved_payout_ids: [],
+      },
+    ],
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  show({}, client);
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: cta }));
+  expect(await screen.findByText(/Обновлено позиций: 1/)).toBeVisible();
+  expect(screen.getByText(/Не удалось обновить часть данных/)).toBeVisible();
+  fireEvent.click(screen.getByText("Подробнее об ошибке"));
+  expect(screen.getByText(/Счёт 2 · Бумага/)).toBeVisible();
+  await act(async () => {
+    client.setQueryData(["draft-payouts", 1, undefined], {
+      ...nextContext,
+      context_digest: "d".repeat(64),
+      source_digest: "e".repeat(64),
+    });
+  });
+  await waitFor(() => expect(screen.queryByText(/Обновлено позиций: 1/)).not.toBeInTheDocument());
+});
+
+test("does not bind a response to a source changed during the request", async () => {
+  vi.mocked(getDraftPayoutContext)
+    .mockResolvedValueOnce(context)
+    .mockResolvedValue({
+      ...context,
+      context_digest: "b".repeat(64),
+      source_digest: "d".repeat(64),
+    });
+  show();
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: cta }));
+  expect(await screen.findByText(/Не удалось подтвердить результат/)).toBeVisible();
+  expect(screen.queryByText(/Обновлено позиций/)).toBeNull();
+  expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
 });

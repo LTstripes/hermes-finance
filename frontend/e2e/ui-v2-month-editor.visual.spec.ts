@@ -828,6 +828,7 @@ async function installMonthUx(page: Page, status = "draft") {
         snapshot_date: "2030-05-31",
         status,
         context_digest: "a".repeat(64),
+        source_digest: "c".repeat(64),
         eligible_positions: 0,
         items: [],
       },

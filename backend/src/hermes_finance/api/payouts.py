@@ -151,6 +151,7 @@ class DraftPayoutContextOut(BaseModel):
     snapshot_date: date
     status: Literal["draft", "closed"]
     context_digest: str
+    source_digest: str
     eligible_positions: int
     items: list[DraftPayoutPositionOut]
 

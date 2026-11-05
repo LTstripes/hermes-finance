@@ -940,3 +940,13 @@ def test_empty_requires_complete_valid_window_for_each_instrument(kind, kinds):
     assert not draft_payouts._empty_coverage_valid(
         replace(result, coverage=coverage[:-1] + (invalid,)), kind, request
     )
+
+
+def test_forecast_changes_context_but_not_source_digest(database):
+    provider = Provider()
+    client, month = setup(database, provider)
+    before = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert refresh(client, month)["summary"]["updated"] == 1
+    after = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert before["context_digest"] != after["context_digest"]
+    assert before["source_digest"] == after["source_digest"]
