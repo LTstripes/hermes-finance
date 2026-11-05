@@ -190,7 +190,14 @@ export default function UiV2ClosePage() {
       </UiV2Notice>
     );
   else if (!selectedMonth)
-    content = <UiV2Notice title="Месяц не найден">Выбери или создай отчётный месяц.</UiV2Notice>;
+    content =
+      selection.kind === "automatic" ? (
+        <UiV2Notice title="Выбери или создай отчётный месяц">
+          Открой список месяцев, чтобы выбрать существующий месяц или создать новый.
+        </UiV2Notice>
+      ) : (
+        <UiV2Notice title="Месяц не найден">Выбери или создай отчётный месяц.</UiV2Notice>
+      );
   else if (!selectionIdentityMatches)
     content = (
       <UiV2Notice title="Период выбранного месяца изменился">

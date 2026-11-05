@@ -163,7 +163,10 @@ function HeadlineGrid({
                   {metric.value}
                 </p>
                 {metric.primary ? (
-                  <PortfolioCoverageNote coverage={current?.portfolio_source_coverage} />
+                  <PortfolioCoverageNote
+                    coverage={current?.portfolio_source_coverage}
+                    month={current ?? undefined}
+                  />
                 ) : null}
               </>
             )}
