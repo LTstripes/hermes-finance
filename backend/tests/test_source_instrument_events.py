@@ -740,8 +740,18 @@ def test_reviewed_bond_file_reaches_ordinary_api_and_returns_then_revokes(
         overview = client.get("/api/returns/overview", params=selection)
         detail = client.get("/api/returns/instrument", params=selection | {"isin": BOND})
         assert overview.status_code == detail.status_code == 200
-        assert overview.json()["instruments"][0]["conditional"] is not accepted
-        assert detail.json()["conditional"] is not accepted
+        assert overview.json()["contract_version"] == "returns_source_v2"
+        assert detail.json()["contract_version"] == "returns_source_detail_v2"
+        assert not overview.json()["instruments"][0]["conditional"]
+        assert not detail.json()["conditional"]
+        assert overview.json()["instruments"][0]["pnl"] == detail.json()["pnl"]
+        if not accepted:
+            assert detail.json()["clean"]["closing_value"]["value"] is None
+        legacy = selection | {"basis": "legacy"}
+        old_overview = client.get("/api/returns/overview", params=legacy)
+        old_detail = client.get("/api/returns/instrument", params=legacy | {"isin": BOND})
+        assert old_overview.json()["instruments"][0]["conditional"] is not accepted
+        assert old_detail.json()["conditional"] is not accepted
         assert overview.headers["cache-control"] == detail.headers["cache-control"] == "no-store"
     assert snapshot(db) == before
     assert json.loads(path.read_text(encoding="utf-8")) == payload | {"status": "revoked"}
