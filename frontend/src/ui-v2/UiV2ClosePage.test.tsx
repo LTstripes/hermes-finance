@@ -148,6 +148,7 @@ function setup(path = "/v2/close") {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
     value: vi.fn(),
@@ -182,6 +183,28 @@ describe("native Monthly Close work mode", () => {
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(
       true,
     );
+  });
+  it("allows navigation to Close while a payout refresh is pending", async () => {
+    const { client, mount, state } = setup("/v2/close?month=12&panel=payouts");
+    state.workflow = readyForClose();
+    client.setQueryData(["draft-payout-operation", 12], {
+      busy: true,
+      unconfirmed: true,
+      result: null,
+      notice: null,
+    });
+    mount();
+    await screen.findByRole("button", { name: "Обновляем прогноз…" });
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Разделы месяца" })).getByRole("link", {
+        name: /Закрыть месяц/,
+      }),
+    );
+    expect(
+      await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Сохранение ещё не подтверждено" })).toBeNull();
+    expect(await screen.findByRole("button", { name: "Закрыть месяц" })).toBeEnabled();
   });
   it("retains the actual File when source discard leaves Month for a catalogue round-trip", async () => {
     const { mount, client } = setup("/v2/close?month=12&panel=brokers");

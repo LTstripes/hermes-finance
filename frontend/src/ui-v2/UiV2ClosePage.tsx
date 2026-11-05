@@ -271,7 +271,6 @@ export default function UiV2ClosePage() {
                   Boolean(pendingLifecycle)
                 }
                 sourceVersion={original.confirmed?.request_id}
-                onPendingChange={setUploadPending}
               />
             ) : null}
             {panel === "brokers" ? (

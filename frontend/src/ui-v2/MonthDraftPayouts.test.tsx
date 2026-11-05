@@ -59,6 +59,7 @@ function show(
 
 beforeEach(() => {
   vi.resetAllMocks();
+  sessionStorage.clear();
   window.history.replaceState(null, "", "/v2/close?month=1&panel=payouts");
   vi.mocked(getDraftPayoutContext).mockResolvedValue(context);
   vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
@@ -76,7 +77,7 @@ test("confirmed DRAFT enables one explicit batch and GET readback; render/focus/
   await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: cta }));
-  fireEvent.click(screen.getByRole("button", { name: /Обновляем прогноз/ }));
+  fireEvent.click(screen.getByRole("button", { name: cta }));
   expect(await screen.findByText(/Обновлено позиций: 2/)).toBeVisible();
   expect(refreshDraftPayouts).toHaveBeenCalledExactlyOnceWith(1, context.context_digest);
   expect(getDraftPayoutContext).toHaveBeenCalledTimes(2);
@@ -115,7 +116,6 @@ test.each(["source-only", "closed", "dirty", "failed-get"])(
 test.each(["lost-ack", "lost-get"])(
   "%s is unresolved until explicit GET recovery without replay",
   async (mode) => {
-    const pending = vi.fn();
     if (mode === "lost-ack")
       vi.mocked(refreshDraftPayouts).mockRejectedValueOnce(new Error("lost ACK"));
     else
@@ -123,16 +123,14 @@ test.each(["lost-ack", "lost-get"])(
         .mockResolvedValueOnce([])
         .mockRejectedValueOnce(new Error("lost GET"))
         .mockResolvedValue([]);
-    show({ onPendingChange: pending });
+    show();
     await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: cta }));
     expect(await screen.findByText(/Не удалось подтвердить результат/)).toBeVisible();
     expect(screen.getByRole("button", { name: cta })).toBeDisabled();
-    expect(pending).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByRole("button", { name: read }));
     await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
     expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
-    expect(pending).toHaveBeenLastCalledWith(false);
     expect(screen.queryByText(/Обновлено позиций/)).not.toBeInTheDocument();
   },
 );
@@ -297,4 +295,83 @@ test("automatic partial failure remains visible after reopening", async () => {
   expect(await screen.findByText(/При автоматическом обновлении часть данных/)).toBeVisible();
   expect(screen.getByText("Подробнее об ошибке")).toBeVisible();
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
+});
+
+test("polls automatic status and displays a later failure without remounting", async () => {
+  const status = { reporting_month_id: 1, positions_changed: 0, items: [], forecast_as_of: null };
+  vi.mocked(getPayoutRefreshStatus)
+    .mockResolvedValueOnce({
+      ...status,
+      automatic_refresh: { status: "pending", message: "", reason_codes: [] },
+    })
+    .mockResolvedValue({
+      ...status,
+      automatic_refresh: { status: "error", message: "", reason_codes: ["provider_error"] },
+    });
+  show();
+  expect(
+    await screen.findByText(/При автоматическом обновлении часть данных/, {}, { timeout: 8000 }),
+  ).toBeVisible();
+  expect(getPayoutRefreshStatus).toHaveBeenCalledTimes(2);
+}, 10000);
+
+test("status read failure is visible with details hidden", async () => {
+  vi.mocked(getPayoutRefreshStatus).mockRejectedValue(new Error("status unavailable"));
+  show();
+  expect(
+    await screen.findByText("Не удалось прочитать статус автоматического обновления."),
+  ).toBeVisible();
+  expect(screen.getByText("status unavailable")).not.toBeVisible();
+});
+
+test("unconfirmed result survives leaving the panel and prevents a repeat until recovery", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let rejectRequest: ((error: Error) => void) | undefined;
+  vi.mocked(refreshDraftPayouts).mockImplementationOnce(
+    () =>
+      new Promise((_, reject) => {
+        rejectRequest = reject;
+      }),
+  );
+  const view = show({}, client);
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: cta }));
+  view.unmount();
+  show({}, client);
+  expect(screen.getByRole("button", { name: /Обновляем прогноз/ })).toBeDisabled();
+  await act(async () => {
+    rejectRequest?.(new Error("lost ACK"));
+  });
+  expect(await screen.findByText(/Не удалось подтвердить результат/)).toBeVisible();
+  expect(screen.getByRole("button", { name: cta })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: read }));
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
+});
+
+test("unconfirmed result survives a fresh client after reload", async () => {
+  sessionStorage.setItem("draft-payout-unconfirmed:1", "1");
+  show();
+  expect(await screen.findByText(/Не удалось подтвердить результат/)).toBeVisible();
+  expect(screen.getByRole("button", { name: cta })).toBeDisabled();
+  await waitFor(() => expect(screen.getByRole("button", { name: read })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: read }));
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  expect(sessionStorage.getItem("draft-payout-unconfirmed:1")).toBeNull();
+  expect(refreshDraftPayouts).not.toHaveBeenCalled();
+});
+
+test("status readback failure after a confirmed refresh is shown without replay", async () => {
+  vi.mocked(getPayoutRefreshStatus).mockRejectedValueOnce(new Error("status readback failed"));
+  // The first read may fail independently of a confirmed forecast readback.
+  show();
+  expect(
+    await screen.findByText("Не удалось прочитать статус автоматического обновления."),
+  ).toBeVisible();
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  vi.mocked(getPayoutRefreshStatus).mockRejectedValue(new Error("status readback failed"));
+  fireEvent.click(screen.getByRole("button", { name: cta }));
+  expect(await screen.findByText(/Обновлено позиций: 2/)).toBeVisible();
+  expect(screen.getByText("Не удалось прочитать статус автоматического обновления.")).toBeVisible();
+  expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
 });

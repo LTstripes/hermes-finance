@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 import { formatApiError } from "../api/client";
 import {
@@ -15,18 +15,23 @@ import { reasonCopy } from "../lib/reasonCopy";
 import styles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 
+type PayoutOperation = {
+  busy: boolean;
+  unconfirmed: boolean;
+  result: DraftPayoutResult | null;
+  notice: string | null;
+};
+
 export function MonthDraftPayouts({
   monthId,
   closed,
   disabled = false,
   sourceVersion,
-  onPendingChange,
 }: {
   monthId: number;
   closed: boolean;
   disabled?: boolean;
   sourceVersion?: string;
-  onPendingChange?: (pending: boolean) => void;
 }) {
   const client = useQueryClient();
   const location = useLocation();
@@ -44,6 +49,7 @@ export function MonthDraftPayouts({
     queryKey: ["payout-refresh-status", monthId],
     queryFn: () => getPayoutRefreshStatus(monthId),
     retry: false,
+    refetchInterval: 5000,
   });
   const calendar = useQuery({
     queryKey: ["draft-payout-calendar", monthId],
@@ -55,10 +61,47 @@ export function MonthDraftPayouts({
     },
     retry: false,
   });
-  const [busy, setBusy] = useState(false);
-  const [unconfirmed, setUnconfirmed] = useState(false);
-  const [result, setResult] = useState<DraftPayoutResult | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const operationKey = ["draft-payout-operation", monthId] as const;
+  const storageKey = `draft-payout-unconfirmed:${monthId}`;
+  const wasUnconfirmed = (() => {
+    try {
+      return sessionStorage.getItem(storageKey) === "1";
+    } catch {
+      return false;
+    }
+  })();
+  const operation = useQuery({
+    queryKey: operationKey,
+    queryFn: () =>
+      ({ busy: false, unconfirmed: false, result: null, notice: null }) as PayoutOperation,
+    enabled: false,
+    initialData: {
+      busy: false,
+      unconfirmed: wasUnconfirmed,
+      result: null,
+      notice: wasUnconfirmed ? "Результат предыдущего запроса не подтверждён." : null,
+    } as PayoutOperation,
+    gcTime: Infinity,
+  }).data;
+  const { busy, unconfirmed, result, notice } = operation;
+  const setOperation = (patch: Partial<PayoutOperation>) => {
+    if (patch.unconfirmed !== undefined) {
+      try {
+        if (patch.unconfirmed) sessionStorage.setItem(storageKey, "1");
+        else sessionStorage.removeItem(storageKey);
+      } catch {
+        /* Cache still protects navigation within this session. */
+      }
+    }
+    client.setQueryData<PayoutOperation>(operationKey, (previous) => ({
+      busy: false,
+      unconfirmed: false,
+      result: null,
+      notice: null,
+      ...previous,
+      ...patch,
+    }));
+  };
   const generation = useRef(0);
   const inFlight = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a changed month invalidates pending callbacks even when React reuses this instance.
@@ -68,10 +111,6 @@ export function MonthDraftPayouts({
       generation.current++;
     };
   }, [monthId]);
-  useEffect(() => {
-    onPendingChange?.(busy || unconfirmed);
-    return () => onPendingChange?.(false);
-  }, [busy, unconfirmed, onPendingChange]);
   useEffect(() => {
     const dependencies = [
       "broker-months",
@@ -157,16 +196,21 @@ export function MonthDraftPayouts({
     try {
       await readSaved();
       if (current === generation.current) {
-        setUnconfirmed(false);
-        setNotice(null);
+        setOperation({ unconfirmed: false, notice: null });
       }
     } catch (error) {
-      if (current === generation.current) setNotice(formatApiError(error));
+      if (current === generation.current) setOperation({ notice: formatApiError(error) });
     }
   }
 
   async function refresh() {
-    if (inFlight.current || !ready || !context.data) return;
+    if (
+      inFlight.current ||
+      client.getQueryData<PayoutOperation>(operationKey)?.busy ||
+      !ready ||
+      !context.data
+    )
+      return;
     if (
       (window.history.state?.key ?? "default") !== location.key ||
       window.location.pathname !== location.pathname ||
@@ -174,28 +218,19 @@ export function MonthDraftPayouts({
       window.location.hash !== location.hash
     )
       return;
-    const current = generation.current;
     inFlight.current = true;
-    setBusy(true);
-    setResult(null);
-    setNotice(null);
-    setUnconfirmed(true);
+    setOperation({ busy: true, result: null, notice: null, unconfirmed: true });
     try {
       const saved = await refreshDraftPayouts(monthId, context.data.context_digest);
       await readSaved();
-      if (current === generation.current) {
-        setResult(saved);
-        setUnconfirmed(false);
-      }
+      setOperation({ result: saved, unconfirmed: false });
     } catch (error) {
-      if (current === generation.current) {
-        setNotice(
-          `Результат всего запроса не подтверждён. Часть прогнозов могла сохраниться. ${formatApiError(error)}`,
-        );
-      }
+      setOperation({
+        notice: `Результат всего запроса не подтверждён. Часть прогнозов могла сохраниться. ${formatApiError(error)}`,
+      });
     } finally {
       inFlight.current = false;
-      if (current === generation.current) setBusy(false);
+      setOperation({ busy: false });
     }
   }
 
@@ -266,6 +301,15 @@ export function MonthDraftPayouts({
             </details>
           </div>
         )}
+        {refreshStatus.isError && (
+          <div role="alert">
+            Не удалось прочитать статус автоматического обновления.
+            <details>
+              <summary>Подробнее об ошибке</summary>
+              {formatApiError(refreshStatus.error)}
+            </details>
+          </div>
+        )}
         {notice && (
           <div role="alert">
             Не удалось подтвердить результат. Часть данных могла сохраниться.
@@ -278,8 +322,7 @@ export function MonthDraftPayouts({
         {result && (
           <p role="status">{`Обновлено позиций: ${result.summary.updated}; без изменений: ${result.summary.unchanged}.`}</p>
         )}
-        {!result &&
-          refreshStatus.data?.automatic_refresh &&
+        {refreshStatus.data?.automatic_refresh &&
           ["error", "partial", "needs_review"].includes(
             refreshStatus.data.automatic_refresh.status,
           ) && (
