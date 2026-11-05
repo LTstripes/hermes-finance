@@ -12120,8 +12120,12 @@ an unrelated concurrent write. An active saved APP under a different accepted UI
 in the same month/account/instrument requires manual review before any new save.
 Only complete unambiguous NEW/REVISED future RUB events can be selected; repeated unchanged
 events create no revision. Omission/error does not erase persisted forecasts.
-Mixed success reports both saved rows and exceptions; lost acknowledgement is
-recovered by GET, then a new explicit request with the fresh digest.
+Mixed success reports both saved rows and exceptions. After a lost acknowledgement,
+GET rereads saved data before a new explicit request with the fresh digest; it does
+not prove the earlier request has finished. There is no automatic retry. The current
+API has no manual-request completion receipt, so a late earlier request can overlap
+a subsequent manual retry. Per-position writer, currentness and identity guards
+still apply; do not present the reread as confirmation of the earlier outcome.
 
 Manual candidates, inactive forecasts and actual payout competitors remain review
 items. Current paid events are skipped; canonical actual lineage, including

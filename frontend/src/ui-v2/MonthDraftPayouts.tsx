@@ -18,6 +18,7 @@ import { UiV2Panel } from "./UiV2Panel";
 type PayoutOperation = {
   busy: boolean;
   unconfirmed: boolean;
+  unknownResult?: boolean;
   result: DraftPayoutResult | null;
   resultDigest?: string;
   resultSourceVersion?: string;
@@ -67,9 +68,9 @@ export function MonthDraftPayouts({
   const storageKey = `draft-payout-unconfirmed:${monthId}`;
   const wasUnconfirmed = (() => {
     try {
-      return sessionStorage.getItem(storageKey) === "1";
+      return sessionStorage.getItem(storageKey);
     } catch {
-      return false;
+      return null;
     }
   })();
   const operation = useQuery({
@@ -79,9 +80,13 @@ export function MonthDraftPayouts({
     enabled: false,
     initialData: {
       busy: false,
-      unconfirmed: wasUnconfirmed,
+      unconfirmed: Boolean(wasUnconfirmed && wasUnconfirmed !== "unknown-reviewed"),
+      unknownResult: Boolean(wasUnconfirmed && wasUnconfirmed !== "readback"),
       result: null,
-      notice: wasUnconfirmed ? "Результат предыдущего запроса не подтверждён." : null,
+      notice:
+        wasUnconfirmed && wasUnconfirmed !== "unknown-reviewed"
+          ? "Результат предыдущего запроса не подтверждён."
+          : null,
     } as PayoutOperation,
     gcTime: Infinity,
   }).data;
@@ -93,22 +98,24 @@ export function MonthDraftPayouts({
       ? operation.result
       : null;
   const setOperation = (patch: Partial<PayoutOperation>) => {
-    if (patch.unconfirmed !== undefined) {
-      try {
-        if (patch.unconfirmed) sessionStorage.setItem(storageKey, "1");
-        else sessionStorage.removeItem(storageKey);
-      } catch {
-        /* Cache still protects navigation within this session. */
-      }
-    }
-    client.setQueryData<PayoutOperation>(operationKey, (previous) => ({
+    const previous = client.getQueryData<PayoutOperation>(operationKey);
+    const next = {
       busy: false,
       unconfirmed: false,
       result: null,
       notice: null,
       ...previous,
       ...patch,
-    }));
+    };
+    try {
+      if (next.unknownResult)
+        sessionStorage.setItem(storageKey, next.unconfirmed ? "unknown" : "unknown-reviewed");
+      else if (next.unconfirmed) sessionStorage.setItem(storageKey, "readback");
+      else sessionStorage.removeItem(storageKey);
+    } catch {
+      /* Cache still protects navigation within this session. */
+    }
+    client.setQueryData<PayoutOperation>(operationKey, next);
   };
   const generation = useRef(0);
   const inFlight = useRef(false);
@@ -228,8 +235,15 @@ export function MonthDraftPayouts({
       window.location.hash !== location.hash
     )
       return;
+    const priorUnknown = Boolean(currentOperation?.unknownResult);
     inFlight.current = true;
-    setOperation({ busy: true, result: null, notice: null, unconfirmed: true });
+    setOperation({
+      busy: true,
+      result: null,
+      notice: null,
+      unconfirmed: true,
+      unknownResult: true,
+    });
     const guardUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
@@ -237,6 +251,7 @@ export function MonthDraftPayouts({
     window.addEventListener("beforeunload", guardUnload);
     try {
       const saved = await refreshDraftPayouts(monthId, context.data.context_digest);
+      setOperation({ unknownResult: priorUnknown });
       await readSaved();
       setOperation({
         result: saved,
@@ -330,6 +345,12 @@ export function MonthDraftPayouts({
               {formatApiError(refreshStatus.error)}
             </details>
           </div>
+        )}
+        {operation.unknownResult && !busy && (
+          <p role="status">
+            Результат предыдущего запроса неизвестен: он может ещё выполняться. Перечитывание
+            показывает сохранённые данные, но не подтверждает его завершение.
+          </p>
         )}
         {notice && (
           <div role="alert">

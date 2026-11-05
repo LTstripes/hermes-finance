@@ -132,6 +132,9 @@ test.each(["lost-ack", "lost-get"])(
     await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
     expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Обновлено позиций/)).not.toBeInTheDocument();
+    if (mode === "lost-ack")
+      expect(screen.getByText(/не подтверждает его завершение/)).toBeVisible();
+    else expect(screen.queryByText(/не подтверждает его завершение/)).toBeNull();
   },
 );
 
@@ -360,7 +363,8 @@ test("unconfirmed result survives a fresh client after reload", async () => {
   await waitFor(() => expect(screen.getByRole("button", { name: read })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: read }));
   await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
-  expect(sessionStorage.getItem("draft-payout-unconfirmed:1")).toBeNull();
+  expect(sessionStorage.getItem("draft-payout-unconfirmed:1")).toBe("unknown-reviewed");
+  expect(screen.getByText(/не подтверждает его завершение/)).toBeVisible();
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
 });
 
@@ -411,4 +415,25 @@ test("fresh unconfirmed state blocks a click from a stale rendered button", asyn
     fireEvent.click(button);
   });
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
+});
+
+test("unknown outcome remains explicit after reread and reload; retry is manual", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.mocked(refreshDraftPayouts).mockRejectedValueOnce(new Error("lost ACK"));
+  const view = show({}, client);
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: cta }));
+  await screen.findByText(/Не удалось подтвердить результат/);
+  fireEvent.click(screen.getByRole("button", { name: read }));
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  expect(screen.getByText(/не подтверждает его завершение/)).toBeVisible();
+  view.unmount();
+  show();
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  expect(screen.getByText(/не подтверждает его завершение/)).toBeVisible();
+  expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: cta }));
+  expect(await screen.findByText(/Обновлено позиций: 2/)).toBeVisible();
+  expect(screen.getByText(/не подтверждает его завершение/)).toBeVisible();
+  expect(refreshDraftPayouts).toHaveBeenCalledTimes(2);
 });
