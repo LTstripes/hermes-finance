@@ -21,6 +21,7 @@ from hermes_finance.domain.instrument_return import (
     InstrumentEvent,
     Metric,
     SourceReference,
+    StatementEstimate,
     calculate_economics,
 )
 from hermes_finance.domain.money_security import parse_money_security
@@ -32,6 +33,7 @@ from hermes_finance.services.source_money_classifications import (
     source_reference,
 )
 from hermes_finance.services.source_monthly_returns import _money
+from hermes_finance.services.source_trade_identity import repo_return_identities
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, digest
 
@@ -50,6 +52,20 @@ def _date(value):
 
 def _fingerprint(value):
     return digest(json.dumps(value, sort_keys=True, default=str))
+
+
+def _account_cost_scope(saved, classification, isin):
+    text = (saved["operation"] + " " + saved["narrative"]).casefold()
+    return (
+        classification in {"fee", "tax"}
+        and isin is None
+        and saved.get("amount_kopecks", 0) < 0
+        and normalize_currency(saved.get("currency")) == "RUB"
+        and not re.search(
+            r"дивиденд|dividend|купон|coupon|нкд|сделк|репо|погашен|сторно|возврат|компенсац", text
+        )
+        and any(w in text for w in ("ведение счета", "ведение счёта", "account maintenance"))
+    )
 
 
 # Public MOEX issue identity only, never a persisted payout link or cash proof.
@@ -165,7 +181,7 @@ def _source_money_attribution(view, saved, raw, identities, native_issues):
     doc = view["document"]
     operation = saved["operation"].casefold().strip()
     nkd = _is_nkd(operation)
-    repo = re.fullmatch(r"(?i:расчеты по сделке) (B[0-9]{1,127})", saved["operation"])
+    repo = re.fullmatch(r"(?i:расчеты|комиссия) по сделке (B[0-9]{1,127})", saved["operation"])
     repo_text = re.search(r"\bрепо\b", saved["narrative"].casefold()) is not None
     if nkd or repo or repo_text:
         if doc["provider"] != "alfa_mybroker" or doc["parser"] != "mybroker-s1-v2":
@@ -460,14 +476,28 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                 reasons=reasons,
                 refs=refs,
                 owned=False,
+                account_only=all(
+                    _account_cost_scope(o[2], o[1].classification, o[4]) for o in observations
+                ),
             )
         )
 
     trades = defaultdict(list)
     for view in views:
+        repo_ids = view.get("return_repo_identities")
+        if repo_ids is None:
+            repo_ids = repo_return_identities(view)
         for trade in view["document"].get("trades", []):
+            repo_identity = (
+                repo_ids.get(trade["ordinal"]) if trade["section"] == "completed" else None
+            )
+            if repo_identity:
+                trade = dict(
+                    trade, return_identity=repo_identity[0], repo_signature=repo_identity[1]
+                )
             key = (
                 trade.get("identity")
+                or trade.get("return_identity")
                 or f"unresolved:{view['id']}:{trade['section']}:{trade['ordinal']}"
             )
             trades[key].append((view, trade))
@@ -478,6 +508,33 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                 primary_owners[trade["ids"][0]].add(key)
     for m in money:
         m["trade_keys"] = primary_owners.get(m["raw"].get("primary_id"), set())
+        repo_reference = re.fullmatch(
+            r"(?:Расчеты|Комиссия) по сделке (B[0-9]{1,127})", m["saved"]["operation"]
+        )
+        if repo_reference:
+            # An exact native B reference can identify a REPO occurrence without
+            # accepting its economics. Ambiguous/unproved occurrences stay visible.
+            owners = {
+                key
+                for key in primary_owners.get(repo_reference[1], ())
+                if any(
+                    t["core"]["source_account"] == m["raw"]["source_account"]
+                    for _, t in trades[key]
+                )
+            }
+            m["trade_keys"] = {
+                key
+                for key in owners
+                if len(owners) == 1
+                if any(
+                    t.get("return_identity") == key
+                    and t["core"]["source_account"] == m["raw"]["source_account"]
+                    and t["core"]["isin"] == m["isin"]
+                    for _, t in trades[key]
+                )
+            }
+            if len(owners) > 1:
+                m["reasons"].add("money_ownership_ambiguous")
         text = m["saved"]["operation"] + " " + m["saved"]["narrative"]
         if not m["trade_keys"] and _is_nkd(text):
             with localcontext() as context:
@@ -499,6 +556,9 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
         view, trade = selected[0]
         core = trade["core"]
         isin = core["isin"]
+        # A native-ID collision across issues cannot silently choose the first
+        # original's scope and leave the other issue with an apparently clean result.
+        event_isin = isin if len({t["core"]["isin"] for _, t in observations}) == 1 else None
         kinds = identities[isin]["types"]
         kind = next(iter(kinds)) if len(kinds) == 1 else None
         refs = tuple(f"trade:{v['id']}:{t['section']}:{t['ordinal']}" for v, t in observations)
@@ -516,7 +576,9 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
         )
         if kind == "stock" and trade.get("accrued_interest") is None:
             nkd = 0
-        if not trade.get("identity") or len(trade.get("ids", [])) != 2:
+        if not trade.get("return_identity") and (
+            not trade.get("identity") or len(trade.get("ids", [])) != 2
+        ):
             reasons.add("trade_identity_unresolved")
         if not settled or cash_date is None:
             reasons.add("trade_missing_settlement")
@@ -532,6 +594,7 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                     t.get("accrued_interest"),
                     _face_signature(t) if kind == "bond" else None,
                     t.get("repo_observed"),
+                    t.get("repo_signature"),
                 )
             )
             for _, t in selected
@@ -584,6 +647,7 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
             role = (
                 "commission"
                 if m["raw"]["kind"] == "commission"
+                or re.fullmatch(r"Комиссия по сделке B[0-9]{1,127}", m["saved"]["operation"])
                 else ("nkd" if _is_nkd(text) else "principal")
             )
             groups[role].append(m)
@@ -629,17 +693,32 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                     legs.append(
                         CashLeg(role, cash_date, value, -value, refs, f"trade:{key}:{role}")
                     )
+        elif trade.get("return_identity"):
+            # Identity-only REPO matching must retain observed Money even when
+            # native economics is unavailable. These legs remain uncounted.
+            legs.extend(
+                CashLeg(
+                    role,
+                    m["flow"].event_date,
+                    m["flow"].amount_kopecks,
+                    -m["flow"].amount_kopecks,
+                    m["refs"],
+                    m["key"],
+                )
+                for role, rows in groups.items()
+                for m in rows
+            )
         events.append(
             InstrumentEvent(
                 event_key=f"trade:{key}",
                 provider=PROVIDER,
                 native_source_account=native_account,
-                isin=isin,
-                effective_isin=isin,
+                isin=event_isin,
+                effective_isin=event_isin,
                 kind="BUY" if qty is not None and qty > 0 else "SELL",
                 source_references=refs,
                 event_date=cash_date or execution,
-                native_identity=trade.get("identity"),
+                native_identity=trade.get("identity") or trade.get("return_identity"),
                 native_ids=tuple(trade.get("ids", [])),
                 execution_date=execution,
                 trade_time=core.get("trade_time"),
@@ -668,6 +747,39 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                 assumptions=tuple(sorted(assumptions)),
             )
         )
+        if "overlapping_trade_conflict" in reasons:
+            primary_dates = {execution, cash_date, depo_date}
+            observed_dates = {
+                _date(value)
+                for _, observed in observations
+                for value in (
+                    observed["core"]["trade_time"][:10],
+                    observed.get("settlement_date"),
+                    observed.get("depo_settlement_date"),
+                )
+                if value
+            }
+            for observed_date in sorted(observed_dates - primary_dates):
+                # These are conflict dates, not invented settlement dates or
+                # additional economic occurrences. A narrow interval must not
+                # lose a conflict by selecting only an alternate observation.
+                events.append(
+                    InstrumentEvent(
+                        event_key=f"trade:{key}:conflict:{observed_date}",
+                        provider=PROVIDER,
+                        native_source_account=native_account,
+                        isin=event_isin,
+                        kind="UNRESOLVED",
+                        source_references=refs,
+                        event_date=observed_date,
+                        native_identity=trade.get("identity") or trade.get("return_identity"),
+                        native_ids=tuple(trade.get("ids", [])),
+                        attribution_basis="conflicting_trade_observation",
+                        counted=False,
+                        current=False,
+                        reason_codes=tuple(sorted(reasons)),
+                    )
+                )
 
     for m in money:
         if m["owned"]:
@@ -690,11 +802,7 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
         kind = {"coupon": "COUPON", "dividend": "DIVIDEND", "fee": "FEE", "tax": "TAX"}.get(
             classification, "UNRESOLVED"
         )
-        account_only = (
-            classification in {"fee", "tax"}
-            and isin is None
-            and any(w in text for w in ("ведение счета", "ведение счёта", "account maintenance"))
-        )
+        account_only = m["account_only"]
         if (
             classification
             in {"external_deposit", "external_withdrawal", "internal_transfer", "external_gift"}
@@ -773,6 +881,7 @@ def endpoint(views, isin, day, kind, *, reviewed_basis=None):
 
     quantities, values, refs, reasons = set(), set(), [], set()
     basis_refs = set()
+    observation_scopes = set()
     for view in views:
         if "period_inferred_from_content" in view["document"].get("warnings", []):
             continue
@@ -795,7 +904,20 @@ def endpoint(views, isin, day, kind, *, reviewed_basis=None):
             if reference:
                 basis_refs.add(reference)
             q = _quantity(row.get("actual_quantity" if closing else "beginning_actual_quantity"))
-            v = _minor(row.get("ending_value" if closing else "beginning_value"))
+            raw_value = row.get("ending_value" if closing else "beginning_value")
+            v = _minor(raw_value)
+            if raw_value is not None and v is None:
+                reasons.add("missing_endpoint")
+            observation_scopes.add(
+                (
+                    view["document"].get("provider"),
+                    row.get("source_account"),
+                    isin,
+                    q,
+                    tuple(sorted(view["document"].get("endpoint_basis", {}).items())),
+                    bool(reference) if kind == "bond" else "stock",
+                )
+            )
             refs.append(
                 f"position:{view['id']}:{row['ordinal']}:{'closing' if closing else 'opening'}"
             )
@@ -808,10 +930,18 @@ def endpoint(views, isin, day, kind, *, reviewed_basis=None):
                 "ending_value": "covered_to_eod",
             }:
                 reasons.add("endpoint_basis_unsupported")
-    q = next(iter(quantities)) if len(quantities) == 1 else None
-    v = next(iter(values)) if len(values) == 1 else None
-    if len(quantities) > 1 or len(values) > 1:
+    known_quantities, known_values = quantities - {None}, values - {None}
+    q = (
+        next(iter(known_quantities))
+        if len(known_quantities) == 1 and None not in quantities
+        else None
+    )
+    v = next(iter(known_values)) if len(known_values) == 1 else None
+    if len(known_quantities) > 1 or len(known_values) > 1:
         reasons.add("overlapping_endpoint_conflict")
+    if None in values and known_values and (len(observation_scopes) != 1 or q is None):
+        v = None
+        reasons.add("missing_endpoint")
     if q is None or v is None or v < 0:
         reasons.add("missing_endpoint")
     if reasons:
@@ -846,6 +976,7 @@ def analyse(views, isin, kind, start, end, events, references, gaps, *, reviewed
         e
         for e in events
         if e.isin in (isin, None)
+        and e.attribution_basis != "account_only"
         and (
             (e.event_date and start < e.event_date <= end)
             or (e.depository_settlement_date and start < e.depository_settlement_date <= end)
@@ -963,6 +1094,42 @@ def analyse(views, isin, kind, start, end, events, references, gaps, *, reviewed
     components, pnl, subtotal, rate, estimate = calculate_economics(
         opening, closing, selected, coverage
     )
+    excluded_costs = tuple(
+        e
+        for e in selected
+        if e.isin is None
+        and e.kind in {"FEE", "TAX"}
+        and set(e.reason_codes) == {"unallocated_instrument_cost"}
+        and e.cash_legs
+        and all(leg.account_cash_kopecks < 0 for leg in e.cash_legs)
+    )
+    if pnl.value is None and excluded_costs:
+        without_costs = analyse(
+            views,
+            isin,
+            kind,
+            start,
+            end,
+            tuple(e for e in events if e not in excluded_costs),
+            references,
+            gaps,
+            reviewed_basis=reviewed_basis,
+        )
+        if without_costs.pnl.value is not None:
+            assumption = ("unallocated_costs_excluded",)
+            estimate = StatementEstimate(
+                replace(
+                    without_costs.pnl,
+                    status="provisional",
+                    assumptions=without_costs.pnl.assumptions + assumption,
+                ),
+                replace(
+                    without_costs.modified_dietz,
+                    status="provisional",
+                    assumptions=without_costs.modified_dietz.assumptions + assumption,
+                ),
+                assumption,
+            )
     history_start = min(
         (_date(v["covered_from"]) - timedelta(days=1) for v in views), default=start
     )

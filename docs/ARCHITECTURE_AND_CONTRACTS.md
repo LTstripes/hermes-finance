@@ -419,6 +419,25 @@ identity, исходную позицию и все revisions. Новую исп
 
 Даты открытия и окончания в MVP необязательны.
 
+Income's 14/30-day planning windows additionally expose an undated deposit
+estimate over the exact `[from_date, to_date)` interval: snapshot balance × annual
+basis-point rate × actual days / days in the respective calendar year (365/366).
+Split year crossings before adding exact fractions, then round HALF_UP once per
+deposit to kopecks. Assume unchanged balance/rate, no compounding and no tax
+deduction; this is an accrual estimate, never a known payment date or credited
+income. Existing monthly `balance × rate / 12` forecasts remain unchanged.
+
+`UpcomingEventsWindow` keeps its dated `items`, `passive_income` and
+`total_cash_flow` meanings. Additive `deposit_estimates` list snapshot identity,
+name, account, amount and `included_in_forecast`; `deposit_interest_estimate`
+sums included rows only. `forecast_passive_income` and `forecast_total_cash_flow`
+add that estimate exactly once to the corresponding dated subtotal. If an account
+has dated interest inside this window, exclude all its snapshot estimates from
+the combined forecast: no deposit-level attribution exists to prove a finer
+allocation. Retain excluded estimates visibly in the table with an explanation.
+Monthly amounts are never added wholesale to a differently dated window.
+
+
 
 <a id="c2-master_spec-295-910-cash_balances"></a>
 #### 9.10. `cash_balances`
@@ -6921,6 +6940,74 @@ or other contradictory saved classifications produce a gap, never silent zero
 income or automatic repair. Explicit account-only costs stay outside instruments;
 ambiguous possible instrument costs block completeness.
 
+Account-only scope must agree across all overlapping occurrences before it can
+exclude a cost from instrument coverage. An occurrence missing from another
+covering original or a conflicting fee/tax choice remains an account
+reconciliation gap, visible in `account_reconciliation_events`; it does not
+become an unknown expense of every ISIN. A conflicting possible payout or unknown
+scope cannot acquire this exclusion. Unallocated possible instrument costs keep
+their existing blockers.
+
+For the already recognized completed single-B-ID REPO grammar, the return reader
+may derive a `repo:` projection identity from provider, native account and the
+own B ID. It requires agreement between the frozen native references and their
+attribute digests, a distinct B partner, an explicit first/second-leg marker and
+one occurrence of the own ID in that original. The partner and leg marker are
+overlap consistency operands; neither is invented as native economic ID #2.
+All original references survive grouping. Exact B-reference settlement and fee
+Money rows may join this projected occurrence, preserving their own cash
+ownership. `native_ids` remains the single original ID; `native_identity` carries
+the prefixed projection identity. Missing witnesses, duplicate IDs, changed
+partners/markers, absent overlapping occurrences and cash conflicts remain gaps.
+Conflicting issue identities stay at root scope; conflicting dates retain
+uncounted dated markers so a narrow interval cannot hide an alternate
+observation. An unresolved same-B owner prevents stronger Money ownership.
+This supplies identity only: `repo_trade_unsupported`, uncounted cash/quantity,
+and unavailable full economic returns remain. Frozen parsers and financial
+receipt identities are unchanged.
+
+The audit correction advances the semantic tripwire to v8. The original-bound
+account proof now requires reciprocal B partners, complementary leg markers,
+matching account/issue/currency, opposite quantities and trade/cash/depository
+dates inside the interval before treating a REPO obligation as closed. Opposite
+first legs of unrelated pairs never suffice. Unproved pairs withhold account
+rates and affected instrument totals; this does not provide general REPO economics.
+Old proof decisions remain immutable. Read-only old-version compatibility is
+limited to interval-local sources whose meaning did not change: no REPO and no
+unallocated or contradictory cost scope. All original, physical, classification,
+clock and gift operands must still reproduce exactly. A new intersecting source
+can invalidate a proof; reads neither reissue it nor apply compatibility to writers.
+
+Account-only cost exclusion requires a negative RUB amount, explicit account
+maintenance meaning and no payout, trade, redemption, reversal or compensation
+contradiction, consistently across occurrences. Generic unallocated fees/taxes
+keep full instrument P/MD unknown. If every other economic dependency is complete,
+the existing calculator may additionally return a separate provisional
+`statement_estimate` with `unallocated_costs_excluded`: result and period rate
+before distributing those known expenses. The expense events remain inspectable.
+Returns displays this separately as “Без нераспределённых расходов счёта”; full
+P/MD is not replaced. AI keeps the separate `before_unallocated_costs` metrics,
+including percentage units, in addition to the unchanged full-result fields.
+
+Available-period instrument presentation can select the earliest reliable EOD
+start ending at the latest known EOD valuation, including a nonzero opening
+position. The bounded scan prefers a full result, then an explicitly separate
+before-cost estimate. Missing history before that start is not called zero or
+complete acquisition history. Every account/issue retains its own dates and
+unknown siblings remain visible. Explicit requests retain their exact interval;
+a stale proof's exact interval is excluded from automatic native fallback.
+The scan does not search every pair of earlier ending dates. REPO inventory
+identity is reconstructed once per source in one coherent read, with no
+cross-request cache.
+
+At the same account/issue/date/quantity and compatible source/EOD/valuation basis,
+an absent instrument boundary value may coexist with an independently known
+value without becoming a conflict. Different known values or quantities still
+conflict; an invalid present value cannot borrow another original's value.
+Outer account economics does not require an interior valuation. History extension
+keeps date continuity, actual seam conflicts, complete dated external-flow
+schedules and every non-valuation blocker while allowing missing interior values.
+
 Economic bond endpoints require evidenced dirty value or clean plus boundary NKD.
 Saved source facts alone do not provide that proof: `reported_unknown` and
 `bond_valuation_basis_unknown` keep full economic P/MD NULL without the separately
@@ -12293,6 +12380,23 @@ After a local read-only token is configured, you can:
 5. inspect the preview. Nothing is applied to snapshots in this task.
 
 There is no background refresh and no trading.
+
+T-Invest request diagnostics contain only an allowlisted method, normalized
+requested timestamps, outcome/HTTP status and received collection count.
+Payout diagnostics add the provider-filter window, calendar window, parsed-event
+and returned-event counts and failure count. Unknown received counts remain
+`unknown`, rather than zero. Tokens, account/instrument identifiers, request
+bodies, raw replies, URLs and exception text are excluded.
+
+Successful payout responses with an explicit empty collection are empty coverage,
+not a provider error. The exact empty success object `{}` also represents an
+omitted empty repeated field under
+[ProtoJSON defaults](https://protobuf.dev/programming-guides/json/#presence-and-default-values)
+for the documented [GetDividends response](https://developer.tinkoff.ru/invest/api/instruments-service-get-dividends)
+and bond event methods. Other missing collections, wrong types, invalid rows,
+error envelopes and transport/HTTP failures retain unsuccessful or invalid
+coverage. Empty coverage only describes the requested provider-filter period;
+it is not evidence that no dividend will ever be announced, paid or received.
 
 
 <a id="c9-t-invest-market-data-1-provider-capabilities"></a>

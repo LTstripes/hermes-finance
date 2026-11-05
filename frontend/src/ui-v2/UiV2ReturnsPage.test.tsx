@@ -65,6 +65,67 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
+test("shows five instruments by absolute result and expands or collapses the list", async () => {
+  const data = overallFixture();
+  const template = data.instruments[1];
+  data.instruments = ["100", "-900", "300", "-500", "0", "700", null].map((value, index) => ({
+    ...template,
+    isin: `TEST${index}`,
+    name: `Инструмент ${index}`,
+    accounts: template.accounts.map((account) => ({
+      ...account,
+      pnl: { ...account.pnl, value },
+    })),
+  }));
+  install(data);
+  setup();
+  const section = await screen.findByRole("region", { name: "Доходность по инструментам (7)" });
+  const names = () =>
+    within(section)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("link")[0].textContent);
+  expect(names()).toEqual([
+    "Инструмент 1",
+    "Инструмент 5",
+    "Инструмент 3",
+    "Инструмент 2",
+    "Инструмент 0",
+  ]);
+  fireEvent.click(within(section).getByRole("button", { name: "Показать все" }));
+  expect(names()).toHaveLength(7);
+  fireEvent.click(within(section).getByRole("button", { name: "Свернуть" }));
+  expect(names()).toHaveLength(5);
+});
+
+test("sorts and displays a native instrument period despite stale account proof", async () => {
+  const data = overallFixture();
+  data.source_accounts[0].proof_status = "stale";
+  const template = data.instruments[1];
+  data.instruments = ["100", "200", "300", "400", "500", "-900"].map((value, index) => ({
+    ...template,
+    isin: `NATIVE${index}`,
+    name: `Бумага ${index}`,
+    accounts: template.accounts.map((account) => ({
+      ...account,
+      native_period: index === 5,
+      period: index === 5 ? { start: "2030-04-30", end: "2030-10-31" } : account.period,
+      valuation_date: index === 5 ? "2030-10-31" : account.valuation_date,
+      pnl: { ...account.pnl, value },
+    })),
+  }));
+  install(data);
+  setup();
+  const section = await screen.findByRole("region", { name: "Доходность по инструментам (6)" });
+  const rows = within(section).getAllByRole("row");
+  expect(rows[1]).toHaveTextContent("Бумага 5");
+  expect(rows[1]).toHaveTextContent("−9 ₽");
+  expect(rows[1]).not.toHaveTextContent("Нужна проверка данных");
+  fireEvent.click(within(rows[1]).getByText(/Учебный счёт А ·/));
+  expect(within(rows[1]).getByText(/30\.04\.2030 — 31\.10\.2030/)).toBeVisible();
+  expect(rows[2]).toHaveTextContent("Нужна проверка данных");
+});
+
 test("default shows exact brokerage subtotal, supported graph/list, excludes deposits and lazy detail calls", async () => {
   const calls = install();
   setup();

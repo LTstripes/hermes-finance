@@ -711,3 +711,48 @@ def test_calendar_module_has_no_provider_network_or_write_surface() -> None:
     assert "session.delete(" not in source
     assert "session.flush(" not in source
     assert "session.commit(" not in source
+
+
+def test_calendar_reused_only_within_same_read_snapshot(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from hermes_finance.database import coherent_read_snapshot
+    from hermes_finance.services import payout_calendar as module
+
+    session, database = session_for(tmp_path)
+    try:
+        month_id, account_id, instrument_id, _ = build_environment(session)
+        build = Mock(wraps=module._merged_payout_calendar)
+        monkeypatch.setattr(module, "_merged_payout_calendar", build)
+        with coherent_read_snapshot(session):
+            first = module.merged_payout_calendar(
+                session, reporting_month_id=month_id, forecast_version="v1"
+            )
+            assert (
+                module.merged_payout_calendar(
+                    session, reporting_month_id=month_id, forecast_version="v1"
+                )
+                == first
+            )
+            assert build.call_count == 1
+            module.merged_payout_calendar(
+                session, reporting_month_id=month_id, forecast_version="v2"
+            )
+            assert build.call_count == 2
+        manual_flow(
+            session,
+            month_id=month_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            flow_type=ExpectedCashFlowType.COUPON,
+            expected_date=date(2030, 6, 15),
+            amount="100.00",
+        )
+        later = module.merged_payout_calendar(
+            session, reporting_month_id=month_id, forecast_version="v1"
+        )
+        assert sum(len(bucket.items) for bucket in later) == 1
+        assert build.call_count == 3
+    finally:
+        session.close()
+        database.engine.dispose()

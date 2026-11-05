@@ -56,6 +56,22 @@ test("explicit mapping conflict excludes instrument numbers despite a current pr
   data.mixed_result.components[0].coverage.status = "conflict";
   expect(instrumentSummary(data, data.instruments[0], "source:SYNTH-A").pnl.value).toBeNull();
 });
+test("a supported native period survives stale account proof but not a mapping conflict", () => {
+  const data = overallFixture();
+  data.source_accounts[0].proof_status = "stale";
+  const account = data.instruments[0].accounts[0];
+  account.native_period = true;
+  let summary = instrumentSummary(data, data.instruments[0], "source:SYNTH-A");
+  expect(summary.pnl.value).toBe("1200");
+  expect(summary.accounts[0].resultAvailable).toBe(true);
+  account.details_loaded = false;
+  expect(instrumentSummary(data, data.instruments[0], "source:SYNTH-A").pnl.value).toBeNull();
+  account.details_loaded = true;
+  data.mixed_result.components[0].coverage.status = "conflict";
+  summary = instrumentSummary(data, data.instruments[0], "source:SYNTH-A");
+  expect(summary.pnl.value).toBeNull();
+  expect(summary.accounts[0].resultAvailable).toBe(false);
+});
 test("decimal quantity formatting changes no significant digits", () => {
   expect(compactQuantity("100.000000")).toBe("100");
   expect(compactQuantity("0.0001200")).toBe("0.00012");

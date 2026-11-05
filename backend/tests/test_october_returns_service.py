@@ -706,7 +706,11 @@ def test_old_investment_proof_becomes_stale_when_gift_proof_is_added(database, m
 
     from hermes_finance.services import mybroker_preflight, source_report_preview
 
-    client, scope, raw, source = existing_statement(database, gift=True)
+    # Isolate gift dependency currentness from v8's intentional rejection of
+    # legacy unallocated instrument-cost semantics.
+    client, scope, raw, source = existing_statement(
+        database, gift=True, fee_narrative="account maintenance"
+    )
     with database.session_factory() as session:
         source_intake.save_intake(
             session, document=raw, filename=FILENAME, request_id="old-proof-gift-source"

@@ -192,6 +192,12 @@ def test_summary_and_dashboard_happy_path(client: TestClient) -> None:
     ladder_response = client.get(f"/api/months/{m2_id}/cash-flow-ladder")
     assert ladder_response.status_code == 200, ladder_response.text
     assert ladder_response.json() == ladder
+    window = ladder["upcoming_30_days"]
+    assert window["deposit_interest_estimate"] == _rub("986.30")
+    assert window["passive_income"] == _rub("870.00")
+    assert window["forecast_passive_income"] == _rub("1856.30")
+    assert window["deposit_estimates"][0]["included_in_forecast"] is True
+    assert "expected_date" not in window["deposit_estimates"][0]
     # one closed month → incomplete 12-month passive-income history
     assert dash["kpis"]["passive_income_average_months"] == 1
     assert dash["kpis"]["passive_income_average_complete"] is False

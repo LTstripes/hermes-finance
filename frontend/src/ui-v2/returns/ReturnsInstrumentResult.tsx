@@ -28,7 +28,7 @@ export function ReturnsInstrumentResult({
   analysis,
   reasonCodes = [],
 }: {
-  result: { pnl: Metric; rate: Metric } | null;
+  result: { pnl: Metric; rate: Metric; conditional_pnl?: Metric; conditional_rate?: Metric } | null;
   analysis?: InstrumentAnalysis<string>;
   reasonCodes?: string[];
 }) {
@@ -62,8 +62,21 @@ export function ReturnsInstrumentResult({
   ).filter(
     ([, value]) => value?.value != null && value.value !== "0" && value.status !== "unavailable",
   );
+  const beforeCosts =
+    pnl.value === null &&
+    result?.conditional_pnl?.value != null &&
+    result.conditional_pnl.reason_codes.includes("unallocated_costs_excluded");
   return (
     <div className={styles.result}>
+      {beforeCosts && (
+        <section aria-label="Результат без нераспределённых расходов">
+          <p>Без нераспределённых расходов счёта</p>
+          <strong>{displayMetric(result!.conditional_pnl!, true)}</strong>
+          {" · "}
+          {result?.conditional_rate && displayMetric(result.conditional_rate)}
+          <small>Полный результат после распределения расходов пока неизвестен.</small>
+        </section>
+      )}
       <dl className={styles.metrics}>
         <div>
           <dt>Результат ₽</dt>

@@ -103,7 +103,10 @@ results name the required EOD dates instead of displaying zero.
 The final tile composes the existing month totals, filling/readiness status and
 visible warnings with explicit user-decided Close. Technical provenance and extended
 checks remain in **Подробнее**. A confirmed lifecycle change requires independent
-workflow GET and invalidates Home/Capital/Returns/chart reads. Unknown Close ACK
+workflow GET and invalidates Home/Capital/Returns/chart reads. The final review
+refreshes before the confirmation dialog. Confirmation checks the selected month's
+identity/status through the bounded month GET; POST revalidates financial guards
+under its writer reservation. Unrelated dashboard refreshes do not delay readback. Unknown Close ACK
 keeps commands/navigation blocked with GET-only recovery. No second calculation
 or progress/financial ledger is introduced. Desktop deposit rows allocate space
 to names, exact amounts and actions; narrower work areas use labelled fields
@@ -378,6 +381,14 @@ Exact historical performance uses historical membership, dated cash/in-kind cove
 <a id="returns-workspace"></a>
 ### Returns workspace
 
+An instrument may show a supported later-start period when its earliest history
+has no reliable opening valuation. Overview, standalone card and AI keep the
+same actual account/issue dates; other unavailable instruments remain visible.
+When only distribution of known negative common expenses is missing, show the
+separate amount and period percentage labelled **Без нераспределённых расходов
+счёта**. Keep the full result unknown and retain those expense rows; do not turn
+unknown valuations or movements into zero to obtain this estimate.
+
 The ordinary `/v2/returns` entry opens **В целом** for all available history.
 The main journey follows the compact account layout: result cards, a graph of
 supported observations, searchable instruments and leaders. Both available broker
@@ -560,6 +571,12 @@ workspace or its existing guards.
 #### Income
 
 - `/v2/income` plans from latest closed. Its `month` selects factual passive-income breakdown, not historical/draft planning, goals or ladder. [Income](https://github.com/LTstripes/hermes-finance/blob/b05487b822252fad9d9ec7cf4410d6d96c91c8bb/frontend/src/ui-v2/UiV2IncomePage.tsx)
+  Its 30-day headline includes the backend's undated deposit-interest estimate
+  for the same period. A separate table below the dated/monthly ladder shows
+  each deposit estimate, including estimates excluded when dated account interest
+  already supplies the forecast. Explain constant balance/rate and unknown payment
+  date once; keep dated totals, principal and existing monthly estimates distinct.
+
 - D2 does not overload this parameter or remove legitimate local month/as-of selection in #552 Goals, #553 Tax/IIS, #556 Scenario Lab or #569 risk detail. Those task contracts remain unchanged.
 
 

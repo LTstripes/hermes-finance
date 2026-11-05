@@ -215,7 +215,7 @@ def _payout_links(documents, money_by_document, report):
 def _native(document, payload, *, display_names=None):
     root = ET.fromstring(payload.decode("utf-8-sig"))
     nodes = root.findall("m:Trades/m:Report/m:Tablix2/m:Details_Collection/m:Details", NS)
-    trades = [t for t in document["trades"] if t["section"] == "completed"]
+    trades = [dict(t) for t in document["trades"] if t["section"] == "completed"]
     if len(nodes) != len(trades):
         raise MyBrokerError("source_return_native_rows_mismatch")
     names = defaultdict(set)
@@ -236,6 +236,9 @@ def _native(document, payload, *, display_names=None):
             display_names.setdefault(isin, set()).add(value)
 
     for trade, node in zip(trades, nodes):
+        if trade.get("repo_observed"):
+            trade["repo_partner"] = node.get("repo_no")
+            trade["repo_leg"] = node.get("comment")
         if node.get("p_name"):
             names[digest(node.get("p_name"))].add(trade["core"]["isin"])
             display_name(trade["core"]["isin"], node.get("p_name"))
@@ -265,6 +268,61 @@ def _native(document, payload, *, display_names=None):
             except (ValueError, ArithmeticError):
                 pass
     return trades, names, primary, cancellations
+
+
+def _repo_pair_blockers(trades, start, end):
+    """Zero net stock quantity alone never discharges a REPO obligation."""
+    repo = [t for t in trades if t.get("repo_observed")]
+    owners = defaultdict(list)
+    for trade in repo:
+        if len(trade.get("ids", [])) == 1:
+            owners[(trade["core"]["source_account"], trade["ids"][0])].append(trade)
+    blockers = set()
+    for trade in repo:
+        core = trade["core"]
+        own = trade["ids"][0] if len(trade.get("ids", [])) == 1 else None
+        partner = trade.get("repo_partner")
+        peers = owners.get((core["source_account"], partner), [])
+        if (
+            not own
+            or not re.fullmatch(r"B[0-9]{1,127}", own)
+            or len(owners[(core["source_account"], own)]) != 1
+            or len(peers) != 1
+        ):
+            blockers.add("repo_pair_unproven")
+            continue
+        peer = peers[0]
+        if (
+            partner == own
+            or peer.get("repo_partner") != own
+            or {trade.get("repo_leg"), peer.get("repo_leg")} != {"репо ч.1", "репо ч.2"}
+            or any(core[k] != peer["core"][k] for k in ("source_account", "isin", "currency"))
+            or Decimal(core["quantity"]) == 0
+            or Decimal(core["quantity"]) + Decimal(peer["core"]["quantity"]) != 0
+        ):
+            blockers.add("repo_pair_unproven")
+            continue
+        first, second = (trade, peer) if trade["repo_leg"] == "репо ч.1" else (peer, trade)
+        for field in ("settlement_date", "depo_settlement_date"):
+            if (
+                not first.get(field)
+                or not second.get(field)
+                or not (
+                    start
+                    < date.fromisoformat(first[field])
+                    <= date.fromisoformat(second[field])
+                    <= end
+                )
+            ):
+                blockers.add("repo_position_open_at_boundary")
+        if (
+            not start
+            < date.fromisoformat(first["core"]["trade_time"][:10])
+            <= date.fromisoformat(second["core"]["trade_time"][:10])
+            <= end
+        ):
+            blockers.add("repo_position_open_at_boundary")
+    return blockers
 
 
 def _money_trade_token(row):
@@ -412,6 +470,7 @@ def _coverage(reasons):
     categories = ("events", "quantity", "endpoints", "payouts", "costs", "valuation")
     dependencies = {
         "economic_endpoint_unavailable": {"endpoints", "valuation"},
+        "unallocated_instrument_cost": {"events", "costs"},
         "zero_quantity_value_conflict": {"quantity", "endpoints", "valuation"},
         "quantity_bridge_mismatch": {"quantity", "costs"},
         "pdf_xml_position_mismatch": {"quantity", "endpoints", "valuation"},
@@ -564,10 +623,23 @@ def _interval(
         raise MyBrokerError("source_return_filename_native_account_conflict")
     start = date.fromisoformat(document["covered_from"]) - timedelta(days=1)
     end = date.fromisoformat(document["covered_to"])
+    display_names = {}
     if native_evidence is None:
-        trades, names, primary, cancellations = _native(document, payload)
+        trades, names, primary, cancellations = _native(
+            document, payload, display_names=display_names
+        )
     else:
-        trades = [t for t in document["trades"] if t["section"] == "completed"]
+        display_names = native_evidence.get("display_names", {})
+        repo_legs = {row[0]: row[1:] for row in native_evidence.get("repo_legs", [])}
+        trades = [
+            dict(
+                t,
+                repo_partner=repo_legs.get(t["ordinal"], [None, None])[0],
+                repo_leg=repo_legs.get(t["ordinal"], [None, None])[1],
+            )
+            for t in document["trades"]
+            if t["section"] == "completed"
+        ]
         names = {k: set(v) for k, v in native_evidence["names"].items()}
         primary = defaultdict(list)
         for trade in trades:
@@ -577,11 +649,46 @@ def _interval(
             (a, i, date.fromisoformat(d), Decimal(q))
             for a, i, d, q in native_evidence["cancellations"]
         ]
+    repo_blockers = _repo_pair_blockers(trades, start, end)
+    pending_repo_isins = {
+        t["core"]["isin"]
+        for t in document["trades"]
+        if t.get("repo_observed") and t.get("section") != "completed"
+    }
+    if pending_repo_isins:
+        repo_blockers.add("repo_position_open_at_boundary")
+    from hermes_finance.services.source_instrument_events import _account_cost_scope
+    from hermes_finance.services.source_instrument_returns import _attribute
+
+    cost_identities = {
+        isin: {"identifiers": {isin}, "names": set(display_names.get(isin, ()))}
+        for isin in {p["isin"] for p in document["positions"]} | {t["core"]["isin"] for t in trades}
+    }
+
+    def account_cost(row):
+        text = row["operation"] + " " + row["narrative"]
+        return _account_cost_scope(
+            {**row, "amount_kopecks": row["minor"]},
+            row["classification"],
+            _attribute(text, cost_identities),
+        )
+
     qdelta = defaultdict(Decimal)
     repo_quantity = defaultdict(Decimal)
     expected = defaultdict(int)
     repo_groups = set()
     issues = defaultdict(set)
+    repo_owners = Counter(
+        (t["core"]["source_account"], t["ids"][0])
+        for t in trades
+        if t.get("repo_observed") and len(t.get("ids", [])) == 1
+    )
+    for isin in pending_repo_isins:
+        issues[isin].add("repo_position_open_at_boundary")
+    repo_issue_blockers = {
+        isin: _repo_pair_blockers([t for t in trades if t["core"]["isin"] == isin], start, end)
+        for isin in {t["core"]["isin"] for t in trades if t.get("repo_observed")}
+    }
     for t in trades:
         isin = t["core"]["isin"]
         if (
@@ -610,6 +717,12 @@ def _interval(
             _minor(t.get("bank_commission") or "0")
         )
         if t.get("repo_observed"):
+            issues[isin].update(repo_issue_blockers[isin])
+            if len(t.get("ids", [])) == 1 and (
+                repo_owners[(t["core"]["source_account"], t["ids"][0])] > 1
+                or repo_owners[(t["core"]["source_account"], t.get("repo_partner"))] > 1
+            ):
+                issues[isin].add("repo_pair_unproven")
             repo_groups.add(key)
             repo_quantity[isin] += q
     for isin, quantity in repo_quantity.items():
@@ -621,6 +734,7 @@ def _interval(
     )
     events = defaultdict(list)
     only = []
+    unallocated_cost = False
     external = []
     unlinked = []
     redemptions = defaultdict(Decimal)
@@ -634,6 +748,15 @@ def _interval(
         if not start < day <= end:
             raise MyBrokerError("source_return_money_outside_period")
         kind = row["classification"]
+        if kind in {"fee", "tax"} and (
+            amount >= 0
+            or re.search(
+                r"дивиденд|dividend|купон|coupon|сторно|возврат",
+                (row["operation"] + " " + row["narrative"]).casefold(),
+            )
+        ):
+            unlinked.append(row)
+            continue
         isin = None
         event_kind = None
         if row["source_account"] != native_account:
@@ -703,12 +826,16 @@ def _interval(
             if kind == "trade_settlement":
                 unlinked.append(row)
                 continue
+            if not account_cost(row):
+                unallocated_cost = True
             if include_instruments:
                 only.append(
                     {"kind": "account_fee", "amount_kopecks": str(amount), "reference": row["ref"]}
                 )
             continue
         elif kind == "tax":
+            if not account_cost(row):
+                unallocated_cost = True
             if include_instruments:
                 only.append(
                     {"kind": "account_tax", "amount_kopecks": str(amount), "reference": row["ref"]}
@@ -853,7 +980,7 @@ def _interval(
     )
     v0total = _minor(cash[0]["beginning_amount"])
     v1total = _minor(cash[0]["ending_amount"])
-    for isin in sorted(set(positions) | set(qdelta) | set(events) | set(redemptions)):
+    for isin in sorted(set(positions) | set(qdelta) | set(events) | set(redemptions) | set(issues)):
         p = positions.get(isin)
         q0 = q1 = None
         v0 = v1 = None
@@ -865,6 +992,8 @@ def _interval(
         if any(r["classification"] not in {"coupon", "dividend"} for r in unlinked):
             why.add("unresolved_account_cash_attribution")
         why.update(m["reason"] for m in movements if m["isin"] in (None, isin))
+        if unallocated_cost:
+            why.add("unallocated_instrument_cost")
         if p:
             q0 = (
                 Decimal(p["beginning_actual_quantity"])
@@ -990,6 +1119,7 @@ def _interval(
     account_reasons = {code for a, code in report.issues if a == account}
     account_reasons.update(code for a, _, code in report.instrument_issues if a == account)
     account_reasons.update(advisory_reasons)
+    account_reasons.update(repo_blockers)
     if any(q != 0 for q in repo_quantity.values()):
         account_reasons.add("repo_position_open_at_boundary")
     if account not in report.closing:
@@ -1013,6 +1143,9 @@ def _interval(
         **rates["pnl"],
         "status": "partial" if rates["pnl"]["value"] is not None else "unavailable",
     }
+    if repo_blockers:
+        for metric in rates.values():
+            metric.update(value=None, status="unavailable", reason_codes=sorted(account_reasons))
     if movements:
         account_reasons.update(m["reason"] for m in movements)
         known_subtotal["reason_codes"] = sorted(account_reasons)

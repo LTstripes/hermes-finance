@@ -1417,3 +1417,24 @@ def test_close_write_failure_returns_error_and_keeps_draft(tmp_path, monkeypatch
         current = client.get(f"/api/months/{month_id}/close-workflow").json()
         assert current["month"]["status"] == "draft"
         assert "empty_manual_month" in current["readiness"]["reason_codes"]
+
+
+def test_workflow_builds_calendar_once_per_fresh_request(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from hermes_finance.services import payout_calendar
+
+    session, database = session_for(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2030, month=5, snapshot_date=date(2030, 5, 12))
+        session.close()
+        build = Mock(wraps=payout_calendar._merged_payout_calendar)
+        monkeypatch.setattr(payout_calendar, "_merged_payout_calendar", build)
+        with TestClient(create_app(database)) as client:
+            for expected_calls in (1, 2):
+                response = client.get(f"/api/months/{month.id}/close-workflow")
+                assert response.status_code == 200, response.text
+                assert build.call_count == expected_calls
+    finally:
+        session.close()
+        database.engine.dispose()

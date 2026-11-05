@@ -100,6 +100,70 @@ describe("UI v2 reports archive", () => {
     const row = await screen.findByTestId("reports-row-90");
     await waitFor(() => expect(row).toHaveTextContent("2 761 300 ₽"));
     expect(within(row).getByText("Частично: нет снимка счёта")).toBeVisible();
+    expect(within(row).getByText("Итог известных записей")).toBeVisible();
+  });
+
+  it("does not display unconfirmed zeros when snapshots are unavailable", async () => {
+    const { mount, state } = setup();
+    state.composition = {
+      ...state.composition,
+      points: state.composition.points.map((point) =>
+        point.reporting_month_id === 90
+          ? {
+              ...point,
+              portfolio_source_coverage: {
+                status: "unavailable",
+                reason_codes: ["active_account_snapshot_missing"],
+                missing_account_ids: [2],
+              },
+            }
+          : point,
+      ),
+    };
+    mount();
+    const row = await screen.findByTestId("reports-row-90");
+    await waitFor(() => expect(row).toHaveTextContent("Нет снимков капитала"));
+    const cells = within(row).getAllByRole("cell");
+    expect(cells.slice(3, 6).map((cell) => cell.textContent?.trim())).toEqual([
+      "—Нет снимков капитала",
+      "—",
+      "—",
+    ]);
+  });
+
+  it("keeps the missing snapshot reason when the source is also partial", async () => {
+    const { mount, state } = setup();
+    state.composition = {
+      ...state.composition,
+      points: state.composition.points.map((point) =>
+        point.reporting_month_id === 90
+          ? {
+              ...point,
+              portfolio_source_coverage: {
+                status: "unavailable",
+                reason_codes: ["active_account_snapshot_missing"],
+                missing_account_ids: [2],
+                source_account_financial_coverage: {
+                  status: "partial",
+                  reason_codes: [],
+                  account_ids: [2],
+                  intake_count: 1,
+                },
+              },
+            }
+          : point,
+      ),
+    };
+    mount();
+    const row = await screen.findByTestId("reports-row-90");
+    await waitFor(() => expect(row).toHaveTextContent("Нет снимков капитала"));
+    const cells = within(row).getAllByRole("cell");
+    expect(cells.slice(3, 6).map((cell) => cell.textContent?.trim())).toEqual([
+      "—Нет снимков капитала",
+      "—",
+      "—",
+    ]);
+    expect(row).not.toHaveTextContent("Итог известных записей");
   });
 
   it("groups closed reports by year, marks the current report and keeps drafts out of history", async () => {

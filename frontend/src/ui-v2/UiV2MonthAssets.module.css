@@ -123,3 +123,12 @@
     justify-content: flex-start;
   }
 }
+
+/* Let cash columns size to their content, including long monetary amounts. */
+.cashTable {
+  table-layout: auto;
+}
+.cashTable :global(th.num),
+.cashTable :global(td.num) {
+  width: auto;
+}

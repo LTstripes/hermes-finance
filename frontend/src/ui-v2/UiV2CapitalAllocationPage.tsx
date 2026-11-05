@@ -182,7 +182,7 @@ export function Allocation({
                       (ASSET_CLASS_LABELS[item.key] ?? item.label)
                     )}
                   </Td>
-                  <Td data-label="Сумма" numeric>
+                  <Td className={styles.amount} data-label="Сумма" numeric>
                     {money(item.amount)}
                   </Td>
                   <Td data-label="Доля ликвидных активов" numeric>

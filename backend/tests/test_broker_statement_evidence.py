@@ -176,7 +176,13 @@ def add_synthetic_posting(raw, operation, narrative, amount, day="2030-01-20"):
 
 
 def existing_statement(
-    database, *, gift=False, gift_amount="17.23", gift_narrative=None, gift_copies=1
+    database,
+    *,
+    gift=False,
+    gift_amount="17.23",
+    gift_narrative=None,
+    gift_copies=1,
+    fee_narrative="Банка по исполнению расчетов на ФР (МБ и СПБ) за 22.01.2030 (ставка по тарифу 0,02%).",
 ):
     from test_statement_import_mybroker_metadata import metadata_xml
 
@@ -198,7 +204,7 @@ def existing_statement(
     raw = add_synthetic_posting(
         raw,
         "Комиссия",
-        "Банка по исполнению расчетов на ФР (МБ и СПБ) за 22.01.2030 (ставка по тарифу 0,02%).",
+        fee_narrative,
         "-1.25",
         "2030-01-22",
     )

@@ -14,10 +14,18 @@ export type OverallAccount = {
 };
 export type OverallInstrumentAccount = Pick<
   Result,
-  "pnl" | "rate" | "coupons" | "dividends" | "valuation_date" | "account_link"
+  | "pnl"
+  | "rate"
+  | "coupons"
+  | "dividends"
+  | "valuation_date"
+  | "account_link"
+  | "conditional_pnl"
+  | "conditional_rate"
 > & {
   canonical_account_id?: number | null;
   details_loaded: boolean;
+  native_period?: boolean;
   period: Period | null;
   scope: string;
   label: string;

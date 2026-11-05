@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+
+import pytest
 
 from hermes_finance.domain import InstrumentType
 from hermes_finance.market_data.dto import (
@@ -16,7 +19,12 @@ from hermes_finance.market_data.dto import (
 )
 from hermes_finance.market_data.payout import PayoutEventKind, PayoutEventStatus
 from hermes_finance.market_data.payout_protocol import PayoutFetchRequest
-from hermes_finance.market_data.t_invest import _AuthUnavailable
+from hermes_finance.market_data.t_invest import (
+    _AuthUnavailable,
+    _Malformed,
+    _NetworkFailure,
+    _NotFound,
+)
 from hermes_finance.market_data.t_invest_payout import TInvestPayoutProvider
 
 _FIXTURE_PATH = Path(__file__).parent / "fixtures" / "t_invest" / "official_payout_shape.json"
@@ -111,6 +119,77 @@ def _stock_client(dividends: object | None = None) -> _FakeClient:
         InstrumentType.STOCK,
         {"GetDividends": dividends if dividends is not None else stock["GetDividends"]},
     )
+
+
+@pytest.mark.parametrize(
+    "payload,status,received,valid",
+    [
+        ({"dividends": []}, "empty", "0", True),
+        ({}, "empty", "0", True),
+        ({"dividends": {}}, "error", "unknown", False),
+        ({"dividends": None}, "error", "unknown", False),
+        ({"message": "sensitive", "code": 13}, "error", "unknown", False),
+        ({"dividends": ["sensitive"]}, "error", "1", False),
+        (_AuthUnavailable(), "error", "unknown", False),
+        (_Malformed("sensitive"), "error", "unknown", False),
+        (_NotFound(), "error", "unknown", False),
+        (_NetworkFailure("sensitive"), "error", "unknown", False),
+    ],
+)
+def test_payout_summary_distinguishes_empty_errors_and_unknown_counts(
+    payload, status, received, valid, caplog
+):
+    client = _stock_client(payload)
+    caplog.set_level(logging.INFO, logger="hermes_finance.market_data.t_invest_payout")
+    result = TInvestPayoutProvider(client).fetch_payouts(
+        PayoutFetchRequest(
+            instrument_uid=_STOCK_UID,
+            calendar_from=date(2026, 7, 1),
+            calendar_to=date(2026, 7, 31),
+        )
+    )
+    (record,) = caplog.records
+    assert record.getMessage() == (
+        "T-Invest payouts: method=GetDividends from=2026-05-02 to=2026-09-29 "
+        "calendar_from=2026-07-01 calendar_to=2026-07-31 "
+        f"status={status} received={received} processed=0 returned=0 failures={0 if valid else 1}"
+    )
+    assert result.coverage[0].structurally_valid == valid
+    assert bool(result.failures) != valid
+    assert not result.events
+    assert _STOCK_UID not in caplog.text and "sensitive" not in caplog.text
+    assert record.exc_info is None
+
+
+def test_payout_summary_counts_parsed_and_calendar_filtered_rows(caplog):
+    client = _stock_client()
+    caplog.set_level(logging.INFO, logger="hermes_finance.market_data.t_invest_payout")
+    result = TInvestPayoutProvider(client).fetch_payouts(
+        PayoutFetchRequest(
+            instrument_uid=_STOCK_UID,
+            calendar_from=date(2040, 1, 1),
+            calendar_to=date(2040, 1, 31),
+        )
+    )
+    rows = len(client.payloads["GetDividends"]["dividends"])
+    assert not result.events and not result.failures
+    assert f"status=ok received={rows} processed={rows} returned=0 failures=0" in caplog.text
+
+
+def test_discovery_error_has_sanitized_final_summary(caplog, monkeypatch):
+    client = _stock_client()
+    monkeypatch.setattr(
+        client, "discover_candidates", lambda **_: DiscoverResult(status=QuoteStatus.NETWORK_ERROR)
+    )
+    caplog.set_level(logging.WARNING, logger="hermes_finance.market_data.t_invest_payout")
+    result = TInvestPayoutProvider(client).fetch_payouts(
+        PayoutFetchRequest(
+            instrument_uid=_STOCK_UID, calendar_from=date(2030, 1, 1), calendar_to=date(2030, 2, 1)
+        )
+    )
+    assert result.failures and not client.calls
+    assert "method=discovery" in caplog.text and "status=discovery_failed" in caplog.text
+    assert _STOCK_UID not in caplog.text
 
 
 def test_bond_fixture_maps_coupon_and_mty_without_cpn_double_import() -> None:

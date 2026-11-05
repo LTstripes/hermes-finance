@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ApiClientError, formatApiError } from "../../api/client";
 import { type MonthCloseWorkflow, useMonthCloseWorkflow } from "../../api/monthCloseWorkflow";
-import { closeMonth, reopenMonth } from "../../api/months";
+import { closeMonth, getMonth, reopenMonth } from "../../api/months";
 import type { ReportingMonth, ReportingMonthStatus } from "../../api/types";
 import { queryKeys } from "../../queryClient";
 
@@ -61,8 +61,9 @@ function assertPersistedMonthIdentity(
 
 /**
  * Non-optimistic lifecycle for the Month workspace.
- * The server workflow stays authoritative: refetch before the dialog, refetch
- * again before the command, verify persisted status, invalidate, then refetch.
+ * Refresh the authoritative review before the dialog and check the month's
+ * identity/status before the command; POST revalidates financial guards
+ * under its writer reservation. Verify persisted status, invalidate, then refetch.
  */
 export function useMonthCloseLifecycle(
   monthId: number | null,
@@ -183,17 +184,31 @@ export function useMonthCloseLifecycle(
     protocolError.current = null;
     let acknowledged = false;
     try {
-      const latest = await refetchAuthoritativeWorkflow();
-      if (pendingLifecycle === "close" && !closeIsAllowed(latest)) {
+      // The full final review was read before the dialog. Rebuilding it here
+      // repeats advisory calculations; the writer must recheck hard guards anyway.
+      const latest = await getMonth(monthId);
+      if (currentIdentity.current !== identityKey) {
+        throw new Error("Выбранный месяц изменился. Действие отменено.");
+      }
+      assertLifecycleWorkflowIdentity(
+        queryClient.getQueryData<MonthCloseWorkflow>(queryKeys.monthCloseWorkflow(monthId)) ??
+          workflowQuery.data,
+        monthId,
+        expectedPeriod,
+      );
+      assertPersistedMonthIdentity(latest, monthId, latest.status, expectedPeriod);
+      if (pendingLifecycle === "close" && latest.status !== "draft") {
+        await refetchAuthoritativeWorkflow();
         setPendingLifecycle(null);
         setLifecycleError(
-          latest.month.status === "closed"
+          latest.status === "closed"
             ? "Месяц уже закрыт в другой вкладке. Состояние обновлено."
             : "Состояние месяца изменилось. Обнови данные и повтори действие.",
         );
         return;
       }
-      if (pendingLifecycle === "reopen" && latest.month.status !== "closed") {
+      if (pendingLifecycle === "reopen" && latest.status !== "closed") {
+        await refetchAuthoritativeWorkflow();
         setPendingLifecycle(null);
         setLifecycleError("Месяц уже открыт для редактирования. Состояние обновлено.");
         return;
@@ -212,12 +227,10 @@ export function useMonthCloseLifecycle(
         throw error;
       }
 
-      await queryClient.invalidateQueries({ queryKey: queryKeys.months });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(monthId) });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.monthCloseWorkflow(monthId),
-        refetchType: "none",
-      });
+      await queryClient.invalidateQueries({ refetchType: "none" });
+      // Refresh the month list in parallel with authoritative readback.
+      // Unrelated summaries must not hold up the Close result.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.months });
       const refreshed = await refetchAuthoritativeWorkflow();
       if (refreshed.month.status !== expectedStatus) {
         throw new Error("Актуальное состояние месяца не совпало с полученными данными.");
