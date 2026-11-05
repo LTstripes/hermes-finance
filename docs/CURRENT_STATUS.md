@@ -1,12 +1,39 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-04**. This is the sole changing project status book. Current source
+Updated **2026-11-05**. This is the sole changing project status book. Current source
 behavior is specified by [P](MASTER_SPEC.md), numeric/data authority by
 [C](ARCHITECTURE_AND_CONTRACTS.md), integration by [D](DEVELOPMENT.md), and
 runtime/recovery by [O](OWNER_RUNTIME_OPERATIONS.md). Historical PR comments
 are evidence for their dated stage, not a newer installation status.
 
 ## Current checkpoint
+
+**Owner release decision, 5 November:** after being told that the fresh-copy
+check had not been performed and the new X5 screen/real Close timing were
+unverified, the Owner explicitly directed: “Релизь так, не тратть время”.
+The Owner waived that additional UAT for 1.10.5; UAT is not recorded as PASS.
+This is release authorization subject to the unchanged code-review, exact-head
+CI, exact-main push-CI and publication guards, not permission for financial
+Apply/Close or access changes.
+
+The common #1083 head `f25e4d2de221d93fea2ea5d1201de63c5bcc62b1` retains
+its independent code GO and successful CI/UI evidence linked below. Metadata
+head `e310782140783560029b6244df264134b9b96588` also has successful
+[CI](https://github.com/LTstripes/hermes-finance/actions/runs/41910695790)
+and [UI evidence](https://github.com/LTstripes/hermes-finance/actions/runs/41910695737).
+The final #1084 successor changes only this decision record and publication
+notes; its exact review/CI must be verified before guarded canonical integration.
+Release guards and financial code are unchanged. Publication and installation
+are not claimed by this preparation record.
+
+Stable installation is authorized only if the Owner laptop is connected and
+accessible, with verified backup, supported update/preparation, separate Start,
+and health/binding/data-continuity readback. A failure stops the owned runtime
+and preserves the database and backup without an automatic overwrite. No
+production or Preview copy has been obtained here. PR approval still requires
+separate explicit confirmation at the action and is not performed.
+
+### Retained 1.10.5 metadata preparation (4 November, historical)
 
 **1.10.5 metadata preparation, 4 November:** the common candidate in
 [#1083](https://github.com/LTstripes/hermes-finance/pull/1083),
