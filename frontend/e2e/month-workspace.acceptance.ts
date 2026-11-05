@@ -420,7 +420,15 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
     await page.getByRole("button", { name: "Проверить изменения", exact: true }).click();
     const apply = page.getByRole("button", { name: "Сохранить данные месяца", exact: true });
     await expect(apply).toBeEnabled();
+    // The UI assertion measures independent readback, not the Apply round trip.
+    // Arm before clicking so even an immediate ACK cannot be missed.
+    const applied = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/broker-months/apply" &&
+        response.request().method() === "POST",
+    );
     await apply.click();
+    expect((await applied).ok()).toBe(true);
     await expect(
       page.getByText(/Сохранённый результат подтверждён независимым чтением/),
     ).toBeVisible();
