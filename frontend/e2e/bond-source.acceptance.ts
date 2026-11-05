@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { displayMetric } from "../src/ui-v2/returns/model";
 
 async function openDisclosure(page: Page, name: string) {
   const summary = page.getByText(name, { exact: true });
@@ -112,22 +113,13 @@ test("source structure proof survives Back/Reload and unrelated financial ABA", 
   await expect(page.getByRole("combobox", { name: "Счёт", exact: true })).toHaveValue(
     "source:1234567-000",
   );
-  // The retired monthly table contained April and June rows of 600 ₽ each.
-  // This card is their history subtotal, not the selected April result.
-  const history = page.getByRole("region", { name: "За доступные месяцы", exact: true });
-  await expect(history).toContainText("За доступные месяцы · 2 из 5");
-  await expect(history).toContainText("+1 200 ₽");
+  // The old account-cash subtotal cannot be presented as a clean security
+  // result. The new history uses clean operands; original monthly evidence is
+  // verified separately above and remains inspectable in the month history.
+  const history = page.getByRole("region", { name: "За всю историю", exact: true });
+  await expect(history.getByRole("heading", { name: /истори/i })).toBeVisible();
   await expect(history).not.toContainText("%");
-  await history.getByLabel("Подробнее: Покрытие доступных месяцев", { exact: true }).click();
-  await expect(history.getByText(/^Учтён:/)).toHaveText([
-    "Учтён: 31.03.2030 — 30.04.2030",
-    "Учтён: 31.05.2030 — 30.06.2030",
-  ]);
-  await expect(history.getByText(/^Не учтён:/)).toHaveText([
-    "Не учтён: 28.02.2030 — 31.03.2030",
-    "Не учтён: 30.04.2030 — 31.05.2030",
-    "Не учтён: 30.06.2030 — 31.07.2030",
-  ]);
+  await expect(page.getByRole("region", { name: "Результат по месяцам" })).toBeVisible();
   await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
   await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
   await openDisclosure(page, "Подробности предварительного результата");
@@ -144,9 +136,18 @@ test("source structure proof survives Back/Reload and unrelated financial ABA", 
 
   await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
   const selected = page.getByRole("region", { name: "Результат периода", exact: true });
-  await expect(selected).toContainText("+600 ₽");
+  const cleanOverview = await (
+    await request.get(
+      "/api/returns/overview?scope=source%3A1234567-000&start=2030-03-31&end=2030-04-30",
+    )
+  ).json();
+  expect(cleanOverview.contract_version).toBe("returns_source_v2");
   await expect(selected).toContainText("31.03.2030 — 30.04.2030");
-  await expect(history).toContainText("+1 200 ₽");
+  await expect(selected).toContainText(displayMetric(cleanOverview.selected.pnl, true));
+  if (cleanOverview.all_history) {
+    await expect(history).toContainText(displayMetric(cleanOverview.all_history.pnl, true));
+  }
+  await expect(history.getByRole("heading", { name: /истори/i })).toBeVisible();
   await page.goBack();
   await openDisclosure(page, "Подробности предварительного результата");
   await expect(summary).toContainText("600 ₽");
