@@ -3,16 +3,14 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
 import { money } from "../SourceInstrumentDetail";
-import { instrumentBreakdown } from "./breakdown";
 import { cardOperations, cardQuantityStatus, hasAmount, nonzeroAmount } from "./cardPresentation";
-import { getInstrumentCard } from "./cards";
+import { cleanMetric, getInstrumentCard } from "./cards";
 import styles from "./InstrumentCard.module.css";
 import resultStyles from "./InstrumentResult.module.css";
 import { dateLabel, displayMetric } from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
-import { ReturnsBreakdown } from "./ReturnsBreakdown";
 import { Explanation, visibleReturnReasons } from "./ReturnsInfo";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
@@ -58,8 +56,10 @@ export function ReturnsInstrumentCard({
           ]),
         ]),
       }))
-      .filter(({ account, codes }) => !account.included || !account.detail || codes.length > 0) ??
-    [];
+      .filter(
+        ({ account, codes }) =>
+          !account.clean && (!account.included || !account.detail || codes.length > 0),
+      ) ?? [];
   const id = canonicalId(capitalAccount);
   const matches =
     data?.accounts.filter((account) => id !== null && account.canonical_account_id === id) ?? [];
@@ -171,7 +171,25 @@ export function ReturnsInstrumentCard({
               что позиция полностью продана.
             </p>
           )}
-          <ReturnsBreakdown value={instrumentBreakdown(data)} total={data.summary.pnl} />
+          <section className={styles.panel} aria-label="Разложение результата">
+            <h2>Из чего сложился результат</h2>
+            <p>Показаны известные составляющие; комиссии, налоги и НКД не входят в расчёт.</p>
+            {(
+              [
+                ["Цена и сделки", data.summary.valuation_and_trades],
+                ["Купоны", data.summary.coupons],
+                ["Дивиденды", data.summary.dividends],
+                ["Погашение", data.summary.redemption],
+                ["Известный результат", data.summary.pnl],
+              ] as const
+            )
+              .filter(([, value]) => value.value !== null)
+              .map(([label, value]) => (
+                <p key={label}>
+                  {label}: {displayMetric(value, true)}
+                </p>
+              ))}
+          </section>
           {!!data.accounts.length && (
             <section className={styles.panel} aria-label="Позиции и результат по счетам">
               <h2>По счетам</h2>
@@ -203,27 +221,48 @@ export function ReturnsInstrumentCard({
                           />
                           {!account.included && <small>Не включён в общий результат</small>}
                         </td>
-                        {account.detail ? (
+                        {account.clean ? (
                           <>
                             <td>
-                              {account.detail.closing_quantity !== null && (
+                              {account.detail?.closing_quantity != null && (
                                 <span>{formatQuantity(account.detail.closing_quantity)} шт.</span>
                               )}
-                              {account.detail.analysis.closing.reported_value_kopecks !== null && (
-                                <small>
-                                  {money(account.detail.analysis.closing.reported_value_kopecks)}
-                                </small>
+                              {account.clean.closing_value.value !== null && (
+                                <small>{money(account.clean.closing_value.value)}</small>
                               )}
                             </td>
                             <td colSpan={2}>
                               <ReturnsInstrumentResult
-                                result={account.detail}
-                                analysis={account.detail.analysis}
-                                reasonCodes={[
-                                  ...account.reason_codes,
-                                  ...account.detail.reason_codes,
-                                ]}
+                                result={{
+                                  pnl: cleanMetric(
+                                    account.clean.pnl.value !== null
+                                      ? account.clean.pnl
+                                      : account.clean.known_result,
+                                  ),
+                                  rate: cleanMetric(account.clean.modified_dietz, true),
+                                }}
+                                reasonCodes={account.reason_codes}
                               />
+                              <details>
+                                <summary>Известные составляющие</summary>
+                                {(
+                                  [
+                                    ["Покупки", account.clean.buys],
+                                    ["Продажи", account.clean.sells],
+                                    ["Купоны", account.clean.coupons],
+                                    ["Дивиденды", account.clean.dividends],
+                                    ["Погашение", account.clean.redemption],
+                                  ] as const
+                                )
+                                  .filter(([, part]) => part.value !== null)
+                                  .map(([label, part]) => (
+                                    <p key={label}>
+                                      {label}
+                                      {part.status === "partial" ? " · известная часть" : ""}:{" "}
+                                      {displayMetric(cleanMetric(part))}
+                                    </p>
+                                  ))}
+                              </details>
                             </td>
                           </>
                         ) : (
@@ -239,11 +278,7 @@ export function ReturnsInstrumentCard({
                   </tbody>
                 </table>
               </div>
-              {data.accounts.some(
-                (account) =>
-                  account.detail?.rate.value !== null &&
-                  account.detail?.rate.method === "modified_dietz",
-              ) && (
+              {data.accounts.some((account) => account.clean?.modified_dietz.value != null) && (
                 <details className={styles.details}>
                   <summary>Как читать процент</summary>
                   <p>

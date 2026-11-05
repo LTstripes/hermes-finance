@@ -491,7 +491,7 @@ def test_explicit_http_summary_matches_existing_producer_without_cards_or_xirr(d
     app.dependency_overrides[session_for_request] = session
     before = snapshot(db)
     with TestClient(app) as client:
-        response = client.get("/api/returns/overall?include_instrument_summaries=true")
+        response = client.get("/api/returns/overall?include_instrument_summaries=true&basis=legacy")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     value = Overall.model_validate(response.json())
@@ -533,9 +533,9 @@ def test_http_default_keeps_index_projection(db, monkeypatch, query):
 
     def read_projection(session, **kwargs):
         calls.append(kwargs)
-        return overall.read_overall(session, **kwargs)
+        return overall.read_clean_overall(session, **kwargs)
 
-    monkeypatch.setattr("hermes_finance.api.returns_overall.read_overall", read_projection)
+    monkeypatch.setattr("hermes_finance.api.returns_overall.read_clean_overall", read_projection)
 
     def session():
         with db.session_factory() as value:

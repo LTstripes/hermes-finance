@@ -513,11 +513,19 @@ export default function UiV2ReturnsAccountPage() {
                   </>
                 ) : (
                   <>
-                    <h2>Результат периода</h2>
+                    <h2>
+                      {data.contract_version === "returns_capital_v1"
+                        ? "Изменение капитала за период"
+                        : data.selected.pnl.reason_codes.includes("clean_partial_result")
+                          ? "Известная часть за период"
+                          : "Результат периода"}
+                    </h2>
                     <div className={styles.mainValue}>
                       <Value metric={data.selected.pnl} label="Результат периода" signed />
                     </div>
-                    <Value metric={data.selected.rate} label="Доходность периода" />
+                    {data.contract_version !== "returns_capital_v1" && (
+                      <Value metric={data.selected.rate} label="Доходность периода" />
+                    )}
                   </>
                 )}
                 <ReturnsResultMeta
@@ -534,7 +542,13 @@ export default function UiV2ReturnsAccountPage() {
                   <ReturnsAvailable value={data.available_months_total} />
                 ) : (
                   <>
-                    <h2>За всю историю</h2>
+                    <h2>
+                      {data.contract_version === "returns_capital_v1"
+                        ? "Изменение капитала за историю"
+                        : data.all_history?.pnl.reason_codes.includes("clean_partial_result")
+                          ? "Известная часть за историю"
+                          : "За всю историю"}
+                    </h2>
                     <div className={styles.mainValue}>
                       <Value
                         metric={data.all_history?.pnl ?? unavailable}
@@ -576,7 +590,14 @@ export default function UiV2ReturnsAccountPage() {
             )}
             <ReturnsHistory
               key={`${scope}/${periodKey(period)}`}
-              rows={data.history}
+              rows={
+                data.contract_version === "returns_capital_v1"
+                  ? data.history.map((row) => ({
+                      ...row,
+                      rate: { ...unavailable, unit: "fraction" },
+                    }))
+                  : data.history
+              }
               selected={period}
               choose={choose}
             />
@@ -616,7 +637,9 @@ export default function UiV2ReturnsAccountPage() {
               причины недоступности указаны у каждой метрики и в истории.
             </p>
             {data?.proof_status === "stale" && (
-              <p>Подтверждение выписок устарело. Зависимые значения требуют повторной проверки.</p>
+              <p>
+                Ранее сохранённая проверка устарела; доступные данные источников показаны отдельно.
+              </p>
             )}
             {diagnosticsLoaded && (
               <Suspense fallback={<p>Загружаем подробности…</p>}>

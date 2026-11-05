@@ -120,19 +120,21 @@ test("sorts and displays a native instrument period despite stale account proof"
   const rows = within(section).getAllByRole("row");
   expect(rows[1]).toHaveTextContent("Бумага 5");
   expect(rows[1]).toHaveTextContent("−9 ₽");
-  expect(rows[1]).not.toHaveTextContent("Нужна проверка данных");
+  expect(rows[1]).not.toHaveTextContent("Нет доступного результата");
   fireEvent.click(within(rows[1]).getByText(/Учебный счёт А ·/));
   expect(within(rows[1]).getByText(/30\.04\.2030 — 31\.10\.2030/)).toBeVisible();
-  expect(rows[2]).toHaveTextContent("Нужна проверка данных");
+  expect(rows[2]).toHaveTextContent("Нет доступного результата");
 });
 
-test("default shows exact brokerage subtotal, supported graph/list, excludes deposits and lazy detail calls", async () => {
+test("different account periods stay separate and preserve the instrument list", async () => {
   const calls = install();
   setup();
-  const total = await screen.findByRole("region", { name: "Результат" });
-  expect(total).toHaveTextContent("+8 ₽");
+  await screen.findByRole("table");
+  expect(screen.queryByRole("region", { name: "Результат" })).toBeNull();
   expect(screen.getByRole("combobox", { name: "Счета" })).toHaveValue("all");
-  expect(screen.getByRole("region", { name: "Вклад инструментов" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "Вклад инструментов" })).toHaveTextContent(
+    "Проданная облигация",
+  );
   expect(screen.getByRole("table")).toHaveTextContent("Проданная облигация");
   expect(screen.queryByRole("region", { name: "Депозиты" })).toBeNull();
   expect(screen.queryByText("Счета и периоды")).toBeNull();
@@ -140,18 +142,18 @@ test("default shows exact brokerage subtotal, supported graph/list, excludes dep
   expect(calls).toEqual(["/api/returns/overall?include_instrument_summaries=true"]);
   expect(screen.queryByRole("region", { name: "Доходность периода" })).toBeNull();
 });
-test("one account selection uses its own period and rate without averaging siblings", async () => {
-  const calls = install();
+test("one account selection keeps its own period without inventing an aggregate rate", async () => {
+  const data = overallFixture();
+  if (!data.source_accounts[1].result) throw new Error("missing synthetic account");
+  data.source_accounts[1].result.rate.value = null;
+  const calls = install(data);
   setup();
-  await screen.findByRole("region", { name: "Результат" });
+  await screen.findByRole("table");
   fireEvent.change(screen.getByRole("combobox", { name: "Счета" }), {
     target: { value: "source:SYNTH-B" },
   });
   expect(screen.getByRole("region", { name: "Результат" })).toHaveTextContent("−4 ₽");
-  expect(screen.getByRole("region", { name: "Доходность периода" })).toHaveTextContent("−4,00%");
-  expect(screen.getByRole("region", { name: "Доходность периода" })).toHaveTextContent(
-    "31.03.2030 — 30.04.2030",
-  );
+  expect(screen.queryByRole("region", { name: "Доходность периода" })).toBeNull();
   expect(calls).toHaveLength(1);
 });
 test("exact native account eligibility excludes conflicts, keeps source provisional numbers and known zero", async () => {
@@ -166,7 +168,7 @@ test("exact native account eligibility excludes conflicts, keeps source provisio
   setup();
   const total = await screen.findByRole("region", { name: "Результат" });
   expect(total).toHaveTextContent("0 ₽");
-  expect(screen.getByText(/Часть истории не подтверждена/)).toBeVisible();
+  expect(screen.getByText(/Показаны известные составляющие/)).toBeVisible();
   const table = screen.getByRole("table");
   expect(table).toHaveTextContent("+12 ₽");
   expect(table).not.toHaveTextContent("−4 ₽");
@@ -184,7 +186,7 @@ test("no eligible operand remains unknown rather than zero and is not replaced b
   setup();
   await screen.findByRole("combobox", { name: "Счета" });
   expect(screen.queryByRole("region", { name: "Результат" })).toBeNull();
-  expect(screen.getAllByText("Нужно заново подтвердить выписки")).toHaveLength(2);
+  expect(screen.getAllByText("Пока нет результата по сохранённым данным")).toHaveLength(2);
 });
 test("ambiguous or unknown account URL never silently chooses a numeric scope", async () => {
   install();
@@ -197,7 +199,7 @@ test("refresh hides previous financial values and error never retains stale tota
   let reject = false;
   install(overallFixture(), () => (reject ? Promise.resolve(response({}, 503)) : undefined));
   setup();
-  await screen.findByRole("region", { name: "Результат" });
+  await screen.findByRole("table");
   reject = true;
   fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
   await screen.findByRole("alert");
@@ -296,7 +298,7 @@ test("dirty gold form blocks instrument navigation and survives summary refresh"
   expect(screen.queryByRole("heading", { name: "Отдельная карточка" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /^Остаться$/ }));
   fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
-  await screen.findByRole("region", { name: "Результат" });
+  await screen.findByRole("table");
   expect(screen.getByLabelText("Заявленное количество на конец истории, г")).toHaveValue("3.25");
 });
 
@@ -314,11 +316,11 @@ test("instrument results retain each account's money, rate and own dates, includ
   const row = within(table).getByRole("row", { name: /Учебная акция/ });
   const a = within(row).getByRole("region", { name: "Учебный счёт А" });
   const b = within(row).getByRole("region", { name: "Учебный счёт Б" });
-  expect(within(a).getByText(/Нужна проверка данных/)).not.toBeVisible();
+  expect(within(a).getByText(/Не все показатели доступны/)).not.toBeVisible();
   fireEvent.click(within(a).getByText(/Учебный счёт А ·/));
   fireEvent.click(within(b).getByText(/Учебный счёт Б ·/));
   expect(a).toHaveTextContent("0 ₽");
-  expect(a).toHaveTextContent("Нужна проверка данных");
+  expect(a).toHaveTextContent("Не все показатели доступны");
   expect(a).toHaveTextContent("30.04.2030 — 31.05.2030");
   expect(b).toHaveTextContent("−4 ₽");
   expect(b).toHaveTextContent("−4,00%");

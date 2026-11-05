@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { getIncome, type IncomeKind } from "./cards";
 import { dateLabel, displayMetric } from "./model";
-import { knownMoney, readDisplayNames } from "./dashboard";
+import { readDisplayNames } from "./dashboard";
 import type { CouponIncome } from "./overall";
 import styles from "./Returns.module.css";
 import layout from "./Dashboard.module.css";
@@ -38,10 +38,15 @@ function Breakdown({
   const names = readDisplayNames();
   const included = (s: string) => !scopes || scopes.includes(s);
   const rows = data.instruments
-    .map((r) => ({
-      ...r,
-      amount: knownMoney(r.accounts.filter((a) => included(a.scope)).map((a) => a.amount)),
-    }))
+    .flatMap((r) =>
+      r.accounts
+        .filter((account) => included(account.scope))
+        .map((account) => ({
+          ...r,
+          amount: account.amount,
+          account,
+        })),
+    )
     .filter((r) => r.amount.value !== null && r.amount.value !== "0");
   const unresolved = data.events.filter((e) => included(e.scope) && !e.isin);
   return (
@@ -57,16 +62,21 @@ function Breakdown({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.isin}>
+                <tr key={`${row.isin}:${row.account.scope}`}>
                   <th>
                     <button type="button" onClick={() => openInstrument?.(row.isin)}>
                       {row.name}
                     </button>
+                    <small>
+                      {names[row.account.scope] || row.account.label}
+                      {row.account.period &&
+                        ` · ${dateLabel(row.account.period.start)} — ${dateLabel(row.account.period.end)}`}
+                    </small>
                     <details>
                       <summary>Показать выплаты</summary>
                       <ul>
                         {data.events
-                          .filter((e) => e.isin === row.isin && included(e.scope))
+                          .filter((e) => e.isin === row.isin && e.scope === row.account.scope)
                           .map((event, index) => (
                             // biome-ignore lint/suspicious/noArrayIndexKey: No public event ID; preserve distinct identical-looking source occurrences.
                             <li key={`${event.scope}/${event.date}/${index}`}>

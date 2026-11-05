@@ -51,13 +51,13 @@ test("preserves exact large money and negative period rate from the server", () 
   expect(screen.getByText("+9 007 199 254 740 993,12 ₽")).toBeVisible();
   expect(screen.getByText("−3,13%")).toBeVisible();
   expect(screen.getByText("Modified Dietz · за период, не годовая")).toBeVisible();
-  expect(screen.queryByText("Нужна проверка данных")).toBeNull();
+  expect(screen.queryByText("Не все показатели доступны")).toBeNull();
 });
 test("known zero remains numeric while a missing percentage has a visible explanation", () => {
   setup({ result: { pnl: m("0"), rate: m(null, "fraction", "modified_dietz") } });
   expect(screen.getByText("0 ₽")).toBeVisible();
   expect(screen.getByText("—")).toBeVisible();
-  expect(screen.getByText("Нужна проверка данных")).toBeVisible();
+  expect(screen.getByText("Не все показатели доступны")).toBeVisible();
   expect(screen.getByText(/^Причины:/)).toHaveTextContent(
     "Не хватает стоимости на границе периода",
   );
@@ -104,7 +104,7 @@ test("assumptions on analysis, metrics and events remain visible and deduplicate
 test("absent result shows two unavailable values and a review status", () => {
   const { container } = setup({ result: null });
   expect(within(container).getAllByText("—")).toHaveLength(2);
-  expect(screen.getByText("Нужна проверка данных")).toBeVisible();
+  expect(screen.getByText("Не все показатели доступны")).toBeVisible();
   expect(screen.queryByText("0 ₽")).toBeNull();
 });
 

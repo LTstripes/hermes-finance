@@ -123,6 +123,13 @@ export function goldPreviewFixture(intent = goldIntentFixture()): GoldPreview {
     declaration: history.declaration,
     valuation: history.valuation,
     result: history.result,
+    clean_result: {
+      value: "100000",
+      reason_codes: [],
+      method: "clean_gold_history",
+      unit: "kopecks",
+      estimate: false,
+    },
     confirmation_digest: "a".repeat(64),
     can_apply: true,
   };

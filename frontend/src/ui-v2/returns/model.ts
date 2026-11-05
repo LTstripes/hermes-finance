@@ -5,6 +5,7 @@ import { formatMoney, formatMoneyDelta } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { formatSourceReturnRate } from "../../lib/sourceReturnFormat";
 import type { ReturnBreakdown } from "./breakdown";
+import type { CleanInstrument } from "./cards";
 
 export type Period = ReturnPeriod;
 export type Metric = {
@@ -65,6 +66,7 @@ export type AcceptedIncome = AcceptedIncomeAmounts & {
   })[];
 };
 export type Overview = {
+  contract_version?: "returns_source_v2" | "returns_capital_v1";
   account_link?: AccountLink | null;
   scope: string;
   breakdown?: ReturnBreakdown | null;
@@ -90,6 +92,8 @@ export type AvailableMonths = {
   total_months: number;
 };
 export type Detail = Instrument & {
+  contract_version?: "returns_source_detail_v2";
+  clean?: CleanInstrument | null;
   analysis: InstrumentAnalysis<string>;
   scope: string;
   opening_quantity: string | null;
@@ -192,6 +196,7 @@ export async function getOverview(scope: string, period: Period, signal: AbortSi
   });
   if (
     value.scope !== scope ||
+    (scope.startsWith("source:") && value.contract_version !== "returns_source_v2") ||
     !samePeriod(value.selected.period, period) ||
     value.instruments.some((r) => !samePeriod(r.period, period))
   )
@@ -202,7 +207,12 @@ export async function getDetail(scope: string, period: Period, isin: string, sig
   const params = query(scope, period);
   params.set("isin", isin);
   const value = await apiRequest<Detail>(`/api/returns/instrument?${params}`, { signal });
-  if (!detailMatchesContext(value, scope, period, isin)) throw new Error("Return context mismatch");
+  if (
+    value.contract_version !== "returns_source_detail_v2" ||
+    !value.clean ||
+    !detailMatchesContext(value, scope, period, isin)
+  )
+    throw new Error("Return context mismatch");
   return value;
 }
 
@@ -215,6 +225,11 @@ export function detailMatchesContext(value: Detail, scope: string, period: Perio
     value.analysis.opening_date === period.start &&
     value.analysis.closing_date === period.end &&
     value.analysis.opening.date === period.start &&
-    value.analysis.closing.date === period.end
+    value.analysis.closing.date === period.end &&
+    (value.contract_version !== "returns_source_detail_v2" ||
+      (!!value.clean &&
+        value.clean.isin === isin &&
+        value.clean.opening_date === period.start &&
+        value.clean.closing_date === period.end))
   );
 }

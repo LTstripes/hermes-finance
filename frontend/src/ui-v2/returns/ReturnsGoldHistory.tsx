@@ -24,6 +24,7 @@ import {
   previewGoldHistory,
 } from "./goldHistory";
 import styles from "./InstrumentCard.module.css";
+import type { Metric } from "./model";
 
 const event = (): GoldEventInput => ({
   event_id: `g_${crypto.randomUUID().replaceAll("-", "")}`,
@@ -84,15 +85,27 @@ function canonical(value: unknown): string {
       .join(",")}}`;
   return JSON.stringify(value) ?? "undefined";
 }
-function Result({ value, valuation }: { value: GoldResult; valuation: GoldValuation | null }) {
+function Result({
+  value,
+  valuation,
+  clean,
+}: {
+  value: GoldResult;
+  valuation: GoldValuation | null;
+  clean?: Metric | null;
+}) {
   const limitations = [
-    ...new Set(value.reason_codes.map((code) => reasonCopy(code, { surface: "gold" }).message)),
+    ...new Set(
+      (
+        clean?.reason_codes ??
+        value.reason_codes.filter((code) => code !== "gold_separate_fees_unknown")
+      ).map((code) => reasonCopy(code, { surface: "gold" }).message),
+    ),
   ];
   const facts = [
-    ["Общий результат", value.total_result_kopecks],
-    ["От продажи", value.realized_result_kopecks],
-    ["Изменение стоимости остатка", value.unrealized_result_kopecks],
-    ["Стоимость оставшегося золота при покупке", value.remaining_cost_kopecks],
+    ["Результат", clean?.value ?? null],
+    ["Покупки", value.buy_amount_kopecks],
+    ["Продажи", value.sale_amount_kopecks],
   ] as const;
   return (
     <div>
@@ -108,7 +121,7 @@ function Result({ value, valuation }: { value: GoldResult; valuation: GoldValuat
             ))}
         </dl>
       )}
-      {value.total_result_kopecks === null && (
+      {clean?.value == null && (
         <p className={styles.notice}>
           Общий результат пока не подтверждён.{" "}
           {limitations.join(" ") || "Проверьте историю и оценку остатка."} Известные части показаны
@@ -131,18 +144,16 @@ function Result({ value, valuation }: { value: GoldResult; valuation: GoldValuat
         {!!value.reason_codes.length && <code>{value.reason_codes.join(", ")}</code>}
         <p>
           История с {value.period.covered_from} по {value.period.covered_to ?? value.as_of_date}.
-          Налоги не предоставлены.{" "}
+          Комиссии и налоги не входят в результат.{" "}
           {value.amount_basis === "derived"
             ? "Суммы операций выведены из цены за грамм."
             : "Использованы фактические суммы операций."}
         </p>
         {value.separate_fees_kopecks !== null && (
-          <p>Отдельные комиссии: {money(value.separate_fees_kopecks)}; учтены один раз.</p>
+          <p>Отдельные комиссии в источнике: {money(value.separate_fees_kopecks)}.</p>
         )}
         {!valuation && <p>Сохранённая оценка остатка не подтверждена.</p>}
-        {value.total_result_kopecks !== null && !!limitations.length && (
-          <p>{limitations.join(" ")}</p>
-        )}
+        {clean?.value != null && !!limitations.length && <p>{limitations.join(" ")}</p>}
       </details>
     </div>
   );
@@ -154,6 +165,7 @@ export function ReturnsGoldHistory({
   onNavigationStateChange,
   refreshing = false,
   revision = 0,
+  cleanResult,
 }: {
   accountId: number;
   instrumentId: number;
@@ -162,6 +174,7 @@ export function ReturnsGoldHistory({
   refreshing?: boolean;
   revision?: number;
   targetLabel?: string;
+  cleanResult?: Metric | null;
 }) {
   const queryClient = useQueryClient();
   const key = ["returns", "gold-history", accountId, instrumentId, revision];
@@ -353,7 +366,7 @@ export function ReturnsGoldHistory({
               : "Зависимости изменились; прежний результат не является актуальным"}{" "}
             · {current.declaration.covered_from} — {current.declaration.covered_to}
           </p>
-          <Result value={current.result} valuation={current.valuation} />
+          <Result value={current.result} valuation={current.valuation} clean={cleanResult} />
           <details>
             <summary>Сохранённые операции ({current.events.length})</summary>
             <ul>
@@ -618,7 +631,11 @@ export function ReturnsGoldHistory({
             {preview.value.declaration.covered_from} — {preview.value.declaration.covered_to} ·{" "}
             {preview.value.declaration.events.length} операций
           </p>
-          <Result value={preview.value.result} valuation={preview.value.valuation} />
+          <Result
+            value={preview.value.result}
+            valuation={preview.value.valuation}
+            clean={preview.value.clean_result}
+          />
           <button
             type="button"
             disabled={blocked || !preview.value.can_apply}

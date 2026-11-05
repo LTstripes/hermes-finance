@@ -6792,40 +6792,36 @@ source/account/class detail modes keep their own supported meaning and URLs.
 <a id="c7-source_instrument_returns-1"></a>
 ### Monthly native-source instrument estimates
 
-#### Clean security result: experimental additive read
+#### Clean security result and versioned consumers
 
-`GET /api/source-returns/clean-instruments` accepts an exact source account,
-optional ISIN and both EOD dates. Its `clean_instrument_return_v1` response is
-an additive source-only read, not a replacement for the legacy cash-economic
-fields, account capital or accepted financial records. Money values are signed
-integer-kopeck strings and Modified Dietz is a decimal fraction. Each metric
-has a status and reasons. `known_result` is a subtotal of observed clean flows
-and both known clean endpoints, and is explicitly partial if coverage is
-incomplete; it is not an assertion that missing operations were zero. Known
-components remain available independently. A total and rate require complete
-clean endpoints and attributable trade, payout and redemption coverage.
+The ordinary Returns overview and instrument card use `returns_overall_v2` and
+`returns_instrument_card_v2`. They share one source-scoped read over existing
+originals and use explicit account and EOD period boundaries. Clean trade
+principal excludes NKD where its inclusion basis and amount are known. Fees and
+taxes do not enter the result. Coupons and dividends use the actually received
+cash, without fabricating gross payments. The projection does not write source
+records or financial receipts and does not equate security returns with changes
+in account capital. A nonzero bond valuation without known accrued interest is
+unknown; a demonstrably empty position is zero. Known results and components
+are labelled partial when coverage is incomplete, rather than promoted to full
+return. Rates remain unavailable when their operands are incomplete.
 
-Clean trade principal excludes NKD where its inclusion basis and amount are
-known. Fees and taxes do not enter the result, while dividends and coupons use
-the cash actually received, not an invented gross payout. A nonzero bond
-valuation without known accrued interest stays unknown; a demonstrably empty
-position is zero. The projection reads existing source events and does not
-create receipts, alter originals, write months or equate security returns with
-changes in account cash. The existing v2 endpoint and export formats retain
-their historical counting meaning until a separately versioned consumer is
-integrated. This experimental read alone does not complete the Returns UI or
-AI-export transition.
+The existing account-specific `/api/returns/overview` and
+`/api/returns/instrument` use `returns_source_v2` and
+`returns_source_detail_v2` for the same clean basis and requested dates. Source
+events remain available for inspection; the separate capital view describes
+actual account capital. Manual gold-history previews add `clean_result` from
+the existing valuation and dated trade evidence; recorded fees and historical
+receipts remain intact. The AI report includes the same available clean gold
+result. Explicit `basis=legacy` preserves the prior Returns projections for
+consumers that still need their original semantics.
 
-`GET /api/returns/clean-overview` reuses the same clean projection for each
-proved source-account scope and its outer saved-source period. Account periods
-remain separate and no account-capital bridge is added to instrument P&L.
-`GET /api/export/clean-returns/json` projects those same rows into the separate
-`hermes.finance.clean_returns` 1.0.0 format, with file-local account refs and
-without raw account identifiers. Its schema is
-[`clean_returns_export.schema.json`](schemas/clean_returns_export.schema.json).
-This source-only export is not the complete AI financial review; it does not
-replace or silently redefine any existing review format. Both reads are local,
-non-persisting and disclose each source period and metric coverage.
+The recommended AI financial review requests version `3.0.0` and includes the
+same source-scoped clean operands under `sections.clean_returns` with file-local
+account references. Each account retains its own period and metric coverage.
+The format is defined in [`ai_financial_review.v3.schema.json`](schemas/ai_financial_review.v3.schema.json).
+Earlier financial review formats and explicitly requested legacy Returns API
+versions retain their historical meaning; no old field is silently redefined.
 
 The original monthly/all-time fields below remain the compatibility contract.
 The additive dated analysis has stricter full-result availability and explicitly
@@ -6853,10 +6849,10 @@ rates (`0.1` = 10%). Status is supported/provisional/partial/unavailable.
 Supported means complete within the selected source scope, never an accepted
 financial receipt. Root authority remains provisional / financial authority none.
 
-The on-demand Returns projection `/api/returns/instrument` adds the same complete
-`analysis` shape while retaining its compatibility fields; the overview stays
-compact. Money values and capital-days serialize as exact integer strings in this
-projection, Decimal rates/quantities/prices as strings, with NULL and source
+The legacy on-demand Returns projection `/api/returns/instrument?basis=legacy`
+adds the same complete `analysis` shape while retaining its compatibility
+fields; the legacy overview stays compact. Money values and capital-days serialize
+as exact integer strings in this projection, Decimal rates/quantities/prices as strings, with NULL and source
 identities preserved. Its compact `events` projection also retains the event key,
 execution date/time, cash/depository dates, signed quantity, source price/unit,
 dated face value, native amount/basis, NKD, commission, gross/withheld/net payout,

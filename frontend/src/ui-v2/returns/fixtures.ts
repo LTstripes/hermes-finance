@@ -115,6 +115,7 @@ export function overviewFixture(scope = "source:SYNTH-A", period: Period = may):
     dividends: m("186025", "kopecks", "credited_payments"),
   };
   return {
+    contract_version: scope.startsWith("source:") ? "returns_source_v2" : "returns_capital_v1",
     scope,
     selected,
     all_history: { ...selected, period: { start: "2029-12-31", end: may.end }, pnl: m(null) },
@@ -219,10 +220,34 @@ export function detailFixture(
         : value,
     ),
   ) as InstrumentAnalysis<string>;
+  const part = (value: string | null) => ({
+    value,
+    status: value === null ? ("unavailable" as const) : ("supported" as const),
+    reason_codes: [],
+    assumptions: [],
+  });
   return {
     ...row(isin, "Горизонт — проданная бумага", "1800000", "0.1", period),
     analysis: wire,
     scope,
+    contract_version: "returns_source_detail_v2",
+    clean: {
+      isin,
+      opening_date: period.start,
+      closing_date: period.end,
+      opening_value: part("10000000"),
+      closing_value: part("0"),
+      buys: part("0"),
+      sells: part("11800000"),
+      coupons: part("0"),
+      dividends: part("0"),
+      payouts: part("0"),
+      redemption: part("0"),
+      valuation_and_trades: part("1800000"),
+      known_result: part("1800000"),
+      pnl: part("1800000"),
+      modified_dietz: part("0.1"),
+    },
     opening_quantity: "10",
     closing_quantity: "0",
     buys: m("0"),

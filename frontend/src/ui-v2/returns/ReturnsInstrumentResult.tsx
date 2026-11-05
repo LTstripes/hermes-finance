@@ -79,7 +79,11 @@ export function ReturnsInstrumentResult({
       )}
       <dl className={styles.metrics}>
         <div>
-          <dt>Результат ₽</dt>
+          <dt>
+            {originalPnl.reason_codes.includes("clean_partial_result")
+              ? "Известная часть результата ₽"
+              : "Результат ₽"}
+          </dt>
           <dd>
             <Value metric={pnl} label="Результат инструмента" signed />
           </dd>
@@ -93,7 +97,7 @@ export function ReturnsInstrumentResult({
       </dl>
       {rate.method === "modified_dietz" && <small>Modified Dietz · за период, не годовая</small>}
       {(pnl.value === null || rate.value === null) && (
-        <p className={styles.notice}>Нужна проверка данных</p>
+        <p className={styles.notice}>Не все показатели доступны</p>
       )}
       {pnl.value === null && observedPayouts.length > 0 && (
         <div>

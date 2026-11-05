@@ -224,7 +224,7 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
         assert response.json()["sections"]["source_returns"] == exported
         assert response.json()["sections"]["returns_overall"]["data"] == current
         ordinary_card = client.get(
-            "/api/returns/instrument-card", params={"isin": instrument["isin"]}
+            "/api/returns/instrument-card", params={"isin": instrument["isin"], "basis": "legacy"}
         )
         assert ordinary_card.status_code == 200, ordinary_card.text
         assert ordinary_card.json()["summary"]["pnl"]["value"] == card["summary"]["pnl"]["value"]
@@ -244,6 +244,48 @@ def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monke
         "instrument_id",
     ):
         assert forbidden not in wire
+    assert snapshot(database) == before
+
+
+def test_v3_clean_returns_match_ordinary_overview_and_card(database, monkeypatch):
+    from hermes_finance.services.clean_instrument_return import (
+        clean_export_data,
+        read_clean_overview,
+    )
+
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+    before = snapshot(database)
+    with database.session_factory() as session:
+        report = assemble_ai_financial_review(
+            session,
+            generated_at=datetime(2030, 2, 1, tzinfo=UTC),
+            evaluated_on=date(2030, 2, 1),
+            format_version="3.0.0",
+        )
+        clean = clean_export_data(read_clean_overview(session))
+        overview = returns_overall.read_clean_overall(session, include_instrument_details=True)
+        isin = clean["accounts"][0]["instruments"][0]["isin"]
+        card = returns_overall.read_clean_instrument_card(session, isin)
+    assert report["schema_version"] == "3.0.0"
+    assert "source_returns" not in report["sections"]
+    assert "returns_overall" not in report["sections"]
+    assert report["sections"]["clean_returns"]["data"] == clean
+    item = clean["accounts"][0]["instruments"][0]
+    normal = next(row for row in overview["instruments"] if row["isin"] == isin)
+    expected = item["pnl"] if item["pnl"]["value"] is not None else item["known_result"]
+    assert normal["accounts"][0]["pnl"]["value"] == expected["value"]
+    assert card["accounts"][0]["clean"]["known_result"]["value"] == item["known_result"]["value"]
+    assert json.loads(canonical_json(report))["sections"]["clean_returns"]["data"] == clean
+    assert ACCOUNT not in canonical_json(report)
+    with TestClient(create_app(database)) as client:
+        response = client.get(
+            "/api/export/ai-financial-review/json",
+            params={"format_version": "3.0.0", "generated_at": "2030-02-01T00:00:00Z"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["sections"]["clean_returns"]["data"] == clean
     assert snapshot(database) == before
 
 

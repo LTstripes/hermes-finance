@@ -124,6 +124,15 @@ export default function UiV2ReturnsPage() {
         ) * -1,
     )
     .slice(0, 6);
+  const resultPeriods = new Set(
+    rows
+      .filter((row) => row.pnl.value !== null)
+      .flatMap((row) =>
+        row.accounts
+          .filter((account) => account.resultAvailable && account.period)
+          .map((account) => `${account.period?.start}/${account.period?.end}`),
+      ),
+  );
   const maximum = chartRows.reduce((m, r) => {
     const v = r.cash;
     const abs = v < 0n ? -v : v;
@@ -211,8 +220,7 @@ export default function UiV2ReturnsPage() {
                     (k) => selectedIncome(data, scope, k).included_accounts < accounts.length,
                   )) && (
                   <p className={layout.notice} role="status">
-                    Часть истории не подтверждена. Ниже показаны известные суммы; они не являются
-                    полным результатом.
+                    Показаны известные составляющие; часть истории может отсутствовать.
                   </p>
                 )}
                 <div
@@ -224,9 +232,9 @@ export default function UiV2ReturnsPage() {
                       className={`${styles.card} ${styles.primaryCard}`}
                       aria-label="Результат"
                     >
-                      <h2>Результат за доступную историю</h2>
+                      <h2>Известный результат бумаг за доступную историю</h2>
                       <div className={layout.value}>{displayMetric(result.amount, true)}</div>
-                      <small>По выбранным брокерским счетам</small>
+                      <small>По выбранным счетам за совпадающий период</small>
                     </section>
                   )}
                   {(["coupon", "dividend"] as const).map((incomeKind) => {
@@ -278,11 +286,7 @@ export default function UiV2ReturnsPage() {
                       {accounts.length > 1 && a.result && a.result.pnl.value !== null ? (
                         <strong>{displayMetric(a.result.pnl, true)}</strong>
                       ) : !a.result || a.result.pnl.value === null ? (
-                        <p>
-                          {a.proof_status === "stale"
-                            ? "Нужно заново подтвердить выписки"
-                            : "Результат пока не подтверждён"}
-                        </p>
+                        <p>Пока нет результата по сохранённым данным</p>
                       ) : null}
                       <ReturnsResultMeta
                         period={a.period}
@@ -296,11 +300,12 @@ export default function UiV2ReturnsPage() {
                   ))}
                 </div>
                 <p className={layout.note}>
-                  Расчёт по сохранённым выпискам. Выплаты уже входят в результат.
+                  Результат бумаг рассчитан без комиссий, налогов и НКД; полученные выплаты уже
+                  включены.
                   {accounts.length > 1 &&
                     " Общий процент для разных периодов счетов не складывается."}
                 </p>
-                {chartRows.length > 0 && (
+                {chartRows.length > 0 && resultPeriods.size === 1 && (
                   <section className={styles.panel} aria-label="Вклад инструментов">
                     <div className={layout.heading}>
                       <h2>Вклад инструментов</h2>
@@ -411,7 +416,7 @@ export default function UiV2ReturnsPage() {
                                         {label(a.scope, a.label)} ·{" "}
                                         {a.resultAvailable
                                           ? `${displayMetric(a.pnl, true)} · ${displayMetric(a.rate)}`
-                                          : "Нужна проверка данных"}
+                                          : "Нет доступного результата"}
                                       </summary>
                                       <ReturnsInstrumentResult
                                         result={a.resultAvailable ? a : null}
@@ -457,56 +462,57 @@ export default function UiV2ReturnsPage() {
                     </button>
                   )}
                 </section>
-                {rows.some((r) => r.pnl.value !== null && r.pnl.value !== "0") && (
-                  <section className={styles.panel} aria-label="Лидеры и отстающие">
-                    <h2>Лидеры и отстающие</h2>
-                    <div className={layout.leaders}>
-                      {([true, false] as const)
-                        .filter((positive) =>
-                          rows.some(
-                            (r) =>
-                              r.pnl.value !== null &&
-                              compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
-                          ),
-                        )
-                        .map((positive) => (
-                          <div className={layout.leaderGroup} key={String(positive)}>
-                            <h3>{positive ? "Наибольший доход" : "Наибольший убыток"}</h3>
-                            <ol className={layout.leaderList}>
-                              {rows
-                                .filter(
-                                  (r) =>
-                                    r.pnl.value !== null &&
-                                    compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
-                                )
-                                .sort(
-                                  (a, b) =>
-                                    compareDecimal(a.pnl.value ?? "0", b.pnl.value ?? "0") *
-                                    (positive ? -1 : 1),
-                                )
-                                .slice(0, 5)
-                                .map((r, index) => (
-                                  <li className={layout.leaderRow} key={r.isin}>
-                                    <span className={layout.leaderRank} aria-hidden="true">
-                                      {index + 1}.
-                                    </span>
-                                    <Link
-                                      to={instrumentHref(r.isin)}
-                                      onClick={(e) => guardLink(e, instrumentHref(r.isin))}
-                                    >
-                                      {r.name}
-                                    </Link>
-                                    <strong className={layout.leaderAmount}>
-                                      {displayMetric(r.pnl, true)}
-                                    </strong>
-                                  </li>
-                                ))}
-                            </ol>
-                          </div>
-                        ))}
-                    </div>
-                  </section>
-                )}
+                {resultPeriods.size === 1 &&
+                  rows.some((r) => r.pnl.value !== null && r.pnl.value !== "0") && (
+                    <section className={styles.panel} aria-label="Лидеры и отстающие">
+                      <h2>Лидеры и отстающие</h2>
+                      <div className={layout.leaders}>
+                        {([true, false] as const)
+                          .filter((positive) =>
+                            rows.some(
+                              (r) =>
+                                r.pnl.value !== null &&
+                                compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
+                            ),
+                          )
+                          .map((positive) => (
+                            <div className={layout.leaderGroup} key={String(positive)}>
+                              <h3>{positive ? "Наибольший доход" : "Наибольший убыток"}</h3>
+                              <ol className={layout.leaderList}>
+                                {rows
+                                  .filter(
+                                    (r) =>
+                                      r.pnl.value !== null &&
+                                      compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
+                                  )
+                                  .sort(
+                                    (a, b) =>
+                                      compareDecimal(a.pnl.value ?? "0", b.pnl.value ?? "0") *
+                                      (positive ? -1 : 1),
+                                  )
+                                  .slice(0, 5)
+                                  .map((r, index) => (
+                                    <li className={layout.leaderRow} key={r.isin}>
+                                      <span className={layout.leaderRank} aria-hidden="true">
+                                        {index + 1}.
+                                      </span>
+                                      <Link
+                                        to={instrumentHref(r.isin)}
+                                        onClick={(e) => guardLink(e, instrumentHref(r.isin))}
+                                      >
+                                        {r.name}
+                                      </Link>
+                                      <strong className={layout.leaderAmount}>
+                                        {displayMetric(r.pnl, true)}
+                                      </strong>
+                                    </li>
+                                  ))}
+                              </ol>
+                            </div>
+                          ))}
+                      </div>
+                    </section>
+                  )}
               </>
             )}
             {goldTargets(data).length > 0 && (
@@ -608,6 +614,13 @@ export default function UiV2ReturnsPage() {
               accountId={goldEditorTarget.account_id}
               instrumentId={goldEditorTarget.instrument_id}
               targetLabel={goldEditorTarget.label}
+              cleanResult={
+                data?.gold.histories?.find(
+                  (history) =>
+                    history.account_id === goldEditorTarget.account_id &&
+                    history.instrument_id === goldEditorTarget.instrument_id,
+                )?.total_result
+              }
               onNavigationStateChange={setGoldNavigation}
               refreshing={query.isFetching || query.isError}
               revision={query.dataUpdatedAt}

@@ -628,7 +628,7 @@ test("accepted net payments remain visible when the result and percentage are un
   expect(within(payouts).getByText(/Учебная акция/)).toBeVisible();
   expect(
     within(screen.getByRole("region", { name: "Результат периода" })).getAllByText("—"),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   expect(within(payouts).queryByText("Оценка")).toBeNull();
 });
 
@@ -640,7 +640,7 @@ test("instrument row exposes both server metrics and visible missing-evidence re
   expect(zero).toHaveTextContent("0 ₽");
   expect(zero).toHaveTextContent("0,00%");
   const missing = within(section).getByRole("row", { name: /Учебная облигация/ });
-  expect(missing).toHaveTextContent("Нужна проверка данных");
+  expect(missing).toHaveTextContent("Не все показатели доступны");
   expect(within(missing).getByText(/^Причины:/)).toHaveTextContent(
     "Не хватает стоимости на границе периода",
   );

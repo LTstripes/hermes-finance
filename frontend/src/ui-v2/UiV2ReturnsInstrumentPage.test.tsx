@@ -153,12 +153,12 @@ test.each(["wrong-version", "wrong-isin", "wrong-account", "wrong-analysis-perio
   },
 );
 
-test("sold zero and known sibling survive a stale account without stale zero fallback", async () => {
+test("known clean result remains visible when the account proof is stale", async () => {
   const value = instrumentCardFixture();
   value.accounts[1].detail = null;
   value.accounts[1].proof_status = "stale";
-  value.accounts[1].included = false;
-  value.accounts[1].reason_codes = ["source_proof_stale"];
+  value.accounts[1].included = true;
+  value.accounts[1].reason_codes = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => response(value)),
@@ -169,14 +169,9 @@ test("sold zero and known sibling survive a stale account without stale zero fal
   expect(accounts.getByText("0 шт.")).toBeVisible();
   expect(accounts.getByText("+12 ₽")).toBeVisible();
   expect(accounts.getByText("12,00%")).toBeVisible();
-  expect(accounts.getByText("Нужна проверка данных")).toBeVisible();
-  expect(accounts.getAllByText("—")).toHaveLength(2);
-  expect(accounts.queryByText("0 ₽")).toBeNull();
-  expect(
-    screen.getByText(
-      "Проверка выписок устарела; требуется актуальное подтверждение. Счёт: Учебный счёт Б · Инструмент: Учебная акция.",
-    ),
-  ).toBeInTheDocument();
+  expect(accounts.getByText("−4 ₽")).toBeVisible();
+  expect(accounts.getByText("−4,00%")).toBeVisible();
+  expect(accounts.queryByText("Не все показатели доступны")).toBeNull();
 });
 
 test.each(["0", "-1", "3.5", "03", "9007199254740992", "3&capital_account=4"])(
@@ -240,6 +235,13 @@ test("partial component account sets are labelled known constituents without imp
   partial.pnl.reason_codes = ["missing_endpoint"];
   partial.analysis.pnl.status = "unavailable";
   partial.analysis.components.coupons.value = "777";
+  const clean = value.accounts[1].clean;
+  if (!clean) throw new Error("missing clean fixture");
+  clean.pnl.value = null;
+  clean.pnl.status = "unavailable";
+  clean.known_result.value = "777";
+  clean.known_result.status = "partial";
+  clean.coupons.value = "777";
   value.summary.pnl.value = "1200";
   value.summary.pnl.reason_codes = ["instrument_accounts_missing_or_excluded"];
   value.summary.coupons.value = "4277";
@@ -250,7 +252,7 @@ test("partial component account sets are labelled known constituents without imp
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(screen.getByRole("heading", { name: "Из чего сложился результат" })).toBeVisible();
-  expect(screen.getByText("Данных для полного разложения пока недостаточно.")).toBeVisible();
+  expect(screen.getByText(/Показаны известные составляющие/)).toBeVisible();
   expect(screen.getAllByText("42,77 ₽").length).toBeGreaterThan(0);
   expect(screen.getAllByText("+12 ₽").length).toBeGreaterThan(0);
 });
@@ -275,6 +277,11 @@ test("standalone instrument explains paid income greater than its exact total", 
   card.summary.coupons.value = "1000";
   card.summary.dividends.value = "500";
   card.summary.valuation_and_trades.value = "-1100";
+  const clean = card.accounts[0].clean;
+  if (!clean) throw new Error("missing clean fixture");
+  clean.pnl.value = clean.known_result.value = "400";
+  clean.coupons.value = "1000";
+  clean.dividends.value = "500";
   const metric = (value: string) => ({
     value,
     status: "supported" as const,
@@ -302,9 +309,8 @@ test("standalone instrument explains paid income greater than its exact total", 
   );
   setup("/v2/returns/instrument/RU000A000002");
   const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
-  expect(region.getByText("+15 ₽")).toBeVisible();
-  expect(region.getByText("+4 ₽")).toBeVisible();
-  expect(region.getByText("Комиссии")).toBeVisible();
-  expect(region.getByText("Уплаченный НКД")).toBeVisible();
-  expect(region.queryByText(/недостаточно/)).toBeNull();
+  expect(region.getByText(/Купоны: \+10 ₽/)).toBeVisible();
+  expect(region.getByText(/Дивиденды: \+5 ₽/)).toBeVisible();
+  expect(region.getByText(/Известный результат: \+4 ₽/)).toBeVisible();
+  expect(region.queryByText(/^Комиссии:/)).toBeNull();
 });

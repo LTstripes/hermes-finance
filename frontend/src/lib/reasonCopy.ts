@@ -365,6 +365,7 @@ const COPY: Record<
   gold_trade_history_incomplete: "Подтвердите полноту истории операций.",
   gold_zero_start_unproven: "Не подтверждён остаток на начало истории.",
   gold_separate_fees_unknown: "Уточните отдельные комиссии.",
+  gold_amount_derived: "Сумма сделки рассчитана по сохранённой цене и количеству.",
   gold_quantity_mismatch: "Количество по операциям не совпадает с заявленным остатком.",
   gold_snapshot_quantity_mismatch: "Количество в сохранённой оценке не совпадает с историей.",
   gold_negative_running_quantity: "Продажа превышает количество золота на эту дату.",

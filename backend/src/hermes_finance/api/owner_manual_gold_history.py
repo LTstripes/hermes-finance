@@ -63,7 +63,10 @@ router = APIRouter(prefix=PREFIX, tags=["owner-gold-history"], dependencies=[Dep
 @router.post("/preview")
 def preview(request: GoldHistoryIntent, session: Session = Depends(session_for_request)):
     try:
-        return preview_gold_history(session, request)
+        from hermes_finance.services.clean_instrument_return import clean_gold_metric
+
+        result = preview_gold_history(session, request)
+        return {**result, "clean_result": clean_gold_metric(result["result"])}
     except (GoldHistoryError, ValidationError) as error:
         raise HTTPException(422, str(error)) from None
 

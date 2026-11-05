@@ -8,9 +8,42 @@ import {
 } from "./model";
 import { validDetailPeriod, validIsin } from "./navigation";
 import type { CouponIncome } from "./overall";
+import type { InstrumentMetric } from "../../api/sourceReturns";
+
+export type CleanInstrument = {
+  isin: string;
+  opening_date: string;
+  closing_date: string;
+  opening_value: InstrumentMetric<string>;
+  closing_value: InstrumentMetric<string>;
+  buys: InstrumentMetric<string>;
+  sells: InstrumentMetric<string>;
+  coupons: InstrumentMetric<string>;
+  dividends: InstrumentMetric<string>;
+  payouts: InstrumentMetric<string>;
+  redemption: InstrumentMetric<string>;
+  valuation_and_trades: InstrumentMetric<string>;
+  known_result: InstrumentMetric<string>;
+  pnl: InstrumentMetric<string>;
+  modified_dietz: InstrumentMetric<string>;
+};
+
+export function cleanMetric(value: InstrumentMetric<string>, rate = false): Metric {
+  return {
+    value: value.value,
+    unit: rate ? "fraction" : "kopecks",
+    method: rate ? "modified_dietz" : "clean_instrument_return_v1",
+    estimate: value.status !== "supported",
+    reason_codes: [
+      ...value.reason_codes,
+      ...value.assumptions,
+      ...(value.status === "partial" ? ["clean_partial_result"] : []),
+    ],
+  };
+}
 
 export type InstrumentCard = {
-  contract_version: "returns_instrument_card_v1";
+  contract_version: "returns_instrument_card_v2";
   isin: string;
   name: string;
   kind: string | null;
@@ -41,12 +74,13 @@ export type InstrumentCard = {
     exclusion_reason: string | null;
     reason_codes: string[];
     detail: Detail | null;
+    clean?: CleanInstrument | null;
   }[];
   reason_codes: string[];
 };
 export type IncomeKind = "coupon" | "dividend";
 export type Income = {
-  contract_version: "returns_income_v1";
+  contract_version: "returns_income_v2";
   kind: IncomeKind;
   summary: CouponIncome;
   instruments: {
@@ -72,13 +106,18 @@ export async function getInstrumentCard(isin: string, signal: AbortSignal) {
     { signal },
   );
   if (
-    value.contract_version !== "returns_instrument_card_v1" ||
+    value.contract_version !== "returns_instrument_card_v2" ||
     value.isin !== isin ||
     value.accounts.some(
       (account) =>
-        account.detail &&
-        (!validDetailPeriod(account.period) ||
-          !detailMatchesContext(account.detail, account.scope, account.period, isin)),
+        (account.clean &&
+          (!validDetailPeriod(account.period) ||
+            account.clean.isin !== isin ||
+            account.clean.opening_date !== account.period.start ||
+            account.clean.closing_date !== account.period.end)) ||
+        (account.detail &&
+          (!validDetailPeriod(account.period) ||
+            !detailMatchesContext(account.detail, account.scope, account.period, isin))),
     )
   )
     throw new Error("Return card context mismatch");
@@ -88,7 +127,7 @@ export async function getIncome(kind: IncomeKind, signal: AbortSignal) {
   const value = await apiRequest<Income>(`/api/returns/income?${new URLSearchParams({ kind })}`, {
     signal,
   });
-  if (value.contract_version !== "returns_income_v1" || value.kind !== kind)
+  if (value.contract_version !== "returns_income_v2" || value.kind !== kind)
     throw new Error("Return income context mismatch");
   return value;
 }

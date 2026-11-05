@@ -745,6 +745,177 @@ def read_overview(session, *, scope, start, end):
         return {"scope": scope, "account_link": link, **view}
 
 
+def read_clean_source_overview(session, *, scope, start, end):
+    """Selected source period on the same clean basis as the main overview."""
+    from hermes_finance.services.clean_instrument_return import (
+        read_clean_account,
+        read_clean_overview,
+    )
+
+    with source_read_snapshot(session):
+        view = read_overview(session, scope=scope, start=start, end=end)
+        if not scope.startswith("source:"):
+            return {**view, "contract_version": "returns_capital_v1"}
+        resolved = _validate_scope(session, scope).removeprefix("source:")
+        link = view["account_link"]
+        cache = {}
+
+        def build(first, last):
+            key = (first, last)
+            if key in cache:
+                return cache[key]
+            source = read_clean_account(session, resolved, first, last)
+            instruments = []
+
+            def converted(raw, *, rate=False):
+                reasons = list(raw["reason_codes"]) + list(raw["assumptions"])
+                if raw["status"] == "partial":
+                    reasons.append("clean_partial_result")
+                return metric(
+                    raw["value"],
+                    reasons=reasons,
+                    method="modified_dietz" if rate else "clean_instrument_return_v1",
+                    unit="fraction" if rate else "kopecks",
+                    estimate=raw["status"] != "supported",
+                )
+
+            def subtotal(name):
+                values = [row[name] for row in source["instruments"]]
+                known = [int(value["value"]) for value in values if value["value"] is not None]
+                return metric(
+                    sum(known) if known else None,
+                    reasons=("clean_partial_result",),
+                    method="known_clean_instruments",
+                    estimate=True,
+                )
+
+            for row in source["instruments"]:
+                pnl = row["pnl"] if row["pnl"]["value"] is not None else row["known_result"]
+                instruments.append(
+                    {
+                        "isin": row["isin"],
+                        "name": row["name"] or row["isin"],
+                        "kind": row["instrument_type"],
+                        "period": bounds(first, last),
+                        "valuation_date": last
+                        if row["closing_value"]["value"] is not None
+                        else None,
+                        "account_link": link,
+                        "pnl": converted(pnl),
+                        "rate": converted(row["modified_dietz"], rate=True),
+                        "coupons": converted(row["coupons"]),
+                        "dividends": converted(row["dividends"]),
+                        "conditional": False,
+                    }
+                )
+            result = {
+                "period": bounds(first, last),
+                "valuation_date": last if any(r["valuation_date"] for r in instruments) else None,
+                "account_link": link,
+                "pnl": subtotal("known_result"),
+                "rate": metric(
+                    reasons=("combined_rate_periods_and_flows_not_proven",), unit="fraction"
+                ),
+                "coupons": subtotal("coupons"),
+                "dividends": subtotal("dividends"),
+            }
+            cache[key] = (result, instruments)
+            return cache[key]
+
+        view["selected"], view["instruments"] = build(start, end)
+        view["history"] = [
+            build(row["period"]["start"], row["period"]["end"])[0] for row in view["history"]
+        ]
+        whole = next(
+            (
+                row
+                for row in read_clean_overview(session)["accounts"]
+                if row["scope"] == f"source:{resolved}"
+            ),
+            None,
+        )
+        view["all_history"] = (
+            build(whole["period"]["start"], whole["period"]["end"])[0] if whole else None
+        )
+        view["breakdown"] = None
+        view["available_months_total"] = None
+        view["selected_available_months_total"] = None
+        view["instrument_reason_codes"] = []
+        view["contract_version"] = "returns_source_v2"
+        return view
+
+
+def apply_clean_detail(detail, clean):
+    """Retain raw events, but omit the legacy cash-economic result from a v2 detail."""
+    from dataclasses import replace
+
+    from hermes_finance.domain.instrument_return import Metric as DomainMetric
+
+    def converted(raw, *, rate=False):
+        reasons = list(raw["reason_codes"]) + list(raw["assumptions"])
+        if raw["status"] == "partial":
+            reasons.append("clean_partial_result")
+        return metric(
+            raw["value"],
+            reasons=reasons,
+            method="modified_dietz" if rate else "clean_instrument_return_v1",
+            unit="fraction" if rate else "kopecks",
+            estimate=raw["status"] != "supported",
+        )
+
+    analysis = detail["analysis"]
+    unavailable = DomainMetric(None, "unavailable", ("legacy_cash_economics_omitted",))
+    unavailable_rate = replace(
+        analysis.modified_dietz,
+        value=None,
+        status="unavailable",
+        reason_codes=("legacy_cash_economics_omitted",),
+    )
+    detail["analysis"] = replace(
+        analysis,
+        components={name: unavailable for name in analysis.components},
+        pnl=unavailable,
+        known_subtotal=unavailable,
+        modified_dietz=unavailable_rate,
+        chained_monthly=unavailable,
+        statement_estimate=replace(
+            analysis.statement_estimate, pnl=unavailable, modified_dietz=unavailable_rate
+        ),
+    )
+    pnl = clean["pnl"] if clean["pnl"]["value"] is not None else clean["known_result"]
+    detail.update(
+        contract_version="returns_source_detail_v2",
+        clean=clean,
+        pnl=converted(pnl),
+        rate=converted(clean["modified_dietz"], rate=True),
+        coupons=converted(clean["coupons"]),
+        dividends=converted(clean["dividends"]),
+        buys=converted(clean["buys"]),
+        sells=converted(clean["sells"]),
+        conditional=False,
+        conditional_pnl=metric(reasons=("legacy_cash_economics_omitted",)),
+        conditional_rate=metric(reasons=("legacy_cash_economics_omitted",), unit="fraction"),
+        reason_codes=list(pnl["reason_codes"]),
+    )
+    return detail
+
+
+def read_clean_source_detail(session, *, scope, start, end, isin):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    with source_read_snapshot(session):
+        resolved = _validate_scope(session, scope)
+        if not scope.startswith("source:"):
+            raise ValueError("returns_instrument_scope_unsupported")
+        data = read_clean_account(session, resolved.removeprefix("source:"), start, end, isin=isin)
+        if len(data["instruments"]) != 1:
+            raise LookupError("returns_instrument_missing")
+        detail = read_detail(
+            session, scope=scope, start=start, end=end, isin=isin, native_period=True
+        )
+        return apply_clean_detail(detail, data["instruments"][0])
+
+
 def read_detail(session, *, scope, start, end, isin, native_period=False):
     with source_read_snapshot(session):
         resolved = _validate_scope(session, scope)

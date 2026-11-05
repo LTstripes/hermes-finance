@@ -33,6 +33,28 @@ def _clean_endpoint(endpoint, instrument_type):
     return endpoint.economic_value_kopecks - endpoint.accrued_interest_kopecks
 
 
+def clean_gold_metric(observed, *, current=True):
+    """Project existing dated gold operands without using separate fees."""
+    from hermes_finance.services.returns_view import metric
+
+    operands = [
+        observed.get(key)
+        for key in ("valuation_kopecks", "sale_amount_kopecks", "buy_amount_kopecks")
+    ]
+    reasons = set(observed.get("reason_codes", ())) - {"gold_separate_fees_unknown"}
+    if observed.get("amount_basis") == "derived":
+        reasons.add("gold_amount_derived")
+    if not current:
+        reasons.add("source_dependency_changed")
+    reasons = tuple(sorted(reasons))
+    value = (
+        int(operands[0]) + int(operands[1]) - int(operands[2])
+        if current and all(value is not None for value in operands)
+        else None
+    )
+    return metric(value, reasons=reasons, method="clean_gold_history", estimate=bool(reasons))
+
+
 def project_clean_analysis(analysis, isin, *, instrument_type=None):
     """Do not change or attest the events, the account bridge, or source receipts."""
     ignored_cost_reasons = {"unallocated_instrument_cost", "native_commission_unavailable"}
@@ -141,6 +163,7 @@ def _fee_only_quantity_reconciled(analysis, events, isin):
 
 def read_clean_account(session, source_account, start, end, *, isin=None):
     """Return one exact source scope and period without saving an attestation."""
+    from hermes_finance.services.returns_view import _catalogue_names, _display_name
     from hermes_finance.services.source_instrument_returns import read_instrument_returns
 
     source = read_instrument_returns(
@@ -153,6 +176,7 @@ def read_clean_account(session, source_account, start, end, *, isin=None):
         available_period=True,
     )
     instruments = []
+    names = _catalogue_names(session, source.instruments)
     for row in source.instruments:
         clean = project_clean_analysis(row.analysis, row.isin, instrument_type=row.instrument_type)
         metrics = asdict(clean)
@@ -168,7 +192,7 @@ def read_clean_account(session, source_account, start, end, *, isin=None):
         instruments.append(
             {
                 "isin": row.isin,
-                "name": row.source_name,
+                "name": _display_name(row.source_name, row.isin) or names.get(row.isin) or row.isin,
                 "instrument_type": row.instrument_type,
                 "opening_date": row.analysis.opening_date,
                 "closing_date": row.analysis.closing_date,
@@ -187,7 +211,7 @@ def read_clean_account(session, source_account, start, end, *, isin=None):
     }
 
 
-def read_clean_overview(session):
+def read_clean_overview(session, *, isin=None):
     """Read each source account's outer saved period in one source snapshot."""
     from hermes_finance.services.returns_view import _accounts, _source_scopes
     from hermes_finance.services.source_monthly_returns import (
@@ -211,7 +235,62 @@ def read_clean_overview(session):
                     "scope": f"source:{account}",
                     "label": labels.get(f"source:{account}", account),
                     "period": {"start": start, "end": end},
-                    "result": read_clean_account(session, account, start, end),
+                    "result": read_clean_account(session, account, start, end, isin=isin),
                 }
             )
         return {"contract_version": "clean_returns_overview_v1", "accounts": accounts}
+
+
+def clean_export_data(overview, *, gold=None):
+    """Project the same read into file-local account references for the AI report."""
+    from fastapi.encoders import jsonable_encoder
+
+    histories = (gold or {}).get("histories", [])
+    account_refs = {
+        value: f"gold-account-{index}"
+        for index, value in enumerate(sorted({row["account_id"] for row in histories}), 1)
+    }
+    instrument_refs = {
+        value: f"gold-instrument-{index}"
+        for index, value in enumerate(sorted({row["instrument_id"] for row in histories}), 1)
+    }
+    return jsonable_encoder(
+        {
+            "contract": "hermes.finance.clean_returns",
+            "schema_version": "1.0.0",
+            "source_contract": overview["contract_version"],
+            "basis": "clean_principal_and_valuation_with_received_cash",
+            "authority": "provisional",
+            "currency": "RUB",
+            "units": {
+                "money": "integer_kopecks",
+                "modified_dietz": "fraction_of_weighted_capital",
+                "period": "opening_eod_exclusive_closing_eod_inclusive",
+            },
+            "accounts": [
+                {
+                    "account_ref": f"source-account-{index}",
+                    "period": account["period"],
+                    "instruments": [
+                        {**instrument, "name": None}
+                        for instrument in account["result"]["instruments"]
+                    ],
+                    "gaps": account["result"]["gaps"],
+                }
+                for index, account in enumerate(overview["accounts"], 1)
+            ],
+            "gold": [
+                {
+                    "account_ref": account_refs[row["account_id"]],
+                    "instrument_ref": instrument_refs[row["instrument_id"]],
+                    "period": row["period"],
+                    "valuation_date": row["valuation_date"],
+                    "currentness": row["currentness"],
+                    "total_result": row["total_result"],
+                    "buy_amount": row["buy_amount"],
+                    "sale_amount": row["sale_amount"],
+                }
+                for row in histories
+            ],
+        }
+    )

@@ -404,7 +404,9 @@ def test_ten_http_previews_have_no_dml_or_table_changes_or_private_logs(database
         event.remove(database.engine, "before_cursor_execute", capture)
     assert snapshot(database) == before
     assert ACCOUNT not in caplog.text and "<" not in caplog.text
-    assert client.post("/api/mybroker-preflight/apply").status_code == 404
+    # With a built frontend the GET-only SPA fallback yields 405; neither case
+    # exposes a preflight apply operation.
+    assert client.post("/api/mybroker-preflight/apply").status_code in {404, 405}
 
 
 def test_bounds_bad_intent_and_sanitized_errors(database):
@@ -634,7 +636,7 @@ def test_preflight_accepted_incomplete_draft_identity_retains_all_financial_warn
         for side in ("beginning", "ending")
     )
     assert snapshot(database) == before
-    assert client.post("/api/mybroker-preflight/apply").status_code == 404
+    assert client.post("/api/mybroker-preflight/apply").status_code in {404, 405}
 
 
 @pytest.mark.parametrize(
