@@ -36,6 +36,7 @@ async function uploadOriginal(
     const uploaded = page.waitForResponse(
       (r) => r.url().endsWith("/api/broker-months/intakes") && r.request().method() === "POST",
     );
+    await openDisclosure(page, "Исходники и повторный выбор файла");
     await page.getByLabel("XML-файлы", { exact: true }).setInputFiles(file);
     const response = await uploaded;
     expect(response.ok()).toBe(true);
@@ -221,6 +222,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
       ).body(),
     })),
   );
+  await openDisclosure(page, "Исходники и повторный выбор файла");
   await sources.getByLabel("XML-файлы").setInputFiles(files);
   for (const file of files)
     await expect(sources.getByText(`${file.name}: Сохранен`, { exact: true })).toBeVisible();
@@ -269,19 +271,10 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await dates.selectOption("2035-09-30");
   await expect(instruments.getByText(/Наблюдаемое количество: 10 на 2035-09-30/)).toBeVisible();
   expect(previews).toHaveLength(0);
-  await instruments
-    .getByRole("button", { name: "Запросить предварительные выплаты T-Invest" })
-    .click();
   await expect(
-    instruments.getByRole("heading", { name: /Фактические строки источника/ }),
-  ).toBeVisible();
-  await expect(
-    instruments.getByRole("heading", { name: "Возможно уже выплачено (possible_paid)" }),
-  ).toBeVisible();
-  await expect(
-    instruments.getByRole("heading", { name: "Будущие кандидаты (future)" }),
-  ).toBeVisible();
-  await expect(instruments.getByText(/^Источник:.*количество: 10 на 2035-09-30/)).toBeVisible();
+    instruments.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+  ).toHaveCount(0);
+  // Provider reconciliation remains in bond-source.acceptance; Month retains quantity/Back/Reload.
   await selectSourceAccount(page, "7113502");
   await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   await dates.selectOption("2035-09-30");
@@ -301,14 +294,14 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   // The old stock's date control must retire before choosing the bond's date.
   // Wait for the new ISIN panel, not a timeout or retry of a stale event.
   await expect(
-    instruments.getByRole("region", { name: "Предварительные выплаты RU000A000001" }),
+    instruments.getByRole("region", { name: "Количество по выписке RU000A000001" }),
   ).toBeVisible();
   await dates.selectOption("2035-09-30");
   await expect(instruments.getByText(/Наблюдаемое количество: 2 на 2035-09-30/)).toBeVisible();
   await expect(instruments.getByText(/не заменяет закрывающий EOD 2035-10-31/)).toBeVisible();
   expect(await manual()).toEqual(before);
   expect(forbidden).toEqual([]);
-  expect(previews).toHaveLength(1);
+  expect(previews).toHaveLength(0);
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1.25";
   });
@@ -1859,6 +1852,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
       await route.fulfill({ status: 503, contentType: "application/json", body: "{}" });
     } else await route.continue();
   });
+  await openDisclosure(page, "Исходники и повторный выбор файла");
   await sourcePanel.getByLabel("XML-файлы").setInputFiles([fileA, fileBad, fileB]);
   const retry = sourcePanel.getByRole("button", { name: /^Повторить чтение / });
   await expect(retry).toBeEnabled();

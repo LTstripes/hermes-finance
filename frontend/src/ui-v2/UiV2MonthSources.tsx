@@ -437,31 +437,31 @@ export function UiV2MonthSources({
               </p>
             )}
             <details>
-              <summary>Подробнее об источниках</summary>{" "}
+              <summary>Исходники и повторный выбор файла</summary>{" "}
               <p className={styles.note}>
                 Загрузка сохраняет наблюдения без привязки к финансовому месяцу или счёту Hermes.
                 Неизвестный ISIN требует явного разбора. Оригиналы после Reload нужно выбрать
                 заново. Другие периоды доступны в{" "}
                 <Link to="/v2/data/source-intake">общем журнале источников</Link>.
               </p>
+              {month.status !== "closed" && (
+                <section aria-label="XML других периодов и повторный выбор оригинала">
+                  <h3>XML других периодов и повторный выбор оригинала</h3>
+                  <SourceIntakeUpload
+                    key={month.id}
+                    compact
+                    showReports={false}
+                    onFilesChange={setReportXmlFiles}
+                    knownSources={list.data}
+                    onPendingChange={reportHistoricalPending}
+                    disabled={unresolved || uploadWouldDiscard || uploadPending || pdfDirty}
+                    reviewDisabled={unresolved || uploadPending || pdfDirty}
+                    onSaved={rememberSource}
+                    onReview={openSource}
+                  />
+                </section>
+              )}
             </details>
-            {month.status !== "closed" && (
-              <section aria-label="XML других периодов и повторный выбор оригинала">
-                <h3>XML других периодов и повторный выбор оригинала</h3>
-                <SourceIntakeUpload
-                  key={month.id}
-                  compact
-                  showReports={false}
-                  onFilesChange={setReportXmlFiles}
-                  knownSources={list.data}
-                  onPendingChange={reportHistoricalPending}
-                  disabled={unresolved || uploadWouldDiscard || uploadPending || pdfDirty}
-                  reviewDisabled={unresolved || uploadPending || pdfDirty}
-                  onSaved={rememberSource}
-                  onReview={openSource}
-                />
-              </section>
-            )}
             {list.isPending ? (
               <UiV2Loading label="Читаем источники месяца…" />
             ) : list.isError ? (
@@ -549,15 +549,13 @@ export function UiV2MonthSources({
                 year={month.year}
                 month={month.month}
                 account={account}
+                showPayoutPreview={false}
                 sourceVersion={JSON.stringify(
                   history.map((source) => [source.id, source.head_seq, source.manifest_digest]),
                 )}
               />
             ) : !invalidAccount && !account && sources.length > 0 ? (
-              <p>
-                Выбери один счёт источника, чтобы открыть инструменты и предварительные выплаты
-                этого месяца.
-              </p>
+              <p>Выбери счёт источника, чтобы открыть инструменты и операции этого месяца.</p>
             ) : null}
           </details>
         )}

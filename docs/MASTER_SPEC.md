@@ -65,8 +65,13 @@ The statements tile provides one multi-file XML/PDF intake with account-statemen
 slots and an income-payment PDF slot. Three files are a typical example, not a
 required set. Type, account and payment period are detected by the existing readers.
 Successful files survive a failed sibling; only problematic files need retry.
-The ordinary view shows **Всё в порядке** or **Нужно подтвердить: N** and short
-findings with **Подтвердить** / **Исправить** opening the existing durable review.
+The ordinary view shows **Всё в порядке**, a partial upload result or **Нужен разбор файлов: N**.
+Only unresolved findings offer one **Разобрать операцию** action opening the existing
+durable review. Known affected instruments/operations show their source name, account,
+date and exact known quantity/amount; unrelated diagnostics stay in file details.
+Recognized non-economic section flags do not request another confirmation. Original
+findings and saved decisions remain available; unknown structures and changed evidence
+still require review. Reopening unchanged sources never appends a confirmation.
 Findings are warnings and never create a new Close blocker. Technical source,
 Money, positions, estimates and journal tables stay in collapsed **Подробности**.
 The payout PDF descriptor survives Reload; financial acceptance still needs the exact
@@ -74,7 +79,8 @@ original and explicit selected-row Prepare/Apply. It is separate from the option
 investment-report PDF below. The details retain the existing XML intake for
 historical/partial originals and exact-original reselection, plus saved originals
 for the selected period/account, exceptions, recognized instruments and quantities,
-corrections, explicit T-Invest preview and the available preliminary result.
+corrections and the available preliminary result. The statements tile retains read-only
+dated quantities but no T-Invest request button; the forecast action stays in **Выплаты**.
 Source-only Save and strict financial Preview/Apply remain distinct internal
 stages. Verified saved uploads can supply the same in-memory original to strict
 review; a fresh exact original is required again after Reload.

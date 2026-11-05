@@ -228,6 +228,15 @@ def test_finance_link_validates_own_receipt_without_circular_readiness(database,
     assert source_intake.PENDING not in linked["exceptions"]
     assert bool(linked["exceptions"]) == unsupported
     assert _all_month_tables(database) == before_link
+    facade = client.get(f"/api/months/{scope['reporting_month_id']}/broker-sources").json()
+    item = facade["items"][0]
+    assert facade["confirmation_count"] == int(unsupported)
+    assert item["state"] == ("needs_decision" if unsupported else "financial_data_accepted")
+    if unsupported:
+        issue = next(i for i in item["review_issues"] if i["code"] == "money_semantics_unsupported")
+        assert issue["source_account"] == "1234567-000"
+        assert issue["date"] and issue["amount"] is not None and issue["ordinal"] == 0
+    assert _all_month_tables(database) == before_link
     with database.session_factory() as session:
         assert source_intake.scoped_status(session, scope["reporting_month_id"])["status"] == (
             "partial" if unsupported else "complete"
@@ -774,6 +783,13 @@ def test_link_replay_aba_and_unrelated_account_isolation(database):
         update_instrument(session, 1, currency="RUB")
     stale = client.get(f"{BASE}/{view['id']}").json()
     assert stale["finance_link"] is None and source_intake.PENDING in stale["exceptions"]
+    before = _tables(database)
+    result = client.get(f"/api/months/{scope['reporting_month_id']}/broker-sources").json()
+    assert result["confirmation_count"] == 1
+    assert "source_intake_receipt_authority_changed" in {
+        issue["code"] for issue in result["items"][0]["review_issues"]
+    }
+    assert _tables(database) == before
 
 
 @pytest.mark.parametrize(
@@ -1575,6 +1591,58 @@ def test_month_broker_sources_xml_partial_success_and_get_recovery(database, nat
         data={"request_id": "synthetic-closed"},
     )
     assert rejected.status_code == 409
+
+
+def test_month_broker_sources_recognized_structure_keeps_saved_decisions_without_new_prompt(
+    database,
+):
+    from test_statement_import_mybroker_metadata import _section_accept, section_setup
+
+    client, section, raw = section_setup(database)
+    scope = {k: section[k] for k in ("account_id", "reporting_month_id")}
+    view = save(client, raw, scope)
+    _section_accept(client, section, raw)
+    path = f"/api/months/{scope['reporting_month_id']}/broker-sources"
+    before = _tables(database)
+    for reader in (client, TestClient(create_app(database=database))):
+        result = reader.get(path).json()
+        item = result["items"][0]
+        assert result["confirmation_count"] == 0, item
+        assert item["state"] == "file_saved"  # no automatic financial acceptance/link
+        assert {"4_Transfers_unsupported", "5_UFSR_unsupported"} <= set(item["exceptions"])
+        assert set(item["exceptions"]) == set(item["information_codes"])
+        assert item["review_issues"] == []
+        # The underlying journal and saved section decisions remain untouched.
+        assert reader.get(f"{BASE}/{view['id']}").json()["exceptions"] == view["exceptions"]
+    duplicate = client.post(
+        path,
+        files={"files": (FILENAME, raw, "application/xml")},
+        data={"request_id": "synthetic-repeat-after-section-decisions"},
+    )
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["results"][0]["duplicate"]
+    assert duplicate.json()["confirmation_count"] == 0
+    assert _tables(database) == before
+
+
+def test_month_broker_sources_opaque_transfer_remains_a_real_finding(database):
+    from test_statement_import_mybroker_metadata import metadata_xml
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    root = ET.fromstring(metadata_xml(broker_month_xml()))
+    root.find("{MyBroker}Trades3/{MyBroker}Report/{MyBroker}Tablix1").set(
+        "unexpected", "synthetic unknown content"
+    )
+    save(client, ET.tostring(root), scope)
+    before = _tables(database)
+    result = client.get(f"/api/months/{scope['reporting_month_id']}/broker-sources").json()
+    assert result["confirmation_count"] == 1
+    item = result["items"][0]
+    assert item["state"] == "needs_decision"
+    assert "4_Transfers_unsupported" in {i["code"] for i in item["review_issues"]}
+    assert item["information_codes"] == []
+    assert _tables(database) == before
 
 
 @pytest.mark.parametrize("quiet", [False, True])

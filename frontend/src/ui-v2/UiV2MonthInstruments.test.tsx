@@ -4,8 +4,8 @@ import { BrowserRouter, useLocation, useSearchParams } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SourcePayoutPreview } from "../api/sourcePayoutPreview";
 import { event, ISIN, metric, source } from "../test/sourceInstrumentFixtures";
-import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
 import { money, rate } from "./SourceInstrumentDetail";
+import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
 
 const STOCK = "RU000STOCK01";
 const json = (data: unknown, status = 200) =>
@@ -99,7 +99,13 @@ function preview(account = "SYNTH-01", isin = ISIN, asOf = "2030-05-31"): Source
     failures: [],
   };
 }
-function Harness({ payoutsOnly = false }: { payoutsOnly?: boolean }) {
+function Harness({
+  payoutsOnly = false,
+  showPayoutPreview = true,
+}: {
+  payoutsOnly?: boolean;
+  showPayoutPreview?: boolean;
+}) {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const account = params.get("source_account") ?? "SYNTH-01";
@@ -123,6 +129,7 @@ function Harness({ payoutsOnly = false }: { payoutsOnly?: boolean }) {
       </output>
       <UiV2MonthInstruments
         payoutsOnly={payoutsOnly}
+        showPayoutPreview={showPayoutPreview}
         key={`${account}:${params.get("month") ?? "1"}`}
         monthId={Number(params.get("month") ?? "1")}
         year={2030}
@@ -133,7 +140,11 @@ function Harness({ payoutsOnly = false }: { payoutsOnly?: boolean }) {
     </>
   );
 }
-function setup(path = "/v2/close?source_account=SYNTH-01", payoutsOnly = false) {
+function setup(
+  path = "/v2/close?source_account=SYNTH-01",
+  payoutsOnly = false,
+  showPayoutPreview = true,
+) {
   const state = {
     reply: null as
       | null
@@ -178,7 +189,7 @@ function setup(path = "/v2/close?source_account=SYNTH-01", payoutsOnly = false) 
   const view = render(
     <QueryClientProvider client={client}>
       <BrowserRouter>
-        <Harness payoutsOnly={payoutsOnly} />
+        <Harness payoutsOnly={payoutsOnly} showPayoutPreview={showPayoutPreview} />
       </BrowserRouter>
     </QueryClientProvider>,
   );
@@ -481,3 +492,15 @@ test.each(["account", "period"])(
     expect(posts(fetcher)).toHaveLength(0);
   },
 );
+
+test("statements retain dated source quantities without a duplicate provider action", async () => {
+  const { fetcher } = setup("/v2/close?source_account=SYNTH-01", false, false);
+  const dates = await screen.findByLabelText("Сохранённая дата количества");
+  fireEvent.change(dates, { target: { value: "2030-04-30" } });
+  expect(await screen.findByText(/Наблюдаемое количество: 2.5 на 2030-04-30/)).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Дата количества из выписки")).not.toBeInTheDocument();
+  expect(posts(fetcher)).toEqual([]);
+});

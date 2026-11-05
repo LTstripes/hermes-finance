@@ -88,6 +88,7 @@ export function MonthInstrumentPayouts({
   closingDate,
   sourceReferences,
   onAsOfChange,
+  allowProviderPreview = true,
 }: {
   account: string;
   nativeAccount: string;
@@ -95,6 +96,7 @@ export function MonthInstrumentPayouts({
   closingDate: string;
   sourceReferences: SourcePayoutPreview["source_references"];
   onAsOfChange: (value: string) => boolean;
+  allowProviderPreview?: boolean;
 }) {
   const client = useQueryClient();
   const [params] = useSearchParams();
@@ -175,7 +177,7 @@ export function MonthInstrumentPayouts({
   }, [client, retire]);
 
   async function run() {
-    if (inFlight.current || !validDate) return;
+    if (!allowProviderPreview || inFlight.current || !validDate) return;
     retire();
     const version = epoch.current;
     const abort = new AbortController();
@@ -242,16 +244,20 @@ export function MonthInstrumentPayouts({
     <section
       id="month-payout-preview"
       className={styles.preview}
-      aria-label={`Предварительные выплаты ${isin}`}
+      aria-label={`${allowProviderPreview ? "Предварительные выплаты" : "Количество по выписке"} ${isin}`}
     >
-      <h3>Предварительные выплаты · T-Invest</h3>
-      <details>
-        <summary>О предварительных выплатах</summary>
-        <p className={styles.note}>
-          Только по явному запросу. Сохранённое количество — сценарий, а не доказательство права на
-          будущую выплату. Прогноз не включается в P&amp;L или фактический доход.
-        </p>
-      </details>
+      <h3>
+        {allowProviderPreview ? "Предварительные выплаты · T-Invest" : "Количество по выписке"}
+      </h3>
+      {allowProviderPreview && (
+        <details>
+          <summary>О предварительных выплатах</summary>
+          <p className={styles.note}>
+            Только по явному запросу. Сохранённое количество — сценарий, а не доказательство права
+            на будущую выплату. Прогноз не включается в P&amp;L или фактический доход.
+          </p>
+        </details>
+      )}
       {bases.isFetching || bases.isPending ? (
         <p>Читаем даты количества из сохранённых выписок…</p>
       ) : bases.isError ? (
@@ -300,32 +306,36 @@ export function MonthInstrumentPayouts({
           )}
         </>
       )}
-      <label>
-        Дата количества из выписки{" "}
-        <input
-          aria-label="Дата количества из выписки"
-          type="date"
-          value={asOf}
-          onChange={(event) => {
-            if (onAsOfChange(event.target.value)) retire();
-          }}
-        />
-      </label>{" "}
-      <Button
-        type="button"
-        variant="primary"
-        disabled={busy || !validDate}
-        onClick={() => void run()}
-      >
-        {busy ? "Запрашиваем…" : "Запросить предварительные выплаты T-Invest"}
-      </Button>
+      {allowProviderPreview && (
+        <>
+          <label>
+            Дата количества из выписки{" "}
+            <input
+              aria-label="Дата количества из выписки"
+              type="date"
+              value={asOf}
+              onChange={(event) => {
+                if (onAsOfChange(event.target.value)) retire();
+              }}
+            />
+          </label>{" "}
+          <Button
+            type="button"
+            variant="primary"
+            disabled={busy || !validDate}
+            onClick={() => void run()}
+          >
+            {busy ? "Запрашиваем…" : "Запросить предварительные выплаты T-Invest"}
+          </Button>
+        </>
+      )}
       {!validDate && (
         <p role="alert">
           Нужна одна корректная дата количества. Выбери её явно; другая дата не подставляется.
         </p>
       )}
       {error && <p role="alert">{error}</p>}
-      {result && (
+      {allowProviderPreview && result && (
         <>
           <p>
             Источник: {result.native_source_account} · ISIN: {result.isin} · количество:{" "}

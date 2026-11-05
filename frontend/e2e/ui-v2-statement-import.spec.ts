@@ -359,7 +359,7 @@ async function openMonthPdf(page: Page) {
     mimeType: "application/pdf",
     buffer: SYNTHETIC_PDF,
   });
-  await page.getByRole("button", { name: "Подтвердить", exact: true }).click();
+  await page.getByRole("button", { name: "Разобрать операцию", exact: true }).click();
   await expect(page.getByRole("button", { name: "Проверить отчёт" })).toBeVisible();
 }
 
