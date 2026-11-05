@@ -218,6 +218,8 @@ it("retains historical XML intake behind details without a second investment-rep
   const upload = screen.getByLabelText("XML-файлы");
   expect(upload).not.toBeVisible();
   fireEvent.click(screen.getByText("Подробности"));
+  expect(upload).not.toBeVisible();
+  fireEvent.click(screen.getByText("Исходники и повторный выбор файла"));
   expect(upload).toBeVisible();
   expect(upload).toBeEnabled();
   expect(screen.queryByLabelText("Загрузить PDF Альфы")).not.toBeInTheDocument();

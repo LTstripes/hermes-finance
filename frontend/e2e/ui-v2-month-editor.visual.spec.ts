@@ -1077,14 +1077,10 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page).toHaveURL(/payout_as_of=2030-04-30/);
   await expect(page.getByText(/не заменяет закрывающий EOD 2030-05-31/)).toBeVisible();
   expect(previewBodies).toEqual([]);
-  await page.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }).click();
-  await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toBeVisible();
-  expect(previewBodies).toHaveLength(1);
-  expect(previewBodies[0]).toMatchObject({
-    source_account: "SYNTH-01",
-    isin: ISIN,
-    as_of: "2030-04-30",
-  });
+  await expect(
+    page.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+  ).toHaveCount(0);
+  expect(previewBodies).toEqual([]);
   await page.screenshot({
     path: testInfo.outputPath("month-payout-source-actual-future.png"),
     fullPage: true,
@@ -1095,7 +1091,7 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(dates).toBeVisible();
   await expect(dates).toHaveValue("2030-04-30");
   await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
-  expect(previewBodies).toHaveLength(1);
+  expect(previewBodies).toHaveLength(0);
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
   await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).click();
   await page.getByLabel("Сохранённый разбор").selectOption("1");
@@ -1142,8 +1138,8 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await instrumentDetails.click();
   await expect(dates).toBeVisible();
   await expect(dates).toHaveValue("2030-04-30");
-  expect(previewBodies).toHaveLength(1);
-  expect(writes).toEqual(["/api/source-returns/payout-preview"]);
+  expect(previewBodies).toHaveLength(0);
+  expect(writes).toEqual([]);
 });
 
 test("ui-v2 Month payout entry keeps CLOSED records read-only without background writes", async ({

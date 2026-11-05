@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { listAccounts } from "../../api/accounts";
 import {
   type BrokerSource,
+  type BrokerSourceIssue,
   type BrokerSources,
   brokerFileIdentity,
   readBrokerSources,
@@ -11,7 +12,9 @@ import {
 import { listInstruments } from "../../api/instruments";
 import { readSourceIntake, type SourceIntake } from "../../api/sourceIntake";
 import type { ReportingMonth } from "../../api/types";
+import { formatDate, formatMoney } from "../../lib/format";
 import { brokerSourceTitle } from "../../lib/ownerCopy";
+import { UNAVAILABLE_REASON } from "../../lib/reasonCopy";
 import { confirmStatementApply } from "../../ui-v2/UiV2StatementImportSection";
 import { SavedInvestmentReports } from "../SavedInvestmentReports";
 import { SourceReportPreviewPanel } from "../SourceReportPreviewPanel";
@@ -25,6 +28,32 @@ type Attempt = { originals: Original[]; requestId: string };
 const matches = (item: BrokerSource, original: Original) =>
   item.document_sha256 === original.document_sha256 &&
   item.filename_digest === original.filename_digest;
+
+function Issue({ issue }: { issue: BrokerSourceIssue }) {
+  const message = brokerSourceTitle(issue.code);
+  return (
+    <li>
+      {(issue.name || issue.isin) && <strong>{issue.name || issue.isin}. </strong>}
+      {issue.source_account && `Счёт ${issue.source_account}. `}
+      {issue.date && `${formatDate(issue.date.slice(0, 10))}. `}
+      {issue.section === "money"
+        ? "Денежная операция. "
+        : issue.section === "trades"
+          ? "Сделка. "
+          : ""}
+      {issue.quantity != null && `Количество: ${issue.quantity}. `}
+      {issue.amount != null &&
+        `Сумма: ${formatMoney(issue.amount, { currency: issue.currency ?? "валюта неизвестна" })}. `}
+      {issue.code === "source_intake_receipt_authority_changed"
+        ? "Сохранённое решение больше не соответствует данным. Сверь изменения перед новым подтверждением."
+        : issue.code === "5_UFSR_unsupported"
+          ? "Служебный раздел выписки не удалось разобрать. Сверь исходный файл."
+          : message === UNAVAILABLE_REASON
+            ? "Не удалось однозначно разобрать данные. Открой их и сверь с выпиской."
+            : message}
+    </li>
+  );
+}
 
 export function BrokerSourcesIntake({
   month,
@@ -151,7 +180,10 @@ export function BrokerSourcesIntake({
       );
       setMessages(
         failed.length
-          ? failed.map((row) => row.error?.message ?? copy.readFailed)
+          ? failed.map(
+              (row) =>
+                `${attempt.originals[row.index].file.name}: ${row.error?.message ?? copy.readFailed}`,
+            )
           : [ack.results.some((row) => row.duplicate) ? copy.duplicate : copy.saved],
       );
       setUncertain(null);
@@ -215,7 +247,7 @@ export function BrokerSourcesIntake({
     }
   }
   const items = !query.isError && !query.isFetching ? (query.data?.items ?? []) : [];
-  const confirmationCount = (query.data?.confirmation_count ?? 0) + (retry?.originals.length ?? 0);
+  const confirmationCount = query.data?.confirmation_count ?? 0;
   const blocked = disabled || busy || applying || proofPending || !!uncertain || !!pdf;
   const slotLabel = (item: BrokerSource) =>
     item.kind === "income_pdf"
@@ -273,43 +305,65 @@ export function BrokerSourcesIntake({
         <p role="status">{copy.loading}</p>
       ) : query.isError ? (
         <p role="status">{copy.readFailed}</p>
-      ) : query.data?.status === "empty" && !confirmationCount ? (
+      ) : query.data?.status === "empty" && !confirmationCount && !retry ? (
         <p>{copy.empty}</p>
       ) : (
         <p
           role="status"
-          className={confirmationCount ? "inline-alert inline-alert--warn" : undefined}
+          className={confirmationCount || retry ? "inline-alert inline-alert--warn" : undefined}
         >
-          {confirmationCount ? copy.confirm + confirmationCount : copy.ok}
+          {confirmationCount
+            ? copy.confirm + confirmationCount
+            : retry
+              ? copy.partialUpload
+              : copy.ok}
         </p>
       )}
+      {confirmationCount > 0 && <p>{copy.partial}</p>}
       {items.length > 0 && (
         <ul aria-label={copy.savedFiles}>
           {items.map((item) => (
             <li key={item.document_sha256}>
-              <span>
-                {slotLabel(item)}.{" "}
-                {item.state === "needs_decision"
-                  ? item.kind === "income_pdf"
-                    ? copy.pdfDecision
-                    : (brokerSourceTitle(item.exceptions[0]) ?? copy.states.needs_decision)
-                  : copy.states[item.state]}
-              </span>{" "}
+              <strong>{slotLabel(item)}</strong>. {copy.states[item.state]}
               {item.state === "needs_decision" && (
                 <>
+                  {item.kind === "income_pdf" ? (
+                    <p>{copy.pdfDecision}</p>
+                  ) : (
+                    <ul>
+                      {(item.review_issues ?? item.exceptions.map((code) => ({ code }))).map(
+                        (issue: BrokerSourceIssue) => (
+                          <Issue
+                            key={[issue.code, issue.isin, issue.section, issue.ordinal].join(":")}
+                            issue={issue}
+                          />
+                        ),
+                      )}
+                    </ul>
+                  )}
                   <button type="button" disabled={blocked} onClick={() => review(item)}>
-                    {copy.confirmAction}
-                  </button>{" "}
-                  <button type="button" disabled={blocked} onClick={() => review(item)}>
-                    {copy.correctAction}
+                    {copy.reviewAction}
                   </button>
                 </>
               )}
-              {item.state === "file_saved" && (
-                <button type="button" disabled={blocked} onClick={() => review(item)}>
-                  {copy.reviewAction}
-                </button>
-              )}
+              <details>
+                <summary>Подробнее о файле</summary>
+                <p>
+                  {formatDate(item.covered_from)} — {formatDate(item.covered_to)}
+                </p>
+                {!!item.information_codes?.length && <p>{copy.structureInfo}</p>}
+                {item.state !== "needs_decision" && item.kind === "mybroker_xml" && (
+                  <button type="button" disabled={blocked} onClick={() => review(item)}>
+                    Просмотреть данные
+                  </button>
+                )}
+                {!!item.exceptions.length && (
+                  <details>
+                    <summary>Диагностика файла</summary>
+                    <code>{item.exceptions.join(", ")}</code>
+                  </details>
+                )}
+              </details>
             </li>
           ))}
         </ul>

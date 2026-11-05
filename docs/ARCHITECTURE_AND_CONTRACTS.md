@@ -2316,6 +2316,14 @@ Duplicate discovery revalidates the existing original identity and attachment,
 with no no-op revision or classification refresh. GET reconstructs the result
 from the journal without financial writes. `file_saved`, `needs_decision` and `financial_data_accepted`
 remain distinct; confirmation findings are warnings, never new Close blockers.
+The facade's additive `review_issues` locates witnessed instrument/operation findings;
+`information_codes` separates only recognized non-economic structure flags using the
+existing exact whole-inventory assessor. Raw `exceptions`, journal decisions, source
+proof/currentness, writer and Close authority are unchanged. Unknown/opaque structure
+and conflicts retain `needs_decision`; a historical finance link that no longer validates
+is also a review finding, including when the underlying scope only reports pending.
+Neither information classification nor an `ok` upload status financially accepts a file
+or refreshes an old confirmation. Failed upload retries are separate from decision counts.
 The facade also accepts the existing depository income-payment PDF family using
 the same Inspect/Prepare services. All parsed payment dates must be known and
 inside the selected month; a foreign period or unsupported PDF fails only that

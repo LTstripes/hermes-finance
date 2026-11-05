@@ -114,7 +114,7 @@ it("drops XML and PDF together, keeps successful siblings and retries only the P
     }),
     { dataTransfer: { files } },
   );
-  await screen.findByText("Не удалось прочитать PDF.");
+  await screen.findByText("income.pdf: Не удалось прочитать PDF.");
   expect(api.upload.mock.calls[0][1]).toEqual(files);
   api.read.mockResolvedValue(state([first, second, pdf]));
   api.upload.mockResolvedValueOnce({
@@ -122,7 +122,7 @@ it("drops XML and PDF together, keeps successful siblings and retries only the P
     results: [{ index: 0, item: pdf, error: null, duplicate: false }],
   });
   fireEvent.click(screen.getByRole("button", { name: "Повторить проблемные файлы" }));
-  await screen.findByText("Нужно подтвердить: 3");
+  await screen.findByText("Нужен разбор файлов: 3");
   expect(api.upload.mock.calls[1][1]).toEqual([files[2]]);
   expect(api.upload.mock.calls[1][2]).toEqual(api.upload.mock.calls[0][2]);
   expect(screen.queryByText("synthetic")).not.toBeInTheDocument();
@@ -145,13 +145,13 @@ it("recovers a lost upload response through GET without replaying POST", async (
 it("reads saved warnings after remount and opens existing decisions without dismissing a finding", async () => {
   api.read.mockResolvedValue(state([source("first.xml")]));
   const first = mount();
-  await screen.findByText("Нужно подтвердить: 1");
+  await screen.findByText("Нужен разбор файлов: 1");
   first.unmount();
   const second = mount();
-  await screen.findByText("Нужно подтвердить: 1");
-  fireEvent.click(screen.getByRole("button", { name: "Подтвердить" }));
+  await screen.findByText("Нужен разбор файлов: 1");
+  fireEvent.click(screen.getByRole("button", { name: "Разобрать операцию" }));
   expect(second.onReview).toHaveBeenCalledWith(1);
-  expect(screen.getByText("Нужно подтвердить: 1")).toBeInTheDocument();
+  expect(screen.getByText("Нужен разбор файлов: 1")).toBeInTheDocument();
   expect(api.upload).not.toHaveBeenCalled();
 });
 
@@ -159,8 +159,8 @@ it("requires the original PDF after reload and reuses it in the existing selecte
   const pdf = source("income.pdf", null);
   api.read.mockResolvedValue(state([pdf]));
   mount();
-  await screen.findByText("Нужно подтвердить: 1");
-  fireEvent.click(screen.getByRole("button", { name: "Исправить" }));
+  await screen.findByText("Нужен разбор файлов: 1");
+  fireEvent.click(screen.getByRole("button", { name: "Разобрать операцию" }));
   await screen.findByText(
     "Выбери исходный PDF в зоне загрузки, чтобы проверить и принять его выплаты.",
   );
@@ -172,7 +172,7 @@ it("requires the original PDF after reload and reuses it in the existing selecte
     target: { files: [new File(["c"], "income.pdf")] },
   });
   await screen.findByText("Этот файл уже загружен.");
-  fireEvent.click(screen.getByRole("button", { name: "Подтвердить" }));
+  fireEvent.click(screen.getByRole("button", { name: "Разобрать операцию" }));
   await screen.findByText("Разбор выбранного PDF: income.pdf");
   expect(screen.getAllByLabelText("Выбрать файлы")).toHaveLength(1);
 });
@@ -183,4 +183,59 @@ it("does not offer uploading in a closed month", async () => {
   await screen.findByText("Всё в порядке");
   expect(screen.queryByLabelText("Выбрать файлы")).not.toBeInTheDocument();
   await waitFor(() => expect(api.upload).not.toHaveBeenCalled());
+});
+
+it("keeps recognized structure information in details after remount without requesting confirmation", async () => {
+  const saved = {
+    ...source("first.xml"),
+    state: "file_saved" as const,
+    exceptions: ["4_Transfers_unsupported"],
+    information_codes: ["4_Transfers_unsupported"],
+    review_issues: [],
+  };
+  api.read.mockResolvedValue(state([saved]));
+  const first = mount();
+  await screen.findByText("Всё в порядке");
+  first.unmount();
+  mount();
+  await screen.findByText("Всё в порядке");
+  expect(screen.queryByRole("button", { name: "Разобрать операцию" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Нужен разбор файлов/)).not.toBeInTheDocument();
+  expect(api.upload).not.toHaveBeenCalled();
+  expect(screen.getByText("4_Transfers_unsupported").closest("details")).not.toHaveAttribute(
+    "open",
+  );
+});
+
+it("shows the witnessed operation and one review action while accepted siblings remain saved", async () => {
+  api.read.mockResolvedValue(
+    state([
+      {
+        ...source("IIS"),
+        review_issues: [
+          {
+            code: "source_intake_currency_conflict",
+            name: "Synthetic bond",
+            isin: "RU000A000001",
+            source_account: "IIS",
+            date: "2030-01-17",
+            amount: "500.00",
+            currency: "RUB",
+            section: "money",
+            ordinal: 2,
+          },
+        ],
+      },
+      { ...source("Broker", 2), state: "financial_data_accepted" },
+    ]),
+  );
+  const { onReview } = mount();
+  await screen.findByText("Нужен разбор файлов: 1");
+  expect(screen.getByText(/Synthetic bond/)).toBeVisible();
+  expect(screen.getByText(/Счёт IIS.*17.01.2030.*Сумма:/)).toBeVisible();
+  expect(screen.getAllByRole("button", { name: "Разобрать операцию" })).toHaveLength(1);
+  expect(screen.getByText(/Остальные данные сохранены/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Разобрать операцию" }));
+  expect(onReview).toHaveBeenCalledWith(1);
+  expect(api.upload).not.toHaveBeenCalled();
 });

@@ -100,6 +100,7 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
     await sourceReadGate;
     await route.continue();
   });
+  await openDisclosure(page, "Исходники и повторный выбор файла");
   await page.getByLabel("XML-файлы", { exact: true }).setInputFiles(
     buffers.map((buffer, i) => ({
       name: `Брокерский 711490${i + 1} (01.01.39-31.10.39).xml`,
@@ -349,7 +350,9 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
     expect(uploaded.results[index].item.intake_id).toEqual(expect.any(Number));
   }
   await expect(
-    page.getByText("Не удалось сохранить файл; проверь его в подробностях.", { exact: true }),
+    page.getByText("broken.xml: Не удалось сохранить файл; проверь его в подробностях.", {
+      exact: true,
+    }),
   ).toBeVisible();
   const savedFiles = page.getByRole("list", { name: "Сохранённые файлы", exact: true });
   await expect(savedFiles.getByRole("listitem")).toHaveCount(2);
@@ -374,10 +377,14 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
       await expect
         .poll(() => page.evaluate(() => window.history.state?.monthNavigationGuard))
         .toBeUndefined();
-      const uploadedB = savedFiles
+      const uploadedBRow = savedFiles
         .getByRole("listitem")
-        .filter({ hasText: "Выписка счёта 7114002-000." })
-        .getByRole("button", { name: /^(Исправить|Проверить)$/ });
+        .filter({ hasText: "Выписка счёта 7114002-000" });
+      await uploadedBRow.getByText("Подробнее о файле", { exact: true }).click();
+      const uploadedB = uploadedBRow.getByRole("button", {
+        name: "Просмотреть данные",
+        exact: true,
+      });
       await uploadedB.click();
       await expect(
         page.getByRole("alertdialog", { name: "Открыть другую выписку?" }),
@@ -422,16 +429,9 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
     for (const name of ["Synthetic stock", "Synthetic bond"]) {
       await page.getByRole("button", { name, exact: true }).click();
       await expect(page.getByText(/Наблюдаемое количество: 10 на 2040-10-31/)).toBeVisible();
-      await page
-        .getByRole("button", { name: "Запросить предварительные выплаты T-Invest" })
-        .click();
       await expect(
-        page.getByRole("region", { name: "Фактические строки источника (actual)" }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("region", { name: "Возможно уже выплачено (possible_paid)" }),
-      ).toBeVisible();
-      await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toBeVisible();
+        page.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+      ).toHaveCount(0);
     }
   }
   await page.screenshot({ path: info.outputPath("october-sources.png"), fullPage: true });

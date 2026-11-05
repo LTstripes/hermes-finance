@@ -8,6 +8,61 @@ from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.persistence import ReportingMonth, SourceIntakeOriginal
 from hermes_finance.services import mybroker_import, source_intake, source_intake_pdf
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
+from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
+
+# Parser limitations are retained as evidence. They are not a choice the Owner
+# can confirm away, and must never be interpreted as a lost journal decision.
+_STRUCTURE_CODES = {"4_Transfers_unsupported", "5_UFSR_unsupported", "unparsed_source_rows"}
+
+
+def _review_issues(view, codes):
+    """Describe only witnessed affected rows; this projection grants no authority."""
+    issues = []
+    located = set()
+    for proposal in view["proposals"]:
+        reasons = set(proposal.get("evidence_gaps", []))
+        reasons.update(proposal.get("review_reasons", []))
+        reasons.update(proposal["currency_assessment"]["reasons"])
+        if proposal["isin"] in view["state"]["deferred_isins"]:
+            reasons.add("source_intake_identity_deferred")
+        for code in sorted(reasons.intersection(codes)):
+            issues.append(
+                {"code": code, "isin": proposal["isin"], "name": proposal.get("source_name")}
+            )
+            located.add(code)
+    for section in ("trades", "money"):
+        for row in view["document"][section]:
+            reasons = set(row.get("blockers", []))
+            if section == "money" and row["kind"] == "unsupported":
+                reasons.add("money_semantics_unsupported")
+            if section == "trades" and row.get("repo_observed"):
+                reasons.add("repo_identity_unsupported")
+            core = row.get("core", row)
+            for code in sorted(reasons.intersection(codes)):
+                issues.append(
+                    {
+                        "code": code,
+                        "isin": core.get("isin"),
+                        "name": next(
+                            (
+                                p.get("source_name")
+                                for p in view["proposals"]
+                                if p["isin"] == core.get("isin")
+                            ),
+                            None,
+                        ),
+                        "source_account": core.get("source_account"),
+                        "date": core.get("trade_time", core.get("date")),
+                        "quantity": core.get("quantity"),
+                        "amount": core.get("trade_amount", core.get("amount")),
+                        "currency": core.get("currency"),
+                        "section": section,
+                        "ordinal": row["ordinal"],
+                    }
+                )
+                located.add(code)
+    issues.extend({"code": code} for code in sorted(set(codes) - located))
+    return issues
 
 
 def _month(session, month_id, *, editable=False):
@@ -33,6 +88,16 @@ def _item(view, filename_digest=None):
     if not accounts and view["document"].get("filename_account"):
         accounts = [view["document"]["filename_account"]]
     exceptions = [code for code in view["exceptions"] if code != source_intake.PENDING]
+    # Reuse the existing exact inventory assessor. Unknown/opaque trees keep
+    # their findings; recognized non-economic wrappers are information only.
+    information = set(exceptions).intersection(_STRUCTURE_CODES) - source_return_blockers(view)
+    decisions = sorted(set(exceptions) - information)
+    # A previously linked receipt that no longer validates is a real changed
+    # dependency, even when PENDING is the only remaining scope reason.
+    if not view["finance_link"] and any(
+        row["operation"] == "finance_link" for row in view["history"]
+    ):
+        decisions.append("source_intake_receipt_authority_changed")
     return {
         "intake_id": view["id"],
         "document_sha256": view["document_sha256"],
@@ -45,9 +110,11 @@ def _item(view, filename_digest=None):
         "kind": "mybroker_xml",
         "slot": "xml:" + digest(accounts),
         "state": "needs_decision"
-        if exceptions
+        if decisions
         else ("financial_data_accepted" if view["finance_link"] else "file_saved"),
         "exceptions": exceptions,
+        "review_issues": _review_issues(view, decisions),
+        "information_codes": sorted(information),
         "head_seq": view["head_seq"],
         "request_ids": [row["request_id"] for row in view["history"]],
     }

@@ -360,12 +360,20 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   ).toHaveLength(0);
   expect(writes).toEqual([]);
 
-  const run = panel.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" });
-  const responseA = page.waitForResponse((response) =>
-    response.url().endsWith("/api/source-returns/payout-preview"),
-  );
-  await run.click();
-  const a = await (await responseA).json();
+  await expect(
+    panel.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+  ).toHaveCount(0);
+  // The Month route intentionally has no provider action. Keep the exact
+  // synthetic backend reconciliation cases here; the default preview component
+  // retains its table/currentness coverage in UiV2MonthInstruments.test.tsx.
+  const preview = async (source_account: string, as_of: string) => {
+    const response = await request.post("/api/source-returns/payout-preview", {
+      data: { source_account, isin: stock, as_of },
+    });
+    expect(response.ok()).toBe(true);
+    return response.json();
+  };
+  const a = await preview("2222222", "2030-05-31");
   expect(a).toMatchObject({
     source_account: "2222222",
     native_source_account: "2222222-000",
@@ -374,50 +382,34 @@ test("Month instruments and explicit source payout preview keep two accounts, da
     quantity: "10",
     financial_authority: "none",
   });
-  expect(a.rows.filter((row: { countable_future: boolean }) => row.countable_future)).toHaveLength(
-    2,
-  );
-  await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).toContainText(
-    "25,00 ₽",
-  );
-  await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).not.toContainText(
-    "possible_paid",
-  );
+  const futureA = a.rows.filter((row: { countable_future: boolean }) => row.countable_future);
+  expect(futureA).toHaveLength(2);
+  expect(
+    futureA.some(
+      (row: { announced_amount_kopecks: string }) => row.announced_amount_kopecks === "2500",
+    ),
+  ).toBe(true);
+  expect(futureA.every((row: { status: string }) => row.status === "future")).toBe(true);
   const requestsAfterA = (await (await request.get("/api/synthetic-month-state")).json())
     .provider_requests.length;
-  await panel.getByLabel("Дата количества из выписки").fill("2030-04-30");
-  await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
-  expect(
-    (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
-  ).toHaveLength(requestsAfterA);
-  const missingResponse = page.waitForResponse((response) =>
-    response.url().endsWith("/api/source-returns/payout-preview"),
-  );
-  await run.click();
-  const missing = await (await missingResponse).json();
+  const missing = await preview("2222222", "2030-04-30");
   expect(missing.quantity).toBeNull();
   expect(missing.rows).toHaveLength(0);
-  await expect(panel.getByText(/количество: неизвестно на 2030-04-30/)).toBeVisible();
   expect(
     (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
   ).toHaveLength(requestsAfterA);
-
   await openDisclosure(page, "Подробности");
   await page.getByLabel("Счёт источника месяца").selectOption("3333333");
   await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   await expect(panel.getByText(/Выбранный счёт: 3333333 · нативный: 3333333-000/)).toBeVisible();
   await panel.getByRole("button", { name: "Синтетическая акция месяца", exact: true }).click();
-  await expect(panel.getByLabel("Дата количества из выписки")).toHaveValue("2030-05-31");
+  await expect(panel.getByLabel("Сохранённая дата количества")).toHaveValue("2030-05-31");
   await expect(panel.getByText(/Наблюдаемое количество: 5 на 2030-05-31/)).toBeVisible();
-  // Let the explicit account change settle its independent current reads before
-  // requesting a preview that those reads are required to retire.
   await page.waitForLoadState("networkidle");
-  await expect(panel.getByRole("table", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
-  const responseB = page.waitForResponse((response) =>
-    response.url().endsWith("/api/source-returns/payout-preview"),
-  );
-  await run.click();
-  const b = await (await responseB).json();
+  expect(
+    (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
+  ).toHaveLength(requestsAfterA);
+  const b = await preview("3333333", "2030-05-31");
   expect(b).toMatchObject({
     source_account: "3333333",
     native_source_account: "3333333-000",
@@ -434,18 +426,12 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   expect(
     b.rows.find((row: { payment_date: string }) => row.payment_date === "2030-06-15").status,
   ).toBe("possible_paid");
-  const actuals = panel.getByRole("table", {
-    name: "Actual для сверки · включая события после даты количества",
-  });
-  await expect(actuals).toContainText("2030-06-15");
-  await expect(actuals).toContainText("12,34 ₽");
-  await expect(
-    panel.getByRole("table", { name: "Возможно уже выплачено (possible_paid)" }),
-  ).toContainText("2030-06-15");
-  await expect(panel.getByRole("region", { name: "Будущие кандидаты (future)" })).not.toContainText(
-    "2030-06-15",
-  );
-  await panel.screenshot({ path: info.outputPath("month-stock-actual-possible-paid-1440.png") });
+  expect(
+    b.rows
+      .filter((row: { countable_future: boolean }) => row.countable_future)
+      .every((row: { payment_date: string }) => row.payment_date !== "2030-06-15"),
+  ).toBe(true);
+  await panel.screenshot({ path: info.outputPath("month-stock-source-quantity-1440.png") });
 
   await panel.getByRole("button", { name: "Синтетическая облигация", exact: true }).click();
   await panel.getByText("Сделки, выплаты и расчёт инструмента", { exact: true }).click();
@@ -480,5 +466,5 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   await panel.screenshot({ path: info.outputPath("month-bond-conditional-null-1440-125.png") });
   const after = await (await request.get("/api/synthetic-month-state")).json();
   expect(after.snapshot_sha256).toBe(before.snapshot_sha256);
-  expect(writes.every((path) => path === "/api/source-returns/payout-preview")).toBe(true);
+  expect(writes).toEqual([]);
 });

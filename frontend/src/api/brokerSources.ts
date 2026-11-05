@@ -1,5 +1,18 @@
 import { apiMultipart, apiRequest } from "./client";
 
+export type BrokerSourceIssue = {
+  code: string;
+  isin?: string | null;
+  name?: string | null;
+  source_account?: string | null;
+  date?: string | null;
+  quantity?: string | null;
+  amount?: string | null;
+  currency?: string | null;
+  section?: string;
+  ordinal?: number;
+};
+
 export type BrokerSource = {
   intake_id: number | null;
   receipt_seq?: number;
@@ -12,6 +25,8 @@ export type BrokerSource = {
   covered_to: string;
   state: "file_saved" | "needs_decision" | "financial_data_accepted";
   exceptions: string[];
+  review_issues?: BrokerSourceIssue[];
+  information_codes?: string[];
   head_seq: number;
   request_ids: string[];
 };

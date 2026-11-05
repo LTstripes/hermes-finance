@@ -5,7 +5,7 @@ import { formatApiError } from "../api/client";
 import { getSourceInstrumentReturns } from "../api/sourceReturns";
 import { Button } from "../components/ui";
 import { MonthInstrumentPayouts } from "./MonthInstrumentPayouts";
-import { SourceInstrumentDetail, money, observed, rate, Reasons } from "./SourceInstrumentDetail";
+import { money, observed, Reasons, rate, SourceInstrumentDetail } from "./SourceInstrumentDetail";
 import styles from "./UiV2BondSlice.module.css";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
@@ -19,6 +19,7 @@ export function UiV2MonthInstruments({
   account,
   sourceVersion,
   payoutsOnly = false,
+  showPayoutPreview = true,
 }: {
   monthId: number;
   year: number;
@@ -26,6 +27,7 @@ export function UiV2MonthInstruments({
   account: string;
   sourceVersion: string;
   payoutsOnly?: boolean;
+  showPayoutPreview?: boolean;
 }) {
   const [params] = useSearchParams();
   const location = useLocation();
@@ -305,7 +307,7 @@ export function UiV2MonthInstruments({
                 <SourceInstrumentDetail
                   analysis={instrument.analysis}
                   instrumentType={instrument.instrument_type}
-                  payoutPreviewHere
+                  payoutPreviewHere={showPayoutPreview}
                 />
               </details>
               <MonthInstrumentPayouts
@@ -316,6 +318,7 @@ export function UiV2MonthInstruments({
                 closingDate={closing}
                 sourceReferences={instrument.analysis.source_references}
                 onAsOfChange={changeQuantityDate}
+                allowProviderPreview={showPayoutPreview}
               />
             </section>
           ) : null}
