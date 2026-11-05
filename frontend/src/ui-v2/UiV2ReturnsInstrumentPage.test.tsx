@@ -169,7 +169,7 @@ test("sold zero and known sibling survive a stale account without stale zero fal
   expect(accounts.getByText("0 шт.")).toBeVisible();
   expect(accounts.getByText("+12 ₽")).toBeVisible();
   expect(accounts.getByText("12,00%")).toBeVisible();
-  expect(accounts.getByText("Нужна проверка данных")).toBeVisible();
+  expect(accounts.getByText("Полный результат недоступен")).toBeVisible();
   expect(accounts.getAllByText("—")).toHaveLength(2);
   expect(accounts.queryByText("0 ₽")).toBeNull();
   expect(
