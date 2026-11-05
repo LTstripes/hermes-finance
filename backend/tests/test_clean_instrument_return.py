@@ -161,15 +161,23 @@ def test_outside_trade_with_cost_leg_inside_does_not_break_clean_quantity(role, 
 
     start, end = date(2030, 1, 31), date(2030, 2, 28)
     prior, fee_date = date(2030, 1, 16), date(2030, 2, 3)
+    instrument_type = "bond" if role == "nkd" else "stock"
     buy = replace(
-        trade("BUY", 102000, 2000),
+        trade("BUY", 102000 if role == "nkd" else 100000, 2000 if role == "nkd" else 0),
         quantity_delta=Decimal(1),
         event_date=prior,
         cash_settlement_date=prior,
         depository_settlement_date=prior,
         cash_legs=(
             CashLeg("principal", prior, -100000, 100000, ("principal",), "principal"),
-            CashLeg(role, fee_date, -2000, 2000, ("cost",), "cost"),
+            CashLeg(
+                role,
+                fee_date,
+                -2000 if role == "nkd" else -100,
+                2000 if role == "nkd" else 100,
+                ("cost",),
+                "cost",
+            ),
         ),
     )
     endpoints = {
@@ -183,10 +191,10 @@ def test_outside_trade_with_cost_leg_inside_does_not_break_clean_quantity(role, 
         {"covered_from": "2030-02-01", "covered_to": "2030-02-28", "document": {"warnings": []}}
     ]
     analysis = source_instrument_events.analyse(
-        views, "ZZ0000000011", "stock", start, end, (buy,), (), ()
+        views, "ZZ0000000011", instrument_type, start, end, (buy,), (), ()
     )
     assert "cross_boundary_settlement" in analysis.coverage["quantity"].reason_codes
-    clean = project_clean_analysis(analysis, "ZZ0000000011")
+    clean = project_clean_analysis(analysis, "ZZ0000000011", instrument_type=instrument_type)
     assert clean.pnl.value == 10000
 
 
