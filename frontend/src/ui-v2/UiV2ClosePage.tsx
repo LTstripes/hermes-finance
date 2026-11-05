@@ -256,36 +256,23 @@ export default function UiV2ClosePage() {
               <Link to={panelPath(null)}>← К месяцу</Link>
             </header>
             {panel === "payouts" ? (
-              <>
-                <nav className={monthStyles.sourceNav} aria-label="Выплаты месяца">
-                  <a href="#month-draft-payouts">Ожидается · T-Invest</a>
-                  <a href="#month-accepted-payouts">Принятые фактические выплаты</a>
-                  <Link to={panelPath("brokers")}>Выписки и наблюдения источников</Link>
-                </nav>
-                <p>
-                  Прогноз T-Invest использует позиции из уже сохранённого финансового DRAFT.
-                  Повторно загружать выписку здесь не нужно. Сохранение источника без финансового
-                  принятия ещё не создаёт такой DRAFT. Прогнозы и полученные выплаты показаны
-                  отдельно.
-                </p>
-                <MonthDraftPayouts
-                  key={`draft-forecasts:${workflow.month.id}:${discardVersion}`}
-                  monthId={workflow.month.id}
-                  closed={closed}
-                  disabled={
-                    !workflowReady ||
-                    sourceDirty ||
-                    sourcePending ||
-                    editorNavigation.dirty ||
-                    editorNavigation.pending ||
-                    lifecycleBusy ||
-                    lifecycleRecovery ||
-                    Boolean(pendingLifecycle)
-                  }
-                  sourceVersion={original.confirmed?.request_id}
-                  onPendingChange={setUploadPending}
-                />
-              </>
+              <MonthDraftPayouts
+                key={`draft-forecasts:${workflow.month.id}:${discardVersion}`}
+                monthId={workflow.month.id}
+                closed={closed}
+                disabled={
+                  !workflowReady ||
+                  sourceDirty ||
+                  sourcePending ||
+                  editorNavigation.dirty ||
+                  editorNavigation.pending ||
+                  lifecycleBusy ||
+                  lifecycleRecovery ||
+                  Boolean(pendingLifecycle)
+                }
+                sourceVersion={original.confirmed?.request_id}
+                onPendingChange={setUploadPending}
+              />
             ) : null}
             {panel === "brokers" ? (
               <UiV2MonthSources

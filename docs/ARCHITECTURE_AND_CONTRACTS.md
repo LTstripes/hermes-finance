@@ -12095,7 +12095,7 @@ duplicate acceptance recovery and GET/Reload do not schedule writes.
 `GET /api/months/{id}/payout-refresh-status` additionally reports transient automatic
 status and reason codes, plus `forecast_as_of`: the oldest fetched date among the
 latest saved revisions of active T-Invest payouts, or NULL without complete evidence.
-Provider failures preserve those revisions and dates. Attempt status resets to idle
+Provider failures preserve those revisions and dates. A successful structurally valid empty window with coverage of every applicable event kind is an unchanged result, not an error; it does not retire saved events or establish zero beyond the requested window. Missing or invalid coverage is an error. Attempt status resets to idle
 on process restart; restart never replays pending work.
 Eligibility requires a current strict broker-month SOURCE receipt and its native
 positive `PositionSnapshot`, active broker/IIS account, stock/bond ISIN and RUB.

@@ -164,7 +164,7 @@ describe("native Monthly Close work mode", () => {
   it("payouts reuses saved DRAFT and calendar without loading a second XML review", async () => {
     const { mount, fetchMock } = setup("/v2/close?month=12&panel=payouts");
     mount();
-    await screen.findByRole("button", { name: "Получить и сохранить прогнозы Т-Инвест" });
+    await screen.findByRole("button", { name: "Обновить прогноз Т-Инвест" });
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/draft-payouts"))).toBe(
         true,
@@ -175,9 +175,9 @@ describe("native Monthly Close work mode", () => {
     ).toBe(false);
     expect(screen.queryByText("Исправления и сохранение месяца")).toBeNull();
     expect(screen.queryByLabelText("XML-файлы")).toBeNull();
-    expect(screen.getByRole("link", { name: "Ожидается · T-Invest" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Календарь выплат" })).toHaveAttribute(
       "href",
-      "#month-draft-payouts",
+      "/v2/data/payouts?month=12",
     );
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(
       true,

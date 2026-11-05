@@ -6,6 +6,7 @@ import {
   type DraftPayoutContext,
   type DraftPayoutResult,
   getDraftPayoutContext,
+  getPayoutRefreshStatus,
   listPayoutCalendar,
   refreshDraftPayouts,
 } from "../api/payouts";
@@ -13,11 +14,12 @@ import { MonthDraftPayouts } from "./MonthDraftPayouts";
 
 vi.mock("../api/payouts", () => ({
   getDraftPayoutContext: vi.fn(),
+  getPayoutRefreshStatus: vi.fn(),
   listPayoutCalendar: vi.fn(),
   refreshDraftPayouts: vi.fn(),
 }));
-const cta = "Получить и сохранить прогнозы Т-Инвест";
-const read = "Обновить чтение сохранённых прогнозов";
+const cta = "Обновить прогноз Т-Инвест";
+const read = "Проверить сохранённые прогнозы";
 const context: DraftPayoutContext = {
   reporting_month_id: 1,
   snapshot_date: "2030-01-31",
@@ -59,6 +61,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   window.history.replaceState(null, "", "/v2/close?month=1&panel=payouts");
   vi.mocked(getDraftPayoutContext).mockResolvedValue(context);
+  vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+    reporting_month_id: 1,
+    positions_changed: 0,
+    items: [],
+    forecast_as_of: null,
+  });
   vi.mocked(listPayoutCalendar).mockResolvedValue([]);
   vi.mocked(refreshDraftPayouts).mockResolvedValue(saved);
 });
@@ -68,18 +76,21 @@ test("confirmed DRAFT enables one explicit batch and GET readback; render/focus/
   await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: cta }));
-  fireEvent.click(screen.getByRole("button", { name: /Получаем и сохраняем/ }));
-  expect(await screen.findByText(/Позиций обновлено: 2/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /Обновляем прогноз/ }));
+  expect(await screen.findByText(/Обновлено позиций: 2/)).toBeVisible();
   expect(refreshDraftPayouts).toHaveBeenCalledExactlyOnceWith(1, context.context_digest);
   expect(getDraftPayoutContext).toHaveBeenCalledTimes(2);
   expect(listPayoutCalendar).toHaveBeenCalledTimes(2);
-  expect(screen.getByText(/Объявлено\/прогноз \(налог неизвестен\)/)).toBeVisible();
-  expect(screen.getByText(/Возврат номинала · отдельно от дохода/)).toBeVisible();
+  expect(screen.getByRole("link", { name: "Календарь выплат" })).toHaveAttribute(
+    "href",
+    "/v2/data/payouts?month=1",
+  );
+  expect(screen.queryByRole("table")).not.toBeInTheDocument();
   view.unmount();
   show();
   await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
   expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
-  expect(screen.queryByText(/Позиций обновлено/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Обновлено позиций/)).not.toBeInTheDocument();
 });
 
 test.each(["source-only", "closed", "dirty", "failed-get"])(
@@ -115,14 +126,14 @@ test.each(["lost-ack", "lost-get"])(
     show({ onPendingChange: pending });
     await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: cta }));
-    expect(await screen.findByText(/Результат всего запроса не подтверждён/)).toBeVisible();
+    expect(await screen.findByText(/Не удалось подтвердить результат/)).toBeVisible();
     expect(screen.getByRole("button", { name: cta })).toBeDisabled();
     expect(pending).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByRole("button", { name: read }));
     await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
     expect(refreshDraftPayouts).toHaveBeenCalledTimes(1);
     expect(pending).toHaveBeenLastCalledWith(false);
-    expect(screen.queryByText(/Позиций обновлено/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Обновлено позиций/)).not.toBeInTheDocument();
   },
 );
 
@@ -235,7 +246,8 @@ test.each(["available", "closed", "dirty", "no-action", "unknown"])(
       items: [{ ...context.items[0], eligible: false, reason_codes: [code] }],
     });
     show({ closed: mode === "closed", disabled: mode === "dirty" });
-    await screen.findByText(/Что требует проверки/);
+    await screen.findByText(/Некоторые данные требуют проверки/);
+    fireEvent.click(screen.getByText("Подробнее"));
     expect(screen.getByText(code)).not.toBeVisible();
     if (mode === "available")
       expect(screen.getByRole("link", { name: "Исправить" })).toHaveAttribute(
@@ -248,3 +260,41 @@ test.each(["available", "closed", "dirty", "no-action", "unknown"])(
     expect(refreshDraftPayouts).not.toHaveBeenCalled();
   },
 );
+
+test("partial failure separates the error and hides its details", async () => {
+  vi.mocked(refreshDraftPayouts).mockResolvedValue({
+    ...saved,
+    summary: { updated: 1, unchanged: 0, unsupported: 0, needs_review: 0, error: 1 },
+    items: [
+      saved.items[0],
+      {
+        ...saved.items[1],
+        status: "error",
+        reason_codes: ["provider_error"],
+        saved_payout_ids: [],
+      },
+    ],
+  });
+  show();
+  await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: cta }));
+  expect(await screen.findByText(/Обновлено позиций: 1/)).toBeVisible();
+  expect(screen.getByText(/Не удалось обновить часть данных/)).toBeVisible();
+  expect(screen.getByText("provider_error")).not.toBeVisible();
+  fireEvent.click(screen.getByText("Подробнее об ошибке"));
+  expect(screen.getByText(/Счёт 2 · Бумага/)).toBeVisible();
+});
+
+test("automatic partial failure remains visible after reopening", async () => {
+  vi.mocked(getPayoutRefreshStatus).mockResolvedValue({
+    reporting_month_id: 1,
+    positions_changed: 0,
+    items: [],
+    forecast_as_of: null,
+    automatic_refresh: { status: "partial", message: "", reason_codes: ["provider_error"] },
+  });
+  show();
+  expect(await screen.findByText(/При автоматическом обновлении часть данных/)).toBeVisible();
+  expect(screen.getByText("Подробнее об ошибке")).toBeVisible();
+  expect(refreshDraftPayouts).not.toHaveBeenCalled();
+});

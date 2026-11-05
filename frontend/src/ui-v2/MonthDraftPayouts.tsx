@@ -5,11 +5,12 @@ import { formatApiError } from "../api/client";
 import {
   type DraftPayoutResult,
   getDraftPayoutContext,
+  getPayoutRefreshStatus,
   listPayoutCalendar,
   refreshDraftPayouts,
 } from "../api/payouts";
-import { Button, Table, Td, Th } from "../components/ui";
-import { formatDate, formatMoney } from "../lib/format";
+import { Button } from "../components/ui";
+import { formatDate } from "../lib/format";
 import { reasonCopy } from "../lib/reasonCopy";
 import styles from "./UiV2MonthWorkspace.module.css";
 import { UiV2Panel } from "./UiV2Panel";
@@ -37,6 +38,11 @@ export function MonthDraftPayouts({
   const context = useQuery({
     queryKey: ["draft-payouts", monthId, sourceVersion],
     queryFn: ({ signal }) => getDraftPayoutContext(monthId, signal),
+    retry: false,
+  });
+  const refreshStatus = useQuery({
+    queryKey: ["payout-refresh-status", monthId],
+    queryFn: () => getPayoutRefreshStatus(monthId),
     retry: false,
   });
   const calendar = useQuery({
@@ -142,6 +148,7 @@ export function MonthDraftPayouts({
     await Promise.all([
       context.refetch({ throwOnError: true }),
       calendar.refetch({ throwOnError: true }),
+      refreshStatus.refetch(),
     ]);
   }
 
@@ -151,9 +158,7 @@ export function MonthDraftPayouts({
       await readSaved();
       if (current === generation.current) {
         setUnconfirmed(false);
-        setNotice(
-          "Сохранённые прогнозы перечитаны. Незавершённый пакет не считается полностью успешным; новый запрос выполняется только по кнопке.",
-        );
+        setNotice(null);
       }
     } catch (error) {
       if (current === generation.current) setNotice(formatApiError(error));
@@ -205,10 +210,6 @@ export function MonthDraftPayouts({
     !calendar.isError &&
     context.data?.status === "draft" &&
     context.data.eligible_positions > 0;
-  const rows =
-    calendar.data
-      ?.flatMap((month) => month.items)
-      .filter((item) => item.source_kind === "provider") ?? [];
   const canResolveReason =
     !closed &&
     !disabled &&
@@ -226,155 +227,129 @@ export function MonthDraftPayouts({
     <UiV2Panel
       id="month-draft-payouts"
       testIdPrefix="month"
-      title="Сохранённые прогнозы Т-Инвест"
-      eyebrow="После финансового DRAFT"
+      title="Будущие выплаты"
+      eyebrow=""
       wide
     >
       <div className={styles.forecastContent}>
         <p>
-          Все подходящие позиции всех принятых брокерских счетов и ИИС этого месяца. Количество
-          берётся из сохранённого финансового DRAFT; фильтр источников его не меняет.
+          {refreshStatus.data?.forecast_as_of
+            ? `Дата сохранённого прогноза: ${formatDate(refreshStatus.data.forecast_as_of.slice(0, 10))}`
+            : "Дата сохранённого прогноза неизвестна."}
         </p>
         <div className={styles.forecastActions}>
           <Button variant="primary" type="button" disabled={!ready} onClick={() => void refresh()}>
-            {busy ? "Получаем и сохраняем прогнозы…" : "Получить и сохранить прогнозы Т-Инвест"}
+            {busy ? "Обновляем прогноз…" : "Обновить прогноз Т-Инвест"}
           </Button>
-          <Button type="button" disabled={busy || reading} onClick={() => void recover()}>
-            Обновить чтение сохранённых прогнозов
-          </Button>
+          <Link to={`/v2/data/payouts?month=${monthId}`}>Календарь выплат</Link>
         </div>
+        {unconfirmed && !busy && (
+          <Button type="button" disabled={reading} onClick={() => void recover()}>
+            Проверить сохранённые прогнозы
+          </Button>
+        )}
         {closed || context.data?.status === "closed" ? (
           <p>Месяц закрыт. Доступно чтение сохранённых прогнозов.</p>
-        ) : !context.data?.eligible_positions && !context.isPending ? (
+        ) : context.data && !context.data.eligible_positions ? (
           <p>
-            Сначала исправь исключения и сохрани финансовый DRAFT:{" "}
-            <Link to={`/v2/close?${sourceParams}#month-source-review`}>
-              Брокерские выписки → Исправления и сохранение месяца
-            </Link>
-            . Одной загрузки XML недостаточно.
+            Сначала сохрани позиции из брокерских выписок:{" "}
+            <Link to={`/v2/close?${sourceParams}#month-source-review`}>Брокерские выписки</Link>.
           </p>
         ) : null}
-        {reading && <p role="status">Читаем финансовый DRAFT и сохранённый календарь…</p>}
+        {reading && <p role="status">Читаем сохранённые данные…</p>}
         {(context.isError || calendar.isError) && (
-          <p role="alert">
-            Чтение не подтверждено: {formatApiError(context.error ?? calendar.error)}
-          </p>
+          <div role="alert">
+            Не удалось прочитать сохранённые данные.
+            <details>
+              <summary>Подробнее об ошибке</summary>
+              {formatApiError(context.error ?? calendar.error)}
+            </details>
+          </div>
         )}
-        {notice && <p role="alert">{notice}</p>}
+        {notice && (
+          <div role="alert">
+            Не удалось подтвердить результат. Часть данных могла сохраниться.
+            <details>
+              <summary>Подробнее об ошибке</summary>
+              {notice}
+            </details>
+          </div>
+        )}
         {result && (
-          <p role="status">{`Позиций обновлено: ${result.summary.updated}; без изменений: ${result.summary.unchanged}; не поддержано: ${result.summary.unsupported}; требуют проверки: ${result.summary.needs_review}; ошибок: ${result.summary.error}.`}</p>
+          <p role="status">{`Обновлено позиций: ${result.summary.updated}; без изменений: ${result.summary.unchanged}.`}</p>
         )}
-        {issues.length > 0 && (
-          <details open>
-            <summary>Что требует проверки ({issues.length})</summary>
-            <ul>
-              {issues.map((item) => (
-                <li key={item.position_snapshot_id}>
-                  {item.account_name} · {item.instrument_name} · {item.isin}:{" "}
-                  {item.reason_codes.map((code) => {
-                    const copy = reasonCopy(code, {
-                      surface: "draftPayouts",
-                      closed,
-                      actions: {
-                        instrumentMapping: {
-                          available: canResolveReason,
-                          href: "/v2/data/catalogs",
-                        },
-                        payouts: {
-                          available: canResolveReason,
-                          href: `/v2/data/payouts?month=${monthId}`,
-                        },
-                      },
-                    });
-                    return (
-                      <p key={code}>
-                        {copy.message}
-                        {copy.action && (
-                          <>
-                            {" "}
-                            <Link to={copy.action.href}>{copy.action.label}</Link>
-                          </>
-                        )}
-                      </p>
-                    );
-                  })}
-                  <details>
-                    <summary>Подробности</summary>
-                    <code>{item.reason_codes.join(", ")}</code>
-                  </details>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-        <p>
-          <Link to="/v2/data/catalogs">Справочник и сопоставления бумаг</Link>
-          {" · "}
-          <Link to={`/v2/data/payouts?month=${monthId}`}>Проверка сохранённых выплат</Link>
-        </p>
-        <p>
-          Объявлено/прогноз (налог неизвестен). Это не подтверждённая сумма после личного налога и
-          не факт получения выплаты.
-        </p>
-        {calendar.data?.some((month) => month.actual_attribution_coverage === "unknown") && (
-          <p role="alert">
-            Часть событий требует сверки с фактическими выплатами. Здесь показана только
-            подтверждённая часть будущего календаря.
-          </p>
-        )}
-        {!calendar.isError &&
-          !calendar.isPending &&
-          [false, true].map((principal) => (
-            <div
-              key={String(principal)}
-              className={`${styles.instrumentTable} ${styles.forecastContent}`}
-            >
-              <h3>
-                {principal
-                  ? "Возврат номинала · отдельно от дохода"
-                  : "Ожидаемые купоны и дивиденды"}
-              </h3>
-              <Table
-                aria-label={
-                  principal
-                    ? "Возврат номинала · отдельно от дохода"
-                    : "Ожидаемые купоны и дивиденды"
-                }
-              >
-                <thead>
-                  <tr>
-                    <Th>Счёт / бумага</Th>
-                    <Th>Дата</Th>
-                    <Th>Выплата</Th>
-                    <Th numeric>Объявлено/прогноз</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows
-                    .filter((item) => (item.flow_type === "redemption") === principal)
-                    .map((item) => (
-                      <tr key={item.source_id}>
-                        <Td>
-                          {item.account_name} · {item.instrument_name}
-                        </Td>
-                        <Td>{formatDate(item.expected_date)}</Td>
-                        <Td>
-                          {item.flow_type === "coupon"
-                            ? "Купон"
-                            : item.flow_type === "dividend"
-                              ? "Дивиденд"
-                              : "Номинал"}
-                        </Td>
-                        <Td numeric>{formatMoney(item.expected_net_amount.amount)}</Td>
-                      </tr>
-                    ))}
-                </tbody>
-              </Table>
+        {!result &&
+          refreshStatus.data?.automatic_refresh &&
+          ["error", "partial", "needs_review"].includes(
+            refreshStatus.data.automatic_refresh.status,
+          ) && (
+            <div role="alert">
+              При автоматическом обновлении часть данных могла остаться прежней.
+              <details>
+                <summary>Подробнее об ошибке</summary>
+                {refreshStatus.data.automatic_refresh.reason_codes.map((code) => (
+                  <p key={code}>{reasonCopy(code, { surface: "draftPayouts", closed }).message}</p>
+                ))}
+              </details>
             </div>
-          ))}
-        {!calendar.isError && !calendar.isPending && !rows.length && (
-          <p>Сохранённых будущих событий нет. Это не обещание нулевых выплат.</p>
-        )}
+          )}
+        {[true, false].map((isError) => {
+          const group = issues.filter(
+            (item) => ("status" in item && item.status === "error") === isError,
+          );
+          return (
+            group.length > 0 && (
+              <div role="alert" key={String(isError)}>
+                <p>
+                  {isError
+                    ? "Не удалось обновить часть данных; они могли остаться прежними."
+                    : "Некоторые данные требуют проверки и могли остаться прежними."}
+                </p>
+                <details>
+                  <summary>{isError ? "Подробнее об ошибке" : "Подробнее"}</summary>
+                  <ul>
+                    {group.map((item) => (
+                      <li key={item.position_snapshot_id}>
+                        {item.account_name} · {item.instrument_name} · {item.isin}:{" "}
+                        {item.reason_codes.map((code) => {
+                          const copy = reasonCopy(code, {
+                            surface: "draftPayouts",
+                            closed,
+                            actions: {
+                              instrumentMapping: {
+                                available: canResolveReason,
+                                href: "/v2/data/catalogs",
+                              },
+                              payouts: {
+                                available: canResolveReason,
+                                href: `/v2/data/payouts?month=${monthId}`,
+                              },
+                            },
+                          });
+                          return (
+                            <p key={code}>
+                              {copy.message}
+                              {copy.action && (
+                                <>
+                                  {" "}
+                                  <Link to={copy.action.href}>{copy.action.label}</Link>
+                                </>
+                              )}
+                            </p>
+                          );
+                        })}
+                        <details>
+                          <summary>Подробности</summary>
+                          <code>{item.reason_codes.join(", ")}</code>
+                        </details>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+            )
+          );
+        })}
       </div>
     </UiV2Panel>
   );
