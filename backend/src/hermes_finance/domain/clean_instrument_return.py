@@ -17,6 +17,8 @@ class CleanInstrumentReturn:
     closing_value: Metric
     buys: Metric
     sells: Metric
+    coupons: Metric
+    dividends: Metric
     payouts: Metric
     redemption: Metric
     valuation_and_trades: Metric
@@ -87,7 +89,7 @@ def calculate_clean_return(
     """
     if opening_date >= closing_date:
         raise ValueError("opening_date must precede closing_date")
-    values = {kind: [] for kind in ("BUY", "SELL", "PAYOUT", "REDEMPTION")}
+    values = {kind: [] for kind in ("BUY", "SELL", "COUPON", "DIVIDEND", "REDEMPTION")}
     assumptions = {kind: set() for kind in values}
     dated_flows = []
     seen_events = set()
@@ -146,7 +148,7 @@ def calculate_clean_return(
                 else:
                     payout_gap = True
                 continue
-            kind = "REDEMPTION" if event.kind == "REDEMPTION" else "PAYOUT"
+            kind = event.kind
             assumptions[kind].update(event.assumptions)
             for leg in legs:
                 if leg.ownership in seen_legs:
@@ -186,7 +188,22 @@ def calculate_clean_return(
 
     buys = component("BUY", trade_gap)
     sells = component("SELL", trade_gap)
-    payouts = component("PAYOUT", payout_gap)
+    coupons = component("COUPON", payout_gap)
+    dividends = component("DIVIDEND", payout_gap)
+    payout_values = values["COUPON"] + values["DIVIDEND"]
+    payout_assumptions = tuple(sorted(assumptions["COUPON"] | assumptions["DIVIDEND"]))
+    payouts = Metric(
+        sum(payout_values) if payout_values or not payout_gap else None,
+        "partial"
+        if payout_values and payout_gap
+        else "unavailable"
+        if payout_gap
+        else "provisional"
+        if payout_assumptions
+        else "supported",
+        ("paid_income_incomplete",) if payout_gap else (),
+        payout_assumptions,
+    )
     redemption = component("REDEMPTION", redemption_gap)
     v_complete = valuation_complete and opening_clean is not None and closing_clean is not None
     price = None
@@ -270,6 +287,8 @@ def calculate_clean_return(
         endpoint_metric(closing_clean),
         buys,
         sells,
+        coupons,
+        dividends,
         payouts,
         redemption,
         price_metric,

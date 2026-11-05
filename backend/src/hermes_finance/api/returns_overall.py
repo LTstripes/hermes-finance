@@ -17,9 +17,30 @@ from hermes_finance.api.returns_view import (
     read,
 )
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.api.source_instrument_returns import CleanInstrumentReturnsResponse
 from hermes_finance.services.returns_overall import read_income, read_instrument_card, read_overall
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
+
+
+class CleanOverviewAccount(DTO):
+    scope: str
+    label: str
+    period: Period
+    result: CleanInstrumentReturnsResponse
+
+
+class CleanOverview(DTO):
+    contract_version: Literal["clean_returns_overview_v1"]
+    accounts: list[CleanOverviewAccount]
+
+
+@router.get("/clean-overview", response_model=CleanOverview)
+def clean_overview(response: Response, session: Session = Depends(session_for_request)):
+    from hermes_finance.services.clean_instrument_return import read_clean_overview
+
+    response.headers["Cache-Control"] = "no-store"
+    return read_clean_overview(session)
 
 
 class OverallResult(DTO):

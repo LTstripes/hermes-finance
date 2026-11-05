@@ -4,7 +4,7 @@ from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.returns_view import AccountLink
@@ -42,7 +42,7 @@ class SourceInstrumentReturnsResponse(BaseModel):
 class CleanMetric(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    value: str | None
+    value: Annotated[str | None, Field(pattern=r"^-?[0-9]+(?:\.[0-9]+)?$")]
     status: Literal["supported", "provisional", "partial", "unavailable"]
     reason_codes: tuple[str, ...]
     assumptions: tuple[str, ...]
@@ -51,7 +51,7 @@ class CleanMetric(BaseModel):
 class CleanInstrument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    isin: str
+    isin: Annotated[str, Field(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")]
     name: str | None
     instrument_type: str | None
     opening_date: date
@@ -60,6 +60,8 @@ class CleanInstrument(BaseModel):
     closing_value: CleanMetric
     buys: CleanMetric
     sells: CleanMetric
+    coupons: CleanMetric
+    dividends: CleanMetric
     payouts: CleanMetric
     redemption: CleanMetric
     valuation_and_trades: CleanMetric
@@ -122,45 +124,9 @@ def clean_instrument_returns(
     session: Session = Depends(session_for_request),
 ):
     """Versioned clean projection; the legacy cash-economic endpoint is unchanged."""
-    from dataclasses import asdict
-
-    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+    from hermes_finance.services.clean_instrument_return import read_clean_account
 
     response.headers["Cache-Control"] = "no-store"
     if opening_date >= closing_date:
         raise HTTPException(422, "opening_date must precede closing_date")
-    source = read_instrument_returns(
-        session,
-        source_account=source_account,
-        isin=isin,
-        opening_date=opening_date,
-        closing_date=closing_date,
-        include_monthly_history=False,
-        available_period=True,
-    )
-    instruments = []
-    for row in source.instruments:
-        clean = project_clean_analysis(row.analysis, row.isin, instrument_type=row.instrument_type)
-        metrics = asdict(clean)
-        for metric in metrics.values():
-            metric["value"] = None if metric["value"] is None else str(metric["value"])
-        instruments.append(
-            {
-                "isin": row.isin,
-                "name": row.source_name,
-                "instrument_type": row.instrument_type,
-                "opening_date": row.analysis.opening_date,
-                "closing_date": row.analysis.closing_date,
-                **metrics,
-            }
-        )
-    return {
-        "contract_version": "clean_instrument_return_v1",
-        "authority": "provisional",
-        "financial_authority": "none",
-        "source_account": source_account,
-        "native_source_account": source.native_source_account,
-        "currency": "RUB",
-        "instruments": instruments,
-        "gaps": [{"code": gap.code, "month": gap.month, "isin": gap.isin} for gap in source.gaps],
-    }
+    return read_clean_account(session, source_account, opening_date, closing_date, isin=isin)

@@ -1,6 +1,8 @@
 """Read-only projection of clean security operands from an existing analysis."""
 
-from dataclasses import replace
+from dataclasses import asdict, replace
+from datetime import timedelta
+from decimal import Decimal
 
 from hermes_finance.domain.clean_instrument_return import calculate_clean_return, missing_fee_only
 
@@ -135,3 +137,81 @@ def _fee_only_quantity_reconciled(analysis, events, isin):
             if holding < 0:
                 return False
         return holding == q1
+
+
+def read_clean_account(session, source_account, start, end, *, isin=None):
+    """Return one exact source scope and period without saving an attestation."""
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    source = read_instrument_returns(
+        session,
+        source_account=source_account,
+        isin=isin,
+        opening_date=start,
+        closing_date=end,
+        include_monthly_history=False,
+        available_period=True,
+    )
+    instruments = []
+    for row in source.instruments:
+        clean = project_clean_analysis(row.analysis, row.isin, instrument_type=row.instrument_type)
+        metrics = asdict(clean)
+        for metric in metrics.values():
+            value = metric["value"]
+            metric["value"] = (
+                None
+                if value is None
+                else format(value, "f")
+                if isinstance(value, Decimal)
+                else str(value)
+            )
+        instruments.append(
+            {
+                "isin": row.isin,
+                "name": row.source_name,
+                "instrument_type": row.instrument_type,
+                "opening_date": row.analysis.opening_date,
+                "closing_date": row.analysis.closing_date,
+                **metrics,
+            }
+        )
+    return {
+        "contract_version": "clean_instrument_return_v1",
+        "authority": "provisional",
+        "financial_authority": "none",
+        "source_account": source_account,
+        "native_source_account": source.native_source_account,
+        "currency": "RUB",
+        "instruments": instruments,
+        "gaps": [{"code": gap.code, "month": gap.month, "isin": gap.isin} for gap in source.gaps],
+    }
+
+
+def read_clean_overview(session):
+    """Read each source account's outer saved period in one source snapshot."""
+    from hermes_finance.services.returns_view import _accounts, _source_scopes
+    from hermes_finance.services.source_monthly_returns import (
+        _selected_sources,
+        source_read_snapshot,
+    )
+
+    with source_read_snapshot(session):
+        canonical = _source_scopes(session)
+        labels = {a["id"]: a["label"] for a in _accounts(session, canonical)}
+        accounts = []
+        for account in sorted(set(canonical.values())):
+            selected, _ = _selected_sources(session, account)
+            originals = [original for original, _, _ in selected if original is not None]
+            if not originals:
+                continue
+            start = min(original.covered_from for original in originals) - timedelta(days=1)
+            end = max(original.covered_to for original in originals)
+            accounts.append(
+                {
+                    "scope": f"source:{account}",
+                    "label": labels.get(f"source:{account}", account),
+                    "period": {"start": start, "end": end},
+                    "result": read_clean_account(session, account, start, end),
+                }
+            )
+        return {"contract_version": "clean_returns_overview_v1", "accounts": accounts}

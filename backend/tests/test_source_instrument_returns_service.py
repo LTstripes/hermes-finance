@@ -493,9 +493,58 @@ def test_clean_projection_on_overlapping_originals_keeps_known_operands(db, acce
     assert snapshot(db) == before
 
 
+def test_clean_synthetic_x5_and_sber_do_not_inherit_other_redemption(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def instruments(root):
+        x5 = root.find(f".//m:Details[@ISIN1='{ISIN}']", NS)
+        sber = root.find(f".//m:Details[@ISIN1='{BOND}']", NS)
+        x5.set("active_name", "X5 synthetic")
+        sber.set("active_name", "Сбер synthetic")
+        sber.set("active_type", "Акции")
+        collection = root.find(
+            "m:Positions/m:Report/m:Tablix1/m:active_type_Collection/"
+            "m:active_type/m:Details_Collection",
+            NS,
+        )
+        other = deepcopy(sber)
+        other.attrib.update(
+            ISIN1="RU000A000003",
+            active_name="ГТЛК synthetic",
+            active_type="Облигации",
+            income_rest="1",
+            real_rest="0",
+            forward_rest="0",
+            income_volume="1000",
+            real_volume="0",
+        )
+        collection.append(other)
+
+    save(
+        db,
+        stock=("10", "10", "1000", "1100"),
+        bond=("2", "2", "2000", "2100"),
+        trades=(),
+        extra=(("Погашение номинала", "ГТЛК synthetic RU000A000003", "1000"),),
+        mutate=instruments,
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30))
+    rows = {row["isin"]: row for row in result["instruments"]}
+    assert rows[ISIN]["known_result"]["value"] == "10000"
+    assert rows[BOND]["known_result"]["value"] == "10000"
+    assert rows[ISIN]["pnl"]["value"] == "10000", rows[ISIN]["pnl"]
+    assert rows[BOND]["pnl"]["value"] == "10000", rows[BOND]["pnl"]
+    assert snapshot(db) == before
+
+
 @pytest.mark.parametrize("fee", ["5", None])
 def test_clean_api_uses_saved_original_without_account_confirmation(db, fee):
+    from pathlib import Path
+
     from fastapi.testclient import TestClient
+    from jsonschema import validate
 
     from hermes_finance.main import create_app
 
@@ -518,6 +567,23 @@ def test_clean_api_uses_saved_original_without_account_confirmation(db, fee):
     (row,) = payload["instruments"]
     assert row["buys"]["value"] == "100000"
     assert row["pnl"]["value"] == "10000"
+    overview = client.get("/api/returns/clean-overview")
+    assert overview.status_code == 200
+    accounts = overview.json()["accounts"]
+    source = next(item for item in accounts if item["scope"] == f"source:{ACCOUNT}")
+    assert source["period"] == {"start": "2030-03-31", "end": "2030-04-30"}
+    assert source["result"]["instruments"][0] == row
+    exported = client.get("/api/export/clean-returns/json")
+    assert exported.status_code == 200
+    assert ACCOUNT not in exported.text
+    report = exported.json()
+    schema = json.loads(
+        (Path(__file__).parents[2] / "docs/schemas/clean_returns_export.schema.json").read_text()
+    )
+    validate(report, schema)
+    assert report["contract"] == "hermes.finance.clean_returns"
+    assert report["accounts"][0]["instruments"][0] == {**row, "name": None}
+    assert report["accounts"][0]["period"] == source["period"]
     assert snapshot(db) == before
 
 

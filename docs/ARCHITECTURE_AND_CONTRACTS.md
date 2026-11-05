@@ -6816,6 +6816,17 @@ their historical counting meaning until a separately versioned consumer is
 integrated. This experimental read alone does not complete the Returns UI or
 AI-export transition.
 
+`GET /api/returns/clean-overview` reuses the same clean projection for each
+proved source-account scope and its outer saved-source period. Account periods
+remain separate and no account-capital bridge is added to instrument P&L.
+`GET /api/export/clean-returns/json` projects those same rows into the separate
+`hermes.finance.clean_returns` 1.0.0 format, with file-local account refs and
+without raw account identifiers. Its schema is
+[`clean_returns_export.schema.json`](schemas/clean_returns_export.schema.json).
+This source-only export is not the complete AI financial review; it does not
+replace or silently redefine any existing review format. Both reads are local,
+non-persisting and disclose each source period and metric coverage.
+
 The original monthly/all-time fields below remain the compatibility contract.
 The additive dated analysis has stricter full-result availability and explicitly
 separates economic values, known subtotals and conditional statement estimates.
