@@ -25,7 +25,7 @@ const context: DraftPayoutContext = {
   snapshot_date: "2030-01-31",
   status: "draft",
   context_digest: "a".repeat(64),
-  source_digest: "c".repeat(64),
+  view_digest: "c".repeat(64),
   eligible_positions: 2,
   items: [1, 2].map((id) => ({
     account_id: id,
@@ -41,6 +41,7 @@ const context: DraftPayoutContext = {
 };
 const saved: DraftPayoutResult = {
   reporting_month_id: 1,
+  readback_digest: "c".repeat(64),
   summary: { updated: 2, unchanged: 0, unsupported: 0, needs_review: 0, error: 0 },
   items: context.items.map((i) => ({ ...i, status: "updated", saved_payout_ids: [i.account_id] })),
 };
@@ -394,6 +395,7 @@ test("a changed context hides an earlier result and shows current issues", async
     client.setQueryData(["draft-payouts", 1, undefined], {
       ...context,
       context_digest: "b".repeat(64),
+      view_digest: "b".repeat(64),
       items: [{ ...context.items[0], eligible: false, reason_codes: ["mapping_ambiguous"] }],
     });
   });
@@ -440,10 +442,11 @@ test("unknown outcome remains explicit after reread and reload; retry is manual"
 });
 
 test("shows partial result after forecast changes digest, but hides it if source changes", async () => {
-  const nextContext = { ...context, context_digest: "b".repeat(64) };
+  const nextContext = { ...context, context_digest: "b".repeat(64), view_digest: "b".repeat(64) };
   vi.mocked(getDraftPayoutContext).mockResolvedValueOnce(context).mockResolvedValue(nextContext);
   vi.mocked(refreshDraftPayouts).mockResolvedValue({
     ...saved,
+    readback_digest: "b".repeat(64),
     summary: { updated: 1, unchanged: 0, unsupported: 0, needs_review: 0, error: 1 },
     items: [
       saved.items[0],
@@ -467,7 +470,7 @@ test("shows partial result after forecast changes digest, but hides it if source
     client.setQueryData(["draft-payouts", 1, undefined], {
       ...nextContext,
       context_digest: "d".repeat(64),
-      source_digest: "e".repeat(64),
+      view_digest: "e".repeat(64),
     });
   });
   await waitFor(() => expect(screen.queryByText(/Обновлено позиций: 1/)).not.toBeInTheDocument());
@@ -479,7 +482,7 @@ test("does not bind a response to a source changed during the request", async ()
     .mockResolvedValue({
       ...context,
       context_digest: "b".repeat(64),
-      source_digest: "d".repeat(64),
+      view_digest: "d".repeat(64),
     });
   show();
   await waitFor(() => expect(screen.getByRole("button", { name: cta })).toBeEnabled());

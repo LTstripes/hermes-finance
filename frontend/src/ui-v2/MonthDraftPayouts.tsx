@@ -93,7 +93,7 @@ export function MonthDraftPayouts({
   const { busy, unconfirmed, notice } = operation;
   const result =
     !context.isFetching &&
-    operation.resultDigest === context.data?.context_digest &&
+    operation.resultDigest === context.data?.view_digest &&
     operation.resultSourceVersion === sourceVersion
       ? operation.result
       : null;
@@ -258,19 +258,20 @@ export function MonthDraftPayouts({
       setOperation({ unknownResult: priorUnknown });
       const readback = await readSaved();
       if (
-        readback.source_digest !== context.data.source_digest ||
+        !saved.readback_digest ||
+        readback.view_digest !== saved.readback_digest ||
         sourceVersionRef.current !== sourceVersion
       ) {
         setOperation({
           result: null,
           unconfirmed: false,
           notice:
-            "Данные источника изменились во время обновления. Перечитанные данные доступны в календаре.",
+            "Данные изменились во время обновления. Перечитанные данные доступны в календаре.",
         });
       } else {
         setOperation({
           result: saved,
-          resultDigest: readback.context_digest,
+          resultDigest: readback.view_digest,
           resultSourceVersion: sourceVersion,
           unconfirmed: false,
         });

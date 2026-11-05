@@ -223,6 +223,7 @@ def test_source_quantity_change_during_fetch_blocks_write(database, when):
     provider.on_fetch = change
     result = refresh(client, month)
     assert result["summary"]["updated"] == 0
+    assert result["readback_digest"] is None
     assert result["items"][0]["reason_codes"] in (["draft_changed"], ["preview_changed"])
     assert calendar(client, month) == []
 
@@ -942,11 +943,35 @@ def test_empty_requires_complete_valid_window_for_each_instrument(kind, kinds):
     )
 
 
-def test_forecast_changes_context_but_not_source_digest(database):
+def test_forecast_result_digest_matches_independent_readback(database):
     provider = Provider()
     client, month = setup(database, provider)
     before = client.get(f"/api/months/{month}/draft-payouts").json()
-    assert refresh(client, month)["summary"]["updated"] == 1
+    result = refresh(client, month)
+    assert result["summary"]["updated"] == 1
     after = client.get(f"/api/months/{month}/draft-payouts").json()
     assert before["context_digest"] != after["context_digest"]
-    assert before["source_digest"] == after["source_digest"]
+    assert before["view_digest"] != after["view_digest"]
+    assert result["readback_digest"] == after["view_digest"]
+
+
+def test_readback_digest_detects_account_and_mapping_changes(database):
+    from hermes_finance.persistence import Account, InstrumentMarketMapping
+
+    provider = Provider()
+    client, month = setup(database, provider)
+    result = refresh(client, month)
+    initial = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert result["readback_digest"] == initial["view_digest"]
+    with database.session_factory() as session:
+        account = session.scalar(select(Account))
+        account.name = "Renamed synthetic account"
+        session.commit()
+    changed = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert changed["view_digest"] != result["readback_digest"]
+    with database.session_factory() as session:
+        mapping = session.scalar(select(InstrumentMarketMapping))
+        mapping.provider_instrument_id = "00000000-0000-0000-0000-000000000000"
+        session.commit()
+    changed_mapping = client.get(f"/api/months/{month}/draft-payouts").json()
+    assert changed_mapping["view_digest"] != changed["view_digest"]

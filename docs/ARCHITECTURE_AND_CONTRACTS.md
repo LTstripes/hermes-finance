@@ -12084,9 +12084,10 @@ T-Invest market data, Alfa current snapshots, MyBroker historical originals, PDF
 <a id="explicit-financial-draft-forecast-refresh"></a>
 #### Financial-DRAFT forecast refresh
 
-`GET /api/months/{id}/draft-payouts` returns eligibility, a combined dependency digest,
-and the existing source dependency digest separately so the UI can distinguish a forecast
-write from a source change during the independent reread. `POST /api/months/{id}/draft-payouts/refresh` remains the explicit provider action.
+`GET /api/months/{id}/draft-payouts` returns eligibility, a dependency digest and a
+digest of the full presented context. A completed refresh returns that full digest
+only when its pinned source remains current; the UI compares it to the independent
+reread before showing the result. `POST /api/months/{id}/draft-payouts/refresh` remains the explicit provider action.
 Successful new strict financial SOURCE acceptance through `POST /api/broker-months/apply`
 also triggers this same refresh after rereading current positions in a new session.
 A process-local response callback coalesces each month until 750 ms after the last

@@ -194,15 +194,16 @@ def _context(session, month_id):
             }
         )
     source_token = broker_months._dependencies(session)
-    return {
+    context = {
         "reporting_month_id": month_id,
         "snapshot_date": month.snapshot_date.isoformat(),
         "status": month.status,
         "context_digest": digest([source_token, _forecast_token(session)]),
-        "source_digest": source_token,
         "eligible_positions": sum(item["eligible"] for item in items),
         "items": items,
-    }, source_token
+    }
+    context["view_digest"] = digest(context)
+    return context, source_token
 
 
 def read_context(session, month_id):
@@ -576,9 +577,16 @@ def _refresh(
                 session.rollback()
                 result.update(status="error", reason_codes=["refresh_unconfirmed"])
         items.append(result)
+    with coherent_read_snapshot(session):
+        readback_digest = (
+            _context(session, month_id)[0]["view_digest"]
+            if _source_current(session, month_id, source_token)
+            else None
+        )
     return {
         "reporting_month_id": month_id,
         "items": items,
+        "readback_digest": readback_digest,
         "summary": {
             status: sum(
                 i["status"] == status
