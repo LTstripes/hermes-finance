@@ -106,6 +106,7 @@ CI_CORE_ADDITIONAL_FILES = (
     "test_returns_read_efficiency_service.py",
     "test_empty_manual_close.py",
     "test_instrument_return.py",
+    "test_clean_instrument_return.py",
     "test_source_instrument_events.py",
     "test_source_payout_preview.py",
     "test_security_reg_isin_mappings_service.py",
@@ -243,6 +244,7 @@ CI_CORE_A_SHARD_WEIGHTS = {
     "test_historical_membership.py": 44.810,
     "test_instrument_eod_observations_service.py": 23.964,
     "test_instrument_return.py": 0.010,
+    "test_clean_instrument_return.py": 0.010,
     "test_instrument_what_if_service.py": 58.071,
     "test_liquid_capital_service.py": 4.374,
     "test_money_preparation_service.py": 17.702,
@@ -814,6 +816,7 @@ def semantic_markers_for(test_path: Path) -> tuple[str, ...]:
     if (relative_path.parts and relative_path.parts[0] == "domain") or filename in {
         "test_monthly_return_chain.py",
         "test_instrument_return.py",
+        "test_clean_instrument_return.py",
     }:
         markers.add("domain")
     if filename.endswith("_api.py"):

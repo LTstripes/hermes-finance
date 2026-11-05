@@ -1276,6 +1276,8 @@ def test_overlapping_account_cost_gap_stays_with_account(db, description, accoun
     "fault", [None, "partner", "leg", "missing", "duplicate", "duplicate_same_issue"]
 )
 def test_repo_overlap_identity_preserves_references_and_unsupported_economics(db, fault):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
     money = (
         ("Расчеты по сделке B90001", "репо ч.1", "-1000"),
         ("Комиссия по сделке B90001", "репо ч.1", "-5"),
@@ -1306,6 +1308,11 @@ def test_repo_overlap_identity_preserves_references_and_unsupported_economics(db
     trades = [e for e in repo.events if e.kind in {"BUY", "SELL"}]
     assert all(not e.counted and "repo_trade_unsupported" in e.reason_codes for e in trades)
     assert repo.pnl.value is repo.modified_dietz.value is None
+    clean_repo = project_clean_analysis(repo, BOND)
+    assert clean_repo.pnl.value is None
+    if fault is None:
+        stock = by_isin(result)[ISIN].analysis
+        assert project_clean_analysis(stock, ISIN, instrument_type="stock").pnl.value == 10000
     if fault in (None, "partner", "leg", "missing"):
         (trade,) = trades
         assert trade.native_identity.startswith("repo:")

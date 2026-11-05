@@ -477,6 +477,50 @@ def test_overlaps_deduplicate_trades_and_preserve_income_multiplicity(db, accept
     assert all(len(item.source_references) == 2 for item in result.income)
 
 
+def test_clean_projection_on_overlapping_originals_keeps_known_operands(db, accepted_basis):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    extra = (("Купон", BOND, "30"), ("Купон", BOND, "30"))
+    save(db, extra=extra)
+    save(db, extra=extra, marker="overlap")
+    before = snapshot(db)
+    analysis = by_isin(read(db))[BOND].analysis
+    clean = project_clean_analysis(analysis, BOND)
+    assert clean.buys.value == 100_000
+    assert clean.payouts.value == 6_000
+    # Existing bond endpoints do not establish the accrued interest to remove.
+    assert clean.pnl.value is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("fee", ["5", None])
+def test_clean_api_uses_saved_original_without_account_confirmation(db, fee):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    save(db, stock=("0", "1", "0", "1100"), bond=None, trades=((ISIN, "1", "1000", "0", fee),))
+    before = snapshot(db)
+    client = TestClient(create_app(database=db))
+    response = client.get(
+        "/api/source-returns/clean-instruments",
+        params={
+            "source_account": ACCOUNT,
+            "isin": ISIN,
+            "opening_date": "2030-03-31",
+            "closing_date": "2030-04-30",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["contract_version"] == "clean_instrument_return_v1"
+    (row,) = payload["instruments"]
+    assert row["buys"]["value"] == "100000"
+    assert row["pnl"]["value"] == "10000"
+    assert snapshot(db) == before
+
+
 def test_overlap_conflicting_valuations_and_trades_are_not_selected(db):
     save(db)
     save(

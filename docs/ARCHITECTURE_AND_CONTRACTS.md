@@ -6792,6 +6792,30 @@ source/account/class detail modes keep their own supported meaning and URLs.
 <a id="c7-source_instrument_returns-1"></a>
 ### Monthly native-source instrument estimates
 
+#### Clean security result: experimental additive read
+
+`GET /api/source-returns/clean-instruments` accepts an exact source account,
+optional ISIN and both EOD dates. Its `clean_instrument_return_v1` response is
+an additive source-only read, not a replacement for the legacy cash-economic
+fields, account capital or accepted financial records. Money values are signed
+integer-kopeck strings and Modified Dietz is a decimal fraction. Each metric
+has a status and reasons. `known_result` is a subtotal of observed clean flows
+and both known clean endpoints, and is explicitly partial if coverage is
+incomplete; it is not an assertion that missing operations were zero. Known
+components remain available independently. A total and rate require complete
+clean endpoints and attributable trade, payout and redemption coverage.
+
+Clean trade principal excludes NKD where its inclusion basis and amount are
+known. Fees and taxes do not enter the result, while dividends and coupons use
+the cash actually received, not an invented gross payout. A nonzero bond
+valuation without known accrued interest stays unknown; a demonstrably empty
+position is zero. The projection reads existing source events and does not
+create receipts, alter originals, write months or equate security returns with
+changes in account cash. The existing v2 endpoint and export formats retain
+their historical counting meaning until a separately versioned consumer is
+integrated. This experimental read alone does not complete the Returns UI or
+AI-export transition.
+
 The original monthly/all-time fields below remain the compatibility contract.
 The additive dated analysis has stricter full-result availability and explicitly
 separates economic values, known subtotals and conditional statement estimates.
