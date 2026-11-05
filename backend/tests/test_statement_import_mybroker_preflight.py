@@ -1715,6 +1715,8 @@ def test_investment_persistent_api_requires_exact_ack_and_boolean_attestation(
 def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, pending):
     from decimal import Decimal
 
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
     service, doc, raw, report, money = investment_case()
     trades, names, primary, cancellations = service._native(doc, raw)
     ordinary = trades[0]
@@ -1748,7 +1750,8 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, p
         if pending == "other":
             pending_trade["core"]["isin"] = "RU000A000001"
         doc["trades"].append(pending_trade)
-    result = service._interval(doc, raw, report, money, {}, {}, True)
+    analyses = {}
+    result = service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
     instrument = result["instruments"][0]
     assert instrument["pnl"]["value"] == (None if pending is True else "9000")
     if pending:
@@ -1771,6 +1774,14 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, p
         assert other["pnl"]["value"] is None
         assert "repo_position_open_at_boundary" in other["reason_codes"]
     assert Decimal(instrument["closing_quantity"]) == 10
+    clean = project_clean_analysis(
+        analyses[instrument["isin"]], instrument["isin"], instrument_type="stock"
+    )
+    if pending is not True:
+        # This original-bound fixture has grouped Money without a unique native
+        # principal disclosure. It must not be relabelled as a clean trade.
+        assert clean.pnl.value is None
+        assert clean.known_result.status == "partial"
 
 
 @pytest.mark.parametrize("target", ["RU000A000000", "RU000A000001"])
