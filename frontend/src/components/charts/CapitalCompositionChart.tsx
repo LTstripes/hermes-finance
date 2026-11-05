@@ -101,6 +101,7 @@ export function CapitalCompositionTooltip({
             points?.find((point) => point.reporting_month_id === datum.reportingMonthId)
               ?.portfolio_source_coverage
           }
+          month={points?.find((point) => point.reporting_month_id === datum.reportingMonthId)}
         />
         <div className="composition-tooltip__row composition-tooltip__debt">
           <span>Включённые долги</span>
