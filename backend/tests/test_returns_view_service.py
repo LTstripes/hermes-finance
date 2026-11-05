@@ -1258,7 +1258,7 @@ def test_detail_api_preserves_persisted_payout_and_stale_link(db, stale):
     if stale:
         assert payout["effective_isin"] is source_payout["effective_isin"] is None
         assert "payout_link_stale" in payout["reason_codes"]
-        assert detail["pnl"]["value"] == "10000"
+        assert detail["pnl"]["value"] == "10000", source["instruments"][0]["analysis"]["coverage"]
         assert "clean_partial_result" in detail["pnl"]["reason_codes"]
         assert detail["rate"]["value"] is None
         assert detail["clean"]["known_result"]["status"] == "partial"

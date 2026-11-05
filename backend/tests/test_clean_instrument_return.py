@@ -83,6 +83,8 @@ def test_clean_sale_and_missing_basis_stays_unknown():
     result = calc((trade("BUY", 102000, None), cash("DIVIDEND", 8700)))
     assert result.buys.value is None and result.pnl.value is None
     assert result.payouts.value == 8700
+    assert result.valuation_and_trades.value is None
+    assert result.known_result.value == 8700
 
 
 def test_partial_and_zero_are_distinct_and_duplicate_payout_is_rejected():

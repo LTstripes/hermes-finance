@@ -1733,7 +1733,8 @@ def test_bond_buy_money_does_not_fill_missing_native_components(db, missing):
     before = snapshot(db)
     analysis = by_isin(read(db))[BOND].analysis
     (buy,) = analysis.events
-    assert not buy.counted and not buy.cash_legs
+    assert not buy.counted
+    assert {leg.role for leg in buy.cash_legs} == {"principal", "commission"}
     assert "trade_components_missing" in buy.reason_codes
     assert analysis.pnl.value is analysis.modified_dietz.value is None
     assert snapshot(db) == before
@@ -1802,6 +1803,64 @@ def test_conflicting_money_never_added_to_native_trade_total(db):
     a = by_isin(read(db))[ISIN].analysis
     assert a.pnl.value is None and "trade_money_cash_conflict" in a.reason_codes
     assert a.events[0].native_trade_amount_kopecks == 100000
+
+
+@pytest.mark.parametrize(
+    "principal,fee,expected",
+    [("-1000", "-3", 100000), ("-999", "-2", None), ("-999", "-3", None)],
+)
+def test_clean_stock_trade_ignores_fee_mismatch_in_saved_source(db, principal, fee, expected):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    save(
+        db,
+        stock=("0", "10", "0", "1100"),
+        bond=None,
+        trades=((ISIN, "10", "1000", None, "2"),),
+        mutate=trade_date(
+            10,
+            money=(
+                ("Расчеты по сделке 10000000001", "Principal", principal, 10),
+                ("Комиссия по сделке 10000000001", "Fee", fee, 10),
+            ),
+        ),
+    )
+    analysis = by_isin(read(db))[ISIN].analysis
+    (buy,) = analysis.events
+    assert not buy.counted and buy.reason_codes == ("trade_money_cash_conflict",)
+    clean = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    assert clean.buys.value == expected
+    assert clean.known_result.value == (10000 if expected is not None else None)
+
+
+@pytest.mark.parametrize("principal", ["-2000", "-1000"])
+def test_clean_missing_fee_checks_linked_principal_and_posting_date(db, principal):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    save(
+        db,
+        stock=("0", "10", "0", "1100"),
+        bond=None,
+        trades=((ISIN, "10", "1000", None, None),),
+        mutate=trade_date(
+            16, money=(("Расчеты по сделке 10000000001", "Principal", principal, 6),)
+        ),
+    )
+    analysis = by_isin(read(db))[ISIN].analysis
+    (buy,) = analysis.events
+    assert "trade_components_missing" in buy.reason_codes
+    assert any(leg.role == "principal" and leg.date.day == 6 for leg in buy.cash_legs)
+    clean = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    if principal == "-2000":
+        assert clean.buys.value is None
+        assert clean.known_result.value is None
+        assert clean.modified_dietz.value is None
+    else:
+        assert clean.buys.value == 100000
+        assert clean.pnl.value == 10000
+        with localcontext() as context:
+            context.prec = 60
+            assert clean.modified_dietz.value == Decimal(10000) / (Decimal(100000) * 24 / 30)
 
 
 @pytest.mark.parametrize(

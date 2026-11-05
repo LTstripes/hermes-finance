@@ -42,6 +42,32 @@ def clean_trade_amount(event: InstrumentEvent) -> int | None:
     return None
 
 
+def _missing_fee_principal_consistent(event: InstrumentEvent) -> bool:
+    principal = [leg for leg in event.cash_legs if leg.role == "principal"]
+    nkd_legs = [leg for leg in event.cash_legs if leg.role == "nkd"]
+    if any(leg.role not in {"principal", "nkd", "commission"} for leg in event.cash_legs):
+        return False
+    if len({leg.date for leg in principal}) > 1:
+        return False
+    if not principal and not nkd_legs:
+        return True
+    nkd = event.accrued_interest_kopecks
+    if nkd is None or nkd < 0 or clean_trade_amount(event) is None:
+        return False
+    sign = -1 if event.kind == "BUY" else 1
+    dirty = event.native_trade_amount_kopecks + (
+        nkd if event.native_total_basis == "excludes_paid_nkd" else 0
+    )
+    split = bool(nkd_legs) or (
+        event.kind == "BUY" and event.native_total_basis == "includes_paid_nkd" and nkd > 0
+    )
+    return (
+        not principal
+        or sum(leg.account_cash_kopecks for leg in principal)
+        == sign * (dirty - nkd if split else dirty)
+    ) and (not nkd_legs or sum(leg.account_cash_kopecks for leg in nkd_legs) == sign * nkd)
+
+
 def missing_fee_only(event: InstrumentEvent) -> bool:
     return (
         event.kind in {"BUY", "SELL"}
@@ -55,7 +81,56 @@ def missing_fee_only(event: InstrumentEvent) -> bool:
             or (event.kind == "SELL" and event.quantity_delta < 0)
         )
         and clean_trade_amount(event) is not None
+        and _missing_fee_principal_consistent(event)
     )
+
+
+def fee_only_trade_conflict(event: InstrumentEvent) -> bool:
+    """Recognise a cash mismatch only when principal and NKD both reconcile."""
+    if (
+        event.kind not in {"BUY", "SELL"}
+        or not event.current
+        or event.counted
+        or event.reason_codes != ("trade_money_cash_conflict",)
+        or event.quantity_delta is None
+        or (event.kind == "BUY" and event.quantity_delta <= 0)
+        or (event.kind == "SELL" and event.quantity_delta >= 0)
+        or event.commission_kopecks is None
+        or event.commission_kopecks < 0
+        or clean_trade_amount(event) is None
+        or event.accrued_interest_kopecks is None
+        or event.accrued_interest_kopecks < 0
+    ):
+        return False
+    roles = {
+        role: [leg for leg in event.cash_legs if leg.role == role]
+        for role in ("principal", "nkd", "commission")
+    }
+    if (
+        not roles["principal"]
+        or not roles["commission"]
+        or len({leg.date for leg in roles["principal"]}) > 1
+        or any(leg.role not in roles for leg in event.cash_legs)
+    ):
+        return False
+    sign = -1 if event.kind == "BUY" else 1
+    nkd = event.accrued_interest_kopecks
+    dirty = event.native_trade_amount_kopecks + (
+        nkd if event.native_total_basis == "excludes_paid_nkd" else 0
+    )
+    expected_principal = sign * (dirty - nkd if roles["nkd"] else dirty)
+    return (
+        sum(leg.account_cash_kopecks for leg in roles["principal"]) == expected_principal
+        and (
+            not roles["nkd"] or sum(leg.account_cash_kopecks for leg in roles["nkd"]) == sign * nkd
+        )
+        and sum(leg.account_cash_kopecks for leg in roles["commission"])
+        != -event.commission_kopecks
+    )
+
+
+def cost_only_trade(event: InstrumentEvent) -> bool:
+    return missing_fee_only(event) or fee_only_trade_conflict(event)
 
 
 def clean_trade_date(event: InstrumentEvent) -> date | None:
@@ -122,7 +197,7 @@ def calculate_clean_return(
         # The legacy event marks a trade uncounted when any native component is
         # missing. A missing commission alone does not prevent clean principal
         # from being known; all identity, settlement and sign checks still apply.
-        fee_only_gap = missing_fee_only(event)
+        fee_only_gap = cost_only_trade(event)
         if not event.current or (not event.counted and not fee_only_gap):
             if event.kind in {"BUY", "SELL"}:
                 trade_gap = True
@@ -209,6 +284,8 @@ def calculate_clean_return(
     price = None
     if (
         v_complete
+        and not trade_gap
+        and not redemption_gap
         and buys.value is not None
         and sells.value is not None
         and redemption.value is not None
@@ -266,11 +343,19 @@ def calculate_clean_return(
         tuple(sorted(set(reasons + row.reason_codes))),
         used,
     )
+    # A valuation cannot be combined with an incomplete trade/redemption set:
+    # doing so presents unaccounted purchase principal as investment gain.
+    # Independent observed receipts remain useful when price is unavailable.
+    known = (
+        price + sum(payout_values)
+        if price is not None
+        else sum(payout_values)
+        if payout_values
+        else None
+    )
     known_result = Metric(
-        closing_clean - opening_clean - sum(amount for _, amount, _ in dated_flows)
-        if v_complete
-        else None,
-        (result_status if complete else "partial") if v_complete else "unavailable",
+        known,
+        (result_status if complete else "partial") if known is not None else "unavailable",
         reasons,
         used,
     )

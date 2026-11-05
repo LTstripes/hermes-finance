@@ -693,9 +693,10 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                     legs.append(
                         CashLeg(role, cash_date, value, -value, refs, f"trade:{key}:{role}")
                     )
-        elif trade.get("return_identity"):
-            # Identity-only REPO matching must retain observed Money even when
-            # native economics is unavailable. These legs remain uncounted.
+        elif linked:
+            # Retain linked observations even when a missing native component
+            # prevents legacy cash economics. They remain uncounted and can be
+            # independently checked against clean principal and posting date.
             legs.extend(
                 CashLeg(
                     role,
@@ -855,7 +856,15 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                 classification_origin=saved["origin"],
                 classification_status=flow.status,
                 persisted_link_status=saved.get("instrument_link_status"),
-                attribution_basis="account_only" if account_only else m["basis"],
+                attribution_basis=(
+                    "account_only"
+                    if account_only
+                    else "explicit_tax_unclassified"
+                    if classification == "unknown"
+                    and flow.amount_kopecks < 0
+                    and saved["operation"].strip().casefold() in {"налог", "tax"}
+                    else m["basis"]
+                ),
                 current=not reasons,
                 counted=not reasons and not account_only,
                 reason_codes=tuple(sorted(reasons)),

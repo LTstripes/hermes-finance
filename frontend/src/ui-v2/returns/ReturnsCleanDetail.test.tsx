@@ -20,4 +20,6 @@ test("clean detail displays clean values and retains original operations without
   expect(screen.queryByText(/999.?999,99/)).toBeNull();
   expect(screen.getByText(/Сделки и выплаты/)).toBeInTheDocument();
   expect(screen.getByText("Известные составляющие")).toBeInTheDocument();
+  const position = screen.getByRole("heading", { name: /Позиция на/ }).parentElement;
+  expect(position).toHaveTextContent(/Количество: .* → /);
 });

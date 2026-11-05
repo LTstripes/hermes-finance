@@ -6805,6 +6805,12 @@ in account capital. A nonzero bond valuation without known accrued interest is
 unknown; a demonstrably empty position is zero. Known results and components
 are labelled partial when coverage is incomplete, rather than promoted to full
 return. Rates remain unavailable when their operands are incomplete.
+If trade or redemption coverage is incomplete, a closing valuation cannot be
+combined with only the observed trades and presented as an investment result;
+independently observed receipts remain available. A missing or conflicting
+commission does not invalidate clean principal only after linked principal and
+NKD amounts, ownership, settlement dates, and position quantities have been
+checked. Conflicting or ambiguous principal remains unknown.
 
 The existing account-specific `/api/returns/overview` and
 `/api/returns/instrument` use `returns_source_v2` and
@@ -6813,7 +6819,9 @@ events remain available for inspection; the separate capital view describes
 actual account capital. Manual gold-history previews add `clean_result` from
 the existing valuation and dated trade evidence; recorded fees and historical
 receipts remain intact. The AI report includes the same available clean gold
-result. Explicit `basis=legacy` preserves the prior Returns projections for
+result. Incomplete gold history, unproved opening quantity, and mismatched
+quantities cannot produce a total from valuation and partial trades; known
+purchase and sale components remain visible. Explicit `basis=legacy` preserves the prior Returns projections for
 consumers that still need their original semantics.
 
 The recommended AI financial review requests version `3.0.0` and includes the

@@ -1086,16 +1086,33 @@ def read_clean_instrument_card(session, isin):
             for item in account["result"]["instruments"]
             if item["isin"] == isin
         }
+        identity_conflicts = {
+            account["scope"]
+            for account in card["accounts"]
+            if account.get("exclusion_reason") == "source_account_identity_mapping_conflict"
+        }
         for account in card["accounts"]:
             pair = by_scope.get(account["scope"])
             account["clean"] = pair[1] if pair else None
             if pair:
                 period = pair[0]["period"]
                 detail = account["detail"]
-                if detail and detail["period"] != period:
-                    account["detail"] = None
-                elif detail:
+                if not detail or detail["period"] != period:
+                    try:
+                        detail = returns_view.read_detail(
+                            session,
+                            scope=account["scope"],
+                            start=period["start"],
+                            end=period["end"],
+                            isin=isin,
+                            native_period=True,
+                        )
+                    except (ValueError, LookupError):
+                        detail = None
+                if detail:
                     account["detail"] = returns_view.apply_clean_detail(detail, pair[1])
+                else:
+                    account["detail"] = None
                 account.update(
                     period=period,
                     valuation_date=pair[1]["closing_date"]
@@ -1103,10 +1120,17 @@ def read_clean_instrument_card(session, isin):
                     else None,
                     included=True,
                     exclusion_reason=None,
-                    reason_codes=[],
+                    reason_codes=["source_account_identity_mapping_conflict"]
+                    if account["scope"] in identity_conflicts
+                    else [],
                 )
 
         def total(field):
+            if any(
+                account["clean"] and account["scope"] in identity_conflicts
+                for account in card["accounts"]
+            ):
+                return _unknown("source_account_identity_mapping_conflict")
             periods = {
                 (account["period"]["start"], account["period"]["end"])
                 for account in card["accounts"]

@@ -724,6 +724,74 @@ def test_card_conflicting_mapping_does_not_fetch_or_sum_ambiguous_accounts(db, m
     )
 
 
+@pytest.mark.parametrize("conflict", [True, False])
+def test_clean_card_keeps_scope_operations_and_does_not_sum_mapping_conflicts(
+    db, monkeypatch, conflict
+):
+    from copy import deepcopy
+
+    from hermes_finance.services import clean_instrument_return
+
+    period = {"start": date(2030, 3, 31), "end": date(2030, 4, 30)}
+    earlier = {"start": date(2030, 4, 1), "end": date(2030, 4, 30)}
+    scopes = ["source:native-a", "source:native-b"] if conflict else ["source:native-a"]
+    metric = {"value": 100, "status": "supported", "reason_codes": (), "assumptions": ()}
+    item = {
+        "isin": ISIN,
+        "closing_date": period["end"],
+        **{
+            name: metric
+            for name in (
+                "known_result",
+                "coupons",
+                "dividends",
+                "valuation_and_trades",
+                "redemption",
+                "closing_value",
+            )
+        },
+    }
+    card = {
+        "summary": {},
+        "accounts": [
+            {
+                "scope": scope,
+                "period": earlier,
+                "canonical_account_id": None,
+                "detail": None if conflict else {"period": earlier},
+                "exclusion_reason": "source_account_identity_mapping_conflict"
+                if conflict
+                else None,
+            }
+            for scope in scopes
+        ],
+    }
+    monkeypatch.setattr(overall, "read_instrument_card", lambda *a, **k: deepcopy(card))
+    monkeypatch.setattr(
+        clean_instrument_return,
+        "read_clean_overview",
+        lambda *a, **k: {
+            "accounts": [
+                {"scope": scope, "period": period, "result": {"instruments": [item]}}
+                for scope in scopes
+            ]
+        },
+    )
+    calls = []
+
+    def detail(session, *, scope, start, end, isin, native_period):
+        calls.append((scope, start, end, native_period))
+        return {"period": {"start": start, "end": end}, "events": ["synthetic"]}
+
+    monkeypatch.setattr(overall.returns_view, "read_detail", detail)
+    monkeypatch.setattr(overall.returns_view, "apply_clean_detail", lambda value, clean: value)
+    with db.session_factory() as session:
+        result = overall.read_clean_instrument_card(session, ISIN)
+    assert len(calls) == len(scopes)
+    assert all(row["detail"]["events"] == ["synthetic"] for row in result["accounts"])
+    assert result["summary"]["pnl"]["value"] == (None if conflict else "100")
+
+
 @pytest.mark.parametrize(
     "blocker", [None, "assumption", "extra_reason", "wrong_period", "wrong_source"]
 )

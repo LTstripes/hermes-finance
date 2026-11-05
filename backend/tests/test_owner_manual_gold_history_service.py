@@ -230,9 +230,16 @@ def test_stale_preview_rejects_without_source_effects(source, dependency):
     ],
 )
 def test_incomplete_and_unproved_quantity_never_become_zero_result(source, change, reason):
+    from hermes_finance.services.clean_instrument_return import clean_gold_metric
+
     response, _ = confirm(source[1], intent(source, **change))
     assert response["history"]["result"]["total_result_kopecks"] is None
     assert reason in response["history"]["reason_codes"]
+    clean = clean_gold_metric(response["history"]["result"])
+    assert clean["value"] is None
+    assert reason in clean["reason_codes"]
+    assert response["history"]["result"]["buy_amount_kopecks"] == "3200000"
+    assert response["history"]["result"]["sale_amount_kopecks"] == "1000000"
 
 
 def test_unknown_fees_stay_unknown_and_known_zero_is_explicit(source):

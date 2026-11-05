@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { SourceInstrumentDetail } from "../SourceInstrumentDetail";
 import { formatQuantity } from "../../lib/format";
 import { analysisBreakdown } from "./breakdown";
-import { type Detail, getDetail, type Period } from "./model";
+import { dateLabel, type Detail, getDetail, type Period } from "./model";
 import styles from "./Returns.module.css";
 import { MissingName } from "./ReturnsAvailable";
 import { ReturnsBreakdown } from "./ReturnsBreakdown";
@@ -52,10 +52,13 @@ export function ReturnsDetailBody({ detail: d }: { detail: Detail }) {
           valuationDate={d.valuation_date}
           accountLink={d.account_link}
         />
-        <p>
-          Количество: {d.opening_quantity === null ? "—" : formatQuantity(d.opening_quantity)} →{" "}
-          {d.closing_quantity === null ? "—" : formatQuantity(d.closing_quantity)}
-        </p>
+        <section>
+          <h4>Позиция на {dateLabel(d.period.end)}</h4>
+          <p>
+            Количество: {d.opening_quantity === null ? "—" : formatQuantity(d.opening_quantity)} →{" "}
+            {d.closing_quantity === null ? "—" : formatQuantity(d.closing_quantity)}
+          </p>
+        </section>
         <ReturnsInstrumentResult result={d.clean ? d : null} reasonCodes={d.reason_codes} />
         {d.clean && (
           <details>

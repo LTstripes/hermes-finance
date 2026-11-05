@@ -653,7 +653,7 @@ def test_clean_instrument_result_ignores_account_costs_and_preserves_receipts(db
     )
     assert response.status_code == 200, response.text
     item = next(row for row in response.json()["instruments"] if row["isin"] == ISIN)
-    assert item["accounts"][0]["pnl"]["value"] == "10000"
+    assert item["accounts"][0]["pnl"]["value"] == "10000", item["accounts"][0]["pnl"]
     assert snapshot(db) == before
 
 

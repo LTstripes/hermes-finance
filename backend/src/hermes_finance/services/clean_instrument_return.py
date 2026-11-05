@@ -4,7 +4,12 @@ from dataclasses import asdict, replace
 from datetime import timedelta
 from decimal import Decimal
 
-from hermes_finance.domain.clean_instrument_return import calculate_clean_return, missing_fee_only
+from hermes_finance.domain.clean_instrument_return import (
+    calculate_clean_return,
+    clean_trade_date,
+    cost_only_trade,
+    fee_only_trade_conflict,
+)
 
 
 def _clean_endpoint(endpoint, instrument_type):
@@ -49,7 +54,9 @@ def clean_gold_metric(observed, *, current=True):
     reasons = tuple(sorted(reasons))
     value = (
         int(operands[0]) + int(operands[1]) - int(operands[2])
-        if current and all(value is not None for value in operands)
+        if current
+        and not (set(reasons) - {"gold_amount_derived"})
+        and all(value is not None for value in operands)
         else None
     )
     return metric(value, reasons=reasons, method="clean_gold_history", estimate=bool(reasons))
@@ -58,6 +65,11 @@ def clean_gold_metric(observed, *, current=True):
 def project_clean_analysis(analysis, isin, *, instrument_type=None):
     """Do not change or attest the events, the account bridge, or source receipts."""
     ignored_cost_reasons = {"unallocated_instrument_cost", "native_commission_unavailable"}
+    unresolved_money = [e for e in analysis.events if "unrecognized_money" in e.reason_codes]
+    if unresolved_money and all(
+        e.attribution_basis == "explicit_tax_unclassified" for e in unresolved_money
+    ):
+        ignored_cost_reasons.add("unrecognized_money")
 
     def complete(*names):
         return all(
@@ -86,13 +98,29 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
             event = replace(event, native_total_basis="excludes_paid_nkd")
         events.append(event)
     fee_only_reconciled = _fee_only_quantity_reconciled(analysis, events, isin)
+    conflicts = [
+        event for event in analysis.events if "trade_money_cash_conflict" in event.reason_codes
+    ]
+    fee_conflicts_only = bool(conflicts) and all(
+        event.isin == isin and fee_only_trade_conflict(event) for event in conflicts
+    )
 
     def clean_complete(name):
         coverage = analysis.coverage[name]
         reasons = set(coverage.reason_codes) - ignored_cost_reasons
+        if name == "events":
+            # A stale payout link affects payout coverage, not a separately
+            # reconciled trade principal and valuation.
+            reasons = {
+                reason
+                for reason in reasons
+                if not reason.startswith("payout_link_") and reason != "unattributed_income"
+            }
         if fee_only_reconciled:
             if name == "events":
                 reasons.discard("trade_components_missing")
+                if fee_conflicts_only:
+                    reasons.discard("trade_money_cash_conflict")
             if name == "quantity":
                 reasons -= {"quantity_events_incomplete", "quantity_reconciliation_mismatch"}
         return (coverage.complete or bool(coverage.reason_codes)) and not reasons
@@ -115,7 +143,7 @@ def _fee_only_quantity_reconciled(analysis, events, isin):
     from collections import defaultdict
     from decimal import Decimal, localcontext
 
-    if not any(missing_fee_only(event) for event in events):
+    if not any(cost_only_trade(event) for event in events):
         return False
     if any(
         event.isin != isin and event.kind in {"BUY", "SELL", "REDEMPTION"}
@@ -132,7 +160,7 @@ def _fee_only_quantity_reconciled(analysis, events, isin):
             if event.kind not in {"BUY", "SELL", "REDEMPTION"}:
                 continue
             if (
-                (not event.counted and not missing_fee_only(event))
+                (not event.counted and not cost_only_trade(event))
                 or not event.current
                 or event.quantity_delta is None
                 or event.depository_settlement_date is None
@@ -141,10 +169,11 @@ def _fee_only_quantity_reconciled(analysis, events, isin):
             cash_inside = any(
                 analysis.opening_date < leg.date <= analysis.closing_date for leg in event.cash_legs
             )
-            if missing_fee_only(event):
+            if cost_only_trade(event):
+                principal_day = clean_trade_date(event)
                 cash_inside = (
-                    event.cash_settlement_date is not None
-                    and analysis.opening_date < event.cash_settlement_date <= analysis.closing_date
+                    principal_day is not None
+                    and analysis.opening_date < principal_day <= analysis.closing_date
                 )
             depo_inside = (
                 analysis.opening_date < event.depository_settlement_date <= analysis.closing_date
