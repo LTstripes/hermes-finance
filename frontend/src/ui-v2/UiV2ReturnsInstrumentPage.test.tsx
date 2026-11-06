@@ -224,9 +224,16 @@ test("bond purchase keeps provisional result and identifies the missing face val
       reason_codes: ["trade_face_value_missing"],
     },
   ];
-  vi.stubGlobal("fetch", vi.fn(async () => response(card)));
-  setup("/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31");
-  const region = within(await screen.findByRole("region", { name: "Результат сохранённых покупок" }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
   expect(region.getByText("10,00 ₽")).toBeVisible();
   expect(region.getByText("Номинал не подтверждён")).toBeVisible();
   expect(region.getByText("Данные неполные")).toBeVisible();
