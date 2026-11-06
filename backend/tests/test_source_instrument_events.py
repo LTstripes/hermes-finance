@@ -1283,6 +1283,174 @@ def test_overlapping_account_cost_gap_stays_with_account(db, description, accoun
 
 
 @pytest.mark.parametrize("paired", [True, False])
+def test_fifo_reader_same_isin_repo_and_unique_ordinary_trades(db, paired):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def repo_after_ordinary(root):
+        rows = root.findall(".//m:Details[@trade_no]", NS)
+        for index, row in enumerate(rows, 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            delivery = f"{index + 7}.04.2030"
+            row.set("save_settlement_date", delivery)
+            row.set("save_depo_settlement_date", delivery)
+            if index >= 11:
+                row.set("trade_no", f"B9000{index - 10}")
+                row.set("repo_no", f"B9000{2 if index == 11 else 1}")
+                row.set("comment", f"репо ч.{index - 10}")
+
+    repo = [(ISIN, "5", "500", "0", "0")]
+    if paired:
+        repo.append((ISIN, "-5", "501", "0", "0"))
+    save(
+        db,
+        stock=("0", "5" if paired else "10", "0", "550" if paired else "1100"),
+        bond=None,
+        trades=((ISIN, "10", "1000", "0", "0"), (ISIN, "-5", "600", "0", "0"), *repo),
+        mutate=repo_after_ordinary,
+    )
+    analysis = by_isin(read(db))[ISIN].analysis
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    rows = result["instruments"][0]["purchases"]
+    if paired:
+        assert rows is not None, (
+            {key: value.reason_codes for key, value in analysis.coverage.items()},
+            [(e.kind, e.native_ids, e.native_identity, e.reason_codes) for e in analysis.events],
+        )
+        assert rows[0]["price_result_kopecks"] == "15000"
+    else:
+        assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+
+
+def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def mutate(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+            if index == 3:
+                row.set("trade_no", "B90001")
+                row.set("repo_no", "B90002")
+                row.set("comment", "репо ч.1")
+
+    save(
+        db,
+        stock=("0", "1", "0", "100"),
+        bond=None,
+        trades=(
+            (ISIN, "1", "100", "0", "0"),
+            (ISIN, "-1", "180", "0", "0"),
+            (ISIN, "1", "100", "0", "0"),
+        ),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    rows = result["instruments"][0]["purchases"]
+    assert rows and rows[0]["price_result_kopecks"] == "8000"
+    assert rows[0]["remaining_quantity"] == "0"
+
+
+@pytest.mark.parametrize("same_day_delivery", [False, True])
+def test_fifo_reader_repo_checks_intermediate_custody_under_all_day_orders(db, same_day_delivery):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def mutate(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            day = 4 if same_day_delivery and index in (3, 4) else index
+            row.set("save_settlement_date", f"{day:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{day:02}.04.2030")
+            if index in (2, 4):
+                row.set("trade_no", "B90001" if index == 2 else "B90002")
+                row.set("repo_no", "B90002" if index == 2 else "B90001")
+                row.set("comment", "репо ч.1" if index == 2 else "репо ч.2")
+
+    save(
+        db,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=(
+            (ISIN, "1", "100", "0", "0"),
+            (ISIN, "-1", "100", "0", "0"),
+            (ISIN, "-1", "180", "0", "0"),
+            (ISIN, "1", "101", "0", "0"),
+        ),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    rows = result["instruments"][0]["purchases"]
+    assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+
+
+def test_fifo_repo_custody_cannot_ignore_unavailable_intermediate_inventory(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def sequential(root):
+        rows = root.findall(".//m:Details[@trade_no]", NS)
+        for index, row in enumerate(rows, 1):
+            stamp = f"{index:02}.04.2030 9:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+        for index, partner, leg in ((1, "B90002", "репо ч.1"), (3, "B90001", "репо ч.2")):
+            rows[index].set("trade_no", "B90001" if index == 1 else "B90002")
+            rows[index].set("repo_no", partner)
+            rows[index].set("comment", leg)
+
+    save(
+        db,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=(
+            (ISIN, "1", "100", "0", "0"),
+            (ISIN, "-1", "100", "0", "0"),
+            (ISIN, "-1", "180", "0", "0"),
+            (ISIN, "1", "101", "0", "0"),
+        ),
+        mutate=sequential,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    rows = result["instruments"][0]["purchases"]
+    assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+
+
+@pytest.mark.parametrize("paired", [True, False])
 def test_fifo_reader_keeps_ordinary_stock_separate_from_repo_issue(db, paired):
     from hermes_finance.services.clean_instrument_return import project_clean_analysis
     from hermes_finance.services.clean_purchase_returns import clean_purchase_price_contributions
@@ -1326,6 +1494,70 @@ def test_fifo_reader_keeps_ordinary_stock_separate_from_repo_issue(db, paired):
     assert (
         clean_purchase_price_contributions(repo, repo_clean, BOND, instrument_type="bond") is None
     )
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "missing_leg", "partner_conflict", "duplicate_b_id", "cross_isin_b_id"]
+)
+def test_fifo_proven_repo_overlap_does_not_silently_collapse_faults(db, fault):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    base = [
+        (ISIN, "10", "1000", "0", "0"),
+        (ISIN, "-5", "600", "0", "0"),
+        (ISIN, "5", "500", "0", "0"),
+        (ISIN, "-5", "501", "0", "0"),
+    ]
+
+    def transform(root, *, changed=False):
+        rows = root.findall(".//m:Details[@trade_no]", NS)
+        for index, row in enumerate(rows, 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{index + 7}.04.2030")
+            row.set("save_depo_settlement_date", f"{index + 7}.04.2030")
+            if index >= 11:
+                row.set("trade_no", f"B9000{index - 10}")
+                row.set("repo_no", f"B9000{2 if index == 11 else 1}")
+                row.set("comment", f"репо ч.{index - 10}")
+        if changed and fault == "partner_conflict":
+            rows[-1].set("repo_no", "B99999")
+        if changed and fault == "duplicate_b_id":
+            rows[-1].set("trade_no", "B90001")
+            rows[-1].set("repo_no", "B90002")
+        if changed and fault == "cross_isin_b_id":
+            rows[-1].set("trade_no", "B90001")
+            rows[-1].set("repo_no", "B90002")
+            rows[-1].set("comment", "репо ч.1")
+
+    save(db, stock=("0", "5", "0", "550"), bond=None, trades=base, marker="first", mutate=transform)
+    second_trades = base[:-1] if fault == "missing_leg" else base
+    if fault == "cross_isin_b_id":
+        second_trades = [*second_trades, (BOND, "1", "1000", "0", "0")]
+    save(
+        db,
+        stock=("0", "5", "0", "550"),
+        bond=("0", "1", "0", "1000") if fault == "cross_isin_b_id" else None,
+        trades=second_trades,
+        marker="second",
+        mutate=lambda root: transform(root, changed=True),
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    rows = result["instruments"][0]["purchases"]
+    if fault is None:
+        assert len(rows) == 1 and rows[0]["price_result_kopecks"] == "15000"
+    else:
+        assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+    assert snapshot(db) == before
 
 
 @pytest.mark.parametrize(

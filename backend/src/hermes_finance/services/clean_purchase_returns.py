@@ -42,6 +42,36 @@ def _execution(event):
     return day, instant
 
 
+def _unordered_buys_resolve_as_a_group(group, prefix, by_day):
+    """Unordered buys are safe if no sale splits them across transactions."""
+    if any(row[0].kind != "BUY" for row in group):
+        return False
+    with localcontext() as context:
+        context.prec = 200
+        ahead = sum((row[4] for row in prefix), Decimal(0))
+        if ahead < 0:
+            return False
+        group_quantity = sum((row[4] for row in group), Decimal(0))
+        for day in sorted(day for day in by_day if day > group[0][1]):
+            sales = [row for row in by_day[day] if row[0].kind == "SELL"]
+            instants = [row[2] for row in sales]
+            if len(sales) > 1 and (None in instants or len(instants) != len(set(instants))):
+                total = sum((-row[4] for row in sales), Decimal(0))
+                if total > ahead:
+                    return False
+                ahead -= total
+                continue
+            for sale in sorted(sales, key=lambda row: row[2] or datetime.min.time()):
+                quantity = -sale[4]
+                if quantity <= ahead:
+                    ahead -= quantity
+                elif quantity - ahead >= group_quantity:
+                    return True
+                else:
+                    return False
+        return True
+
+
 def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type):
     """FIFO price/sale contributions, exclusive of payouts and all costs.
 
@@ -58,6 +88,7 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
     ):
         return None
     coverage = getattr(analysis, "coverage", None)
+    repo_barrier = getattr(coverage, "fifo_repo_barrier", None)
     if not coverage or not all(name in coverage for name in ("events", "quantity")):
         return None
     if "source_sections_not_financially_accepted" in getattr(analysis, "reason_codes", ()):
@@ -143,7 +174,10 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         return None
     with localcontext() as context:
         context.prec = 200
-        if sum((row[4] for row in trades), Decimal(0)) != analysis.closing.quantity:
+        if (
+            repo_barrier is None
+            and sum((row[4] for row in trades), Decimal(0)) != analysis.closing.quantity
+        ):
             return None
     native_ids = [row[0].native_identity for row in trades if row[0].native_identity]
     if len(native_ids) != len(set(native_ids)):
@@ -156,8 +190,8 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         group = by_day[day]
         instants = [row[2] for row in group]
         ambiguous = len(group) > 1 and (None in instants or len(instants) != len(set(instants)))
-        later_sales = any(row[0].kind == "SELL" and row[1] > day for row in trades)
-        if ambiguous and (any(row[0].kind == "SELL" for row in group) or later_sales):
+        safe_unordered = ambiguous and _unordered_buys_resolve_as_a_group(group, ordered, by_day)
+        if ambiguous and not safe_unordered:
             ambiguous_at = len(ordered)
             ordered.extend(sorted(group, key=lambda row: row[0].event_key))
             for later in sorted(d for d in by_day if d > day):
@@ -167,28 +201,40 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             sorted(group, key=lambda row: (row[2] or datetime.min.time(), row[0].event_key))
         )
     trades = ordered
+    if repo_barrier is not None:
+        repo_index = next(
+            (i for i, row in enumerate(trades) if row[1] >= repo_barrier), len(trades)
+        )
+        ambiguous_at = min(ambiguous_at, repo_index) if ambiguous_at is not None else repo_index
 
     with localcontext() as context:
         context.prec = 200
         lots = []
         buy_sum = sell_sum = 0
+        last_sale_day = max((row[1] for row in trades if row[0].kind == "SELL"), default=None)
         for index, (event, day, _instant, settlement, q, amount) in enumerate(trades):
             if ambiguous_at is not None and index >= ambiguous_at:
                 if index == ambiguous_at:
                     for lot in lots:
                         if lot["remaining"]:
                             lot["remaining"] = None
-                            lot["proceeds"] = None
+                            if repo_barrier is None or any(
+                                t[0].kind == "SELL" for t in trades[index:]
+                            ):
+                                lot["proceeds"] = None
                 if event.kind == "BUY":
+                    untouched = repo_barrier is None and (
+                        last_sale_day is None or day > last_sale_day
+                    )
                     lots.append(
                         {
                             "key": event.event_key,
                             "date": day,
                             "settlement": settlement,
                             "quantity": q,
-                            "remaining": None,
+                            "remaining": q if untouched else None,
                             "cost": amount,
-                            "proceeds": None,
+                            "proceeds": 0 if untouched else None,
                         }
                     )
                 continue
@@ -234,6 +280,10 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                     if lot["proceeds"] is not None and share is not None
                     else None
                 )
+        if repo_barrier is not None and ambiguous_at == len(trades):
+            for lot in lots:
+                if lot["remaining"]:
+                    lot["remaining"] = None
         if (
             not lots
             or (
@@ -255,11 +305,21 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         valuation = clean.closing_value.value if clean.closing_value.status == "supported" else None
         if valuation is not None and valuation < 0:
             return None
-        values = (
-            _allocate(valuation, [lot["remaining"] for lot in lots], [lot["key"] for lot in lots])
-            if valuation is not None and ambiguous_at is None
-            else [0 if lot["remaining"] == 0 else None for lot in lots]
-        )
+        if valuation is not None and ambiguous_at is None:
+            values = _allocate(
+                valuation, [lot["remaining"] for lot in lots], [lot["key"] for lot in lots]
+            )
+        else:
+            values = []
+            for lot in lots:
+                remaining = lot["remaining"]
+                if remaining == 0:
+                    values.append(0)
+                elif valuation is not None and remaining is not None and analysis.closing.quantity:
+                    share = Decimal(valuation) * remaining / analysis.closing.quantity
+                    values.append(int(share) if share == share.to_integral_value() else None)
+                else:
+                    values.append(None)
         if values is None:
             return None
         results = []
@@ -271,7 +331,9 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             )
             reasons = []
             if lot["remaining"] is None:
-                reasons.append("fifo_order_ambiguous")
+                reasons.append(
+                    "repo_custody_unproven" if repo_barrier is not None else "fifo_order_ambiguous"
+                )
             if lot["cost"] is None:
                 reasons.append("purchase_amount_unknown")
             if lot["proceeds"] is None:

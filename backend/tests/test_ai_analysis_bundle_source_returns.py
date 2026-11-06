@@ -443,6 +443,50 @@ def test_v31_keeps_closed_purchase_when_later_bond_clean_cost_is_unknown(databas
     assert snapshot(database) == before
 
 
+def test_v31_fifo_same_day_buys_sold_together_match_card(database):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000000"
+
+    def next_day_sale(root):
+        rows = root.findall(".//{MyBroker}Details[@trade_no]")
+        rows[-1].set("db_time", "16.04.2030 9:00:00\n16.04.2030 9:00:00")
+
+    save(
+        database,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "1", "200", "0", "7"),
+            (isin, "-2", "300", "0", "9"),
+        ),
+        mutate=next_day_sale,
+    )
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(database)
+    with TestClient(create_app(database)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": isin})
+        report = client.get(
+            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
+        )
+    assert card.status_code == report.status_code == 200, (card.text, report.text)
+    account = card.json()["accounts"][0]
+    exported = report.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert (
+        exported["account_ref"] == account["ai_account_ref"]
+        and exported["period"] == account["period"]
+    )
+    rows = exported["instruments"][0]["purchases"]
+    assert [{k: v for k, v in row.items() if k != "id"} for row in rows] == [
+        {k: v for k, v in row.items() if k != "id"} for row in account["purchases"]
+    ]
+    assert [row["price_result_kopecks"] for row in rows] == ["5000", "-5000"]
+    assert [row["return_fraction"] for row in rows] == ["0.5", "-0.25"]
+    assert snapshot(database) == before
+
+
 @pytest.mark.parametrize("aba", [False, True])
 def test_latest_stale_scope_never_revives_numeric_month_or_history(database, monkeypatch, aba):
     _save(database, monkeypatch)

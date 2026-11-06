@@ -464,6 +464,52 @@ def test_later_ambiguous_sale_leaves_already_closed_purchase_known():
     )
 
 
+def test_same_day_buys_fully_sold_together_have_order_independent_results():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    second = buy("b", 20000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 30000, "-2", date(2030, 1, 11)), kind="SELL")
+    rows = case([first, second, sale], quantity="0", closing=0)
+    assert [r["price_result_kopecks"] for r in rows] == ["5000", "-5000"]
+    assert [r["return_fraction"] for r in rows] == ["0.5", "-0.25"]
+
+
+@pytest.mark.parametrize("sales", [1, 2])
+def test_unordered_buys_split_between_sales_keep_affected_results_unknown(sales):
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    second = buy("b", 20000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 11)), kind="SELL")
+    events = [first, second, sale]
+    if sales == 2:
+        events.append(replace(buy("sale2", 12000, "-1", date(2030, 1, 12)), kind="SELL"))
+    rows = case(events, quantity=str(2 - sales), closing=15000 if sales == 1 else 0)
+    assert all(row["price_result_kopecks"] is None for row in rows)
+    assert all("fifo_order_ambiguous" in row["reason_codes"] for row in rows)
+
+
+def test_unordered_buys_behind_older_purchase_do_not_hide_sale_of_that_purchase():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    second = buy("b", 20000, "1", date(2030, 1, 11))
+    third = buy("c", 10000, "1", date(2030, 1, 11))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 12)), kind="SELL")
+    rows = case([first, second, third, sale], quantity="2", closing=30000)
+    assert [r["price_result_kopecks"] for r in rows] == ["8000", "-5000", "5000"]
+
+
+def test_purchase_after_ambiguous_partial_sale_keeps_its_exact_value():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    second = buy("b", 20000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 11)), kind="SELL")
+    third = buy("c", 10000, "1", date(2030, 1, 12))
+    rows = case([first, second, sale, third], quantity="2", closing=30000)
+    assert all(row["price_result_kopecks"] is None for row in rows[:2])
+    assert rows[2]["remaining_quantity"] == "1" and rows[2]["value_kopecks"] == "15000"
+    assert rows[2]["price_result_kopecks"] == "5000" and rows[2]["return_fraction"] == "0.5"
+    uncertain_kopeck = case([first, second, sale, third], quantity="2", closing=30001)
+    assert uncertain_kopeck[2]["remaining_quantity"] == "1"
+    assert uncertain_kopeck[2]["value_kopecks"] is None
+    assert uncertain_kopeck[2]["price_result_kopecks"] is None
+
+
 def test_later_unknown_sale_proceeds_do_not_hide_earlier_closed_purchase():
     first = buy("a", 10000, "1", date(2030, 1, 10))
     sale = replace(buy("sale", 18000, "-1", date(2030, 1, 11)), kind="SELL")

@@ -273,10 +273,34 @@ def read_clean_account(session, source_account, start, end, *, isin=None, includ
         include_monthly_history=False,
         available_period=True,
     )
+    views = None
+    if include_purchases or any(
+        row.analysis is not None
+        and any("repo_trade_unsupported" in event.reason_codes for event in row.analysis.events)
+        for row in source.instruments
+    ):
+        from hermes_finance.services.source_monthly_returns import _selected_sources
+
+        selected, _ = _selected_sources(session, source_account)
+        if all(original is not None and not error for original, _, error in selected):
+            views = [view for _, view, _ in selected]
     instruments = []
     names = _catalogue_names(session, source.instruments)
     for row in source.instruments:
-        clean = project_clean_analysis(row.analysis, row.isin, instrument_type=row.instrument_type)
+        analysis = purchase_analysis = row.analysis
+        if views is not None:
+            from hermes_finance.services.clean_repo_pairs import (
+                clean_and_purchase_repo_projections,
+                saved_proof_repo_evidence_complete,
+            )
+
+            allow_pair = saved_proof_repo_evidence_complete(
+                session, source_account, start, end, views, row.isin
+            )
+            analysis, purchase_analysis = clean_and_purchase_repo_projections(
+                analysis, views, row.isin, allow_pair=allow_pair
+            )
+        clean = project_clean_analysis(analysis, row.isin, instrument_type=row.instrument_type)
         metrics = asdict(clean)
         for metric in metrics.values():
             value = metric["value"]
@@ -301,7 +325,7 @@ def read_clean_account(session, source_account, start, end, *, isin=None, includ
             )
 
             item["purchases"] = clean_purchase_price_contributions(
-                row.analysis, clean, row.isin, instrument_type=row.instrument_type
+                purchase_analysis, clean, row.isin, instrument_type=row.instrument_type
             )
         instruments.append(item)
     return {
