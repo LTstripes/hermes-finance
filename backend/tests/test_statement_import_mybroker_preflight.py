@@ -1108,6 +1108,9 @@ def test_clean_investment_report_unlinked_cost_is_not_an_unlinked_principal(
 
 
 def test_clean_investment_report_unaccepted_structure_shows_only_partial_known_result():
+    from dataclasses import replace
+
+    from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
     from hermes_finance.services.clean_instrument_return import project_clean_analysis
 
     service, doc, raw, report, money = investment_case()
@@ -1123,6 +1126,33 @@ def test_clean_investment_report_unaccepted_structure_shows_only_partial_known_r
     assert result.buys.value == 100000
     assert "source_sections_not_financially_accepted" in result.known_result.reason_codes
     assert result.pnl.value is None and result.modified_dietz.value is None
+    observed = InstrumentEvent(
+        event_key="synthetic-coupon",
+        provider="synthetic",
+        native_source_account="1234567-000",
+        isin="RU000A000000",
+        kind="COUPON",
+        source_references=("synthetic-coupon",),
+        event_date=date(2030, 1, 20),
+        cash_legs=(
+            CashLeg(
+                "coupon",
+                date(2030, 1, 20),
+                12000,
+                -12000,
+                ("synthetic-coupon",),
+                "synthetic-coupon",
+            ),
+        ),
+    )
+    analysis = analyses["RU000A000000"]
+    paid = project_clean_analysis(
+        replace(analysis, events=(*analysis.events, observed)),
+        "RU000A000000",
+        instrument_type="stock",
+    )
+    assert paid.known_result.value == 12000 and paid.known_result.status == "partial"
+    assert paid.valuation_and_trades.value is None and paid.pnl.value is None
 
 
 @pytest.mark.parametrize("second_principal, expected", [(-100000, 20000), (-200000, None)])
