@@ -261,6 +261,31 @@ def test_empty_exact_proof_does_not_hide_available_native_instrument(db, monkeyp
     assert any(row.isin == "RU000A000000" for row in result.instruments)
 
 
+def test_stale_exact_proof_keeps_available_native_observations(db, monkeypatch):
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _saved_investment(db, monkeypatch)
+    with db.session_factory() as session:
+        classification = session.scalar(
+            select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
+        )
+        classification.classification = (
+            "unknown" if classification.classification != "unknown" else "fee"
+        )
+        session.commit()
+    with db.session_factory() as session:
+        assert proofs.read_reports(session, source_account=ACCOUNT)[0]["status"] == "stale"
+        result = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=PROOF_START,
+            closing_date=PROOF_END,
+            available_period=True,
+        )
+    row = next(row for row in result.instruments if row.isin == "RU000A000000")
+    assert "investment_proof_stale" not in row.analysis.reason_codes
+
+
 def test_v3_proof_remains_current_only_with_exact_unchanged_dependencies(db, monkeypatch):
     with monkeypatch.context() as previous:
         previous.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_v3")
