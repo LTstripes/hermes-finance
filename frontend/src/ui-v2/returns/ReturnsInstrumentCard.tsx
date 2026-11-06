@@ -50,6 +50,15 @@ export function ReturnsInstrumentCard({
     ? selectCardScope(query.data, selectedScope, selectedStart, selectedEnd)
     : null;
   const data = !query.isError ? selection?.card : undefined;
+  const accountsWithKnownTrades =
+    data?.accounts.filter(
+      (account) =>
+        account.clean &&
+        (data.summary.pnl.value === null ||
+          account.clean.pnl.value === null ||
+          account.clean.pnl.status === "partial") &&
+        (account.clean.buys.value !== null || account.clean.sells.value !== null),
+    ) ?? [];
   const limitedAccounts =
     data?.accounts
       .map((account) => ({
@@ -168,6 +177,55 @@ export function ReturnsInstrumentCard({
                 </section>
               ))}
             </div>
+            {accountsWithKnownTrades.length > 0 && (
+              <section aria-label="Известные суммы сделок">
+                <h3>Известные суммы сделок</h3>
+                <p>Эти суммы сами по себе не являются доходностью.</p>
+                {accountsWithKnownTrades.map((account) => {
+                  const clean = account.clean;
+                  if (!clean || (clean.buys.value === null && clean.sells.value === null))
+                    return null;
+                  return (
+                    <div key={account.scope}>
+                      <strong>{accountLabels[account.scope] ?? account.label}</strong>
+                      {account.period && (
+                        <p>
+                          {dateLabel(account.period.start)} – {dateLabel(account.period.end)}
+                        </p>
+                      )}
+                      {(
+                        [
+                          ["Покупки", clean.buys],
+                          ["Продажи", clean.sells],
+                        ] as const
+                      )
+                        .filter(([, value]) => value.value !== null)
+                        .map(([label, value]) => (
+                          <p key={label}>
+                            {label}
+                            {value.status === "partial"
+                              ? " · известная часть"
+                              : value.status === "provisional"
+                                ? " · оценка"
+                                : ""}
+                            : {displayMetric(cleanMetric(value))}
+                            {value.assumptions.length > 0 && (
+                              <small>
+                                {" "}
+                                ·{" "}
+                                {value.assumptions[0] === "trade_face_value_missing"
+                                  ? "Номинал сделки не подтверждён."
+                                  : reasonCopy(value.assumptions[0], { surface: "returns" })
+                                      .message}
+                              </small>
+                            )}
+                          </p>
+                        ))}
+                    </div>
+                  );
+                })}
+              </section>
+            )}
             <details>
               <summary>Купоны и дивиденды</summary>
               {(

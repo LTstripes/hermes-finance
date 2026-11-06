@@ -58,6 +58,69 @@ test("selected scope and exact period show only that account's known return", as
   expect(accounts.queryByText("Учебный счёт Б")).toBeNull();
 });
 
+test("known trade amounts stay visible when the result is unavailable", async () => {
+  const card = instrumentCardFixture();
+  const clean = card.accounts[0].clean;
+  if (!clean) throw new Error("missing synthetic clean data");
+  clean.pnl.value = clean.known_result.value = clean.valuation_and_trades.value = null;
+  clean.buys = {
+    value: "100000",
+    status: "partial",
+    reason_codes: ["clean_trades_incomplete"],
+    assumptions: [],
+  };
+  clean.sells = { value: "0", status: "supported", reason_codes: [], assumptions: [] };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const facts = within(await screen.findByRole("region", { name: "Известные суммы сделок" }));
+  expect(facts.getByText("Учебный счёт А")).toBeVisible();
+  expect(facts.getByText(/Покупки · известная часть:/)).toHaveTextContent("1 000");
+  expect(facts.getByText(/Продажи:/)).toHaveTextContent("0");
+  expect(facts.getByText(/сами по себе не являются доходностью/)).toBeVisible();
+  expect(facts.queryByText("Учебный счёт Б")).toBeNull();
+});
+
+test("known trades stay visible beside a partial payout result and retain assumptions", async () => {
+  const card = instrumentCardFixture();
+  const clean = card.accounts[0].clean;
+  if (!clean) throw new Error("missing synthetic clean data");
+  clean.pnl.value = null;
+  clean.known_result = {
+    value: "8700",
+    status: "partial",
+    reason_codes: ["clean_trades_incomplete"],
+    assumptions: [],
+  };
+  clean.buys = {
+    value: "100000",
+    status: "provisional",
+    reason_codes: [],
+    assumptions: ["trade_face_value_missing"],
+  };
+  clean.sells = {
+    value: null,
+    status: "unavailable",
+    reason_codes: ["clean_trades_incomplete"],
+    assumptions: [],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const facts = within(await screen.findByRole("region", { name: "Известные суммы сделок" }));
+  expect(facts.getByText(/Покупки · оценка:/)).toHaveTextContent("1 000");
+  expect(facts.getByText(/номинал/i)).toBeVisible();
+  expect(facts.queryByText(/Продажи:/)).toBeNull();
+});
+
 test("selected account shows supported purchase price changes and true zero", async () => {
   const card = instrumentCardFixture();
   if (!card.accounts[0].clean || !card.accounts[1].clean)
