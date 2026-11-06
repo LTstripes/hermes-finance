@@ -1159,6 +1159,68 @@ def test_clean_card_fifo_sale_matches_clean_instrument_result(db):
     )
 
 
+def test_clean_card_closed_fifo_purchase_survives_missing_open_valuation(db):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000000"
+
+    def ordered_without_valuation(root):
+        for index, row in enumerate(root.findall(".//{MyBroker}Details[@trade_no]"), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+        root.find(".//{MyBroker}Details[@ISIN1]").attrib.pop("real_volume", None)
+
+    save(
+        db,
+        stock=("0", "1", "0", "150"),
+        bond=None,
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "-1", "180", "0", "9"),
+            (isin, "1", "200", "0", "7"),
+        ),
+        mutate=ordered_without_valuation,
+    )
+    with db.session_factory() as session:
+        card = overall.read_clean_instrument_card(session, isin)
+    account = card["accounts"][0]
+    rows = account["purchases"]
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[1]["cost_kopecks"] == "20000" and rows[1]["value_kopecks"] is None
+    assert rows[1]["price_result_kopecks"] is None
+
+
+def test_clean_card_closed_fifo_purchase_survives_later_unknown_buy_amount(db):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000001"
+
+    def ordered_with_missing_buy_amount(root):
+        rows = root.findall(".//{MyBroker}Details[@trade_no]")
+        for index, (row, price) in enumerate(zip(rows, ("10", "18", "20"), strict=True), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("Price", price)
+        rows[-1].attrib.pop("summ_nkd", None)
+
+    save(
+        db,
+        stock=None,
+        bond=("0", "1", "0", "150"),
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "-1", "180", "0", "9"),
+            (isin, "1", "200", "0", "7"),
+        ),
+        mutate=ordered_with_missing_buy_amount,
+    )
+    with db.session_factory() as session:
+        card = overall.read_clean_instrument_card(session, isin)
+    rows = card["accounts"][0]["purchases"]
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[1]["cost_kopecks"] is None and rows[1]["price_result_kopecks"] is None
+
+
 def _manual_gold(db):
     from hermes_finance.services.owner_manual_gold_history import (
         apply_gold_history,

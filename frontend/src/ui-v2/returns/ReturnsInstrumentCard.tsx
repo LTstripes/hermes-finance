@@ -254,18 +254,28 @@ export function ReturnsInstrumentCard({
                             <td>{dateLabel(purchase.date)}</td>
                             <td>
                               {formatQuantity(purchase.quantity)} /{" "}
-                              {formatQuantity(purchase.remaining_quantity)}
+                              {purchase.remaining_quantity === null
+                                ? "—"
+                                : formatQuantity(purchase.remaining_quantity)}
                             </td>
                             <td>{money(purchase.cost_kopecks)}</td>
                             <td>
                               {money(purchase.sale_proceeds_kopecks)} /{" "}
                               {money(purchase.value_kopecks)}
                             </td>
-                            <td>{money(purchase.price_result_kopecks)}</td>
+                            <td>
+                              {money(purchase.price_result_kopecks)}
+                              {purchase.status === "partial" && <small>Данные неполные</small>}
+                            </td>
                             <td>
                               {purchase.return_fraction === null ? (
                                 <span>
-                                  — <small>Нулевая стоимость покупки</small>
+                                  —{" "}
+                                  <small>
+                                    {purchase.cost_kopecks === "0"
+                                      ? "Нулевая стоимость покупки"
+                                      : "Недостаточно данных"}
+                                  </small>
                                 </span>
                               ) : (
                                 rate(purchase.return_fraction)

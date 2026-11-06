@@ -7547,24 +7547,59 @@
           "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
         },
         "remaining_quantity": {
-          "type": "string",
-          "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "cost_kopecks": {
-          "type": "string",
-          "pattern": "^[0-9]+$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "sale_proceeds_kopecks": {
-          "type": "string",
-          "pattern": "^[0-9]+$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "value_kopecks": {
-          "type": "string",
-          "pattern": "^[0-9]+$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "price_result_kopecks": {
-          "type": "string",
-          "pattern": "^-?[0-9]+$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^-?[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "return_fraction": {
           "anyOf": [
@@ -7576,6 +7611,19 @@
               "type": "null"
             }
           ]
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "partial"
+          ],
+          "type": "string"
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -7588,7 +7636,9 @@
         "sale_proceeds_kopecks",
         "value_kopecks",
         "price_result_kopecks",
-        "return_fraction"
+        "return_fraction",
+        "status",
+        "reason_codes"
       ]
     }
   }

@@ -83,12 +83,14 @@ export type InstrumentCard = {
           date: string;
           settlement_date: string;
           quantity: string;
-          remaining_quantity: string;
-          cost_kopecks: string;
-          sale_proceeds_kopecks: string;
-          value_kopecks: string;
-          price_result_kopecks: string;
+          remaining_quantity: string | null;
+          cost_kopecks: string | null;
+          sale_proceeds_kopecks: string | null;
+          value_kopecks: string | null;
+          price_result_kopecks: string | null;
           return_fraction: string | null;
+          status: "supported" | "partial";
+          reason_codes: string[];
         }[]
       | null;
   }[];

@@ -359,7 +359,7 @@ def buy(key, amount, quantity, day):
     )
 
 
-def case(events, *, quantity="2", closing=30000, complete=True):
+def case(events, *, quantity="2", closing=30000, complete=True, coverage=None):
     clean = calculate_clean_return(
         START,
         END,
@@ -375,6 +375,7 @@ def case(events, *, quantity="2", closing=30000, complete=True):
         opening_date=START,
         closing_date=END,
         events=tuple(events),
+        coverage=coverage or {"events": Coverage(complete), "quantity": Coverage(complete)},
         opening=Endpoint(START, Decimal(0), 0, 0, 0, "dirty"),
         closing=Endpoint(END, Decimal(quantity), closing, closing, 0, "dirty"),
     )
@@ -407,6 +408,85 @@ def test_fifo_full_sale_and_unattributed_payout_stays_at_instrument():
     assert row["price_result_kopecks"] == "8000" and row["return_fraction"] == "0.8"
 
 
+def test_closed_purchase_survives_unknown_closing_value_of_open_purchase():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 11)), kind="SELL")
+    second = buy("b", 20000, "1", date(2030, 1, 12))
+    rows = case([first, sale, second], quantity="1", closing=None)
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[0]["value_kopecks"] == "0" and rows[0]["status"] == "supported"
+    assert rows[1]["cost_kopecks"] == "20000" and rows[1]["remaining_quantity"] == "1"
+    assert rows[1]["value_kopecks"] is rows[1]["price_result_kopecks"] is None
+    assert "closing_value_unknown" in rows[1]["reason_codes"]
+
+
+def test_closed_purchase_survives_later_unknown_clean_purchase_amount():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 11)), kind="SELL")
+    second = replace(
+        buy("b", 20000, "1", date(2030, 1, 12)),
+        native_total_basis=None,
+        counted=False,
+        reason_codes=("trade_nkd_basis_unknown",),
+    )
+    coverage = {
+        "events": Coverage(False, ("trade_nkd_basis_unknown",)),
+        "quantity": Coverage(
+            False, ("quantity_events_incomplete", "quantity_reconciliation_mismatch")
+        ),
+    }
+    rows = case([first, sale, second], quantity="1", closing=15000, coverage=coverage)
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[1]["cost_kopecks"] is None and rows[1]["value_kopecks"] == "15000"
+    assert rows[1]["price_result_kopecks"] is None
+
+
+def test_unordered_later_buys_without_later_sales_do_not_hide_closed_purchase():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 11)), kind="SELL")
+    second = buy("b", 20000, "1", date(2030, 1, 12))
+    third = buy("c", 10000, "1", date(2030, 1, 12))
+    rows = case([first, sale, second, third], quantity="2", closing=30000)
+    assert [r["price_result_kopecks"] for r in rows] == ["8000", "-5000", "5000"]
+
+
+def test_later_ambiguous_sale_leaves_already_closed_purchase_known():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 11)), kind="SELL")
+    second = buy("b", 20000, "1", date(2030, 1, 12))
+    third = buy("c", 10000, "1", date(2030, 1, 12))
+    last_sale = replace(buy("last-sale", 15000, "-1", date(2030, 1, 13)), kind="SELL")
+    rows = case([first, sale, second, third, last_sale], quantity="1", closing=15000)
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["status"] == "supported"
+    assert all(
+        row["remaining_quantity"] is None and row["price_result_kopecks"] is None
+        for row in rows[1:]
+    )
+
+
+def test_later_unknown_sale_proceeds_do_not_hide_earlier_closed_purchase():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 11)), kind="SELL")
+    second = buy("b", 20000, "1", date(2030, 1, 12))
+    unknown_sale = replace(
+        buy("sale-b", 15000, "-1", date(2030, 1, 13)),
+        kind="SELL",
+        native_trade_amount_kopecks=None,
+        counted=False,
+        reason_codes=("trade_components_missing",),
+    )
+    coverage = {
+        "events": Coverage(False, ("trade_components_missing",)),
+        "quantity": Coverage(
+            False, ("quantity_events_incomplete", "quantity_reconciliation_mismatch")
+        ),
+    }
+    rows = case([first, sale, second, unknown_sale], quantity="0", closing=0, coverage=coverage)
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[1]["remaining_quantity"] == "0" and rows[1]["sale_proceeds_kopecks"] is None
+    assert rows[1]["price_result_kopecks"] is None
+
+
 def test_fifo_excludes_fees_and_paid_nkd_from_buy_and_sale():
     first = replace(
         buy("a", 10200, "1", date(2030, 1, 10)),
@@ -429,10 +509,58 @@ def test_fifo_excludes_fees_and_paid_nkd_from_buy_and_sale():
 def test_fifo_rejects_ambiguous_same_day_order_and_zero_cost_rate_is_unknown():
     first = buy("a", 0, "1", date(2030, 1, 10))
     sale = replace(buy("sale", 100, "-1", date(2030, 1, 10)), kind="SELL")
-    assert case([first, sale], quantity="0", closing=0) is None
-    sold_next_day = replace(sale, execution_date=date(2030, 1, 11))
+    ambiguous = case([first, sale], quantity="0", closing=0)
+    assert ambiguous[0]["price_result_kopecks"] is None
+    assert "fifo_order_ambiguous" in ambiguous[0]["reason_codes"]
+    sold_next_day = replace(
+        sale,
+        event_date=date(2030, 1, 11),
+        execution_date=date(2030, 1, 11),
+        cash_settlement_date=date(2030, 1, 11),
+        depository_settlement_date=date(2030, 1, 11),
+    )
     row = case([first, sold_next_day], quantity="0", closing=0)[0]
     assert row["price_result_kopecks"] == "100" and row["return_fraction"] is None
+
+
+@pytest.mark.parametrize("kind", ["BUY", "SELL"])
+@pytest.mark.parametrize("field", ["cash_settlement_date", "depository_settlement_date"])
+def test_fifo_rejects_settlement_or_delivery_before_execution(kind, field):
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 12000, "-1", date(2030, 1, 12)), kind="SELL")
+    target = first if kind == "BUY" else sale
+    inconsistent = replace(
+        target, **{field: target.execution_date.replace(day=target.execution_date.day - 1)}
+    )
+    events = [inconsistent, sale] if kind == "BUY" else [first, inconsistent]
+    assert case(events, quantity="0", closing=0) is None
+
+
+@pytest.mark.parametrize("field", ["cash_settlement_date", "depository_settlement_date"])
+def test_fifo_requires_both_settlement_dates_inside_period_and_accepts_end(field):
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    assert case([replace(first, **{field: START})], quantity="1", closing=11000) is None
+    end_day = buy("end", 10000, "1", END)
+    result = case([end_day], quantity="1", closing=11000)
+    assert result[0]["price_result_kopecks"] == "1000"
+
+
+def test_fifo_rejects_mismatched_execution_date_and_native_timestamp():
+    event = replace(buy("a", 10000, "1", date(2030, 1, 10)), trade_time="2030-01-11T09:00:00")
+    assert case([event], quantity="1", closing=11000) is None
+
+
+@pytest.mark.parametrize("role", ["principal", "native_money"])
+def test_fifo_checks_actual_linked_money_date_not_only_native_settlement(role):
+    day = date(2030, 1, 9)
+    event = replace(
+        buy("a", 10000, "1", date(2030, 1, 10)),
+        attribution_basis="native_money_group_bridge"
+        if role == "native_money"
+        else "matched_money",
+        cash_legs=(CashLeg(role, day, -10000, 10000, ("synthetic",), "synthetic"),),
+    )
+    assert case([event], quantity="1", closing=11000) is None
 
 
 def test_purchase_principal_excludes_nkd_and_missing_commission_does_not_block():
@@ -457,9 +585,7 @@ def test_zero_and_rounding_are_known_and_add_to_total():
     assert any(row["price_result_kopecks"] == "0" for row in rows)
 
 
-@pytest.mark.parametrize(
-    "shape", ["sale", "quantity", "incomplete", "missing_value", "missing_date", "wrong_isin"]
-)
+@pytest.mark.parametrize("shape", ["sale", "quantity", "incomplete", "missing_date", "wrong_isin"])
 def test_unknown_or_disposed_inventory_does_not_invent_results(shape):
     one = buy("a", 10000, "1", date(2030, 1, 10))
     two = buy("b", 20000, "1", date(2030, 1, 11))

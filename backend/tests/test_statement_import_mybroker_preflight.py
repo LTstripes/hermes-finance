@@ -2027,6 +2027,14 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, p
     clean = project_clean_analysis(
         analyses[instrument["isin"]], instrument["isin"], instrument_type="stock"
     )
+    from hermes_finance.services.clean_purchase_returns import clean_purchase_price_contributions
+
+    purchase_rows = clean_purchase_price_contributions(
+        analyses[instrument["isin"]], clean, instrument["isin"], instrument_type="stock"
+    )
+    assert purchase_rows is None or all(
+        row["price_result_kopecks"] is None and row["cost_kopecks"] is None for row in purchase_rows
+    )
     if pending is not True:
         # This original-bound fixture has grouped Money without a unique native
         # principal disclosure. It must not be relabelled as a clean trade.

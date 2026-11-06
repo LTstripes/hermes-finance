@@ -74,6 +74,8 @@ test("selected account shows supported purchase price changes and true zero", as
       value_kopecks: "15000",
       price_result_kopecks: "5000",
       return_fraction: "0.5",
+      status: "supported",
+      reason_codes: [],
     },
     {
       id: "synthetic-b",
@@ -86,6 +88,8 @@ test("selected account shows supported purchase price changes and true zero", as
       value_kopecks: "15000",
       price_result_kopecks: "0",
       return_fraction: "0",
+      status: "supported",
+      reason_codes: [],
     },
   ];
   card.accounts[1].purchases = [
@@ -100,6 +104,8 @@ test("selected account shows supported purchase price changes and true zero", as
       value_kopecks: "15000",
       price_result_kopecks: "-5000",
       return_fraction: "-0.25",
+      status: "supported",
+      reason_codes: [],
     },
   ];
   vi.stubGlobal(
@@ -117,6 +123,54 @@ test("selected account shows supported purchase price changes and true zero", as
   expect(region.getAllByText(/150,00 ₽/).length).toBeGreaterThan(0);
   expect(region.getByText("0,00 ₽")).toBeVisible();
   expect(region.getByText(/самые ранние покупки \(FIFO\)/)).toBeVisible();
+});
+
+test("closed purchase remains visible when the open purchase has no valuation", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "a",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "10000",
+      sale_proceeds_kopecks: "18000",
+      value_kopecks: "0",
+      price_result_kopecks: "8000",
+      return_fraction: "0.8",
+      status: "supported",
+      reason_codes: [],
+    },
+    {
+      id: "b",
+      date: "2030-05-03",
+      settlement_date: "2030-05-04",
+      quantity: "1",
+      remaining_quantity: "1",
+      cost_kopecks: "20000",
+      sale_proceeds_kopecks: "0",
+      value_kopecks: null,
+      price_result_kopecks: null,
+      return_fraction: null,
+      status: "partial",
+      reason_codes: ["closing_value_unknown"],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("80,00 ₽")).toBeVisible();
+  expect(region.getByText("80 %")).toBeVisible();
+  expect(region.getAllByText("Неизвестно").length).toBeGreaterThan(0);
+  expect(region.getByText("Данные неполные")).toBeVisible();
 });
 
 test("selected scope shows producer-owned price, payouts and result with redemption included once", async () => {

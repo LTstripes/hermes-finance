@@ -1282,6 +1282,52 @@ def test_overlapping_account_cost_gap_stays_with_account(db, description, accoun
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("paired", [True, False])
+def test_fifo_reader_keeps_ordinary_stock_separate_from_repo_issue(db, paired):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+    from hermes_finance.services.clean_purchase_returns import clean_purchase_price_contributions
+
+    def repo_bond_only(root):
+        ordinary = [
+            row
+            for row in root.findall(".//m:Details[@trade_no]", NS)
+            if row.get("isin_reg") == ISIN
+        ]
+        for index, row in enumerate(ordinary, 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+        rows = [
+            row
+            for row in root.findall(".//m:Details[@trade_no]", NS)
+            if row.get("isin_reg") == BOND
+        ]
+        for index, row in enumerate(rows):
+            row.set("trade_no", f"B9000{index + 1}")
+            row.set("repo_no", f"B9000{2 if index == 0 else 1}")
+            row.set("comment", f"репо ч.{index + 1}")
+
+    bond_trades = [(BOND, "1", "100", "0", "0")]
+    if paired:
+        bond_trades.append((BOND, "-1", "101", "0", "0"))
+    save(
+        db,
+        stock=("0", "0", "0", "0"),
+        bond=("2", "2" if paired else "3", "2000", "2100"),
+        trades=((ISIN, "1", "1000", "0", "0"), (ISIN, "-1", "1100", "0", "0"), *bond_trades),
+        mutate=repo_bond_only,
+    )
+    source = by_isin(read(db))
+    stock = source[ISIN].analysis
+    stock_clean = project_clean_analysis(stock, ISIN, instrument_type="stock")
+    rows = clean_purchase_price_contributions(stock, stock_clean, ISIN, instrument_type="stock")
+    assert rows[0]["price_result_kopecks"] == "10000"
+    repo = source[BOND].analysis
+    repo_clean = project_clean_analysis(repo, BOND, instrument_type="bond")
+    assert (
+        clean_purchase_price_contributions(repo, repo_clean, BOND, instrument_type="bond") is None
+    )
+
+
 @pytest.mark.parametrize(
     "fault", [None, "partner", "leg", "missing", "duplicate", "duplicate_same_issue"]
 )

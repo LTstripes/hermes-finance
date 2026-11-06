@@ -1,7 +1,7 @@
 """Analytical FIFO over existing clean source events; no journal is persisted."""
 
 import hashlib
-from collections import Counter
+from collections import defaultdict
 from dataclasses import replace
 from datetime import datetime
 from decimal import ROUND_FLOOR, Decimal, localcontext
@@ -45,33 +45,71 @@ def _execution(event):
 def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type):
     """FIFO price/sale contributions, exclusive of payouts and all costs.
 
-    Complete clean trade and quantity coverage, a zero opening inventory, and
-    unique execution order are required. In ambiguous cases the events remain
-    visible elsewhere but individual returns are withheld.
+    A zero opening inventory and complete source/quantity evidence are needed.
+    A missing price or valuation affects only the dependent contributions. An
+    ambiguous later execution order does not erase already closed purchases.
     """
     if (
         analysis.opening.quantity != 0
         or clean.opening_value.value != 0
-        or clean.closing_value.value is None
-        or clean.closing_value.status != "supported"
-        or clean.buys.status != "supported"
-        or clean.sells.status != "supported"
-        or clean.redemption.status != "supported"
-        or clean.redemption.value != 0
-        or clean.valuation_and_trades.status != "supported"
         or analysis.closing.quantity is None
         or not analysis.closing.quantity.is_finite()
         or analysis.closing.quantity < 0
     ):
         return None
+    coverage = getattr(analysis, "coverage", None)
+    if not coverage or not all(name in coverage for name in ("events", "quantity")):
+        return None
+    if "source_sections_not_financially_accepted" in getattr(analysis, "reason_codes", ()):
+        return None
+    # These reasons do not make native trade identity or quantity ambiguous.
+    # Any unrelated source gap remains a blocker; it may contain another trade.
+    permitted_event_reasons = {"unallocated_instrument_cost", "native_commission_unavailable"}
+    if getattr(coverage, "unresolved_cost_only", False):
+        permitted_event_reasons.add("unresolved_account_cash_attribution")
+    if instrument_type == "stock" and getattr(coverage, "fee_only_bridge", False):
+        permitted_event_reasons.add("native_money_cash_bridge_mismatch")
+    missing_component_reasons = {"trade_components_missing", "trade_nkd_basis_unknown"}
+    for event in analysis.events:
+        if event.kind in {"FEE", "TAX"}:
+            permitted_event_reasons.update(set(event.reason_codes) & {"cost_sign_conflict"})
+            if event.attribution_basis == "explicit_tax_unclassified":
+                permitted_event_reasons.add("unrecognized_money")
+        if event.isin == isin and event.kind in {"BUY", "SELL"}:
+            permitted_event_reasons.update(set(event.reason_codes) & missing_component_reasons)
+    event_coverage = coverage["events"]
+    if (not event_coverage.complete and not event_coverage.reason_codes) or (
+        set(event_coverage.reason_codes) - permitted_event_reasons
+    ):
+        return None
+    quantity_coverage = coverage["quantity"]
+    if (not quantity_coverage.complete and not quantity_coverage.reason_codes) or (
+        set(quantity_coverage.reason_codes)
+        - {
+            "quantity_events_incomplete",
+            "quantity_reconciliation_mismatch",
+            "cross_boundary_settlement",
+        }
+    ):
+        return None
     trades = []
     for event in analysis.events:
-        if event.isin != isin or event.kind in {"FEE", "TAX", "COUPON", "DIVIDEND"}:
+        if event.kind in {"FEE", "TAX", "COUPON", "DIVIDEND"}:
+            continue
+        if event.isin not in {isin, None}:
             continue
         if (
-            event.kind not in {"BUY", "SELL"}
+            event.isin != isin
+            or event.kind not in {"BUY", "SELL"}
             or not event.current
-            or not (event.counted or cost_only_trade(event))
+            or (
+                not event.counted
+                and (
+                    not event.reason_codes
+                    or not set(event.reason_codes) <= missing_component_reasons
+                )
+                and not cost_only_trade(event)
+            )
         ):
             return None
         if (
@@ -82,7 +120,8 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             and event.accrued_interest_kopecks in (None, 0)
         ):
             event = replace(event, native_total_basis="excludes_paid_nkd")
-        settlement, amount = clean_trade_date(event), clean_trade_amount(event)
+        settlement = clean_trade_date(event)
+        amount = clean_trade_amount(event) if event.counted or cost_only_trade(event) else None
         day, instant = _execution(event)
         q = event.quantity_delta
         if (
@@ -90,10 +129,11 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             or not q.is_finite()
             or q == 0
             or (q > 0) != (event.kind == "BUY")
-            or amount is None
             or day is None
             or settlement is None
             or event.depository_settlement_date is None
+            or day > settlement
+            or day > event.depository_settlement_date
             or not analysis.opening_date < settlement <= analysis.closing_date
             or not analysis.opening_date < event.depository_settlement_date <= analysis.closing_date
         ):
@@ -101,22 +141,57 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         trades.append((event, day, instant, settlement, q, amount))
     if not trades or len({row[0].event_key for row in trades}) != len(trades):
         return None
+    with localcontext() as context:
+        context.prec = 200
+        if sum((row[4] for row in trades), Decimal(0)) != analysis.closing.quantity:
+            return None
     native_ids = [row[0].native_identity for row in trades if row[0].native_identity]
     if len(native_ids) != len(set(native_ids)):
         return None
-    counts = Counter(row[1] for row in trades)
-    same_day = [(row[1], row[2]) for row in trades if counts[row[1]] > 1]
-    if any(row[0].kind == "SELL" for row in trades) and (
-        any(instant is None for _, instant in same_day) or len(same_day) != len(set(same_day))
-    ):
-        return None
-    trades.sort(key=lambda row: (row[1], row[2] or datetime.min.time()))
+    by_day = defaultdict(list)
+    for trade in trades:
+        by_day[trade[1]].append(trade)
+    ordered, ambiguous_at = [], None
+    for day in sorted(by_day):
+        group = by_day[day]
+        instants = [row[2] for row in group]
+        ambiguous = len(group) > 1 and (None in instants or len(instants) != len(set(instants)))
+        later_sales = any(row[0].kind == "SELL" and row[1] > day for row in trades)
+        if ambiguous and (any(row[0].kind == "SELL" for row in group) or later_sales):
+            ambiguous_at = len(ordered)
+            ordered.extend(sorted(group, key=lambda row: row[0].event_key))
+            for later in sorted(d for d in by_day if d > day):
+                ordered.extend(sorted(by_day[later], key=lambda row: row[0].event_key))
+            break
+        ordered.extend(
+            sorted(group, key=lambda row: (row[2] or datetime.min.time(), row[0].event_key))
+        )
+    trades = ordered
 
     with localcontext() as context:
         context.prec = 200
         lots = []
         buy_sum = sell_sum = 0
-        for event, day, _instant, settlement, q, amount in trades:
+        for index, (event, day, _instant, settlement, q, amount) in enumerate(trades):
+            if ambiguous_at is not None and index >= ambiguous_at:
+                if index == ambiguous_at:
+                    for lot in lots:
+                        if lot["remaining"]:
+                            lot["remaining"] = None
+                            lot["proceeds"] = None
+                if event.kind == "BUY":
+                    lots.append(
+                        {
+                            "key": event.event_key,
+                            "date": day,
+                            "settlement": settlement,
+                            "quantity": q,
+                            "remaining": None,
+                            "cost": amount,
+                            "proceeds": None,
+                        }
+                    )
+                continue
             if event.kind == "BUY":
                 lots.append(
                     {
@@ -129,9 +204,11 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                         "proceeds": 0,
                     }
                 )
-                buy_sum += amount
+                if amount is not None:
+                    buy_sum += amount
                 continue
-            sell_sum += amount
+            if amount is not None:
+                sell_sum += amount
             pending = -q
             consumed = []
             for lot in lots:
@@ -143,50 +220,90 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                     break
             if pending != 0:
                 return None
-            shares = _allocate(
-                amount, [part for _, part in consumed], [lot["key"] for lot, _ in consumed]
+            shares = (
+                _allocate(
+                    amount, [part for _, part in consumed], [lot["key"] for lot, _ in consumed]
+                )
+                if amount is not None
+                else [None] * len(consumed)
             )
-            if shares is None:
-                return None
             for (lot, part), share in zip(consumed, shares, strict=True):
                 lot["remaining"] -= part
-                lot["proceeds"] += share
+                lot["proceeds"] = (
+                    lot["proceeds"] + share
+                    if lot["proceeds"] is not None and share is not None
+                    else None
+                )
         if (
             not lots
-            or sum((lot["remaining"] for lot in lots), Decimal(0)) != analysis.closing.quantity
-            or buy_sum != clean.buys.value
-            or sell_sum != clean.sells.value
+            or (
+                ambiguous_at is None
+                and sum((lot["remaining"] for lot in lots), Decimal(0)) != analysis.closing.quantity
+            )
+            or (
+                ambiguous_at is None
+                and clean.buys.status == "supported"
+                and buy_sum != clean.buys.value
+            )
+            or (
+                ambiguous_at is None
+                and clean.sells.status == "supported"
+                and sell_sum != clean.sells.value
+            )
         ):
             return None
-        valuation = clean.closing_value.value
-        if valuation < 0:
+        valuation = clean.closing_value.value if clean.closing_value.status == "supported" else None
+        if valuation is not None and valuation < 0:
             return None
-        values = _allocate(
-            valuation, [lot["remaining"] for lot in lots], [lot["key"] for lot in lots]
+        values = (
+            _allocate(valuation, [lot["remaining"] for lot in lots], [lot["key"] for lot in lots])
+            if valuation is not None and ambiguous_at is None
+            else [0 if lot["remaining"] == 0 else None for lot in lots]
         )
         if values is None:
             return None
         results = []
         for lot, value in zip(lots, values, strict=True):
-            result = value + lot["proceeds"] - lot["cost"]
+            result = (
+                value + lot["proceeds"] - lot["cost"]
+                if value is not None and lot["proceeds"] is not None and lot["cost"] is not None
+                else None
+            )
+            reasons = []
+            if lot["remaining"] is None:
+                reasons.append("fifo_order_ambiguous")
+            if lot["cost"] is None:
+                reasons.append("purchase_amount_unknown")
+            if lot["proceeds"] is None:
+                reasons.append("sale_proceeds_unknown")
+            if value is None:
+                reasons.append("closing_value_unknown")
             results.append(
                 {
                     "id": hashlib.sha256(lot["key"].encode("utf-8")).hexdigest()[:24],
                     "date": lot["date"],
                     "settlement_date": lot["settlement"],
                     "quantity": format(lot["quantity"], "f"),
-                    "remaining_quantity": format(lot["remaining"], "f"),
-                    "cost_kopecks": str(lot["cost"]),
-                    "sale_proceeds_kopecks": str(lot["proceeds"]),
-                    "value_kopecks": str(value),
-                    "price_result_kopecks": str(result),
-                    "return_fraction": format(Decimal(result) / Decimal(lot["cost"]), "f")
-                    if lot["cost"]
+                    "remaining_quantity": format(lot["remaining"], "f")
+                    if lot["remaining"] is not None
                     else None,
+                    "cost_kopecks": str(lot["cost"]) if lot["cost"] is not None else None,
+                    "sale_proceeds_kopecks": str(lot["proceeds"])
+                    if lot["proceeds"] is not None
+                    else None,
+                    "value_kopecks": str(value) if value is not None else None,
+                    "price_result_kopecks": str(result) if result is not None else None,
+                    "return_fraction": format(Decimal(result) / Decimal(lot["cost"]), "f")
+                    if result is not None and lot["cost"]
+                    else None,
+                    "status": "supported" if result is not None else "partial",
+                    "reason_codes": reasons,
                 }
             )
         if (
-            sum(int(row["price_result_kopecks"]) for row in results)
+            all(row["price_result_kopecks"] is not None for row in results)
+            and clean.valuation_and_trades.value is not None
+            and sum(int(row["price_result_kopecks"]) for row in results)
             != clean.valuation_and_trades.value
         ):
             return None

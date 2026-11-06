@@ -6833,17 +6833,21 @@ current ordered source-account set; it contains no account identity. A changed
 source-account set requires a fresh card and export before comparing them.
 
 The card may also show analytical `purchases` for a single source scope and EOD
-period. It requires a proved zero opening position/value, complete clean trades,
-no redemption, known clean closing valuation, current uniquely owned trades,
-and reconciled closing quantity. Settlement and delivery must fall within the
-period. Sales consume the earliest purchased remaining quantity first (FIFO);
-same-day execution order must be established, otherwise the allocation is
-unknown. Sale proceeds and clean closing value are allocated proportionally by
+period. It requires a proved zero opening position/value, complete source and
+quantity evidence, no redemption, current uniquely owned trades, and reconciled
+closing quantity. Each execution must precede or coincide with its actual
+settlement and delivery; both must fall within the period. Sales consume the
+earliest purchased remaining quantity first (FIFO). An ambiguous execution
+order leaves affected lots unknown but does not erase already closed lots.
+Sale proceeds and clean closing value are allocated proportionally by
 quantity with a deterministic largest remainder in kopecks. A purchase's
 price/sale result is proceeds plus its remaining value minus its original clean
 principal. Its percentage is this result divided by that original principal;
 a zero principal gives an unknown percentage, and no annualization applies.
-The allocated contributions must sum exactly to `valuation_and_trades`.
+When every component is known the contributions must sum exactly to
+`valuation_and_trades`. Missing clean principal, sale proceeds or open-position
+valuation leaves the affected field and result unknown while preserving
+independently supported components and closed-lot results.
 This is Hermes analysis, not broker tax accounting, and excludes payouts,
 fees, taxes and NKD. Unsupported histories return `purchases=null` while
 underlying observed operations and independently known payouts remain visible.

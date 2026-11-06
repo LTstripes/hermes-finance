@@ -350,6 +350,99 @@ def test_v31_fifo_export_matches_card_and_v30_remains_compatible(database):
     assert snapshot(database) == before
 
 
+def test_v31_keeps_closed_purchase_when_open_valuation_is_unknown(database):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000000"
+
+    def ordered_without_valuation(root):
+        for index, row in enumerate(root.findall(".//{MyBroker}Details[@trade_no]"), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+        root.find(".//{MyBroker}Details[@ISIN1]").attrib.pop("real_volume", None)
+
+    save(
+        database,
+        stock=("0", "1", "0", "150"),
+        bond=None,
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "-1", "180", "0", "9"),
+            (isin, "1", "200", "0", "7"),
+        ),
+        mutate=ordered_without_valuation,
+    )
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(database)
+    with TestClient(create_app(database)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": isin})
+        report = client.get(
+            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
+        )
+    assert card.status_code == report.status_code == 200, (card.text, report.text)
+    card_account = card.json()["accounts"][0]
+    ai_account = report.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert ai_account["account_ref"] == card_account["ai_account_ref"]
+    assert ai_account["period"] == card_account["period"]
+    rows = ai_account["instruments"][0]["purchases"]
+    assert [{k: v for k, v in row.items() if k != "id"} for row in rows] == [
+        {k: v for k, v in row.items() if k != "id"} for row in card_account["purchases"]
+    ]
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[1]["value_kopecks"] is None and rows[1]["price_result_kopecks"] is None
+    assert rows[1]["status"] == "partial" and "closing_value_unknown" in rows[1]["reason_codes"]
+    assert snapshot(database) == before
+
+
+def test_v31_keeps_closed_purchase_when_later_bond_clean_cost_is_unknown(database):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000001"
+
+    def ordered_with_missing_nkd(root):
+        rows = root.findall(".//{MyBroker}Details[@trade_no]")
+        for index, (row, price) in enumerate(zip(rows, ("10", "18", "20"), strict=True), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("Price", price)
+        rows[-1].attrib.pop("summ_nkd", None)
+
+    save(
+        database,
+        stock=None,
+        bond=("0", "1", "0", "150"),
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "-1", "180", "0", "9"),
+            (isin, "1", "200", "0", "7"),
+        ),
+        mutate=ordered_with_missing_nkd,
+    )
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(database)
+    with TestClient(create_app(database)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": isin})
+        report = client.get(
+            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
+        )
+    assert card.status_code == report.status_code == 200, (card.text, report.text)
+    account = card.json()["accounts"][0]
+    exported = report.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert (
+        exported["account_ref"] == account["ai_account_ref"]
+        and exported["period"] == account["period"]
+    )
+    rows = exported["instruments"][0]["purchases"]
+    assert [{k: v for k, v in row.items() if k != "id"} for row in rows] == [
+        {k: v for k, v in row.items() if k != "id"} for row in account["purchases"]
+    ]
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[1]["cost_kopecks"] is None and rows[1]["price_result_kopecks"] is None
+    assert snapshot(database) == before
+
+
 @pytest.mark.parametrize("aba", [False, True])
 def test_latest_stale_scope_never_revives_numeric_month_or_history(database, monkeypatch, aba):
     _save(database, monkeypatch)
