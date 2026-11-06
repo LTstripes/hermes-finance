@@ -697,6 +697,7 @@ _CI_LANE_OVERRIDES = {
     "test_instrument_mappings_api.py": "ci_integrations",
     "test_ci_lane_ownership.py": "ci_runtime_release",
     "test_prepare_release_version.py": "ci_runtime_release",
+    "test_uat_private_leaf.py": "ci_runtime_release",
     "test_source_payout_preview.py": "ci_core",
     "test_source_investment_semantics.py": "ci_core",
 }

@@ -658,6 +658,7 @@ jobs:
           tests/test_startup.py
           tests/test_scratch_preflight_runtime.py
           tests/test_instrument_uat_runtime.py
+          tests/test_uat_private_leaf.py
           --basetemp "$env:RUNNER_TEMP/hermes-recovery-pytest"
 
   windows-production-smoke:
