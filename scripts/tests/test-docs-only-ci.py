@@ -580,22 +580,16 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(f'--job "{name}=${{{{ needs.{name}.result }}}}"', fast)
         self.assertNotIn("docs-only", self.release)
 
-    def test_docs_full_override_and_windows_safety_workflow_behavior(self) -> None:
-        # Exercise the actual job expressions, including false area outputs on
-        # docs-only PRs; merely finding a label in the condition misses precedence bugs.
-        completed = subprocess.run(
-            [
-                sys.executable,
-                "-B",
-                str(ROOT / "scripts/tests/test-ci-paths.py"),
-                "WorkflowTests.test_full_label_bypasses_docs_area_and_visual_filters",
-                "WorkflowTests.test_windows_jobs_follow_classifier_outputs_and_fail_closed",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+    def test_docs_gate_shares_full_ci_path_matrix_in_privacy_job(self) -> None:
+        # The privacy job already executes the entire workflow-expression
+        # matrix before this suite. Calling two cases again here adds no CI
+        # coverage, but invoking only this file no longer runs that matrix.
+        privacy = _job(self.ci, "privacy")
+        matrix = "python3 scripts/tests/test-ci-paths.py"
+        this_suite = "python3 scripts/tests/test-docs-only-ci.py"
+        self.assertEqual(privacy.count(matrix), 1)
+        self.assertEqual(privacy.count(this_suite), 1)
+        self.assertLess(privacy.index(matrix), privacy.index(this_suite))
 
     def test_ui_evidence_does_not_run_for_allowlisted_docs(self) -> None:
         patterns = evidence_patterns_from_workflow(self.ui)
