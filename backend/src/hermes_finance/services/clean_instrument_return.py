@@ -65,6 +65,8 @@ def clean_gold_metric(observed, *, current=True):
 def project_clean_analysis(analysis, isin, *, instrument_type=None):
     """Do not change or attest the events, the account bridge, or source receipts."""
     ignored_cost_reasons = {"unallocated_instrument_cost", "native_commission_unavailable"}
+    if getattr(analysis.coverage, "unresolved_cost_only", False):
+        ignored_cost_reasons.add("unresolved_account_cash_attribution")
     cost_sign_events = [e for e in analysis.events if "cost_sign_conflict" in e.reason_codes]
     if cost_sign_events and all(e.kind in {"FEE", "TAX"} for e in cost_sign_events):
         ignored_cost_reasons.add("cost_sign_conflict")
@@ -131,6 +133,10 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
                     reasons.discard("trade_components_missing")
                 if fee_conflicts_only:
                     reasons.discard("trade_money_cash_conflict")
+                if instrument_type == "stock" and getattr(
+                    analysis.coverage, "fee_only_bridge", False
+                ):
+                    reasons.discard("native_money_cash_bridge_mismatch")
             if name == "quantity":
                 reasons -= {
                     "quantity_events_incomplete",
@@ -139,7 +145,7 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
                 }
         return (coverage.complete or bool(coverage.reason_codes)) and not reasons
 
-    return calculate_clean_return(
+    clean = calculate_clean_return(
         analysis.opening_date,
         analysis.closing_date,
         opening,
@@ -150,6 +156,50 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         redemptions_complete=clean_complete("quantity"),
         valuation_complete=opening is not None and closing is not None,
     )
+    if "source_sections_not_financially_accepted" in getattr(analysis, "reason_codes", ()):
+        reason = "source_sections_not_financially_accepted"
+
+        def partial(metric):
+            return replace(
+                metric,
+                status="partial" if metric.value is not None else "unavailable",
+                reason_codes=tuple(sorted(set(metric.reason_codes) | {reason})),
+            )
+
+        def unavailable(metric):
+            return replace(
+                metric,
+                value=None,
+                status="unavailable",
+                reason_codes=tuple(sorted(set(metric.reason_codes) | {reason})),
+            )
+
+        known = (
+            replace(partial(clean.known_result), value=clean.payouts.value)
+            if clean.payouts.value not in (None, 0)
+            else unavailable(clean.known_result)
+        )
+        return replace(
+            clean,
+            **{
+                name: partial(getattr(clean, name))
+                for name in (
+                    "opening_value",
+                    "closing_value",
+                    "buys",
+                    "sells",
+                    "coupons",
+                    "dividends",
+                    "payouts",
+                    "redemption",
+                )
+            },
+            valuation_and_trades=unavailable(clean.valuation_and_trades),
+            known_result=known,
+            pnl=unavailable(clean.pnl),
+            modified_dietz=unavailable(clean.modified_dietz),
+        )
+    return clean
 
 
 def _clean_quantity_reconciled(analysis, events, isin):
@@ -157,8 +207,10 @@ def _clean_quantity_reconciled(analysis, events, isin):
     from collections import defaultdict
     from decimal import Decimal, localcontext
 
-    if not any(cost_only_trade(event) for event in events) and (
-        "cross_boundary_settlement" not in analysis.coverage["quantity"].reason_codes
+    if (
+        not any(cost_only_trade(event) for event in events)
+        and ("cross_boundary_settlement" not in analysis.coverage["quantity"].reason_codes)
+        and not getattr(analysis.coverage, "fee_only_bridge", False)
     ):
         return False
     if any(

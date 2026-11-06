@@ -1163,16 +1163,29 @@ def read_instrument_returns(
     from hermes_finance.services.source_return_proofs import resolve_proof
 
     investment = (
-        None
-        if available_period
-        else instrument_result(
+        instrument_result(
             session, source_account, selected, requested_isin, opening_date, closing_date
         )
+        if not available_period
+        or (
+            opening_date is not None
+            and closing_date is not None
+            and len(selected) == 1
+            and selected[0][0] is not None
+            and not selected[0][2]
+        )
+        else None
     )
     from hermes_finance.services.returns_account_link import account_link
 
     link = account_link(session, source_account)
-    if investment is not None:
+    if investment is not None and (
+        not available_period
+        or (
+            bool(investment.instruments)
+            and not any(gap.code == "investment_proof_stale" for gap in investment.gaps)
+        )
+    ):
         return replace(investment, account_link=link)
     cancellation_dates, _ = resolve_proof(session, source_account, selected, native_scope)
     from hermes_finance.services.source_redemption_evidence import verified_redemptions

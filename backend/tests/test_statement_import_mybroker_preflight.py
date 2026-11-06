@@ -1035,6 +1035,138 @@ def investment_case():
 
 
 @pytest.mark.parametrize(
+    "principal, fee, cash_day, expected",
+    [
+        (-100000, -1100, None, 10000),
+        (-200000, -1100, None, None),
+        (-100000, -1100, date(2030, 1, 6), None),
+        (-100000, -1000, None, 10000),
+    ],
+)
+def test_clean_investment_report_fee_conflict_requires_proven_principal_and_date(
+    principal, fee, cash_day, expected
+):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    service, doc, raw, report, money = investment_case()
+    doc["trades"][0]["accrued_interest"] = "0"
+    money[0]["minor"] = principal
+    money[1]["minor"] = fee
+    if cash_day:
+        money[0]["date"] = cash_day.isoformat()
+        money[0]["day"] = cash_day
+    analyses = {}
+    service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
+    analysis = analyses["RU000A000000"]
+    result = project_clean_analysis(analysis, "RU000A000000", instrument_type="stock")
+    assert result.pnl.value == expected
+    assert result.buys.value == (100000 if expected is not None else None)
+    if fee == -1100:
+        assert "native_money_cash_bridge_mismatch" in analysis.reason_codes
+        from dataclasses import asdict
+
+        from pydantic import TypeAdapter
+
+        from hermes_finance.domain.instrument_return import InstrumentAnalysis
+
+        assert "clean_fee_only_bridge_proven" not in asdict(analysis)
+        assert (
+            "clean_fee_only_bridge_proven"
+            not in TypeAdapter(InstrumentAnalysis).json_schema()["properties"]
+        )
+
+
+@pytest.mark.parametrize(
+    "classification,expected", [("fee", 10000), ("tax", 10000), ("unknown", None)]
+)
+def test_clean_investment_report_unlinked_cost_is_not_an_unlinked_principal(
+    classification, expected
+):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    service, doc, raw, report, money = investment_case()
+    doc["trades"][0]["accrued_interest"] = "0"
+    money.append(
+        {
+            **money[1],
+            "minor": 100,
+            "classification": classification,
+            "kind": classification,
+            "operation": "Synthetic cost",
+            "ref": "synthetic-cost",
+            "primary_id": None,
+        }
+    )
+    if classification == "unknown":
+        money.append({**money[-1], "classification": "fee", "kind": "fee", "ref": "synthetic-fee"})
+    analyses = {}
+    service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
+    analysis = analyses["RU000A000000"]
+    result = project_clean_analysis(analysis, "RU000A000000", instrument_type="stock")
+    assert "unresolved_account_cash_attribution" in analysis.reason_codes
+    assert result.pnl.value == expected
+
+
+def test_clean_investment_report_unaccepted_structure_shows_only_partial_known_result():
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    service, doc, raw, report, money = investment_case()
+    doc["trades"][0]["accrued_interest"] = "0"
+    doc["syntax_blockers"] = ["synthetic_unknown_structure"]
+    analyses = {}
+    service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
+    result = project_clean_analysis(
+        analyses["RU000A000000"], "RU000A000000", instrument_type="stock"
+    )
+    assert result.known_result.value is None
+    assert result.valuation_and_trades.value is None
+    assert result.buys.value == 100000
+    assert "source_sections_not_financially_accepted" in result.known_result.reason_codes
+    assert result.pnl.value is None and result.modified_dietz.value is None
+
+
+@pytest.mark.parametrize("second_principal, expected", [(-100000, 20000), (-200000, None)])
+def test_clean_investment_report_two_same_day_trades_require_each_principal(
+    second_principal, expected
+):
+    from dataclasses import replace
+
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    service, doc, raw, report, money = investment_case()
+    _, names, _, cancellations = service._native(doc, raw)
+    first = doc["trades"][0]
+    first["accrued_interest"] = "0"
+    second = deepcopy(first)
+    second["ids"] = ["10000000002", "20000000002"]
+    second["identity"] = service.digest(
+        [service.PROVIDER, second["core"]["source_account"], second["ids"]]
+    )
+    doc["trades"].append(second)
+    doc["positions"][0].update(actual_quantity="20", ending_value="2200")
+    report = replace(report, positions={("1234567", "RU000A000000"): ("20", 220000)})
+    money[1]["minor"] = -1100
+    for index, amount in ((0, second_principal), (1, -1000)):
+        row = deepcopy(money[index])
+        row.update(minor=amount, ref=f"second-{index}", primary_id="10000000002")
+        row["operation"] = row["operation"].replace("10000000001", "10000000002")
+        money.append(row)
+    analyses = {}
+    native_evidence = {
+        "names": names,
+        "cancellations": [(a, i, d.isoformat(), str(q)) for a, i, d, q in cancellations],
+        "unresolved": [],
+    }
+    service._interval(
+        doc, raw, report, money, {}, {}, True, analyses=analyses, native_evidence=native_evidence
+    )
+    result = project_clean_analysis(
+        analyses["RU000A000000"], "RU000A000000", instrument_type="stock"
+    )
+    assert result.pnl.value == expected
+
+
+@pytest.mark.parametrize(
     "quantity,value,available",
     [
         ("0", None, True),
