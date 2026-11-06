@@ -20,10 +20,14 @@ class CleanPurchase(BaseModel):
 
     id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")]
     date: date
+    settlement_date: date
     quantity: Annotated[str, Field(pattern=r"^[0-9]+(?:\.[0-9]+)?$")]
+    remaining_quantity: Annotated[str, Field(pattern=r"^[0-9]+(?:\.[0-9]+)?$")]
     cost_kopecks: Annotated[str, Field(pattern=r"^[0-9]+$")]
+    sale_proceeds_kopecks: Annotated[str, Field(pattern=r"^[0-9]+$")]
     value_kopecks: Annotated[str, Field(pattern=r"^[0-9]+$")]
     price_result_kopecks: Annotated[str, Field(pattern=r"^-?[0-9]+$")]
+    return_fraction: Annotated[str | None, Field(pattern=r"^-?[0-9]+(?:\.[0-9]+)?$")]
 
 
 class CleanInstrument(BaseModel):

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
 import { reasonCopy } from "../../lib/reasonCopy";
-import { money } from "../SourceInstrumentDetail";
+import { money, rate } from "../SourceInstrumentDetail";
 import { cardOperations, cardQuantityStatus, nonzeroAmount } from "./cardPresentation";
 import { cleanMetric, getInstrumentCard, selectCardScope } from "./cards";
 import styles from "./InstrumentCard.module.css";
@@ -221,10 +221,12 @@ export function ReturnsInstrumentCard({
               (account.clean?.buys.value != null && account.clean.buys.value !== "0"),
           ) && (
             <section className={styles.panel} aria-label="Результат сохранённых покупок">
-              <h2>Покупки в остатке</h2>
+              <h2>Результат покупок</h2>
               <p>
-                Показано изменение стоимости без выплат, комиссий, налогов и НКД. Выплаты показаны
-                выше по инструменту. Данные относятся к указанным счетам и периодам.
+                Показан результат стоимости и продаж без выплат, комиссий, налогов и НКД. При
+                продаже первыми считаются проданными самые ранние покупки (FIFO). Это аналитика
+                Hermes, не налоговый учёт брокера. Процент от первоначальной стоимости покупки, без
+                годового пересчёта. Выплаты показаны выше по инструменту.
               </p>
               {data.accounts.map((account) =>
                 account.purchases ? (
@@ -238,21 +240,37 @@ export function ReturnsInstrumentCard({
                     <table className={styles.table}>
                       <thead>
                         <tr>
-                          <th>Дата расчёта</th>
-                          <th>Куплено и осталось</th>
+                          <th>Дата покупки</th>
+                          <th>Куплено / осталось</th>
                           <th>Вложено</th>
-                          <th>Стоимость</th>
-                          <th>Изменение стоимости</th>
+                          <th>Выручка / стоимость остатка</th>
+                          <th>Результат без выплат</th>
+                          <th>К первоначальной стоимости</th>
                         </tr>
                       </thead>
                       <tbody>
                         {account.purchases.map((purchase) => (
                           <tr key={purchase.id}>
                             <td>{dateLabel(purchase.date)}</td>
-                            <td>{formatQuantity(purchase.quantity)}</td>
+                            <td>
+                              {formatQuantity(purchase.quantity)} /{" "}
+                              {formatQuantity(purchase.remaining_quantity)}
+                            </td>
                             <td>{money(purchase.cost_kopecks)}</td>
-                            <td>{money(purchase.value_kopecks)}</td>
+                            <td>
+                              {money(purchase.sale_proceeds_kopecks)} /{" "}
+                              {money(purchase.value_kopecks)}
+                            </td>
                             <td>{money(purchase.price_result_kopecks)}</td>
+                            <td>
+                              {purchase.return_fraction === null ? (
+                                <span>
+                                  — <small>Нулевая стоимость покупки</small>
+                                </span>
+                              ) : (
+                                rate(purchase.return_fraction)
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -261,7 +279,10 @@ export function ReturnsInstrumentCard({
                 ) : null,
               )}
               {data.accounts.some((account) => account.clean && account.purchases == null) && (
-                <p>Если остаток покупок не подтверждён, их отдельный результат пока недоступен.</p>
+                <p>
+                  Если история, порядок сделок или остаток не подтверждены, отдельный результат пока
+                  недоступен.
+                </p>
               )}
             </section>
           )}

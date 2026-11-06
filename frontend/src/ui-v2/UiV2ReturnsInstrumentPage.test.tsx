@@ -66,28 +66,40 @@ test("selected account shows supported purchase price changes and true zero", as
     {
       id: "synthetic-a",
       date: "2030-05-01",
+      settlement_date: "2030-05-01",
       quantity: "1",
+      remaining_quantity: "1",
       cost_kopecks: "10000",
+      sale_proceeds_kopecks: "0",
       value_kopecks: "15000",
       price_result_kopecks: "5000",
+      return_fraction: "0.5",
     },
     {
       id: "synthetic-b",
       date: "2030-05-02",
+      settlement_date: "2030-05-02",
       quantity: "1",
+      remaining_quantity: "1",
       cost_kopecks: "15000",
+      sale_proceeds_kopecks: "0",
       value_kopecks: "15000",
       price_result_kopecks: "0",
+      return_fraction: "0",
     },
   ];
   card.accounts[1].purchases = [
     {
       id: "synthetic-c",
       date: "2030-05-03",
+      settlement_date: "2030-05-03",
       quantity: "1",
+      remaining_quantity: "1",
       cost_kopecks: "20000",
+      sale_proceeds_kopecks: "0",
       value_kopecks: "15000",
       price_result_kopecks: "-5000",
+      return_fraction: "-0.25",
     },
   ];
   vi.stubGlobal(
@@ -102,13 +114,9 @@ test("selected account shows supported purchase price changes and true zero", as
   );
   expect(region.getByText("Учебный счёт А")).toBeVisible();
   expect(region.queryByText("Учебный счёт Б")).toBeNull();
-  expect(region.getAllByText("150,00 ₽").length).toBeGreaterThan(0);
+  expect(region.getAllByText(/150,00 ₽/).length).toBeGreaterThan(0);
   expect(region.getByText("0,00 ₽")).toBeVisible();
-  expect(
-    region.getByText(
-      "Показано изменение стоимости без выплат, комиссий, налогов и НКД. Выплаты показаны выше по инструменту. Данные относятся к указанным счетам и периодам.",
-    ),
-  ).toBeVisible();
+  expect(region.getByText(/самые ранние покупки \(FIFO\)/)).toBeVisible();
 });
 
 test("selected scope shows producer-owned price, payouts and result with redemption included once", async () => {

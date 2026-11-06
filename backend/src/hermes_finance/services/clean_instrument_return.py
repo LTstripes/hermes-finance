@@ -348,7 +348,7 @@ def read_clean_overview(session, *, isin=None, include_purchases=False):
         return {"contract_version": "clean_returns_overview_v1", "accounts": accounts}
 
 
-def clean_export_data(overview, *, gold=None):
+def clean_export_data(overview, *, gold=None, include_purchases=False, purchase_conflicts=()):
     """Project the same read into file-local account references for the AI report."""
     from fastapi.encoders import jsonable_encoder
 
@@ -361,10 +361,30 @@ def clean_export_data(overview, *, gold=None):
         value: f"gold-instrument-{index}"
         for index, value in enumerate(sorted({row["instrument_id"] for row in histories}), 1)
     }
+
+    def exported_instrument(instrument, scope):
+        result = {**instrument, "name": None}
+        if include_purchases:
+            purchases = None if scope in purchase_conflicts else result.get("purchases")
+            result["purchases"] = (
+                None
+                if purchases is None
+                else [
+                    {**purchase, "id": f"purchase-{index}"}
+                    for index, purchase in enumerate(purchases, 1)
+                ]
+            )
+        return result
+
     return jsonable_encoder(
         {
             "contract": "hermes.finance.clean_returns",
-            "schema_version": "1.0.0",
+            "schema_version": "1.1.0" if include_purchases else "1.0.0",
+            **(
+                {"purchase_method": "fifo_clean_price_and_sales_without_payouts_v1"}
+                if include_purchases
+                else {}
+            ),
             "source_contract": overview["contract_version"],
             "basis": "clean_principal_and_valuation_with_received_cash",
             "authority": "provisional",
@@ -379,7 +399,7 @@ def clean_export_data(overview, *, gold=None):
                     "account_ref": f"source-account-{index}",
                     "period": account["period"],
                     "instruments": [
-                        {**instrument, "name": None}
+                        exported_instrument(instrument, account["scope"])
                         for instrument in account["result"]["instruments"]
                     ],
                     "gaps": account["result"]["gaps"],

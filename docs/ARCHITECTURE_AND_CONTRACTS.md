@@ -6832,19 +6832,23 @@ card's source account to the existing file-local AI reference for the same
 current ordered source-account set; it contains no account identity. A changed
 source-account set requires a fresh card and export before comparing them.
 
-The card may also show `purchases` as a bounded price-only view of currently
-held buys in the same source scope and EOD period. It requires a proved zero
-opening position and value, complete clean buys, no sales or redemptions,
-known clean closing valuation, current uniquely owned trades and reconciled
-closing quantity. Settlement and delivery must fall within the period. The
-clean closing value is allocated by held quantity with a deterministic largest
-remainder in kopecks; each price contribution is that share minus the buy's
-clean principal. The shares add to the same closing value. This is neither a
-total return including payouts nor a tax-lot calculation. No percentage or
-disposal allocation is implied; unsupported histories return `purchases=null`
-and retain their underlying observed operations. Payouts remain at instrument
-scope. `purchases` is an optional card field; existing AI report versions and
-historical records retain their prior contracts.
+The card may also show analytical `purchases` for a single source scope and EOD
+period. It requires a proved zero opening position/value, complete clean trades,
+no redemption, known clean closing valuation, current uniquely owned trades,
+and reconciled closing quantity. Settlement and delivery must fall within the
+period. Sales consume the earliest purchased remaining quantity first (FIFO);
+same-day execution order must be established, otherwise the allocation is
+unknown. Sale proceeds and clean closing value are allocated proportionally by
+quantity with a deterministic largest remainder in kopecks. A purchase's
+price/sale result is proceeds plus its remaining value minus its original clean
+principal. Its percentage is this result divided by that original principal;
+a zero principal gives an unknown percentage, and no annualization applies.
+The allocated contributions must sum exactly to `valuation_and_trades`.
+This is Hermes analysis, not broker tax accounting, and excludes payouts,
+fees, taxes and NKD. Unsupported histories return `purchases=null` while
+underlying observed operations and independently known payouts remain visible.
+The additive account-level card field is also present in AI report 3.1.0 with
+file-local purchase references. Earlier report versions retain their contracts.
 
 The existing account-specific `/api/returns/overview` and
 `/api/returns/instrument` use `returns_source_v2` and
@@ -6858,10 +6862,10 @@ quantities cannot produce a total from valuation and partial trades; known
 purchase and sale components remain visible. Explicit `basis=legacy` preserves the prior Returns projections for
 consumers that still need their original semantics.
 
-The recommended AI financial review requests version `3.0.0` and includes the
+The recommended AI financial review requests version `3.1.0` and includes the
 same source-scoped clean operands under `sections.clean_returns` with file-local
 account references. Each account retains its own period and metric coverage.
-The format is defined in [`ai_financial_review.v3.schema.json`](schemas/ai_financial_review.v3.schema.json).
+The format is defined in [`ai_financial_review.v3_1.schema.json`](schemas/ai_financial_review.v3_1.schema.json).
 Earlier financial review formats and explicitly requested legacy Returns API
 versions retain their historical meaning; no old field is silently redefined.
 

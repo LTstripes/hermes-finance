@@ -296,6 +296,60 @@ def test_v3_clean_returns_match_ordinary_overview_and_card(database, monkeypatch
     assert snapshot(database) == before
 
 
+def test_v31_fifo_export_matches_card_and_v30_remains_compatible(database):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000000"
+
+    def ordered(root):
+        for index, row in enumerate(root.findall(".//{MyBroker}Details[@trade_no]"), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+
+    save(
+        database,
+        stock=("0", "1", "0", "150"),
+        bond=None,
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "1", "200", "0", "7"),
+            (isin, "-1", "180", "0", "9"),
+        ),
+        mutate=ordered,
+    )
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(database)
+    with TestClient(create_app(database)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": isin}).json()
+        old = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.0.0"})
+        response = client.get(
+            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
+        )
+    assert old.status_code == response.status_code == 200, (old.text, response.text)
+    old_data = old.json()["sections"]["clean_returns"]["data"]
+    assert old_data["schema_version"] == "1.0.0" and "purchase_method" not in old_data
+    assert "purchases" not in old_data["accounts"][0]["instruments"][0]
+    report = response.json()
+    assert report["schema_version"] == "3.1.0"
+    data = report["sections"]["clean_returns"]["data"]
+    assert data["purchase_method"] == "fifo_clean_price_and_sales_without_payouts_v1"
+    account = data["accounts"][0]
+    card_account = card["accounts"][0]
+    assert account["account_ref"] == card_account["ai_account_ref"]
+    assert account["period"] == card_account["period"]
+    actual = account["instruments"][0]["purchases"]
+    expected = card_account["purchases"]
+    assert [row["id"] for row in actual] == ["purchase-1", "purchase-2"]
+    assert [{k: v for k, v in row.items() if k != "id"} for row in actual] == [
+        {k: v for k, v in row.items() if k != "id"} for row in expected
+    ]
+    assert [row["price_result_kopecks"] for row in actual] == ["8000", "-5000"]
+    assert [row["return_fraction"] for row in actual] == ["0.8", "-0.25"]
+    assert ACCOUNT not in canonical_json(report)
+    assert snapshot(database) == before
+
+
 @pytest.mark.parametrize("aba", [False, True])
 def test_latest_stale_scope_never_revives_numeric_month_or_history(database, monkeypatch, aba):
     _save(database, monkeypatch)

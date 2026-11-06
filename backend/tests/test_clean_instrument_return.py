@@ -348,6 +348,7 @@ def buy(key, amount, quantity, day):
         kind="BUY",
         source_references=(key,),
         event_date=day,
+        execution_date=day,
         cash_settlement_date=day,
         depository_settlement_date=day,
         quantity_delta=Decimal(quantity),
@@ -384,6 +385,54 @@ def test_two_purchases_show_different_price_results_without_costs_or_payouts():
     rows = case([buy("a", 10000, "1", date(2030, 1, 10)), buy("b", 20000, "1", date(2030, 1, 11))])
     assert [r["price_result_kopecks"] for r in rows] == ["5000", "-5000"]
     assert [r["cost_kopecks"] for r in rows] == ["10000", "20000"]
+
+
+def test_fifo_partial_sale_uses_original_cost_and_matches_instrument_price_result():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    second = buy("b", 20000, "1", date(2030, 1, 11))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 12)), kind="SELL")
+    rows = case([first, second, sale], quantity="1", closing=15000)
+    assert [r["price_result_kopecks"] for r in rows] == ["8000", "-5000"]
+    assert [r["remaining_quantity"] for r in rows] == ["0", "1"]
+    assert [r["return_fraction"] for r in rows] == ["0.8", "-0.25"]
+    assert sum(int(row["price_result_kopecks"]) for row in rows) == 3000
+
+
+def test_fifo_full_sale_and_unattributed_payout_stays_at_instrument():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 18000, "-1", date(2030, 1, 12)), kind="SELL")
+    payout = cash("DIVIDEND", 12000)
+    row = case([first, sale, payout], quantity="0", closing=0)[0]
+    assert row["remaining_quantity"] == "0"
+    assert row["price_result_kopecks"] == "8000" and row["return_fraction"] == "0.8"
+
+
+def test_fifo_excludes_fees_and_paid_nkd_from_buy_and_sale():
+    first = replace(
+        buy("a", 10200, "1", date(2030, 1, 10)),
+        native_total_basis="includes_paid_nkd",
+        accrued_interest_kopecks=200,
+        commission_kopecks=600,
+    )
+    sale = replace(
+        buy("sale", 18300, "-1", date(2030, 1, 12)),
+        kind="SELL",
+        native_total_basis="includes_paid_nkd",
+        accrued_interest_kopecks=300,
+        commission_kopecks=1100,
+    )
+    row = case([first, sale, cash("FEE", -900), cash("TAX", -1300)], quantity="0", closing=0)[0]
+    assert row["cost_kopecks"] == "10000" and row["sale_proceeds_kopecks"] == "18000"
+    assert row["price_result_kopecks"] == "8000" and row["return_fraction"] == "0.8"
+
+
+def test_fifo_rejects_ambiguous_same_day_order_and_zero_cost_rate_is_unknown():
+    first = buy("a", 0, "1", date(2030, 1, 10))
+    sale = replace(buy("sale", 100, "-1", date(2030, 1, 10)), kind="SELL")
+    assert case([first, sale], quantity="0", closing=0) is None
+    sold_next_day = replace(sale, execution_date=date(2030, 1, 11))
+    row = case([first, sold_next_day], quantity="0", closing=0)[0]
+    assert row["price_result_kopecks"] == "100" and row["return_fraction"] is None
 
 
 def test_purchase_principal_excludes_nkd_and_missing_commission_does_not_block():

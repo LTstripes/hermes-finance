@@ -1127,6 +1127,38 @@ def test_clean_card_returns_no_sale_purchase_contributions_from_same_source(db):
     assert snapshot(db) == before
 
 
+def test_clean_card_fifo_sale_matches_clean_instrument_result(db):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000000"
+
+    def ordered(root):
+        for index, row in enumerate(root.findall(".//{MyBroker}Details[@trade_no]"), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+
+    save(
+        db,
+        stock=("0", "1", "0", "150"),
+        bond=None,
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "1", "200", "0", "7"),
+            (isin, "-1", "180", "0", "9"),
+        ),
+        mutate=ordered,
+    )
+    with db.session_factory() as session:
+        card = overall.read_clean_instrument_card(session, isin)
+    account = card["accounts"][0]
+    rows = account["purchases"]
+    assert [row["price_result_kopecks"] for row in rows] == ["8000", "-5000"]
+    assert [row["return_fraction"] for row in rows] == ["0.8", "-0.25"]
+    assert sum(int(row["price_result_kopecks"]) for row in rows) == int(
+        account["clean"]["valuation_and_trades"]["value"]
+    )
+
+
 def _manual_gold(db):
     from hermes_finance.services.owner_manual_gold_history import (
         apply_gold_history,
