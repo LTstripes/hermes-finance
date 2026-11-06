@@ -238,6 +238,29 @@ def test_clean_exact_period_does_not_drop_other_overlapping_source_instruments(d
     assert {"RU000A000000", "RU000A000001"} <= isins
 
 
+def test_empty_exact_proof_does_not_hide_available_native_instrument(db, monkeypatch):
+    from hermes_finance.services.source_instrument_returns import (
+        SourceInstrumentReturns,
+        read_instrument_returns,
+    )
+
+    _saved_investment(db, monkeypatch)
+    monkeypatch.setattr(
+        proofs,
+        "instrument_result",
+        lambda *args, **kwargs: SourceInstrumentReturns(ACCOUNT, (), (), ()),
+    )
+    with db.session_factory() as session:
+        result = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=PROOF_START,
+            closing_date=PROOF_END,
+            available_period=True,
+        )
+    assert any(row.isin == "RU000A000000" for row in result.instruments)
+
+
 def test_v3_proof_remains_current_only_with_exact_unchanged_dependencies(db, monkeypatch):
     with monkeypatch.context() as previous:
         previous.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_v3")
