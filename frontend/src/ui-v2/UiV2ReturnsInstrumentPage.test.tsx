@@ -209,12 +209,45 @@ test("unclassified account activity leaves observed purchase cost visible as par
 test("same-day buys sold together show both supported price results", async () => {
   const card = instrumentCardFixture();
   card.accounts[0].purchases = [
-    { id: "a", date: "2030-05-01", settlement_date: "2030-05-03", quantity: "1", remaining_quantity: "0", cost_kopecks: "10000", sale_proceeds_kopecks: "15000", value_kopecks: "0", price_result_kopecks: "5000", return_fraction: "0.5", status: "supported", reason_codes: [] },
-    { id: "b", date: "2030-05-01", settlement_date: "2030-05-03", quantity: "1", remaining_quantity: "0", cost_kopecks: "20000", sale_proceeds_kopecks: "15000", value_kopecks: "0", price_result_kopecks: "-5000", return_fraction: "-0.25", status: "supported", reason_codes: [] },
+    {
+      id: "a",
+      date: "2030-05-01",
+      settlement_date: "2030-05-03",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "10000",
+      sale_proceeds_kopecks: "15000",
+      value_kopecks: "0",
+      price_result_kopecks: "5000",
+      return_fraction: "0.5",
+      status: "supported",
+      reason_codes: [],
+    },
+    {
+      id: "b",
+      date: "2030-05-01",
+      settlement_date: "2030-05-03",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "20000",
+      sale_proceeds_kopecks: "15000",
+      value_kopecks: "0",
+      price_result_kopecks: "-5000",
+      return_fraction: "-0.25",
+      status: "supported",
+      reason_codes: [],
+    },
   ];
-  vi.stubGlobal("fetch", vi.fn(async () => response(card)));
-  setup("/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31");
-  const region = within(await screen.findByRole("region", { name: "Результат сохранённых покупок" }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
   expect(region.getByText("50,00 ₽")).toBeVisible();
   expect(region.getByText("−50,00 ₽")).toBeVisible();
   expect(region.queryByText("Данные неполные")).toBeNull();
