@@ -1571,7 +1571,7 @@ shared worktrees remain PRESERVE. Do not adopt or backdate old folders.
 
 Install the two scripts/cleanup-workspaces.* files together under the existing
 container-relative ops/workspace-cleanup location. The script derives only the four
-fixed Hermes/workspaces/{codex,opencode,grok,hermes} roots, Ops and recovery/workspaces
+fixed Hermes/workspaces/{codex,opencode,grok,hermes,claude} roots, Ops and recovery/workspaces
 from that installation. Main, Stable, Test/UAT, Owner, staging, backups, runtime,
 Ops and recovery are excluded. Do not relocate Ops or change its ACLs/security.
 
