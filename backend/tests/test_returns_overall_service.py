@@ -1099,6 +1099,34 @@ def test_real_synthetic_card_and_income_get_are_exact_read_only(db, monkeypatch)
     assert snapshot(db) == before
 
 
+def test_clean_card_returns_no_sale_purchase_contributions_from_same_source(db):
+    from test_source_instrument_returns_service import save
+
+    save(
+        db,
+        stock=("0", "2", "0", "300"),
+        bond=None,
+        trades=(("RU000A000000", "1", "100", "0", "3"), ("RU000A000000", "1", "200", "0", "7")),
+    )
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    before = snapshot(db)
+    with TestClient(app) as client:
+        response = client.get("/api/returns/instrument-card", params={"isin": "RU000A000000"})
+        assert response.status_code == 200, response.text
+        rows = response.json()["accounts"][0]["purchases"]
+        assert rows is not None, response.json()["accounts"][0]["clean"]
+        assert [row["cost_kopecks"] for row in rows] == ["10000", "20000"]
+        assert [row["price_result_kopecks"] for row in rows] == ["5000", "-5000"]
+    assert snapshot(db) == before
+
+
 def _manual_gold(db):
     from hermes_finance.services.owner_manual_gold_history import (
         apply_gold_history,

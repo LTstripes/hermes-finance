@@ -6832,6 +6832,20 @@ card's source account to the existing file-local AI reference for the same
 current ordered source-account set; it contains no account identity. A changed
 source-account set requires a fresh card and export before comparing them.
 
+The card may also show `purchases` as a bounded price-only view of currently
+held buys in the same source scope and EOD period. It requires a proved zero
+opening position and value, complete clean buys, no sales or redemptions,
+known clean closing valuation, current uniquely owned trades and reconciled
+closing quantity. Settlement and delivery must fall within the period. The
+clean closing value is allocated by held quantity with a deterministic largest
+remainder in kopecks; each price contribution is that share minus the buy's
+clean principal. The shares add to the same closing value. This is neither a
+total return including payouts nor a tax-lot calculation. No percentage or
+disposal allocation is implied; unsupported histories return `purchases=null`
+and retain their underlying observed operations. Payouts remain at instrument
+scope. `purchases` is an optional card field; existing AI report versions and
+historical records retain their prior contracts.
+
 The existing account-specific `/api/returns/overview` and
 `/api/returns/instrument` use `returns_source_v2` and
 `returns_source_detail_v2` for the same clean basis and requested dates. Source

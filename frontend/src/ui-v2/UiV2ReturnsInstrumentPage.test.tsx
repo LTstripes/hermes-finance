@@ -58,6 +58,59 @@ test("selected scope and exact period show only that account's known return", as
   expect(accounts.queryByText("Учебный счёт Б")).toBeNull();
 });
 
+test("selected account shows supported purchase price changes and true zero", async () => {
+  const card = instrumentCardFixture();
+  if (!card.accounts[0].clean || !card.accounts[1].clean)
+    throw new Error("missing synthetic clean data");
+  card.accounts[0].purchases = [
+    {
+      id: "synthetic-a",
+      date: "2030-05-01",
+      quantity: "1",
+      cost_kopecks: "10000",
+      value_kopecks: "15000",
+      price_result_kopecks: "5000",
+    },
+    {
+      id: "synthetic-b",
+      date: "2030-05-02",
+      quantity: "1",
+      cost_kopecks: "15000",
+      value_kopecks: "15000",
+      price_result_kopecks: "0",
+    },
+  ];
+  card.accounts[1].purchases = [
+    {
+      id: "synthetic-c",
+      date: "2030-05-03",
+      quantity: "1",
+      cost_kopecks: "20000",
+      value_kopecks: "15000",
+      price_result_kopecks: "-5000",
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("Учебный счёт А")).toBeVisible();
+  expect(region.queryByText("Учебный счёт Б")).toBeNull();
+  expect(region.getAllByText("150,00 ₽").length).toBeGreaterThan(0);
+  expect(region.getByText("0,00 ₽")).toBeVisible();
+  expect(
+    region.getByText(
+      "Показано изменение стоимости без выплат, комиссий, налогов и НКД. Выплаты показаны выше по инструменту. Данные относятся к указанным счетам и периодам.",
+    ),
+  ).toBeVisible();
+});
+
 test("selected scope shows producer-owned price, payouts and result with redemption included once", async () => {
   const card = instrumentCardFixture();
   const account = card.accounts[0];

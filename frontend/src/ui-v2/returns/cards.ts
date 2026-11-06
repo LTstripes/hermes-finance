@@ -77,6 +77,16 @@ export type InstrumentCard = {
     detail: Detail | null;
     clean?: CleanInstrument | null;
     ai_account_ref?: string | null;
+    purchases?:
+      | {
+          id: string;
+          date: string;
+          quantity: string;
+          cost_kopecks: string;
+          value_kopecks: string;
+          price_result_kopecks: string;
+        }[]
+      | null;
   }[];
   reason_codes: string[];
 };

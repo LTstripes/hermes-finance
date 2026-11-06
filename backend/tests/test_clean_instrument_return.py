@@ -8,6 +8,7 @@ import pytest
 from hermes_finance.domain.clean_instrument_return import calculate_clean_return, clean_trade_amount
 from hermes_finance.domain.instrument_return import CashLeg, Coverage, Endpoint, InstrumentEvent
 from hermes_finance.services.clean_instrument_return import project_clean_analysis
+from hermes_finance.services.clean_purchase_returns import clean_purchase_price_contributions
 
 START, END, DAY = date(2030, 1, 1), date(2030, 1, 31), date(2030, 1, 16)
 
@@ -333,3 +334,98 @@ def test_positive_tax_does_not_block_clean_trade_result(monkeypatch):
 
 def replace_namespace(value, **changes):
     return SimpleNamespace(**(vars(value) | changes))
+
+
+ISIN = "RU000A000000"
+
+
+def buy(key, amount, quantity, day):
+    return InstrumentEvent(
+        event_key=key,
+        provider="synthetic",
+        native_source_account="synthetic",
+        isin=ISIN,
+        kind="BUY",
+        source_references=(key,),
+        event_date=day,
+        cash_settlement_date=day,
+        depository_settlement_date=day,
+        quantity_delta=Decimal(quantity),
+        native_trade_amount_kopecks=amount,
+        native_total_basis="excludes_paid_nkd",
+        accrued_interest_kopecks=None,
+        commission_kopecks=None,
+    )
+
+
+def case(events, *, quantity="2", closing=30000, complete=True):
+    clean = calculate_clean_return(
+        START,
+        END,
+        0,
+        closing,
+        tuple(events),
+        trades_complete=complete,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=closing is not None,
+    )
+    analysis = SimpleNamespace(
+        opening_date=START,
+        closing_date=END,
+        events=tuple(events),
+        opening=Endpoint(START, Decimal(0), 0, 0, 0, "dirty"),
+        closing=Endpoint(END, Decimal(quantity), closing, closing, 0, "dirty"),
+    )
+    return clean_purchase_price_contributions(analysis, clean, ISIN, instrument_type="stock")
+
+
+def test_two_purchases_show_different_price_results_without_costs_or_payouts():
+    rows = case([buy("a", 10000, "1", date(2030, 1, 10)), buy("b", 20000, "1", date(2030, 1, 11))])
+    assert [r["price_result_kopecks"] for r in rows] == ["5000", "-5000"]
+    assert [r["cost_kopecks"] for r in rows] == ["10000", "20000"]
+
+
+def test_purchase_principal_excludes_nkd_and_missing_commission_does_not_block():
+    event = replace(
+        buy("bond", 10200, "1", date(2030, 1, 10)),
+        native_total_basis="includes_paid_nkd",
+        accrued_interest_kopecks=200,
+        commission_kopecks=None,
+        counted=False,
+        reason_codes=("trade_components_missing",),
+    )
+    result = case([event], quantity="1", closing=11000)
+    assert result[0]["cost_kopecks"] == "10000"
+    assert result[0]["price_result_kopecks"] == "1000"
+
+
+def test_zero_and_rounding_are_known_and_add_to_total():
+    rows = case(
+        [buy("a", 100, "1", date(2030, 1, 10)), buy("b", 100, "1", date(2030, 1, 11))], closing=201
+    )
+    assert sum(int(row["value_kopecks"]) for row in rows) == 201
+    assert any(row["price_result_kopecks"] == "0" for row in rows)
+
+
+@pytest.mark.parametrize(
+    "shape", ["sale", "quantity", "incomplete", "missing_value", "missing_date", "wrong_isin"]
+)
+def test_unknown_or_disposed_inventory_does_not_invent_results(shape):
+    one = buy("a", 10000, "1", date(2030, 1, 10))
+    two = buy("b", 20000, "1", date(2030, 1, 11))
+    if shape == "sale":
+        two = replace(two, kind="SELL", quantity_delta=Decimal(-1))
+    if shape == "missing_date":
+        two = replace(two, depository_settlement_date=None)
+    if shape == "wrong_isin":
+        two = replace(two, isin="RU000A000001")
+    assert (
+        case(
+            [one, two],
+            quantity="3" if shape == "quantity" else "2",
+            closing=None if shape == "missing_value" else 30000,
+            complete=shape != "incomplete",
+        )
+        is None
+    )

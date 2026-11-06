@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.clean_return_types import CleanInstrument
+from hermes_finance.api.clean_return_types import CleanInstrument, CleanPurchase
 from hermes_finance.api.returns_view import (
     DTO,
     AccountLink,
@@ -281,6 +281,7 @@ class CardAccount(DTO):
     detail: Detail | None
     clean: CleanInstrument | None = None
     ai_account_ref: str | None = None
+    purchases: list[CleanPurchase] | None = None
 
 
 class InstrumentCard(DTO):

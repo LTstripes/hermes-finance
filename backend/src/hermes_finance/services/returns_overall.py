@@ -1079,7 +1079,7 @@ def read_clean_instrument_card(session, isin):
 
     with source_read_snapshot(session):
         card = read_instrument_card(session, isin)
-        clean = read_clean_overview(session, isin=isin)
+        clean = read_clean_overview(session, isin=isin, include_purchases=True)
         ai_refs = {
             account["scope"]: f"source-account-{index}"
             for index, account in enumerate(clean["accounts"], 1)
@@ -1099,6 +1099,9 @@ def read_clean_instrument_card(session, isin):
             account["ai_account_ref"] = ai_refs.get(account["scope"])
             pair = by_scope.get(account["scope"])
             account["clean"] = pair[1] if pair else None
+            if account["clean"] is not None:
+                purchases = account["clean"].pop("purchases", None)
+                account["purchases"] = None if account["scope"] in identity_conflicts else purchases
             if pair:
                 period = pair[0]["period"]
                 detail = account["detail"]

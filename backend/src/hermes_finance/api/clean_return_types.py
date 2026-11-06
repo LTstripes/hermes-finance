@@ -15,6 +15,17 @@ class CleanMetric(BaseModel):
     assumptions: tuple[str, ...]
 
 
+class CleanPurchase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: Annotated[str, Field(pattern=r"^[0-9a-f]{24}$")]
+    date: date
+    quantity: Annotated[str, Field(pattern=r"^[0-9]+(?:\.[0-9]+)?$")]
+    cost_kopecks: Annotated[str, Field(pattern=r"^[0-9]+$")]
+    value_kopecks: Annotated[str, Field(pattern=r"^[0-9]+$")]
+    price_result_kopecks: Annotated[str, Field(pattern=r"^-?[0-9]+$")]
+
+
 class CleanInstrument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

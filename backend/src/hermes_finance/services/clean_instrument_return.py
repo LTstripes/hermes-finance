@@ -259,7 +259,7 @@ def _clean_quantity_reconciled(analysis, events, isin):
         return holding == q1
 
 
-def read_clean_account(session, source_account, start, end, *, isin=None):
+def read_clean_account(session, source_account, start, end, *, isin=None, include_purchases=False):
     """Return one exact source scope and period without saving an attestation."""
     from hermes_finance.services.returns_view import _catalogue_names, _display_name
     from hermes_finance.services.source_instrument_returns import read_instrument_returns
@@ -287,16 +287,23 @@ def read_clean_account(session, source_account, start, end, *, isin=None):
                 if isinstance(value, Decimal)
                 else str(value)
             )
-        instruments.append(
-            {
-                "isin": row.isin,
-                "name": _display_name(row.source_name, row.isin) or names.get(row.isin) or row.isin,
-                "instrument_type": row.instrument_type,
-                "opening_date": row.analysis.opening_date,
-                "closing_date": row.analysis.closing_date,
-                **metrics,
-            }
-        )
+        item = {
+            "isin": row.isin,
+            "name": _display_name(row.source_name, row.isin) or names.get(row.isin) or row.isin,
+            "instrument_type": row.instrument_type,
+            "opening_date": row.analysis.opening_date,
+            "closing_date": row.analysis.closing_date,
+            **metrics,
+        }
+        if include_purchases:
+            from hermes_finance.services.clean_purchase_returns import (
+                clean_purchase_price_contributions,
+            )
+
+            item["purchases"] = clean_purchase_price_contributions(
+                row.analysis, clean, row.isin, instrument_type=row.instrument_type
+            )
+        instruments.append(item)
     return {
         "contract_version": "clean_instrument_return_v1",
         "authority": "provisional",
@@ -309,7 +316,7 @@ def read_clean_account(session, source_account, start, end, *, isin=None):
     }
 
 
-def read_clean_overview(session, *, isin=None):
+def read_clean_overview(session, *, isin=None, include_purchases=False):
     """Read each source account's outer saved period in one source snapshot."""
     from hermes_finance.services.returns_view import _accounts, _source_scopes
     from hermes_finance.services.source_monthly_returns import (
@@ -333,7 +340,9 @@ def read_clean_overview(session, *, isin=None):
                     "scope": f"source:{account}",
                     "label": labels.get(f"source:{account}", account),
                     "period": {"start": start, "end": end},
-                    "result": read_clean_account(session, account, start, end, isin=isin),
+                    "result": read_clean_account(
+                        session, account, start, end, isin=isin, include_purchases=include_purchases
+                    ),
                 }
             )
         return {"contract_version": "clean_returns_overview_v1", "accounts": accounts}

@@ -215,6 +215,56 @@ export function ReturnsInstrumentCard({
               что позиция полностью продана.
             </p>
           )}
+          {data.accounts.some(
+            (account) =>
+              account.purchases != null ||
+              (account.clean?.buys.value != null && account.clean.buys.value !== "0"),
+          ) && (
+            <section className={styles.panel} aria-label="Результат сохранённых покупок">
+              <h2>Покупки в остатке</h2>
+              <p>
+                Показано изменение стоимости без выплат, комиссий, налогов и НКД. Выплаты показаны
+                выше по инструменту. Данные относятся к указанным счетам и периодам.
+              </p>
+              {data.accounts.map((account) =>
+                account.purchases ? (
+                  <div className={styles.scroll} key={account.scope}>
+                    <h3>{accountLabels[account.scope] ?? account.label}</h3>
+                    {account.period && (
+                      <p>
+                        {dateLabel(account.period.start)} – {dateLabel(account.period.end)}
+                      </p>
+                    )}
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th>Дата расчёта</th>
+                          <th>Куплено и осталось</th>
+                          <th>Вложено</th>
+                          <th>Стоимость</th>
+                          <th>Изменение стоимости</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {account.purchases.map((purchase) => (
+                          <tr key={purchase.id}>
+                            <td>{dateLabel(purchase.date)}</td>
+                            <td>{formatQuantity(purchase.quantity)}</td>
+                            <td>{money(purchase.cost_kopecks)}</td>
+                            <td>{money(purchase.value_kopecks)}</td>
+                            <td>{money(purchase.price_result_kopecks)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null,
+              )}
+              {data.accounts.some((account) => account.clean && account.purchases == null) && (
+                <p>Если остаток покупок не подтверждён, их отдельный результат пока недоступен.</p>
+              )}
+            </section>
+          )}
           {!!data.accounts.length && (
             <section className={styles.panel} aria-label="Позиции и результат по счетам">
               <h2>По счетам</h2>
