@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.clean_return_types import CleanInstrument, CleanPurchase
 from hermes_finance.api.returns_view import (
     DTO,
     AccountLink,
@@ -17,7 +18,14 @@ from hermes_finance.api.returns_view import (
     read,
 )
 from hermes_finance.api.settings import session_for_request
-from hermes_finance.services.returns_overall import read_income, read_instrument_card, read_overall
+from hermes_finance.services.returns_overall import (
+    read_clean_income,
+    read_clean_instrument_card,
+    read_clean_overall,
+    read_income,
+    read_instrument_card,
+    read_overall,
+)
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -175,7 +183,7 @@ class CouponIncome(DTO):
 
 
 class Overall(DTO):
-    contract_version: Literal["returns_overall_v1"]
+    contract_version: Literal["returns_overall_v1", "returns_overall_v2"]
     overall: OverallResult
     source_accounts: list[SourceAccount]
     instruments: list[OverallInstrument]
@@ -192,6 +200,7 @@ def overall(
     request: Request,
     response: Response,
     include_instrument_summaries: Literal["true", "false"] = "false",
+    basis: Literal["clean", "legacy"] = "clean",
     session: Session = Depends(session_for_request),
 ):
     no_store(response)
@@ -199,7 +208,8 @@ def overall(
         raise HTTPException(422, "returns_selection_invalid", headers={"Cache-Control": "no-store"})
     # An explicit visible summary table may request the existing guarded
     # instrument projection. This still defers XIRR and never reads cards.
-    return read_overall(session, include_instrument_details=include_instrument_summaries == "true")
+    reader = read_clean_overall if basis == "clean" else read_overall
+    return reader(session, include_instrument_details=include_instrument_summaries == "true")
 
 
 class IncomeInstrumentAccount(DTO):
@@ -226,7 +236,7 @@ class IncomeEvent(DTO):
 
 
 class Income(DTO):
-    contract_version: Literal["returns_income_v1"]
+    contract_version: Literal["returns_income_v1", "returns_income_v2"]
     kind: Literal["coupon", "dividend"]
     summary: CouponIncome
     instruments: list[IncomeInstrument]
@@ -247,6 +257,7 @@ class CardSummary(DTO):
     pnl: Metric
     coupons: Metric
     dividends: Metric
+    payouts: Metric | None = None
     valuation_and_trades: Metric
     costs: Metric
     taxes: Metric
@@ -268,10 +279,13 @@ class CardAccount(DTO):
     exclusion_reason: str | None
     reason_codes: list[str]
     detail: Detail | None
+    clean: CleanInstrument | None = None
+    ai_account_ref: str | None = None
+    purchases: list[CleanPurchase] | None = None
 
 
 class InstrumentCard(DTO):
-    contract_version: Literal["returns_instrument_card_v1"]
+    contract_version: Literal["returns_instrument_card_v1", "returns_instrument_card_v2"]
     isin: str
     name: str
     kind: str | None
@@ -285,22 +299,25 @@ def income(
     request: Request,
     response: Response,
     kind: Literal["coupon", "dividend"],
+    basis: Literal["clean", "legacy"] = "clean",
     session: Session = Depends(session_for_request),
 ):
     no_store(response)
     if len(request.query_params.getlist("kind")) != 1:
         raise HTTPException(422, "returns_selection_invalid", headers={"Cache-Control": "no-store"})
-    return read(read_income, session, kind=kind)
+    return read(read_clean_income if basis == "clean" else read_income, session, kind=kind)
 
 
-@router.get("/instrument-card", response_model=InstrumentCard)
+@router.get("/instrument-card", response_model=InstrumentCard, response_model_exclude_unset=True)
 def instrument_card(
     request: Request,
     response: Response,
     isin: Annotated[str, Query(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")],
+    basis: Literal["clean", "legacy"] = "clean",
     session: Session = Depends(session_for_request),
 ):
     no_store(response)
     if len(request.query_params.getlist("isin")) != 1:
         raise HTTPException(422, "returns_selection_invalid", headers={"Cache-Control": "no-store"})
-    return read(read_instrument_card, session, isin=isin)
+    reader = read_clean_instrument_card if basis == "clean" else read_instrument_card
+    return read(reader, session, isin=isin)

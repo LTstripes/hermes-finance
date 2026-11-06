@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
+import { reasonCopy } from "../lib/reasonCopy";
 import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
@@ -13,7 +14,13 @@ import {
   selectedIncome,
 } from "./returns/dashboard";
 import resultStyles from "./returns/InstrumentResult.module.css";
-import { compareDecimal, dateLabel, displayMetric, periodLabel } from "./returns/model";
+import {
+  compareDecimal,
+  dateLabel,
+  displayMetric,
+  isPartialResult,
+  periodLabel,
+} from "./returns/model";
 import { capitalGoldTarget, goldTargets } from "./returns/navigation";
 import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
@@ -95,8 +102,24 @@ export default function UiV2ReturnsPage() {
             a.name.localeCompare(b.name, "ru")
           : compareDecimal(a.pnl.value, b.pnl.value) * (sort === "pnl-asc" ? 1 : -1),
   );
-  const instrumentHref = (isin: string) =>
-    `/v2/returns/instrument/${isin}?${new URLSearchParams({ back: `${location.pathname}${location.search}` })}`;
+  const instrumentHref = (isin: string) => {
+    const next = new URLSearchParams({ back: `${location.pathname}${location.search}` });
+    if (scope !== "all") {
+      next.set("detail_scope", scope);
+      const period = rows
+        .find((row) => row.isin === isin)
+        ?.accounts.find((a) => a.scope === scope)?.period;
+      if (period) {
+        next.set("detail_start", period.start);
+        next.set("detail_end", period.end);
+      } else {
+        // A missing overview period is not authority to substitute another interval.
+        next.set("detail_start", "unavailable");
+        next.set("detail_end", "unavailable");
+      }
+    }
+    return `/v2/returns/instrument/${isin}?${next}`;
+  };
   const summaryAccountHref = (accountScope: string) => {
     const next = new URLSearchParams(params);
     next.set("accounts", accountScope);
@@ -124,6 +147,15 @@ export default function UiV2ReturnsPage() {
         ) * -1,
     )
     .slice(0, 6);
+  const resultPeriods = new Set(
+    rows
+      .filter((row) => row.pnl.value !== null)
+      .flatMap((row) =>
+        row.accounts
+          .filter((account) => account.resultAvailable && account.period)
+          .map((account) => `${account.period?.start}/${account.period?.end}`),
+      ),
+  );
   const maximum = chartRows.reduce((m, r) => {
     const v = r.cash;
     const abs = v < 0n ? -v : v;
@@ -211,8 +243,7 @@ export default function UiV2ReturnsPage() {
                     (k) => selectedIncome(data, scope, k).included_accounts < accounts.length,
                   )) && (
                   <p className={layout.notice} role="status">
-                    Часть истории не подтверждена. Ниже показаны известные суммы; они не являются
-                    полным результатом.
+                    Показаны известные составляющие; часть истории может отсутствовать.
                   </p>
                 )}
                 <div
@@ -224,9 +255,9 @@ export default function UiV2ReturnsPage() {
                       className={`${styles.card} ${styles.primaryCard}`}
                       aria-label="Результат"
                     >
-                      <h2>Результат за доступную историю</h2>
+                      <h2>Известный результат бумаг за доступную историю</h2>
                       <div className={layout.value}>{displayMetric(result.amount, true)}</div>
-                      <small>По выбранным брокерским счетам</small>
+                      <small>По выбранным счетам за совпадающий период</small>
                     </section>
                   )}
                   {(["coupon", "dividend"] as const).map((incomeKind) => {
@@ -278,11 +309,7 @@ export default function UiV2ReturnsPage() {
                       {accounts.length > 1 && a.result && a.result.pnl.value !== null ? (
                         <strong>{displayMetric(a.result.pnl, true)}</strong>
                       ) : !a.result || a.result.pnl.value === null ? (
-                        <p>
-                          {a.proof_status === "stale"
-                            ? "Нужно заново подтвердить выписки"
-                            : "Результат пока не подтверждён"}
-                        </p>
+                        <p>Пока нет результата по сохранённым данным</p>
                       ) : null}
                       <ReturnsResultMeta
                         period={a.period}
@@ -296,11 +323,12 @@ export default function UiV2ReturnsPage() {
                   ))}
                 </div>
                 <p className={layout.note}>
-                  Расчёт по сохранённым выпискам. Выплаты уже входят в результат.
+                  Результат бумаг рассчитан без комиссий, налогов и НКД; полученные выплаты уже
+                  включены.
                   {accounts.length > 1 &&
                     " Общий процент для разных периодов счетов не складывается."}
                 </p>
-                {chartRows.length > 0 && (
+                {chartRows.length > 0 && resultPeriods.size === 1 && (
                   <section className={styles.panel} aria-label="Вклад инструментов">
                     <div className={layout.heading}>
                       <h2>Вклад инструментов</h2>
@@ -325,7 +353,10 @@ export default function UiV2ReturnsPage() {
                                 }}
                               />
                             </div>
-                            <strong>{displayMetric(r.pnl, true)}</strong>
+                            <strong>
+                              {isPartialResult(r.pnl) ? "Известная часть: " : ""}
+                              {displayMetric(r.pnl, true)}
+                            </strong>
                           </div>
                         );
                       })}
@@ -408,10 +439,41 @@ export default function UiV2ReturnsPage() {
                                   >
                                     <details>
                                       <summary>
-                                        {label(a.scope, a.label)} ·{" "}
-                                        {a.resultAvailable
-                                          ? `${displayMetric(a.pnl, true)} · ${displayMetric(a.rate)}`
-                                          : "Нужна проверка данных"}
+                                        <span className={layout.instrumentAccountName}>
+                                          {label(a.scope, a.label)}
+                                        </span>{" "}
+                                        ·{" "}
+                                        {a.resultAvailable ? (
+                                          <>
+                                            <strong>
+                                              {isPartialResult(a.pnl) ? "Известная часть: " : ""}
+                                              {displayMetric(a.pnl, true)}
+                                            </strong>{" "}
+                                            · {displayMetric(a.rate)}
+                                          </>
+                                        ) : (
+                                          "Нет доступного результата"
+                                        )}
+                                        {a.resultAvailable && a.pnl.value === null && (
+                                          <small>
+                                            {a.pnl.reason_codes.length
+                                              ? reasonCopy(a.pnl.reason_codes[0], {
+                                                  surface: "returns",
+                                                }).message
+                                              : "Результат недоступен"}
+                                          </small>
+                                        )}
+                                        {a.resultAvailable &&
+                                          a.pnl.value !== null &&
+                                          a.rate.value === null && (
+                                            <small>
+                                              {a.rate.reason_codes.length
+                                                ? reasonCopy(a.rate.reason_codes[0], {
+                                                    surface: "returns",
+                                                  }).message
+                                                : "Доходность недоступна"}
+                                            </small>
+                                          )}
                                       </summary>
                                       <ReturnsInstrumentResult
                                         result={a.resultAvailable ? a : null}
@@ -457,56 +519,61 @@ export default function UiV2ReturnsPage() {
                     </button>
                   )}
                 </section>
-                {rows.some((r) => r.pnl.value !== null && r.pnl.value !== "0") && (
-                  <section className={styles.panel} aria-label="Лидеры и отстающие">
-                    <h2>Лидеры и отстающие</h2>
-                    <div className={layout.leaders}>
-                      {([true, false] as const)
-                        .filter((positive) =>
-                          rows.some(
-                            (r) =>
-                              r.pnl.value !== null &&
-                              compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
-                          ),
-                        )
-                        .map((positive) => (
-                          <div className={layout.leaderGroup} key={String(positive)}>
-                            <h3>{positive ? "Наибольший доход" : "Наибольший убыток"}</h3>
-                            <ol className={layout.leaderList}>
-                              {rows
-                                .filter(
-                                  (r) =>
-                                    r.pnl.value !== null &&
-                                    compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
-                                )
-                                .sort(
-                                  (a, b) =>
-                                    compareDecimal(a.pnl.value ?? "0", b.pnl.value ?? "0") *
-                                    (positive ? -1 : 1),
-                                )
-                                .slice(0, 5)
-                                .map((r, index) => (
-                                  <li className={layout.leaderRow} key={r.isin}>
-                                    <span className={layout.leaderRank} aria-hidden="true">
-                                      {index + 1}.
-                                    </span>
-                                    <Link
-                                      to={instrumentHref(r.isin)}
-                                      onClick={(e) => guardLink(e, instrumentHref(r.isin))}
-                                    >
-                                      {r.name}
-                                    </Link>
-                                    <strong className={layout.leaderAmount}>
-                                      {displayMetric(r.pnl, true)}
-                                    </strong>
-                                  </li>
-                                ))}
-                            </ol>
-                          </div>
-                        ))}
-                    </div>
-                  </section>
-                )}
+                {resultPeriods.size === 1 &&
+                  rows.some((r) => r.pnl.value !== null && r.pnl.value !== "0") && (
+                    <section className={styles.panel} aria-label="Лидеры и отстающие">
+                      <h2>Лидеры и отстающие</h2>
+                      {rows.some((r) => isPartialResult(r.pnl)) && (
+                        <p>Порядок основан на показанных суммах; часть результатов неполна.</p>
+                      )}
+                      <div className={layout.leaders}>
+                        {([true, false] as const)
+                          .filter((positive) =>
+                            rows.some(
+                              (r) =>
+                                r.pnl.value !== null &&
+                                compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
+                            ),
+                          )
+                          .map((positive) => (
+                            <div className={layout.leaderGroup} key={String(positive)}>
+                              <h3>{positive ? "Наибольший доход" : "Наибольший убыток"}</h3>
+                              <ol className={layout.leaderList}>
+                                {rows
+                                  .filter(
+                                    (r) =>
+                                      r.pnl.value !== null &&
+                                      compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
+                                  )
+                                  .sort(
+                                    (a, b) =>
+                                      compareDecimal(a.pnl.value ?? "0", b.pnl.value ?? "0") *
+                                      (positive ? -1 : 1),
+                                  )
+                                  .slice(0, 5)
+                                  .map((r, index) => (
+                                    <li className={layout.leaderRow} key={r.isin}>
+                                      <span className={layout.leaderRank} aria-hidden="true">
+                                        {index + 1}.
+                                      </span>
+                                      <Link
+                                        to={instrumentHref(r.isin)}
+                                        onClick={(e) => guardLink(e, instrumentHref(r.isin))}
+                                      >
+                                        {r.name}
+                                      </Link>
+                                      <strong className={layout.leaderAmount}>
+                                        {isPartialResult(r.pnl) ? "Известная часть: " : ""}
+                                        {displayMetric(r.pnl, true)}
+                                      </strong>
+                                    </li>
+                                  ))}
+                              </ol>
+                            </div>
+                          ))}
+                      </div>
+                    </section>
+                  )}
               </>
             )}
             {goldTargets(data).length > 0 && (
@@ -608,6 +675,13 @@ export default function UiV2ReturnsPage() {
               accountId={goldEditorTarget.account_id}
               instrumentId={goldEditorTarget.instrument_id}
               targetLabel={goldEditorTarget.label}
+              cleanResult={
+                data?.gold.histories?.find(
+                  (history) =>
+                    history.account_id === goldEditorTarget.account_id &&
+                    history.instrument_id === goldEditorTarget.instrument_id,
+                )?.total_result
+              }
               onNavigationStateChange={setGoldNavigation}
               refreshing={query.isFetching || query.isError}
               revision={query.dataUpdatedAt}

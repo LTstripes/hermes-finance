@@ -349,6 +349,23 @@ describe("native Monthly Close work mode", () => {
     },
   );
 
+  it("offers a period choice when only closed months exist", async () => {
+    const { mount, state } = setup();
+    state.months = state.months.filter((month) => month.status === "closed");
+    expect(state.months.length).toBeGreaterThan(0);
+    mount();
+    expect(
+      await screen.findByRole("heading", { name: "Выбери или создай отчётный месяц" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: /Отчётные месяцы/ })).toHaveAttribute(
+      "href",
+      "/v2/data/months",
+    );
+    expect(screen.queryByText("Месяц не найден")).toBeNull();
+    expect(state.workflowReads).toBe(0);
+    expect(state.writes).toEqual([]);
+  });
+
   it.each([
     ["/v2/close?month=012", "Некорректный месяц"],
     ["/v2/close?month=404", "Месяц не найден"],

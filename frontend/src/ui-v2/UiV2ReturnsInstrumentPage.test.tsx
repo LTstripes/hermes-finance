@@ -40,6 +40,432 @@ function setup(
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("selected scope and exact period show only that account's known return", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(instrumentCardFixture())),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
+  expect(screen.getByText("Выбранный счёт · 30.04.2030 – 31.05.2030")).toBeVisible();
+  const result = screen.getByRole("heading", { name: "Известный результат" }).closest("section");
+  expect(result).toHaveTextContent("+12 ₽");
+  expect(result).not.toHaveTextContent("+8 ₽");
+  const accounts = within(screen.getByRole("region", { name: "Позиции и результат по счетам" }));
+  expect(accounts.getByText("Учебный счёт А")).toBeVisible();
+  expect(accounts.queryByText("Учебный счёт Б")).toBeNull();
+});
+
+test("known trade amounts stay visible when the result is unavailable", async () => {
+  const card = instrumentCardFixture();
+  const clean = card.accounts[0].clean;
+  if (!clean) throw new Error("missing synthetic clean data");
+  clean.pnl.value = clean.known_result.value = clean.valuation_and_trades.value = null;
+  clean.buys = {
+    value: "100000",
+    status: "partial",
+    reason_codes: ["clean_trades_incomplete"],
+    assumptions: [],
+  };
+  clean.sells = { value: "0", status: "supported", reason_codes: [], assumptions: [] };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const facts = within(await screen.findByRole("region", { name: "Известные суммы сделок" }));
+  expect(facts.getByText("Учебный счёт А")).toBeVisible();
+  expect(facts.getByText(/Покупки · известная часть:/)).toHaveTextContent("1 000");
+  expect(facts.getByText(/Продажи:/)).toHaveTextContent("0");
+  expect(facts.getByText(/сами по себе не являются доходностью/)).toBeVisible();
+  expect(facts.queryByText("Учебный счёт Б")).toBeNull();
+});
+
+test("known trades stay visible beside a partial payout result and retain assumptions", async () => {
+  const card = instrumentCardFixture();
+  const clean = card.accounts[0].clean;
+  if (!clean) throw new Error("missing synthetic clean data");
+  clean.pnl.value = null;
+  clean.known_result = {
+    value: "8700",
+    status: "partial",
+    reason_codes: ["clean_trades_incomplete"],
+    assumptions: [],
+  };
+  clean.buys = {
+    value: "100000",
+    status: "provisional",
+    reason_codes: [],
+    assumptions: ["trade_face_value_missing"],
+  };
+  clean.sells = {
+    value: null,
+    status: "unavailable",
+    reason_codes: ["clean_trades_incomplete"],
+    assumptions: [],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const facts = within(await screen.findByRole("region", { name: "Известные суммы сделок" }));
+  expect(facts.getByText(/Покупки · оценка:/)).toHaveTextContent("1 000");
+  expect(facts.getByText(/номинал/i)).toBeVisible();
+  expect(facts.queryByText(/Продажи:/)).toBeNull();
+});
+
+test("selected account shows supported purchase price changes and true zero", async () => {
+  const card = instrumentCardFixture();
+  if (!card.accounts[0].clean || !card.accounts[1].clean)
+    throw new Error("missing synthetic clean data");
+  card.accounts[0].purchases = [
+    {
+      id: "synthetic-a",
+      date: "2030-05-01",
+      settlement_date: "2030-05-01",
+      quantity: "1",
+      remaining_quantity: "1",
+      cost_kopecks: "10000",
+      sale_proceeds_kopecks: "0",
+      value_kopecks: "15000",
+      price_result_kopecks: "5000",
+      return_fraction: "0.5",
+      status: "supported",
+      reason_codes: [],
+    },
+    {
+      id: "synthetic-b",
+      date: "2030-05-02",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: "1",
+      cost_kopecks: "15000",
+      sale_proceeds_kopecks: "0",
+      value_kopecks: "15000",
+      price_result_kopecks: "0",
+      return_fraction: "0",
+      status: "supported",
+      reason_codes: [],
+    },
+  ];
+  card.accounts[1].purchases = [
+    {
+      id: "synthetic-c",
+      date: "2030-05-03",
+      settlement_date: "2030-05-03",
+      quantity: "1",
+      remaining_quantity: "1",
+      cost_kopecks: "20000",
+      sale_proceeds_kopecks: "0",
+      value_kopecks: "15000",
+      price_result_kopecks: "-5000",
+      return_fraction: "-0.25",
+      status: "supported",
+      reason_codes: [],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("Учебный счёт А")).toBeVisible();
+  expect(region.queryByText("Учебный счёт Б")).toBeNull();
+  expect(region.getAllByText(/150,00 ₽/).length).toBeGreaterThan(0);
+  expect(region.getByText("0,00 ₽")).toBeVisible();
+  expect(region.getByText(/самые ранние покупки \(FIFO\)/)).toBeVisible();
+});
+
+test("closed purchase remains visible when the open purchase has no valuation", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "a",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "10000",
+      sale_proceeds_kopecks: "18000",
+      value_kopecks: "0",
+      price_result_kopecks: "8000",
+      return_fraction: "0.8",
+      status: "supported",
+      reason_codes: [],
+    },
+    {
+      id: "b",
+      date: "2030-05-03",
+      settlement_date: "2030-05-04",
+      quantity: "1",
+      remaining_quantity: "1",
+      cost_kopecks: "20000",
+      sale_proceeds_kopecks: "0",
+      value_kopecks: null,
+      price_result_kopecks: null,
+      return_fraction: null,
+      status: "partial",
+      reason_codes: ["closing_value_unknown"],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("80,00 ₽")).toBeVisible();
+  expect(region.getByText("80 %")).toBeVisible();
+  expect(region.getAllByText("Неизвестно").length).toBeGreaterThan(0);
+  expect(region.getByText("Данные неполные")).toBeVisible();
+});
+
+test("unclassified account activity leaves observed purchase cost visible as partial", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "observed-buy",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: null,
+      cost_kopecks: "10000",
+      sale_proceeds_kopecks: null,
+      value_kopecks: null,
+      price_result_kopecks: null,
+      return_fraction: null,
+      status: "partial",
+      reason_codes: ["purchase_allocation_unproven"],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("100,00 ₽")).toBeVisible();
+  expect(region.getByText("Данные неполные")).toBeVisible();
+  expect(region.queryByText("80,00 ₽")).toBeNull();
+});
+
+test("bond purchase keeps provisional result and identifies the missing face value", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "bond-buy",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "100000",
+      sale_proceeds_kopecks: "101000",
+      value_kopecks: "0",
+      price_result_kopecks: "1000",
+      return_fraction: "0.01",
+      status: "partial",
+      reason_codes: ["trade_face_value_missing"],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("10,00 ₽")).toBeVisible();
+  expect(region.getByText("Номинал не подтверждён")).toBeVisible();
+  expect(region.getByText("Данные неполные")).toBeVisible();
+});
+
+test("same-day buys sold together show both supported price results", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "a",
+      date: "2030-05-01",
+      settlement_date: "2030-05-03",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "10000",
+      sale_proceeds_kopecks: "15000",
+      value_kopecks: "0",
+      price_result_kopecks: "5000",
+      return_fraction: "0.5",
+      status: "supported",
+      reason_codes: [],
+    },
+    {
+      id: "b",
+      date: "2030-05-01",
+      settlement_date: "2030-05-03",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "20000",
+      sale_proceeds_kopecks: "15000",
+      value_kopecks: "0",
+      price_result_kopecks: "-5000",
+      return_fraction: "-0.25",
+      status: "supported",
+      reason_codes: [],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("50,00 ₽")).toBeVisible();
+  expect(region.getByText("−50,00 ₽")).toBeVisible();
+  expect(region.queryByText("Данные неполные")).toBeNull();
+});
+
+test("selected scope shows producer-owned price, payouts and result with redemption included once", async () => {
+  const card = instrumentCardFixture();
+  const account = card.accounts[0];
+  const clean = account.clean;
+  if (!clean) throw new Error("synthetic clean fixture missing");
+  clean.valuation_and_trades.value = "-5000";
+  clean.payouts.value = clean.dividends.value = "12000";
+  clean.pnl.value = clean.known_result.value = "7000";
+  clean.redemption.value = "10000";
+  account.ai_account_ref = "source-account-2";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(
+    region.getByRole("heading", { name: "Стоимость и сделки" }).closest("section"),
+  ).toHaveTextContent("−50 ₽");
+  expect(
+    region.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
+  ).toHaveTextContent("+120 ₽");
+  expect(
+    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
+  ).toHaveTextContent("+70 ₽");
+  expect(region.getByText(/Погашение включено в стоимость и сделки/)).toBeVisible();
+  expect(screen.getByText("В отчёте AI: source-account-2")).toBeVisible();
+});
+
+test("unknown and genuine zero payout are not confused", async () => {
+  const card = instrumentCardFixture();
+  const clean = card.accounts[0].clean;
+  if (!clean) throw new Error("synthetic clean fixture missing");
+  clean.payouts.value = "0";
+  clean.valuation_and_trades.value = null;
+  clean.valuation_and_trades.status = "unavailable";
+  clean.pnl.value = null;
+  clean.known_result.value = "12000";
+  clean.known_result.status = "partial";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(
+    region.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
+  ).toHaveTextContent("0 ₽");
+  expect(
+    region.getByRole("heading", { name: "Стоимость и сделки" }).closest("section"),
+  ).toHaveTextContent("—");
+  expect(
+    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
+  ).toHaveTextContent("Известная часть");
+});
+
+test("older v2 card without additive payouts field leaves it unknown", async () => {
+  const card = instrumentCardFixture();
+  const oldSummary: Partial<typeof card.summary> = card.summary;
+  delete oldSummary.payouts;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(
+    region.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
+  ).toHaveTextContent("—");
+});
+
+test.each([
+  [null, "50", "partial", "+0,50 ₽"],
+  ["0", "0", "supported", "0 ₽"],
+] as const)(
+  "selected account keeps its partial value or genuine zero",
+  async (pnl, known, status, shown) => {
+    const card = instrumentCardFixture();
+    const clean = card.accounts[0].clean;
+    if (!clean) throw new Error("synthetic clean fixture missing");
+    clean.pnl.value = pnl;
+    clean.pnl.status = pnl === null ? "unavailable" : "supported";
+    clean.known_result.value = known;
+    clean.known_result.status = status;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response(card)),
+    );
+    setup(
+      "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+    );
+    const heading = await screen.findByRole("heading", { name: "Известный результат" });
+    expect(heading.closest("section")).toHaveTextContent(shown);
+  },
+);
+
+test.each([
+  "detail_scope=source%3ASYNTH-A&detail_start=2030-04-01&detail_end=2030-04-30",
+  "detail_scope=source%3AMISSING",
+  "detail_scope=source%3ASYNTH-A&detail_scope=source%3ASYNTH-B",
+  "detail_scope=source%3ASYNTH-A&detail_start=2030-04-30",
+  "detail_scope=",
+  "detail_scope=source%3ASYNTH-A&detail_start=&detail_end=",
+])("a changed or ambiguous scope never substitutes another result: %s", async (selection) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(instrumentCardFixture())),
+  );
+  setup(`/v2/returns/instrument/RU000A000002?${selection}`);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Счёт или период изменились");
+  expect(screen.queryByRole("heading", { name: "Известный результат" })).toBeNull();
+});
+
 test("background refresh keeps the card and signals that data is updating", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let finish: (value: Response) => void = () => {};
@@ -153,12 +579,12 @@ test.each(["wrong-version", "wrong-isin", "wrong-account", "wrong-analysis-perio
   },
 );
 
-test("sold zero and known sibling survive a stale account without stale zero fallback", async () => {
+test("known clean result remains visible when the account proof is stale", async () => {
   const value = instrumentCardFixture();
   value.accounts[1].detail = null;
   value.accounts[1].proof_status = "stale";
-  value.accounts[1].included = false;
-  value.accounts[1].reason_codes = ["source_proof_stale"];
+  value.accounts[1].included = true;
+  value.accounts[1].reason_codes = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => response(value)),
@@ -169,14 +595,9 @@ test("sold zero and known sibling survive a stale account without stale zero fal
   expect(accounts.getByText("0 шт.")).toBeVisible();
   expect(accounts.getByText("+12 ₽")).toBeVisible();
   expect(accounts.getByText("12,00%")).toBeVisible();
-  expect(accounts.getByText("Нужна проверка данных")).toBeVisible();
-  expect(accounts.getAllByText("—")).toHaveLength(2);
-  expect(accounts.queryByText("0 ₽")).toBeNull();
-  expect(
-    screen.getByText(
-      "Проверка выписок устарела; требуется актуальное подтверждение. Счёт: Учебный счёт Б · Инструмент: Учебная акция.",
-    ),
-  ).toBeInTheDocument();
+  expect(accounts.getByText("−4 ₽")).toBeVisible();
+  expect(accounts.getByText("−4,00%")).toBeVisible();
+  expect(accounts.queryByText("Не все показатели доступны")).toBeNull();
 });
 
 test.each(["0", "-1", "3.5", "03", "9007199254740992", "3&capital_account=4"])(
@@ -240,9 +661,17 @@ test("partial component account sets are labelled known constituents without imp
   partial.pnl.reason_codes = ["missing_endpoint"];
   partial.analysis.pnl.status = "unavailable";
   partial.analysis.components.coupons.value = "777";
+  const clean = value.accounts[1].clean;
+  if (!clean) throw new Error("missing clean fixture");
+  clean.pnl.value = null;
+  clean.pnl.status = "unavailable";
+  clean.known_result.value = "777";
+  clean.known_result.status = "partial";
+  clean.coupons.value = "777";
   value.summary.pnl.value = "1200";
   value.summary.pnl.reason_codes = ["instrument_accounts_missing_or_excluded"];
   value.summary.coupons.value = "4277";
+  value.summary.payouts.value = "4977";
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => response(value)),
@@ -250,8 +679,12 @@ test("partial component account sets are labelled known constituents without imp
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(screen.getByRole("heading", { name: "Из чего сложился результат" })).toBeVisible();
-  expect(screen.getByText("Данных для полного разложения пока недостаточно.")).toBeVisible();
-  expect(screen.getAllByText("42,77 ₽").length).toBeGreaterThan(0);
+  expect(screen.getByText(/Показаны известные составляющие/)).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
+  ).toHaveTextContent("+49,77 ₽");
+  fireEvent.click(screen.getByText("Купоны и дивиденды"));
+  expect(screen.getByText(/Купоны: \+42,77 ₽/)).toBeVisible();
   expect(screen.getAllByText("+12 ₽").length).toBeGreaterThan(0);
 });
 
@@ -274,7 +707,13 @@ test("standalone instrument explains paid income greater than its exact total", 
   detail.pnl.estimate = false;
   card.summary.coupons.value = "1000";
   card.summary.dividends.value = "500";
+  card.summary.payouts.value = "1500";
   card.summary.valuation_and_trades.value = "-1100";
+  const clean = card.accounts[0].clean;
+  if (!clean) throw new Error("missing clean fixture");
+  clean.pnl.value = clean.known_result.value = "400";
+  clean.coupons.value = "1000";
+  clean.dividends.value = "500";
   const metric = (value: string) => ({
     value,
     status: "supported" as const,
@@ -302,9 +741,11 @@ test("standalone instrument explains paid income greater than its exact total", 
   );
   setup("/v2/returns/instrument/RU000A000002");
   const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
-  expect(region.getByText("+15 ₽")).toBeVisible();
-  expect(region.getByText("+4 ₽")).toBeVisible();
-  expect(region.getByText("Комиссии")).toBeVisible();
-  expect(region.getByText("Уплаченный НКД")).toBeVisible();
-  expect(region.queryByText(/недостаточно/)).toBeNull();
+  fireEvent.click(region.getByText("Купоны и дивиденды"));
+  expect(region.getByText(/Купоны: \+10 ₽/)).toBeVisible();
+  expect(region.getByText(/Дивиденды: \+5 ₽/)).toBeVisible();
+  expect(
+    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
+  ).toHaveTextContent("+4 ₽");
+  expect(region.queryByText(/^Комиссии:/)).toBeNull();
 });

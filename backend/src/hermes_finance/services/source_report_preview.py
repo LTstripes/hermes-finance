@@ -461,6 +461,15 @@ def _account_index(interval, *, requested_isin=None):
     }
 
 
+class _CleanProjectionCoverage(dict):
+    """Ephemeral proof flags; mapping serialization retains only coverage entries."""
+
+    def __init__(self, *args, fee_only_bridge=False, unresolved_cost_only=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fee_only_bridge = fee_only_bridge
+        self.unresolved_cost_only = unresolved_cost_only
+
+
 def _coverage(reasons):
     """Local dependency sets; unrecognized source faults conservatively affect all.
 
@@ -676,6 +685,7 @@ def _interval(
     qdelta = defaultdict(Decimal)
     repo_quantity = defaultdict(Decimal)
     expected = defaultdict(int)
+    expected_trade_counts = Counter()
     repo_groups = set()
     issues = defaultdict(set)
     repo_owners = Counter(
@@ -711,6 +721,7 @@ def _interval(
         qdelta[isin] += q
         day = date.fromisoformat(t["settlement_date"])
         key = (isin, day, t["core"]["currency"], bool(t.get("repo_observed")))
+        expected_trade_counts[key] += 1
         if t.get("bank_commission") is None:
             issues[isin].add("native_commission_unavailable")
         expected[key] += (-1 if q > 0 else 1) * abs(_minor(t["core"]["trade_amount"])) - abs(
@@ -883,12 +894,46 @@ def _interval(
                 classification_status="confirmed",
             )
         )
+    fee_only_conflicts = set()
+    other_bridge_conflicts = set()
     for key in sorted(set(expected) | set(native_money)):
         isin, day, currency, _ = key
         rows = native_money[key]
         amount = sum(r["minor"] for r in rows)
+        principal_rows = [r for r in rows if r["classification"] == "trade_settlement"]
+        disclosures = [
+            _trade_disclosure(
+                row,
+                primary,
+                trade_occurrences,
+                account=native_account,
+                isin=isin,
+                currency=currency,
+                start=start,
+                end=end,
+            )
+            for row in principal_rows
+        ]
+        fee_only_conflict = (
+            currency == "RUB"
+            and key in expected
+            and key not in repo_groups
+            and amount != expected[key]
+            and len(principal_rows) == expected_trade_counts[key] > 0
+            and all(row["classification"] in {"trade_settlement", "fee"} for row in rows)
+            and all(
+                disclosure
+                and disclosure["native_trade_amount_kopecks"] is not None
+                and row["minor"]
+                == (-1 if disclosure["quantity_delta"] > 0 else 1)
+                * disclosure["native_trade_amount_kopecks"]
+                for row, disclosure in zip(principal_rows, disclosures, strict=True)
+            )
+            and len({d["native_identity"] for d in disclosures}) == len(disclosures)
+        )
         if currency != "RUB" or key not in expected or amount != expected[key]:
             issues[isin].add("native_money_cash_bridge_mismatch")
+            (fee_only_conflicts if fee_only_conflict else other_bridge_conflicts).add(isin)
         if key in repo_groups:
             if include_instruments:
                 only.append(
@@ -941,7 +986,7 @@ def _interval(
                         )
                         if event_kind in {"BUY", "SELL"}
                         and key in expected
-                        and amount == expected[key]
+                        and (amount == expected[key] or fee_only_conflict)
                         else {}
                     ),
                 )
@@ -1032,7 +1077,28 @@ def _interval(
         if p:
             v0total = None if v0total is None or v0 is None else v0total + v0
             v1total = None if v1total is None or v1 is None else v1total + v1
-        coverage = _coverage(why)
+        coverage = _CleanProjectionCoverage(
+            _coverage(why),
+            fee_only_bridge=isin in fee_only_conflicts and isin not in other_bridge_conflicts,
+            unresolved_cost_only=(
+                bool(
+                    non_payout_unlinked := [
+                        row
+                        for row in unlinked
+                        if row["classification"] not in {"coupon", "dividend"}
+                    ]
+                )
+                and all(
+                    row["classification"] in {"fee", "tax"}
+                    and row["minor"] >= 0
+                    and not re.search(
+                        r"дивиденд|dividend|купон|coupon|сторно|возврат",
+                        (row["operation"] + " " + row["narrative"]).casefold(),
+                    )
+                    for row in non_payout_unlinked
+                )
+            ),
+        )
         opening = Endpoint(start, q0, v0, v0, None, "dirty")
         closing = Endpoint(end, q1, v1, v1, None, "dirty")
         components, pnl, known, dietz, estimate = calculate_economics(

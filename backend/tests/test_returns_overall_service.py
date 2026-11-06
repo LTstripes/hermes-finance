@@ -491,7 +491,7 @@ def test_explicit_http_summary_matches_existing_producer_without_cards_or_xirr(d
     app.dependency_overrides[session_for_request] = session
     before = snapshot(db)
     with TestClient(app) as client:
-        response = client.get("/api/returns/overall?include_instrument_summaries=true")
+        response = client.get("/api/returns/overall?include_instrument_summaries=true&basis=legacy")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     value = Overall.model_validate(response.json())
@@ -533,9 +533,9 @@ def test_http_default_keeps_index_projection(db, monkeypatch, query):
 
     def read_projection(session, **kwargs):
         calls.append(kwargs)
-        return overall.read_overall(session, **kwargs)
+        return overall.read_clean_overall(session, **kwargs)
 
-    monkeypatch.setattr("hermes_finance.api.returns_overall.read_overall", read_projection)
+    monkeypatch.setattr("hermes_finance.api.returns_overall.read_clean_overall", read_projection)
 
     def session():
         with db.session_factory() as value:
@@ -653,6 +653,88 @@ def test_lazy_income_uses_actual_cash_legs_not_forecast_or_repeated_event(
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("kind", ["coupon", "dividend"])
+@pytest.mark.parametrize(
+    "conflict,count,expected", [(True, 2, None), (False, 2, "5000"), (True, 1, "2500")]
+)
+def test_clean_income_does_not_sum_conflicting_source_accounts(
+    db, monkeypatch, kind, conflict, count, expected
+):
+    from hermes_finance.services import clean_instrument_return, source_instrument_returns
+
+    period = {"start": date(2030, 3, 31), "end": date(2030, 4, 30)}
+    scopes = ["source:native-a", "source:native-b"][:count]
+    part = {"value": "2500", "status": "supported", "reason_codes": [], "assumptions": []}
+    accounts = [
+        {
+            "scope": scope,
+            "label": scope,
+            "period": period,
+            "result": {
+                "instruments": [
+                    {"isin": ISIN, "name": "Synthetic", "coupons": part, "dividends": part}
+                ]
+            },
+        }
+        for scope in scopes
+    ]
+    monkeypatch.setattr(
+        clean_instrument_return, "read_clean_overview", lambda *a, **k: {"accounts": accounts}
+    )
+    monkeypatch.setattr(
+        overall,
+        "read_clean_overall",
+        lambda *a, **k: {
+            "coupon_income": {
+                "known_total": overall.returns_view.metric(),
+                "partial": True,
+                "selected_accounts": count,
+                "included_accounts": count,
+                "accounts": [],
+                "reason_codes": [],
+            },
+            "dividend_income": {
+                "known_total": overall.returns_view.metric(),
+                "partial": True,
+                "selected_accounts": count,
+                "included_accounts": count,
+                "accounts": [],
+                "reason_codes": [],
+            },
+            "mixed_result": {
+                "components": [
+                    {"id": scope, "coverage": {"status": "conflict" if conflict else "partial"}}
+                    for scope in scopes
+                ]
+            },
+        },
+    )
+    monkeypatch.setattr(
+        source_instrument_returns,
+        "read_instrument_returns",
+        lambda *a, **k: SimpleNamespace(instruments=[]),
+    )
+    with db.session_factory() as session:
+        result = overall.read_clean_income(session, kind=kind)
+    item = result["instruments"][0]
+    assert [row["amount"]["value"] for row in item["accounts"]] == ["2500"] * count
+    assert item["amount"]["value"] == expected
+    if conflict and count > 1:
+        assert "source_account_identity_mapping_conflict" in item["amount"]["reason_codes"]
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    response = TestClient(app).get("/api/returns/income", params={"kind": kind})
+    assert response.status_code == 200, response.text
+    assert response.json()["contract_version"] == "returns_income_v2"
+    assert response.json()["instruments"][0]["amount"]["value"] == expected
+
+
 def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(db, monkeypatch):
     source_fixture(monkeypatch, stale_second=True)
     view = read(db).model_dump(mode="python")
@@ -705,6 +787,63 @@ def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(
     assert value["accounts"][1]["detail"] is None
 
 
+def test_card_ai_reference_counts_sources_without_the_instrument(db, monkeypatch):
+    from hermes_finance.services import clean_instrument_return
+
+    period = {"start": date(2030, 3, 31), "end": date(2030, 4, 30)}
+    metric = {"value": "0", "status": "supported", "reason_codes": (), "assumptions": ()}
+    item = {
+        "isin": ISIN,
+        "name": "synthetic",
+        "closing_date": period["end"],
+        **{
+            name: metric
+            for name in (
+                "known_result",
+                "coupons",
+                "dividends",
+                "payouts",
+                "valuation_and_trades",
+                "redemption",
+                "closing_value",
+            )
+        },
+    }
+    clean = {
+        "contract_version": "clean_returns_overview_v1",
+        "accounts": [
+            {"scope": "source:first", "period": period, "result": {"instruments": [], "gaps": []}},
+            {
+                "scope": "source:second",
+                "period": period,
+                "result": {"instruments": [item], "gaps": []},
+            },
+        ],
+    }
+    card = {
+        "isin": ISIN,
+        "summary": {},
+        "accounts": [
+            {
+                "scope": "source:second",
+                "period": period,
+                "canonical_account_id": None,
+                "detail": {"period": period},
+                "exclusion_reason": None,
+            }
+        ],
+    }
+    monkeypatch.setattr(overall, "read_instrument_card", lambda *a, **k: card)
+    monkeypatch.setattr(clean_instrument_return, "read_clean_overview", lambda *a, **k: clean)
+    monkeypatch.setattr(overall.returns_view, "apply_clean_detail", lambda detail, item: detail)
+    with db.session_factory() as session:
+        selected = overall.read_clean_instrument_card(session, ISIN)
+    exported = clean_instrument_return.clean_export_data(clean)
+    assert selected["accounts"][0]["ai_account_ref"] == "source-account-2"
+    assert exported["accounts"][1]["account_ref"] == "source-account-2"
+    assert exported["accounts"][0]["instruments"] == []
+
+
 def test_card_conflicting_mapping_does_not_fetch_or_sum_ambiguous_accounts(db, monkeypatch):
     source_fixture(monkeypatch)
     identity_mappings(db, shared=True)
@@ -722,6 +861,75 @@ def test_card_conflicting_mapping_does_not_fetch_or_sum_ambiguous_accounts(db, m
         row["exclusion_reason"] == "source_account_identity_mapping_conflict"
         for row in value["accounts"]
     )
+
+
+@pytest.mark.parametrize("conflict", [True, False])
+def test_clean_card_keeps_scope_operations_and_does_not_sum_mapping_conflicts(
+    db, monkeypatch, conflict
+):
+    from copy import deepcopy
+
+    from hermes_finance.services import clean_instrument_return
+
+    period = {"start": date(2030, 3, 31), "end": date(2030, 4, 30)}
+    earlier = {"start": date(2030, 4, 1), "end": date(2030, 4, 30)}
+    scopes = ["source:native-a", "source:native-b"] if conflict else ["source:native-a"]
+    metric = {"value": 100, "status": "supported", "reason_codes": (), "assumptions": ()}
+    item = {
+        "isin": ISIN,
+        "closing_date": period["end"],
+        **{
+            name: metric
+            for name in (
+                "known_result",
+                "coupons",
+                "dividends",
+                "payouts",
+                "valuation_and_trades",
+                "redemption",
+                "closing_value",
+            )
+        },
+    }
+    card = {
+        "summary": {},
+        "accounts": [
+            {
+                "scope": scope,
+                "period": earlier,
+                "canonical_account_id": None,
+                "detail": None if conflict else {"period": earlier},
+                "exclusion_reason": "source_account_identity_mapping_conflict"
+                if conflict
+                else None,
+            }
+            for scope in scopes
+        ],
+    }
+    monkeypatch.setattr(overall, "read_instrument_card", lambda *a, **k: deepcopy(card))
+    monkeypatch.setattr(
+        clean_instrument_return,
+        "read_clean_overview",
+        lambda *a, **k: {
+            "accounts": [
+                {"scope": scope, "period": period, "result": {"instruments": [item]}}
+                for scope in scopes
+            ]
+        },
+    )
+    calls = []
+
+    def detail(session, *, scope, start, end, isin, native_period):
+        calls.append((scope, start, end, native_period))
+        return {"period": {"start": start, "end": end}, "events": ["synthetic"]}
+
+    monkeypatch.setattr(overall.returns_view, "read_detail", detail)
+    monkeypatch.setattr(overall.returns_view, "apply_clean_detail", lambda value, clean: value)
+    with db.session_factory() as session:
+        result = overall.read_clean_instrument_card(session, ISIN)
+    assert len(calls) == len(scopes)
+    assert all(row["detail"]["events"] == ["synthetic"] for row in result["accounts"])
+    assert result["summary"]["pnl"]["value"] == (None if conflict else "100")
 
 
 @pytest.mark.parametrize(
@@ -889,6 +1097,128 @@ def test_real_synthetic_card_and_income_get_are_exact_read_only(db, monkeypatch)
             client.get(f"/api/returns/instrument-card?isin={isin}&isin={isin}").status_code == 422
         )
     assert snapshot(db) == before
+
+
+def test_clean_card_returns_no_sale_purchase_contributions_from_same_source(db):
+    from test_source_instrument_returns_service import save
+
+    save(
+        db,
+        stock=("0", "2", "0", "300"),
+        bond=None,
+        trades=(("RU000A000000", "1", "100", "0", "3"), ("RU000A000000", "1", "200", "0", "7")),
+    )
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    before = snapshot(db)
+    with TestClient(app) as client:
+        response = client.get("/api/returns/instrument-card", params={"isin": "RU000A000000"})
+        assert response.status_code == 200, response.text
+        rows = response.json()["accounts"][0]["purchases"]
+        assert rows is not None, response.json()["accounts"][0]["clean"]
+        assert [row["cost_kopecks"] for row in rows] == ["10000", "20000"]
+        assert [row["price_result_kopecks"] for row in rows] == ["5000", "-5000"]
+    assert snapshot(db) == before
+
+
+def test_clean_card_fifo_sale_matches_clean_instrument_result(db):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000000"
+
+    def ordered(root):
+        for index, row in enumerate(root.findall(".//{MyBroker}Details[@trade_no]"), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+
+    save(
+        db,
+        stock=("0", "1", "0", "150"),
+        bond=None,
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "1", "200", "0", "7"),
+            (isin, "-1", "180", "0", "9"),
+        ),
+        mutate=ordered,
+    )
+    with db.session_factory() as session:
+        card = overall.read_clean_instrument_card(session, isin)
+    account = card["accounts"][0]
+    rows = account["purchases"]
+    assert [row["price_result_kopecks"] for row in rows] == ["8000", "-5000"]
+    assert [row["return_fraction"] for row in rows] == ["0.8", "-0.25"]
+    assert sum(int(row["price_result_kopecks"]) for row in rows) == int(
+        account["clean"]["valuation_and_trades"]["value"]
+    )
+
+
+def test_clean_card_closed_fifo_purchase_survives_missing_open_valuation(db):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000000"
+
+    def ordered_without_valuation(root):
+        for index, row in enumerate(root.findall(".//{MyBroker}Details[@trade_no]"), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+        root.find(".//{MyBroker}Details[@ISIN1]").attrib.pop("real_volume", None)
+
+    save(
+        db,
+        stock=("0", "1", "0", "150"),
+        bond=None,
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "-1", "180", "0", "9"),
+            (isin, "1", "200", "0", "7"),
+        ),
+        mutate=ordered_without_valuation,
+    )
+    with db.session_factory() as session:
+        card = overall.read_clean_instrument_card(session, isin)
+    account = card["accounts"][0]
+    rows = account["purchases"]
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[1]["cost_kopecks"] == "20000" and rows[1]["value_kopecks"] is None
+    assert rows[1]["price_result_kopecks"] is None
+
+
+def test_clean_card_closed_fifo_purchase_survives_later_unknown_buy_amount(db):
+    from test_source_instrument_returns_service import save
+
+    isin = "RU000A000001"
+
+    def ordered_with_missing_buy_amount(root):
+        rows = root.findall(".//{MyBroker}Details[@trade_no]")
+        for index, (row, price) in enumerate(zip(rows, ("10", "18", "20"), strict=True), 9):
+            stamp = f"15.04.2030 {index}:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("Price", price)
+        rows[-1].attrib.pop("summ_nkd", None)
+
+    save(
+        db,
+        stock=None,
+        bond=("0", "1", "0", "150"),
+        trades=(
+            (isin, "1", "100", "0", "3"),
+            (isin, "-1", "180", "0", "9"),
+            (isin, "1", "200", "0", "7"),
+        ),
+        mutate=ordered_with_missing_buy_amount,
+    )
+    with db.session_factory() as session:
+        card = overall.read_clean_instrument_card(session, isin)
+    rows = card["accounts"][0]["purchases"]
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[1]["cost_kopecks"] is None and rows[1]["price_result_kopecks"] is None
 
 
 def _manual_gold(db):

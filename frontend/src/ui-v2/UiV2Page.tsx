@@ -154,7 +154,10 @@ function KpiGrid({
                 ? "—"
                 : money(comparison.current.liquid_capital_net)}
             </p>
-            <PortfolioCoverageNote coverage={comparison.current.portfolio_source_coverage} />
+            <PortfolioCoverageNote
+              coverage={comparison.current.portfolio_source_coverage}
+              month={comparison.current}
+            />
           </>
         ) : (
           <UiV2WidgetState retry={comparisonReady ? undefined : retryComparison} />

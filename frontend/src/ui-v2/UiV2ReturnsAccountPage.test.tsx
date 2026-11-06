@@ -287,6 +287,24 @@ test("tops show the name first, ISIN second and an honest single ISIN fallback",
   expect(rows).toHaveLength(3);
 });
 
+test("account leaders show clean monetary results and label partial amounts", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    data.instruments[0].pnl.method = "clean_instrument_return_v1";
+    data.instruments[0].pnl.reason_codes = ["clean_partial_result"];
+    data.instruments[1].pnl.method = "clean_instrument_return_v1";
+    data.instruments[1].pnl.reason_codes = [];
+    return Promise.resolve(response(data));
+  });
+  setup();
+  const tops = await screen.findByRole("region", { name: "Лидеры и отстающие" });
+  expect(tops).toHaveTextContent("Северные технологии");
+  expect(tops).toHaveTextContent("Известная часть:");
+  expect(tops).toHaveTextContent("Горизонт");
+  expect(tops).toHaveTextContent("часть результатов неполна");
+});
+
 test("source seam context stays behind each metric's details while values remain visible", async () => {
   install((url) => {
     if (!url.pathname.endsWith("overview")) return;
@@ -628,7 +646,7 @@ test("accepted net payments remain visible when the result and percentage are un
   expect(within(payouts).getByText(/Учебная акция/)).toBeVisible();
   expect(
     within(screen.getByRole("region", { name: "Результат периода" })).getAllByText("—"),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   expect(within(payouts).queryByText("Оценка")).toBeNull();
 });
 
@@ -640,9 +658,11 @@ test("instrument row exposes both server metrics and visible missing-evidence re
   expect(zero).toHaveTextContent("0 ₽");
   expect(zero).toHaveTextContent("0,00%");
   const missing = within(section).getByRole("row", { name: /Учебная облигация/ });
-  expect(missing).toHaveTextContent("Нужна проверка данных");
-  expect(within(missing).getByText(/^Причины:/)).toHaveTextContent(
-    "Не хватает стоимости на границе периода",
-  );
+  expect(missing).toHaveTextContent("Не хватает стоимости на границе периода");
+  expect(
+    within(missing)
+      .getAllByText("Не хватает стоимости на границе периода.")
+      .some((e) => e.closest("small")),
+  ).toBe(true);
   expect(missing).toHaveTextContent("30.04.2030 — 31.05.2030");
 });

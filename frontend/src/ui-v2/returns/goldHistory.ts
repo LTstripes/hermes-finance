@@ -1,4 +1,5 @@
 import { ApiClientError } from "../../api/client";
+import type { Metric } from "./model";
 import { canonicalId } from "./navigation";
 export const GOLD_VERSION = "owner_manual_gold_history_v1" as const;
 export type GoldEventInput = {
@@ -98,6 +99,7 @@ export type GoldPreview = {
   declaration: GoldDeclaration;
   valuation: GoldValuation | null;
   result: GoldResult;
+  clean_result?: Metric;
   confirmation_digest: string;
   can_apply: boolean;
 };

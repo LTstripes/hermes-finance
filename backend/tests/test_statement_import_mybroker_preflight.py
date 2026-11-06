@@ -10,6 +10,8 @@ from xml.etree import ElementTree as ET
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, select
+from test_source_instrument_returns_service import db as db
+from test_source_instrument_returns_service import save as save_source
 from test_statement_import_mybroker import ACCOUNT, FILENAME, fixture, native_money_xml
 from test_statement_import_mybroker import database as database
 from test_statement_import_mybroker_endpoints import broker_month_xml, draft_structure_xml, node
@@ -335,6 +337,7 @@ def test_accepted_legacy_money_selector_and_missing_immutable_binder(database):
     result = run(database, [(FILENAME, raw)])
     assert all(r["kind"] == "unsupported" for r in result["documents"][0]["document"]["money"])
     assert snapshot(database) == before
+
     with database.session_factory() as session:
         source = session.get(MyBrokerImport, source_id)
         stored = __import__("json").loads(source.normalized_json)
@@ -404,7 +407,9 @@ def test_ten_http_previews_have_no_dml_or_table_changes_or_private_logs(database
         event.remove(database.engine, "before_cursor_execute", capture)
     assert snapshot(database) == before
     assert ACCOUNT not in caplog.text and "<" not in caplog.text
-    assert client.post("/api/mybroker-preflight/apply").status_code == 404
+    # With a built frontend the GET-only SPA fallback yields 405; neither case
+    # exposes a preflight apply operation.
+    assert client.post("/api/mybroker-preflight/apply").status_code in {404, 405}
 
 
 def test_bounds_bad_intent_and_sanitized_errors(database):
@@ -634,7 +639,7 @@ def test_preflight_accepted_incomplete_draft_identity_retains_all_financial_warn
         for side in ("beginning", "ending")
     )
     assert snapshot(database) == before
-    assert client.post("/api/mybroker-preflight/apply").status_code == 404
+    assert client.post("/api/mybroker-preflight/apply").status_code in {404, 405}
 
 
 @pytest.mark.parametrize(
@@ -1033,6 +1038,168 @@ def investment_case():
 
 
 @pytest.mark.parametrize(
+    "principal, fee, cash_day, expected",
+    [
+        (-100000, -1100, None, 10000),
+        (-200000, -1100, None, None),
+        (-100000, -1100, date(2030, 1, 6), None),
+        (-100000, -1000, None, 10000),
+    ],
+)
+def test_clean_investment_report_fee_conflict_requires_proven_principal_and_date(
+    principal, fee, cash_day, expected
+):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    service, doc, raw, report, money = investment_case()
+    doc["trades"][0]["accrued_interest"] = "0"
+    money[0]["minor"] = principal
+    money[1]["minor"] = fee
+    if cash_day:
+        money[0]["date"] = cash_day.isoformat()
+        money[0]["day"] = cash_day
+    analyses = {}
+    service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
+    analysis = analyses["RU000A000000"]
+    result = project_clean_analysis(analysis, "RU000A000000", instrument_type="stock")
+    assert result.pnl.value == expected
+    assert result.buys.value == (100000 if expected is not None else None)
+    if fee == -1100:
+        assert "native_money_cash_bridge_mismatch" in analysis.reason_codes
+        from dataclasses import asdict
+
+        from pydantic import TypeAdapter
+
+        from hermes_finance.domain.instrument_return import InstrumentAnalysis
+
+        assert "clean_fee_only_bridge_proven" not in asdict(analysis)
+        assert (
+            "clean_fee_only_bridge_proven"
+            not in TypeAdapter(InstrumentAnalysis).json_schema()["properties"]
+        )
+
+
+@pytest.mark.parametrize(
+    "classification,expected", [("fee", 10000), ("tax", 10000), ("unknown", None)]
+)
+def test_clean_investment_report_unlinked_cost_is_not_an_unlinked_principal(
+    classification, expected
+):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    service, doc, raw, report, money = investment_case()
+    doc["trades"][0]["accrued_interest"] = "0"
+    money.append(
+        {
+            **money[1],
+            "minor": 100,
+            "classification": classification,
+            "kind": classification,
+            "operation": "Synthetic cost",
+            "ref": "synthetic-cost",
+            "primary_id": None,
+        }
+    )
+    if classification == "unknown":
+        money.append({**money[-1], "classification": "fee", "kind": "fee", "ref": "synthetic-fee"})
+    analyses = {}
+    service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
+    analysis = analyses["RU000A000000"]
+    result = project_clean_analysis(analysis, "RU000A000000", instrument_type="stock")
+    assert "unresolved_account_cash_attribution" in analysis.reason_codes
+    assert result.pnl.value == expected
+
+
+def test_clean_investment_report_unaccepted_structure_shows_only_partial_known_result():
+    from dataclasses import replace
+
+    from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    service, doc, raw, report, money = investment_case()
+    doc["trades"][0]["accrued_interest"] = "0"
+    doc["syntax_blockers"] = ["synthetic_unknown_structure"]
+    analyses = {}
+    service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
+    result = project_clean_analysis(
+        analyses["RU000A000000"], "RU000A000000", instrument_type="stock"
+    )
+    assert result.known_result.value is None
+    assert result.valuation_and_trades.value is None
+    assert result.buys.value == 100000
+    assert "source_sections_not_financially_accepted" in result.known_result.reason_codes
+    assert result.pnl.value is None and result.modified_dietz.value is None
+    observed = InstrumentEvent(
+        event_key="synthetic-coupon",
+        provider="synthetic",
+        native_source_account="1234567-000",
+        isin="RU000A000000",
+        kind="COUPON",
+        source_references=("synthetic-coupon",),
+        event_date=date(2030, 1, 20),
+        cash_legs=(
+            CashLeg(
+                "coupon",
+                date(2030, 1, 20),
+                12000,
+                -12000,
+                ("synthetic-coupon",),
+                "synthetic-coupon",
+            ),
+        ),
+    )
+    analysis = analyses["RU000A000000"]
+    paid = project_clean_analysis(
+        replace(analysis, events=(*analysis.events, observed)),
+        "RU000A000000",
+        instrument_type="stock",
+    )
+    assert paid.known_result.value == 12000 and paid.known_result.status == "partial"
+    assert paid.valuation_and_trades.value is None and paid.pnl.value is None
+
+
+@pytest.mark.parametrize("second_principal, expected", [(-100000, 20000), (-200000, None)])
+def test_clean_investment_report_two_same_day_trades_require_each_principal(
+    second_principal, expected
+):
+    from dataclasses import replace
+
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    service, doc, raw, report, money = investment_case()
+    _, names, _, cancellations = service._native(doc, raw)
+    first = doc["trades"][0]
+    first["accrued_interest"] = "0"
+    second = deepcopy(first)
+    second["ids"] = ["10000000002", "20000000002"]
+    second["identity"] = service.digest(
+        [service.PROVIDER, second["core"]["source_account"], second["ids"]]
+    )
+    doc["trades"].append(second)
+    doc["positions"][0].update(actual_quantity="20", ending_value="2200")
+    report = replace(report, positions={("1234567", "RU000A000000"): ("20", 220000)})
+    money[1]["minor"] = -1100
+    for index, amount in ((0, second_principal), (1, -1000)):
+        row = deepcopy(money[index])
+        row.update(minor=amount, ref=f"second-{index}", primary_id="10000000002")
+        row["operation"] = row["operation"].replace("10000000001", "10000000002")
+        money.append(row)
+    analyses = {}
+    native_evidence = {
+        "names": names,
+        "cancellations": [(a, i, d.isoformat(), str(q)) for a, i, d, q in cancellations],
+        "unresolved": [],
+    }
+    service._interval(
+        doc, raw, report, money, {}, {}, True, analyses=analyses, native_evidence=native_evidence
+    )
+    result = project_clean_analysis(
+        analyses["RU000A000000"], "RU000A000000", instrument_type="stock"
+    )
+    assert result.pnl.value == expected
+
+
+@pytest.mark.parametrize(
     "quantity,value,available",
     [
         ("0", None, True),
@@ -1250,6 +1417,60 @@ def save_semantics_proof(database, monkeypatch, revision, request_id):
     return reports
 
 
+@pytest.mark.parametrize(
+    "kind, expected",
+    [
+        ("normal", "ee4cd0b5f1c1cdb7c689edd4aed1443df652309f0bd338f2396a9e616db0a4ee"),
+        ("fee_mismatch", "27dd011a3d49472eebb979c4efcb3ba810e3e50f58afc2d14b84119667602230"),
+        ("positive_fee", "1d48667ffe25572cd266e3bcac2f5351602a181f0ae5f7b08711947d784cfbce"),
+        ("positive_tax", "c78eaa82175022145253689ac064e9e35cc30056e777f5d6e4e7364300c7b77d"),
+    ],
+)
+def test_v10_retains_v9_legacy_interval_fixture(kind, expected):
+    import hashlib
+    import json
+
+    service, doc, raw, report, money = investment_case()
+    doc["trades"][0]["accrued_interest"] = "0"
+    if kind == "fee_mismatch":
+        money[1]["minor"] = -1100
+    elif kind == "positive_fee":
+        money[1]["minor"] = 100
+    elif kind == "positive_tax":
+        money.append(
+            {
+                **money[1],
+                "minor": 100,
+                "classification": "tax",
+                "kind": "tax",
+                "operation": "Налог",
+                "ref": "synthetic-tax",
+                "primary_id": None,
+            }
+        )
+    result = service._interval(doc, raw, report, money, {}, {}, True)
+    encoded = json.dumps(
+        result, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":")
+    ).encode()
+    assert hashlib.sha256(encoded).hexdigest() == expected
+
+
+def test_v10_reads_unchanged_v9_receipt_without_writes(database, monkeypatch):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    original = save_semantics_proof(
+        database, monkeypatch, "source_investment_semantics_v9", "v9-receipt"
+    )
+    before = snapshot(database)
+    before_bytes = database.database_path.read_bytes()
+    with database.session_factory() as session:
+        current = proofs.read_reports(session)
+        assert current == original
+        assert proofs.request_status(session, "v9-receipt")["current"]
+    assert snapshot(database) == before
+    assert database.database_path.read_bytes() == before_bytes
+
+
 def test_investment_semantics_ignores_unrelated_module_changes_without_writes(
     database, monkeypatch
 ):
@@ -1316,6 +1537,7 @@ def test_investment_semantics_rejects_legacy_digest(database, monkeypatch, prede
 @pytest.mark.parametrize(
     "old_code",
     [
+        "source_investment_semantics_v8",
         "source_investment_semantics_v7",
         "source_investment_semantics_v6",
         "source_investment_semantics_v2",
@@ -1343,6 +1565,28 @@ def test_gift_v3_compatibility_preserves_exact_old_proof_without_gift(
         report = proofs.read_reports(session)[0]
         assert report["status"] == "stale"
         assert report["reason_codes"] == ["investment_proof_dependencies_changed"]
+
+
+@pytest.mark.parametrize(
+    "revision,expected",
+    [
+        ("source_investment_semantics_v9", "current"),
+        ("source_investment_semantics_v8", "current"),
+        ("source_investment_semantics_v7", "stale"),
+    ],
+)
+def test_v9_compatibility_preserves_v8_even_when_older_cost_scope_is_incompatible(
+    database, monkeypatch, revision, expected
+):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    save_semantics_proof(database, monkeypatch, revision, "old-cost-scope")
+    before = snapshot(database)
+    monkeypatch.setattr(proofs, "_old_cost_meaning_unchanged", lambda _: False)
+    with database.session_factory() as session:
+        report = proofs.read_reports(session)[0]
+        assert report["status"] == expected
+    assert snapshot(database) == before
 
 
 def test_new_intersecting_original_stales_proof_without_rewriting_decision(database, monkeypatch):
@@ -1384,12 +1628,17 @@ def test_investment_semantics_revision_change_stales_saved_proof(database, monke
     assert snapshot(database) == before
 
 
-def test_investment_semantics_does_not_admit_pending_old_writer_form(database, monkeypatch):
+@pytest.mark.parametrize(
+    "old_revision", ["source_investment_semantics_previous", "source_investment_semantics_v9"]
+)
+def test_investment_semantics_does_not_admit_pending_old_writer_form(
+    database, monkeypatch, old_revision
+):
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.source_return_proofs import ProofError
 
     with monkeypatch.context() as patch:
-        patch.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_previous")
+        patch.setattr(proofs, "SEMANTICS_REVISION", old_revision)
         preview = saved_investment_preview(database, patch)["persistence"]
     before = snapshot(database)
     with database.session_factory() as session:
@@ -1426,7 +1675,7 @@ def test_investment_semantics_latest_stale_proof_has_no_older_compatible_fallbac
 
 
 @pytest.mark.parametrize("operation", ["copy", "replace"])
-@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("legacy", [False, True, "v9"])
 def test_investment_semantics_preserves_physical_database_binding(
     database, monkeypatch, tmp_path, operation, legacy
 ):
@@ -1439,7 +1688,11 @@ def test_investment_semantics_preserves_physical_database_binding(
     save_semantics_proof(
         database,
         monkeypatch,
-        proofs._GIFT_COMPAT_CODES[1] if legacy else proofs.SEMANTICS_REVISION,
+        "source_investment_semantics_v9"
+        if legacy == "v9"
+        else proofs._GIFT_COMPAT_CODES[1]
+        if legacy
+        else proofs.SEMANTICS_REVISION,
         "physical-original",
     )
     with database.session_factory() as session:
@@ -1711,9 +1964,429 @@ def test_investment_persistent_api_requires_exact_ack_and_boolean_attestation(
     assert ordinary["period"]["growth_kopecks"] == 9000
 
 
+@pytest.mark.parametrize("paired", [True, False])
+def test_same_isin_repo_keeps_uniquely_identified_ordinary_fifo_rows(monkeypatch, paired):
+    from dataclasses import replace
+
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+    from hermes_finance.services.clean_purchase_returns import clean_purchase_price_contributions
+
+    service, doc, raw, report, money = investment_case()
+    trades, names, primary, cancellations = service._native(doc, raw)
+    ordinary = trades[0]
+    ordinary["accrued_interest"] = "0"
+    sale = deepcopy(ordinary)
+    sale.update(
+        ids=["10000000002", "20000000002"],
+        settlement_date="2030-01-18",
+        depo_settlement_date="2030-01-18",
+        bank_commission="0",
+    )
+    sale["core"].update(quantity="-5", trade_amount="600", trade_time="2030-01-16T09:00:00")
+    sale["identity"] = service.digest(
+        [service.PROVIDER, sale["core"]["source_account"], sale["ids"]]
+    )
+    trades.append(sale)
+    primary[sale["ids"][0]] = [sale]
+    money.append(
+        {
+            **money[0],
+            "minor": 60000,
+            "primary_id": sale["ids"][0],
+            "native_token": sale["ids"][0],
+            "operation": f"Расчеты по сделке {sale['ids'][0]}",
+            "ref": "synthetic-ordinary-sale",
+            "date": "2030-01-18",
+            "day": date(2030, 1, 18),
+        }
+    )
+    for i, (quantity, amount) in enumerate([("5", "500"), ("-5", "501")][: 2 if paired else 1]):
+        t = deepcopy(ordinary)
+        token = f"B{i + 1}"
+        t.update(
+            ids=[token],
+            repo_observed=True,
+            bank_commission="0",
+            repo_partner="B2" if i == 0 else "B1",
+            repo_leg=f"репо ч.{i + 1}",
+        )
+        t["core"].update(quantity=quantity, trade_amount=amount)
+        trades.append(t)
+        primary[token] = [t]
+        money.append(
+            {
+                **money[0],
+                "minor": -50000 if i == 0 else 50100,
+                "primary_id": token,
+                "native_token": token,
+                "operation": f"Расчеты по сделке {token}",
+                "ref": token,
+            }
+        )
+    monkeypatch.setattr(
+        service, "_native", lambda *_, **__: (trades, names, primary, cancellations)
+    )
+    doc["positions"][0].update(
+        actual_quantity="5" if paired else "10", ending_value="550" if paired else "1100"
+    )
+    report = replace(
+        report, positions={("1234567", "RU000A000000"): ("5", 55000) if paired else ("10", 110000)}
+    )
+    analyses = {}
+    service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
+    analysis = analyses["RU000A000000"]
+    clean = project_clean_analysis(analysis, "RU000A000000", instrument_type="stock")
+    rows = clean_purchase_price_contributions(
+        analysis, clean, "RU000A000000", instrument_type="stock"
+    )
+    if paired:
+        assert len(rows) == 1 and rows[0]["price_result_kopecks"] == "15000"
+        assert rows[0]["remaining_quantity"] == "5" and rows[0]["sale_proceeds_kopecks"] == "60000"
+    else:
+        assert len(rows) == 1
+        assert rows[0]["cost_kopecks"] == "100000" and rows[0]["status"] == "partial"
+        assert rows[0]["remaining_quantity"] is None and rows[0]["sale_proceeds_kopecks"] is None
+        assert rows[0]["value_kopecks"] is None and rows[0]["price_result_kopecks"] is None
+        assert rows[0]["return_fraction"] is None
+
+
+def test_report_repo_pair_does_not_hide_impossible_intermediate_custody(monkeypatch, db):
+    from dataclasses import replace
+
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+    from hermes_finance.services.clean_purchase_returns import clean_purchase_price_contributions
+    from hermes_finance.services.clean_repo_pairs import clean_and_purchase_repo_projections
+
+    service, doc, raw, report, money = investment_case()
+    trades, names, primary, cancellations = service._native(doc, raw)
+    ordinary = trades[0]
+    ordinary["core"].update(quantity="1", trade_amount="100", trade_time="2030-01-01T09:00:00")
+    ordinary.update(
+        accrued_interest="0", settlement_date="2030-01-01", depo_settlement_date="2030-01-01"
+    )
+    for index in (0, 1):
+        money[index].update(date="2030-01-01", day=date(2030, 1, 1))
+    money[0]["minor"] = -10000
+    sale = deepcopy(ordinary)
+    sale.update(
+        ids=["10000000002", "20000000002"],
+        settlement_date="2030-01-03",
+        depo_settlement_date="2030-01-03",
+        bank_commission="0",
+    )
+    sale["core"].update(quantity="-1", trade_amount="180", trade_time="2030-01-03T09:00:00")
+    sale["identity"] = service.digest(
+        [service.PROVIDER, sale["core"]["source_account"], sale["ids"]]
+    )
+    trades.append(sale)
+    primary[sale["ids"][0]] = [sale]
+    money.append(
+        {
+            **money[0],
+            "minor": 18000,
+            "primary_id": sale["ids"][0],
+            "native_token": sale["ids"][0],
+            "operation": f"Расчеты по сделке {sale['ids'][0]}",
+            "ref": "ordinary-sale",
+            "date": "2030-01-03",
+            "day": date(2030, 1, 3),
+        }
+    )
+    for i, (quantity, amount, day) in enumerate([("-1", "100", 2), ("1", "101", 4)]):
+        trade = deepcopy(ordinary)
+        token = f"B{i + 1}"
+        settlement = f"2030-01-{day:02}"
+        trade.update(
+            ids=[token],
+            repo_observed=True,
+            bank_commission="0",
+            repo_partner="B2" if i == 0 else "B1",
+            repo_leg=f"репо ч.{i + 1}",
+            settlement_date=settlement,
+            depo_settlement_date=settlement,
+        )
+        trade["core"].update(
+            quantity=quantity, trade_amount=amount, trade_time=f"{settlement}T09:00:00"
+        )
+        trades.append(trade)
+        primary[token] = [trade]
+        money.append(
+            {
+                **money[0],
+                "minor": 10000 if i == 0 else -10100,
+                "primary_id": token,
+                "native_token": token,
+                "operation": f"Расчеты по сделке {token}",
+                "ref": token,
+                "date": settlement,
+                "day": date(2030, 1, day),
+            }
+        )
+    monkeypatch.setattr(
+        service, "_native", lambda *_, **__: (trades, names, primary, cancellations)
+    )
+    doc["positions"][0].update(actual_quantity="0", ending_value="0")
+    report = replace(report, positions={("1234567", "RU000A000000"): ("0", 0)})
+    analyses = {}
+    service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
+    analysis = analyses["RU000A000000"]
+
+    def mutate(root):
+        for index, trade_node in enumerate(root.findall(".//{MyBroker}Details[@trade_no]"), 1):
+            day = (1, 3, 2, 4)[index - 1]
+            stamp = f"{day:02}.01.2030 09:00:00"
+            trade_node.set("db_time", f"{stamp}\n{stamp}")
+            trade_node.set("save_settlement_date", f"{day:02}.01.2030")
+            trade_node.set("save_depo_settlement_date", f"{day:02}.01.2030")
+            if index > 2:
+                trade_node.set("trade_no", "B1" if index == 3 else "B2")
+                trade_node.set("repo_no", "B2" if index == 3 else "B1")
+                trade_node.set("comment", "репо ч.1" if index == 3 else "репо ч.2")
+
+    save_source(
+        db,
+        1,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=(
+            ("RU000A000000", "1", "100", "0", "0"),
+            ("RU000A000000", "-1", "180", "0", "0"),
+            ("RU000A000000", "-1", "100", "0", "0"),
+            ("RU000A000000", "1", "101", "0", "0"),
+        ),
+        mutate=mutate,
+    )
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+
+    with db.session_factory() as session:
+        selected, _ = _selected_sources(session, ACCOUNT)
+        views = [view for _, view, error in selected if not error]
+    assert views
+    _, purchase_analysis = clean_and_purchase_repo_projections(analysis, views, "RU000A000000")
+    clean = project_clean_analysis(analysis, "RU000A000000", instrument_type="stock")
+    rows = clean_purchase_price_contributions(
+        purchase_analysis, clean, "RU000A000000", instrument_type="stock"
+    )
+    assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+    foreign = deepcopy(views)
+    for view in foreign:
+        for trade in view["document"]["trades"]:
+            if trade.get("repo_observed"):
+                trade["core"]["source_account"] = "synthetic-other-account"
+    clean_foreign, purchase_foreign = clean_and_purchase_repo_projections(
+        analysis, foreign, "RU000A000000"
+    )
+    assert clean_foreign is analysis and purchase_foreign is analysis
+
+
+@pytest.mark.parametrize("safe", [False, True])
+@pytest.mark.parametrize("card_first", [False, True])
+def test_saved_proof_repo_custody_readback(database, monkeypatch, safe, card_first):
+    import sys
+    from dataclasses import replace
+    from datetime import UTC, datetime
+
+    from hermes_finance.services import returns_overall
+    from hermes_finance.services import source_investment_proofs as proofs
+    from hermes_finance.services.ai_financial_review import (
+        assemble_ai_financial_review,
+        validate_ai_financial_review,
+    )
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.reporting_months import create_reporting_month
+    from hermes_finance.services.source_monthly_returns import source_read_snapshot
+
+    service, _, raw, report, _ = investment_case()
+    root = ET.fromstring(raw)
+    original = root.find(".//{MyBroker}Details[@trade_no]")
+    collection = root.find(
+        ".//{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Details_Collection"
+    )
+    collection.remove(original)
+    money_collection = root.find(".//{MyBroker}rn_Collection")
+    template = money_collection[0]
+    for money in list(money_collection)[:2]:
+        money_collection.remove(money)
+    group = root.find(".//{MyBroker}settlement_date_Collection/{MyBroker}settlement_date")
+    group_collection = root.find(".//{MyBroker}settlement_date_Collection")
+    legs = (
+        (
+            (1, "1", "100", "10000000001", "", "", "-100"),
+            (2, "-1", "100", "B1", "B2", "репо ч.1", "100"),
+            (3, "-1", "180", "10000000002", "", "", "180"),
+            (4, "1", "101", "B2", "B1", "репо ч.2", "-101"),
+        )
+        if not safe
+        else (
+            (1, "1", "100", "10000000001", "", "", "-100"),
+            (2, "1", "100", "B1", "B2", "репо ч.1", "-100"),
+            (4, "-1", "180", "10000000002", "", "", "180"),
+            (3, "-1", "101", "B2", "B1", "репо ч.2", "101"),
+        )
+    )
+    for i, (day, qty, amount, token, partner, leg, money_value) in enumerate(legs):
+        trade = deepcopy(original)
+        stamp = f"{day:02}.01.2030"
+        trade.attrib.update(
+            trade_no=token if partner else f"{token}\n200000000{i + 1}",
+            db_time=f"{stamp} 09:00:00\n{stamp} 09:00:00",
+            save_settlement_date=stamp,
+            save_depo_settlement_date=stamp,
+            settlement_time=f"{stamp} 10:00:00",
+            qty=qty,
+            summ_trade=amount,
+            bank_tax="0",
+            summ_nkd="0",
+        )
+        if partner:
+            trade.attrib.update(repo_no=partner, comment=leg)
+        collection.append(trade)
+        money = deepcopy(template)
+        money.set("last_update", f"2030-01-{day:02}T10:00:00")
+        money.find("{MyBroker}oper_type").set("oper_type", f"Расчеты по сделке {token}")
+        money.find(".//{MyBroker}p_code[@volume]").set("volume", money_value)
+        trade_group = deepcopy(group)
+        trade_group.set("settlement_date", f"2030-01-{day:02}T00:00:00")
+        trade_money = trade_group.find("{MyBroker}rn_Collection")
+        for row in list(trade_money):
+            trade_money.remove(row)
+        trade_money.append(money)
+        group_collection.append(trade_group)
+    position = root.find(".//{MyBroker}Details[@ISIN1]")
+    position.attrib.update(real_rest="0", forward_rest="0", real_volume="0")
+    root.find(".//{MyBroker}Details[@active_name='RUB']").set(
+        "real_rest", "2081" if safe else "2079"
+    )
+    raw = ET.tostring(root, encoding="utf-8")
+    doc = parse_mybroker(raw, FILENAME)
+    report = replace(
+        report,
+        positions={("1234567", "RU000A000000"): ("0", 0)},
+        closing={"1234567": 208100 if safe else 207900},
+        reported_pnl={"1234567": 8100 if safe else 7900},
+    )
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "investment_case",
+        lambda: (service, doc, raw, report, service._money(doc, raw)),
+    )
+    preview = saved_investment_preview(database, monkeypatch)["persistence"]
+    assert preview["available"], preview
+    with database.session_factory() as session:
+        proofs.confirm(
+            session,
+            form_token=preview["form_token"],
+            preview_digest=preview["preview_digest"],
+            request_id="custody",
+        )
+        create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+    before = snapshot(database)
+    with database.session_factory() as session:
+        assert proofs.read_reports(session)[0]["status"] == "current"
+        with source_read_snapshot(session):
+            if card_first:
+                card = returns_overall.read_clean_instrument_card(session, "RU000A000000")
+                returns_overall.read_overall(session, include_instrument_details=True)
+            else:
+                returns_overall.read_overall(session, include_instrument_details=True)
+                card = returns_overall.read_clean_instrument_card(session, "RU000A000000")
+            ai = assemble_ai_financial_review(
+                session,
+                generated_at=datetime(2030, 2, 1, tzinfo=UTC),
+                evaluated_on=date(2030, 2, 1),
+                format_version="3.1.0",
+            )
+            result = read_clean_account(
+                session,
+                ACCOUNT,
+                date(2029, 12, 31),
+                date(2030, 1, 31),
+                isin="RU000A000000",
+                include_purchases=True,
+            )
+    validate_ai_financial_review(ai)
+    rows = result["instruments"][0]["purchases"]
+    if safe:
+        assert rows and rows[0]["price_result_kopecks"] == "8000"
+    else:
+        assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+    assert card["accounts"][0]["purchases"] == rows
+    exported = ai["sections"]["clean_returns"]["data"]["accounts"][0]
+    from fastapi.encoders import jsonable_encoder
+
+    assert exported["account_ref"] == card["accounts"][0]["ai_account_ref"]
+    assert exported["period"] == jsonable_encoder(card["accounts"][0]["period"])
+    assert [
+        {k: v for k, v in row.items() if k != "id"}
+        for row in exported["instruments"][0]["purchases"]
+    ] == [{k: v for k, v in row.items() if k != "id"} for row in jsonable_encoder(rows)]
+    assert snapshot(database) == before
+
+    if safe and not card_first:
+        import json
+
+        from hermes_finance.persistence import SourceMoneyClassification, SourceReturnProof
+        from hermes_finance.services.clean_repo_pairs import saved_proof_repo_evidence_complete
+        from hermes_finance.services.source_monthly_returns import _selected_sources
+
+        with database.session_factory() as session:
+            proof = session.scalar(select(SourceReturnProof))
+            original_evidence = proof.evidence_json
+        for mutation in ("missing", "duplicate", "wrong_partner"):
+            plan = json.loads(original_evidence)
+            legs = plan["native"]["repo_legs"]
+            if mutation == "missing":
+                legs.pop()
+            elif mutation == "duplicate":
+                legs.append(deepcopy(legs[0]))
+            else:
+                legs[0][1] = "B999"
+            before_read = snapshot(database)
+            with database.session_factory() as session:
+                selected, _ = _selected_sources(session, ACCOUNT)
+                views = [view for _, view, error in selected if not error]
+                with monkeypatch.context() as patch:
+                    patch.setattr(proofs, "_report_rows", lambda *_: iter([(proof, plan)]))
+                    patch.setattr(
+                        proofs,
+                        "read_reports",
+                        lambda *_, **__: [{"proof_id": proof.id, "status": "current"}],
+                    )
+                    assert not saved_proof_repo_evidence_complete(
+                        session,
+                        ACCOUNT,
+                        date(2029, 12, 31),
+                        date(2030, 1, 31),
+                        views,
+                        "RU000A000000",
+                    )
+            assert snapshot(database) == before_read
+
+        with database.session_factory() as session:
+            classification = session.scalar(select(SourceMoneyClassification))
+            assert classification is not None
+            classification.classification = "unknown"
+            session.commit()
+        stale_before = snapshot(database)
+        with database.session_factory() as session:
+            assert proofs.read_reports(session)[0]["status"] == "stale"
+            fallback = read_clean_account(
+                session,
+                ACCOUNT,
+                date(2029, 12, 31),
+                date(2030, 1, 31),
+                isin="RU000A000000",
+                include_purchases=True,
+            )
+            assert fallback["instruments"]
+        assert snapshot(database) == stale_before
+
+
 @pytest.mark.parametrize("pending", [False, True, "other"])
 def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, pending):
     from decimal import Decimal
+
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
 
     service, doc, raw, report, money = investment_case()
     trades, names, primary, cancellations = service._native(doc, raw)
@@ -1748,7 +2421,8 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, p
         if pending == "other":
             pending_trade["core"]["isin"] = "RU000A000001"
         doc["trades"].append(pending_trade)
-    result = service._interval(doc, raw, report, money, {}, {}, True)
+    analyses = {}
+    result = service._interval(doc, raw, report, money, {}, {}, True, analyses=analyses)
     instrument = result["instruments"][0]
     assert instrument["pnl"]["value"] == (None if pending is True else "9000")
     if pending:
@@ -1771,6 +2445,25 @@ def test_investment_repo_never_absorbs_ordinary_trade_on_same_day(monkeypatch, p
         assert other["pnl"]["value"] is None
         assert "repo_position_open_at_boundary" in other["reason_codes"]
     assert Decimal(instrument["closing_quantity"]) == 10
+    clean = project_clean_analysis(
+        analyses[instrument["isin"]], instrument["isin"], instrument_type="stock"
+    )
+    from hermes_finance.services.clean_purchase_returns import clean_purchase_price_contributions
+
+    purchase_rows = clean_purchase_price_contributions(
+        analyses[instrument["isin"]], clean, instrument["isin"], instrument_type="stock"
+    )
+    assert purchase_rows is None or all(
+        row["price_result_kopecks"] is None and row["cost_kopecks"] is None for row in purchase_rows
+    )
+    if pending is not True:
+        # This original-bound fixture has grouped Money without a unique native
+        # principal disclosure. It must not be relabelled as a clean trade.
+        assert clean.pnl.value is None
+        # The endpoint value alone is not a return when the purchase amount
+        # is unavailable; known independent components remain separately exposed.
+        assert clean.known_result.status == "unavailable"
+        assert clean.known_result.value is None
 
 
 @pytest.mark.parametrize("target", ["RU000A000000", "RU000A000001"])

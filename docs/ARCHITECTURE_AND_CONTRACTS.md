@@ -2611,6 +2611,14 @@ from-zero proof supplies its exact historical interval. Any unsupported code,
 dependency or database-incarnation change requires fresh original Preview and confirmation.
 No prepared valuation packet is activated by these routes.
 
+The v9 investment semantic revision retains additional uncounted native Money
+observations for the clean instrument reader. Investment proof economics still
+use the unchanged investment-report derivation and account-cost classifier.
+The read-only v8 compatibility edge therefore recomputes all exact live v8
+dependencies, including for REPO or gift scopes, without rewriting receipts.
+Earlier compatibility edges retain their existing narrower scope restrictions.
+This compatibility requires independent review before release.
+
 The read-only compatibility edge admits exactly the released 1.9.4 producing
 implementation (`a381dbf1`, package digest
 `0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81`)
@@ -6792,6 +6800,92 @@ source/account/class detail modes keep their own supported meaning and URLs.
 <a id="c7-source_instrument_returns-1"></a>
 ### Monthly native-source instrument estimates
 
+#### Clean security result and versioned consumers
+
+The ordinary Returns overview and instrument card use `returns_overall_v2` and
+`returns_instrument_card_v2`. They share one source-scoped read over existing
+originals and use explicit account and EOD period boundaries. Clean trade
+principal excludes NKD where its inclusion basis and amount are known. Fees and
+taxes do not enter the result. Coupons and dividends use the actually received
+cash, without fabricating gross payments. The projection does not write source
+records or financial receipts and does not equate security returns with changes
+in account capital. A nonzero bond valuation without known accrued interest is
+unknown; a demonstrably empty position is zero. Known results and components
+are labelled partial when coverage is incomplete, rather than promoted to full
+return. Rates remain unavailable when their operands are incomplete.
+If trade or redemption coverage is incomplete, a closing valuation cannot be
+combined with only the observed trades and presented as an investment result;
+independently observed receipts remain available. A missing or conflicting
+commission does not invalidate clean principal only after linked principal and
+NKD amounts, ownership, settlement dates, and position quantities have been
+checked. Conflicting or ambiguous principal remains unknown.
+Commission and NKD posting dates do not substitute for a security principal
+settlement when checking a period boundary; genuine principal and delivery
+crossings still remain incomplete. Fee- and tax-only sign conflicts remain
+visible as source facts but do not invalidate clean security operands. Income
+drilldowns retain per-source receipts and withhold cross-source instrument
+totals when account identity mappings conflict.
+The instrument card exposes the same producer-owned `payouts` metric beside
+`valuation_and_trades` and the available result. Redemption is already included
+in `valuation_and_trades`, not an additional summand. `ai_account_ref` maps a
+card's source account to the existing file-local AI reference for the same
+current ordered source-account set; it contains no account identity. A changed
+source-account set requires a fresh card and export before comparing them.
+
+The card may also show analytical `purchases` for a single source scope and EOD
+period. A supported FIFO result requires a proved zero opening position/value, complete source and
+quantity evidence, no redemption, current uniquely owned trades, and reconciled
+closing quantity. Each execution must precede or coincide with its actual
+settlement and delivery; both must fall within the period. Sales consume the
+earliest purchased remaining quantity first (FIFO). An ambiguous execution
+order leaves affected lots unknown but does not erase already closed lots.
+Sale proceeds and clean closing value are allocated proportionally by
+quantity with a deterministic largest remainder in kopecks. A purchase's
+price/sale result is proceeds plus its remaining value minus its original clean
+principal. Its percentage is this result divided by that original principal;
+a zero principal gives an unknown percentage, and no annualization applies.
+When every component is known the contributions must sum exactly to
+`valuation_and_trades`. Missing clean principal, sale proceeds or open-position
+valuation leaves the affected field and result unknown while preserving
+independently supported components and closed-lot results.
+An assumption attached to a purchase or an allocated sale is retained on
+the affected purchase as a reason and makes its status `partial`, even when
+the amount and percentage are available. In particular,
+`trade_face_value_missing` identifies the unconfirmed bond face value; the
+card and AI report expose the same status and reason.
+If FIFO coverage is insufficient, an individually current purchase with a
+unique native identity, valid dated delivery and independently established
+clean principal remains visible with `status=partial` and reason
+`purchase_allocation_unproven`. Its remaining quantity, allocated proceeds,
+value, result and percentage are unknown; observed sales remain at instrument
+level. Conflicting or duplicate identities do not establish separate purchases.
+An execution may precede the opening EOD when both its cash settlement and
+delivery are inside the selected period; preserve its actual execution date.
+This is Hermes analysis, not broker tax accounting, and excludes payouts,
+fees, taxes and NKD. If no individual purchase can be proved, unsupported
+histories return `purchases=null`; underlying operations remain visible.
+The additive account-level card field is also present in AI report 3.1.0 with
+file-local purchase references. Earlier report versions retain their contracts.
+
+The existing account-specific `/api/returns/overview` and
+`/api/returns/instrument` use `returns_source_v2` and
+`returns_source_detail_v2` for the same clean basis and requested dates. Source
+events remain available for inspection; the separate capital view describes
+actual account capital. Manual gold-history previews add `clean_result` from
+the existing valuation and dated trade evidence; recorded fees and historical
+receipts remain intact. The AI report includes the same available clean gold
+result. Incomplete gold history, unproved opening quantity, and mismatched
+quantities cannot produce a total from valuation and partial trades; known
+purchase and sale components remain visible. Explicit `basis=legacy` preserves the prior Returns projections for
+consumers that still need their original semantics.
+
+The recommended AI financial review requests version `3.1.0` and includes the
+same source-scoped clean operands under `sections.clean_returns` with file-local
+account references. Each account retains its own period and metric coverage.
+The format is defined in [`ai_financial_review.v3_1.schema.json`](schemas/ai_financial_review.v3_1.schema.json).
+Earlier financial review formats and explicitly requested legacy Returns API
+versions retain their historical meaning; no old field is silently redefined.
+
 The original monthly/all-time fields below remain the compatibility contract.
 The additive dated analysis has stricter full-result availability and explicitly
 separates economic values, known subtotals and conditional statement estimates.
@@ -6818,10 +6912,10 @@ rates (`0.1` = 10%). Status is supported/provisional/partial/unavailable.
 Supported means complete within the selected source scope, never an accepted
 financial receipt. Root authority remains provisional / financial authority none.
 
-The on-demand Returns projection `/api/returns/instrument` adds the same complete
-`analysis` shape while retaining its compatibility fields; the overview stays
-compact. Money values and capital-days serialize as exact integer strings in this
-projection, Decimal rates/quantities/prices as strings, with NULL and source
+The legacy on-demand Returns projection `/api/returns/instrument?basis=legacy`
+adds the same complete `analysis` shape while retaining its compatibility
+fields; the legacy overview stays compact. Money values and capital-days serialize
+as exact integer strings in this projection, Decimal rates/quantities/prices as strings, with NULL and source
 identities preserved. Its compact `events` projection also retains the event key,
 execution date/time, cash/depository dates, signed quantity, source price/unit,
 dated face value, native amount/basis, NKD, commission, gross/withheld/net payout,

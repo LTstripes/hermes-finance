@@ -723,6 +723,187 @@ def read_overall(session, *, include_instrument_details=False):
         }
 
 
+def read_clean_overall(session, *, include_instrument_details=False):
+    """Use clean source results in the existing overview without changing legacy readers."""
+    from hermes_finance.services.clean_instrument_return import read_clean_overview
+
+    with source_read_snapshot(session):
+        legacy = read_overall(session, include_instrument_details=False)
+        clean = read_clean_overview(session)
+        indexed = {row["scope"]: row for row in legacy["source_accounts"]}
+        instruments = {}
+        conflicts = {
+            row["id"]: (row["coverage"], row["exclusion_reason"])
+            for row in legacy["mixed_result"]["components"]
+            if row["coverage"]["status"] == "conflict"
+        }
+        for component in legacy["mixed_result"]["components"]:
+            if component["id"].startswith("source:") or component["category"] == "gold":
+                component.update(
+                    amount=_unknown("clean_source_unavailable"),
+                    included=False,
+                    available=False,
+                    exclusion_reason="clean_source_unavailable",
+                    coverage={
+                        "status": "unavailable",
+                        "reason_codes": ["clean_source_unavailable"],
+                    },
+                )
+
+        def metric(value, *, rate=False):
+            reasons = list(value["reason_codes"]) + list(value["assumptions"])
+            if value["status"] == "partial":
+                reasons.append("clean_partial_result")
+            return returns_view.metric(
+                value["value"],
+                reasons=reasons,
+                method="modified_dietz" if rate else "clean_instrument_return_v1",
+                unit="fraction" if rate else "kopecks",
+                estimate=value["status"] != "supported",
+            )
+
+        def subtotal(items, name):
+            values = [item[name] for item in items]
+            known = [int(item["value"]) for item in values if item["value"] is not None]
+            return returns_view.metric(
+                sum(known) if known else None,
+                reasons=("clean_partial_result",),
+                method="known_clean_instruments",
+                estimate=True,
+            )
+
+        for source in indexed.values():
+            source["result"] = None
+        for account in clean["accounts"]:
+            scope, items, period = (
+                account["scope"],
+                account["result"]["instruments"],
+                account["period"],
+            )
+            source = indexed.get(scope)
+            if source is None:
+                continue
+            account_pnl = subtotal(items, "known_result")
+            coupons = subtotal(items, "coupons")
+            dividends = subtotal(items, "dividends")
+            source.update(
+                period=period,
+                valuation_date=period["end"],
+                result={
+                    "period": period,
+                    "valuation_date": period["end"],
+                    "account_link": source["account_link"],
+                    "pnl": account_pnl,
+                    "rate": _unknown("combined_rate_periods_and_flows_not_proven", rate=True),
+                    "coupons": coupons,
+                    "dividends": dividends,
+                },
+                reason_codes=[],
+                instrument_count=len(items),
+            )
+            for item in items:
+                isin = item["isin"]
+                row = instruments.setdefault(
+                    isin,
+                    {
+                        "isin": isin,
+                        "name": item["name"] or isin,
+                        "kind": item["instrument_type"],
+                        "accounts": [],
+                        "reason_codes": [],
+                    },
+                )
+                row["accounts"].append(
+                    {
+                        "scope": scope,
+                        "label": account["label"],
+                        "account_link": source["account_link"],
+                        "canonical_account_id": source["account_link"]["financial_account_id"],
+                        "details_loaded": include_instrument_details,
+                        "native_period": True,
+                        "period": period,
+                        "valuation_date": item["closing_date"]
+                        if item["closing_value"]["value"] is not None
+                        else None,
+                        "pnl": metric(
+                            item["pnl"]
+                            if item["pnl"]["value"] is not None
+                            else item["known_result"]
+                        ),
+                        "rate": metric(item["modified_dietz"], rate=True),
+                        "coupons": metric(item["coupons"]),
+                        "dividends": metric(item["dividends"]),
+                    }
+                )
+            for component in legacy["mixed_result"]["components"]:
+                if component["id"] == scope:
+                    conflict = scope in conflicts
+                    component.update(
+                        amount=account_pnl,
+                        included=account_pnl["value"] is not None and not conflict,
+                        available=account_pnl["value"] is not None,
+                        period=period,
+                        interval=period,
+                        method="known_clean_instruments",
+                        coverage=conflicts[scope][0]
+                        if conflict
+                        else {"status": "partial", "reason_codes": ["clean_partial_result"]},
+                        exclusion_reason=conflicts[scope][1] if conflict else None,
+                    )
+        # Existing mixed totals are account-cash based and cannot be reused as
+        # a clean security subtotal. Accounts remain separate, with no rate sum.
+        legacy["mixed_result"]["known_result"] = _unknown("clean_account_totals_not_aggregated")
+        legacy["mixed_result"]["available_component_count"] = sum(
+            c["available"] for c in legacy["mixed_result"]["components"]
+        )
+        legacy["mixed_result"]["included_component_count"] = sum(
+            c["included"] for c in legacy["mixed_result"]["components"]
+        )
+        from hermes_finance.services.clean_instrument_return import clean_gold_metric
+        from hermes_finance.services.owner_manual_gold_history import read_gold_histories
+
+        gold_rows = {
+            (row["account_id"], row["instrument_id"]): row
+            for row in read_gold_histories(session, include_events=False)
+        }
+        for history in legacy["gold"]["histories"]:
+            row = gold_rows[(history["account_id"], history["instrument_id"])]
+            history["total_result"] = clean_gold_metric(
+                row["result"], current=row["currentness"] == "current"
+            )
+            history["realized_result"] = _unknown("clean_gold_decomposition_unavailable")
+            history["unrealized_result"] = _unknown("clean_gold_decomposition_unavailable")
+        for snapshot in legacy["gold"]["snapshots"]:
+            snapshot["unrealized_result"] = _unknown("clean_gold_cost_unavailable")
+            snapshot["cost_return"] = _unknown("clean_gold_cost_unavailable", rate=True)
+        for key, field in (("coupon_income", "coupons"), ("dividend_income", "dividends")):
+            income = legacy[key]
+            source_rows = []
+            for source in indexed.values():
+                result = source["result"]
+                source_rows.append(
+                    {
+                        "scope": source["scope"],
+                        "label": source["label"],
+                        "account_link": source["account_link"],
+                        "period": source["period"],
+                        "valuation_date": source["valuation_date"],
+                        "amount": result[field] if result else _unknown("clean_source_unavailable"),
+                        "proof_status": source["proof_status"],
+                        "included": bool(result),
+                        "exclusion_reason": None if result else "clean_source_unavailable",
+                        "reason_codes": [] if result else ["clean_source_unavailable"],
+                    }
+                )
+            income["accounts"] = source_rows
+            income["selected_accounts"] = len(source_rows)
+            income["included_accounts"] = sum(row["included"] for row in source_rows)
+            income["known_total"] = _unknown("clean_account_totals_not_aggregated")
+        legacy["contract_version"] = "returns_overall_v2"
+        legacy["instruments"] = [instruments[key] for key in sorted(instruments)]
+        return legacy
+
+
 def _known_sum(metrics, *, method):
     """Retain known partial amounts, never promote estimates or unknown to zero."""
     metrics = list(metrics)
@@ -889,6 +1070,223 @@ def read_instrument_card(session, isin, *, overview=None):
             "summary": summary,
             "accounts": accounts,
             "reason_codes": reasons,
+        }
+
+
+def read_clean_instrument_card(session, isin):
+    """Keep original operations while using the overview's clean account periods."""
+    from hermes_finance.services.clean_instrument_return import read_clean_overview
+
+    with source_read_snapshot(session):
+        card = read_instrument_card(session, isin)
+        clean = read_clean_overview(session, isin=isin, include_purchases=True)
+        ai_refs = {
+            account["scope"]: f"source-account-{index}"
+            for index, account in enumerate(clean["accounts"], 1)
+        }
+        by_scope = {
+            account["scope"]: (account, item)
+            for account in clean["accounts"]
+            for item in account["result"]["instruments"]
+            if item["isin"] == isin
+        }
+        identity_conflicts = {
+            account["scope"]
+            for account in card["accounts"]
+            if account.get("exclusion_reason") == "source_account_identity_mapping_conflict"
+        }
+        for account in card["accounts"]:
+            account["ai_account_ref"] = ai_refs.get(account["scope"])
+            pair = by_scope.get(account["scope"])
+            account["clean"] = pair[1] if pair else None
+            if account["clean"] is not None:
+                purchases = account["clean"].pop("purchases", None)
+                account["purchases"] = None if account["scope"] in identity_conflicts else purchases
+            if pair:
+                period = pair[0]["period"]
+                detail = account["detail"]
+                if not detail or detail["period"] != period:
+                    try:
+                        detail = returns_view.read_detail(
+                            session,
+                            scope=account["scope"],
+                            start=period["start"],
+                            end=period["end"],
+                            isin=isin,
+                            native_period=True,
+                        )
+                    except (ValueError, LookupError):
+                        detail = None
+                if detail:
+                    account["detail"] = returns_view.apply_clean_detail(detail, pair[1])
+                else:
+                    account["detail"] = None
+                account.update(
+                    period=period,
+                    valuation_date=pair[1]["closing_date"]
+                    if pair[1]["closing_value"]["value"] is not None
+                    else None,
+                    included=True,
+                    exclusion_reason=None,
+                    reason_codes=["source_account_identity_mapping_conflict"]
+                    if account["scope"] in identity_conflicts
+                    else [],
+                )
+
+        def total(field):
+            if any(
+                account["clean"] and account["scope"] in identity_conflicts
+                for account in card["accounts"]
+            ):
+                return _unknown("source_account_identity_mapping_conflict")
+            periods = {
+                (account["period"]["start"], account["period"]["end"])
+                for account in card["accounts"]
+                if account["clean"] and account["period"]
+            }
+            if len(periods) > 1:
+                return _unknown("instrument_account_periods_differ")
+            identities = [
+                account["canonical_account_id"]
+                for account in card["accounts"]
+                if account["clean"] and account["canonical_account_id"] is not None
+            ]
+            if len(identities) != len(set(identities)):
+                return _unknown("source_account_identity_mapping_conflict")
+            rows = [account["clean"][field] for account in card["accounts"] if account["clean"]]
+            values = [int(row["value"]) for row in rows if row["value"] is not None]
+            return returns_view.metric(
+                sum(values) if values else None,
+                reasons=("clean_partial_result",),
+                method="known_clean_instruments",
+                estimate=True,
+            )
+
+        card["summary"].update(
+            pnl=total("known_result"),
+            coupons=total("coupons"),
+            dividends=total("dividends"),
+            payouts=total("payouts"),
+            valuation_and_trades=total("valuation_and_trades"),
+            redemption=total("redemption"),
+            reported_value=total("closing_value"),
+            costs=_unknown("costs_excluded_from_returns"),
+            taxes=_unknown("costs_excluded_from_returns"),
+            rate=_unknown("combined_rate_periods_and_flows_not_proven", rate=True),
+        )
+        card["contract_version"] = "returns_instrument_card_v2"
+        return card
+
+
+def read_clean_income(session, *, kind):
+    """Expose actual paid income from the same scoped source observations as clean returns."""
+    from hermes_finance.services.clean_instrument_return import read_clean_overview
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    if kind not in {"coupon", "dividend"}:
+        raise ValueError("returns_income_kind_invalid")
+    with source_read_snapshot(session):
+        overview = read_clean_overall(session, include_instrument_details=True)
+        clean = read_clean_overview(session)
+        summary = overview["coupon_income" if kind == "coupon" else "dividend_income"]
+        identity_conflicts = {
+            component["id"]
+            for component in overview["mixed_result"]["components"]
+            if component["coverage"]["status"] == "conflict"
+        }
+        items = {}
+        events = []
+        for account in clean["accounts"]:
+            scope, period = account["scope"], account["period"]
+            native = scope.removeprefix("source:")
+            rows = account["result"]["instruments"]
+            for row in rows:
+                raw = row["coupons" if kind == "coupon" else "dividends"]
+                item = items.setdefault(
+                    row["isin"],
+                    {"isin": row["isin"], "name": row["name"] or row["isin"], "accounts": []},
+                )
+                item["accounts"].append(
+                    {
+                        "scope": scope,
+                        "label": account["label"],
+                        "period": period,
+                        "amount": returns_view.metric(
+                            raw["value"],
+                            reasons=(*raw["reason_codes"], *raw["assumptions"]),
+                            method="clean_instrument_return_v1",
+                            estimate=raw["status"] != "supported",
+                        ),
+                    }
+                )
+            source = read_instrument_returns(
+                session,
+                source_account=native,
+                opening_date=period["start"],
+                closing_date=period["end"],
+                include_monthly_history=False,
+                available_period=True,
+            )
+            for row in source.instruments:
+                for event in row.analysis.events:
+                    if (
+                        event.isin != row.isin
+                        or event.kind != kind.upper()
+                        or not event.current
+                        or not event.counted
+                    ):
+                        continue
+                    for leg in event.cash_legs:
+                        if period["start"] < leg.date <= period["end"]:
+                            events.append(
+                                {
+                                    "scope": scope,
+                                    "label": account["label"],
+                                    "isin": row.isin,
+                                    "name": row.source_name,
+                                    "date": leg.date,
+                                    "amount": returns_view.metric(
+                                        leg.account_cash_kopecks,
+                                        method="credited_payments",
+                                        estimate=bool(event.assumptions),
+                                    ),
+                                }
+                            )
+        for item in items.values():
+            periods = {(a["period"]["start"], a["period"]["end"]) for a in item["accounts"]}
+            amounts = [a["amount"] for a in item["accounts"]]
+            known = [int(a["value"]) for a in amounts if a["value"] is not None]
+            partial = any(a["value"] is None or a["estimate"] for a in amounts)
+            conflicted = len(item["accounts"]) > 1 and any(
+                account["scope"] in identity_conflicts for account in item["accounts"]
+            )
+            item["amount"] = (
+                _unknown("source_account_identity_mapping_conflict")
+                if conflicted
+                else _unknown("instrument_account_periods_differ")
+                if len(periods) > 1
+                else returns_view.metric(
+                    sum(known) if known else None,
+                    reasons=("clean_partial_result",) if partial else (),
+                    method="known_clean_incomes",
+                    estimate=partial,
+                )
+            )
+        return {
+            "contract_version": "returns_income_v2",
+            "kind": kind,
+            "summary": summary,
+            "instruments": [items[key] for key in sorted(items)],
+            "events": events,
+            "reason_codes": ["source_only_not_financial_close"]
+            + (
+                ["source_account_identity_mapping_conflict"]
+                if any(
+                    "source_account_identity_mapping_conflict" in item["amount"]["reason_codes"]
+                    for item in items.values()
+                )
+                else []
+            ),
         }
 
 

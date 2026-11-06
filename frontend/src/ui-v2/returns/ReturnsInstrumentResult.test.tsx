@@ -12,7 +12,7 @@ const setup = (props: Parameters<typeof ReturnsInstrumentResult>[0]) =>
     </MemoryRouter>,
   );
 
-test("shows a separate before-cost result while full result remains unknown", () => {
+test("does not substitute legacy conditional cost estimates for an unknown clean result", () => {
   setup({
     result: {
       pnl: m(null),
@@ -21,9 +21,8 @@ test("shows a separate before-cost result while full result remains unknown", ()
       conditional_rate: m("0.1", "fraction", "modified_dietz"),
     },
   });
-  const estimate = screen.getByRole("region", { name: "Результат без нераспределённых расходов" });
-  expect(estimate).toHaveTextContent("+100 ₽");
-  expect(estimate).toHaveTextContent("10,00%");
+  expect(screen.queryByText("+100 ₽")).toBeNull();
+  expect(screen.queryByText(/распределения расходов/)).toBeNull();
   expect(screen.getAllByText("—")).toHaveLength(2);
 });
 
@@ -51,16 +50,38 @@ test("preserves exact large money and negative period rate from the server", () 
   expect(screen.getByText("+9 007 199 254 740 993,12 ₽")).toBeVisible();
   expect(screen.getByText("−3,13%")).toBeVisible();
   expect(screen.getByText("Modified Dietz · за период, не годовая")).toBeVisible();
-  expect(screen.queryByText("Нужна проверка данных")).toBeNull();
+  expect(screen.queryByText("Не все показатели доступны")).toBeNull();
 });
 test("known zero remains numeric while a missing percentage has a visible explanation", () => {
   setup({ result: { pnl: m("0"), rate: m(null, "fraction", "modified_dietz") } });
   expect(screen.getByText("0 ₽")).toBeVisible();
   expect(screen.getByText("—")).toBeVisible();
-  expect(screen.getByText("Нужна проверка данных")).toBeVisible();
-  expect(screen.getByText(/^Причины:/)).toHaveTextContent(
-    "Не хватает стоимости на границе периода",
+  expect(
+    screen.getAllByText("Не хватает стоимости на границе периода.").some((e) => e.closest("small")),
+  ).toBe(true);
+});
+test("clean partial and a true clean zero remain distinct and visible", () => {
+  const partial = {
+    ...m("1200"),
+    method: "clean_instrument_return_v1",
+    reason_codes: ["clean_partial_result"],
+  };
+  const view = setup({ result: { pnl: partial, rate: m(null, "fraction") } });
+  expect(screen.getByText("Известная часть результата ₽")).toBeVisible();
+  expect(screen.getByText("+12 ₽")).toBeVisible();
+  view.rerender(
+    <MemoryRouter>
+      <ReturnsInstrumentResult
+        result={{
+          pnl: { ...partial, value: "0", reason_codes: [] },
+          rate: m("0", "fraction", "modified_dietz"),
+        }}
+      />
+    </MemoryRouter>,
   );
+  expect(screen.getByText("Результат ₽")).toBeVisible();
+  expect(screen.getByText("0 ₽")).toBeVisible();
+  expect(screen.queryByText("Известная часть результата ₽")).toBeNull();
 });
 test("missing detail never becomes zero or a conditional or partial result", () => {
   const detail = detailFixture();
@@ -95,16 +116,21 @@ test("assumptions on analysis, metrics and events remain visible and deduplicate
   detail.analysis.pnl.assumptions = ["face_value_assumed"];
   detail.analysis.events[0].assumptions = ["income_assumed"];
   setup({ result: detail, analysis: detail.analysis });
-  const notes = screen.getByText(/^Допущения:/);
+  const notes = screen.getByText("Допущения");
   expect(notes).toBeVisible();
-  expect(notes).toHaveTextContent("Номинал сделки принят с допущением");
-  expect(notes).toHaveTextContent("Классификация выплаты основана на правиле по умолчанию");
-  expect(notes.textContent?.match(/Номинал сделки/g)).toHaveLength(1);
+  expect(notes.closest("details")).not.toHaveAttribute("open");
+  notes.click();
+  expect(notes.closest("details")).toHaveTextContent("Номинал сделки принят с допущением");
+  expect(notes.closest("details")).toHaveTextContent(
+    "Классификация выплаты основана на правиле по умолчанию",
+  );
+  expect(notes.closest("details")?.textContent?.match(/Номинал сделки/g)).toHaveLength(1);
 });
 test("absent result shows two unavailable values and a review status", () => {
   const { container } = setup({ result: null });
   expect(within(container).getAllByText("—")).toHaveLength(2);
-  expect(screen.getByText("Нужна проверка данных")).toBeVisible();
+  expect(screen.getByText("Результат недоступен")).toBeVisible();
+  expect(screen.getByText("Доходность недоступна")).toBeVisible();
   expect(screen.queryByText("0 ₽")).toBeNull();
 });
 
@@ -113,5 +139,5 @@ test("excluded or stale events do not label the result with unused assumptions",
   detail.analysis.events[0].assumptions = ["income_assumed"];
   detail.analysis.events[0].current = false;
   setup({ result: detail, analysis: detail.analysis });
-  expect(screen.queryByText(/^Допущения:/)).toBeNull();
+  expect(screen.queryByText("Допущения")).toBeNull();
 });

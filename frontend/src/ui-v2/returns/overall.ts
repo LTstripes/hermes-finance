@@ -108,7 +108,7 @@ export type GoldHistorySummary = {
 };
 export type GoldTarget = { account_id: number; instrument_id: number; label: string };
 export type Overall = {
-  contract_version: "returns_overall_v1";
+  contract_version: "returns_overall_v2";
   mixed_result: MixedResult;
   coupon_income: CouponIncome;
   dividend_income: CouponIncome;
@@ -145,7 +145,7 @@ export async function getOverall(signal: AbortSignal, summaries = false): Promis
     `/api/returns/overall${summaries ? "?include_instrument_summaries=true" : ""}`,
     { signal },
   );
-  if (value.contract_version !== "returns_overall_v1") throw new Error("Return contract mismatch");
+  if (value.contract_version !== "returns_overall_v2") throw new Error("Return contract mismatch");
   return value;
 }
 export function accountHref(scope: string, period: Period | null) {

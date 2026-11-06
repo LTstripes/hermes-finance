@@ -477,6 +477,186 @@ def test_overlaps_deduplicate_trades_and_preserve_income_multiplicity(db, accept
     assert all(len(item.source_references) == 2 for item in result.income)
 
 
+def test_clean_projection_on_overlapping_originals_keeps_known_operands(db, accepted_basis):
+    from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+    extra = (("Купон", BOND, "30"), ("Купон", BOND, "30"))
+    save(db, extra=extra)
+    save(db, extra=extra, marker="overlap")
+    before = snapshot(db)
+    analysis = by_isin(read(db))[BOND].analysis
+    clean = project_clean_analysis(analysis, BOND)
+    assert clean.buys.value == 100_000
+    assert clean.payouts.value == 6_000
+    # Existing bond endpoints do not establish the accrued interest to remove.
+    assert clean.pnl.value is None
+    assert snapshot(db) == before
+
+
+def test_clean_synthetic_x5_and_sber_do_not_inherit_other_redemption(db):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    def instruments(root):
+        x5 = root.find(f".//m:Details[@ISIN1='{ISIN}']", NS)
+        sber = root.find(f".//m:Details[@ISIN1='{BOND}']", NS)
+        x5.set("active_name", "X5 synthetic")
+        sber.set("active_name", "Сбер synthetic")
+        sber.set("active_type", "Акции")
+        collection = root.find(
+            "m:Positions/m:Report/m:Tablix1/m:active_type_Collection/"
+            "m:active_type/m:Details_Collection",
+            NS,
+        )
+        other = deepcopy(sber)
+        other.attrib.update(
+            ISIN1="RU000A000003",
+            active_name="ГТЛК synthetic",
+            active_type="Облигации",
+            income_rest="1",
+            real_rest="0",
+            forward_rest="0",
+            income_volume="1000",
+            real_volume="0",
+        )
+        collection.append(other)
+
+    save(
+        db,
+        stock=("10", "10", "1000", "1100"),
+        bond=("2", "2", "2000", "2100"),
+        trades=(),
+        extra=(("Погашение номинала", "ГТЛК synthetic RU000A000003", "1000"),),
+        mutate=instruments,
+    )
+    with db.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30))
+    rows = {row["isin"]: row for row in result["instruments"]}
+    assert rows[ISIN]["known_result"]["value"] == "10000"
+    assert rows[BOND]["known_result"]["value"] == "10000"
+    assert rows[ISIN]["pnl"]["value"] == "10000", rows[ISIN]["pnl"]
+    assert rows[BOND]["pnl"]["value"] == "10000", rows[BOND]["pnl"]
+    client = TestClient(create_app(database=db))
+    overview = client.get("/api/returns/overall?include_instrument_summaries=true").json()
+    report_response = client.get("/api/export/ai-financial-review/json?format_version=3.0.0")
+    assert report_response.status_code == 200, report_response.text
+    report = report_response.json()["sections"]["clean_returns"]["data"]
+    ai_rows = {row["isin"]: row for row in report["accounts"][0]["instruments"]}
+    for isin in (ISIN, BOND):
+        ordinary = next(row for row in overview["instruments"] if row["isin"] == isin)
+        card = client.get("/api/returns/instrument-card", params={"isin": isin})
+        assert card.status_code == 200, card.text
+        assert ordinary["accounts"][0]["pnl"]["value"] == rows[isin]["pnl"]["value"]
+        assert card.json()["accounts"][0]["clean"]["pnl"] == ai_rows[isin]["pnl"]
+        assert card.json()["accounts"][0]["period"] == report["accounts"][0]["period"]
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("fee", ["5", None])
+def test_clean_api_uses_saved_original_without_account_confirmation(db, fee):
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    save(db, stock=("0", "1", "0", "1100"), bond=None, trades=((ISIN, "1", "1000", "0", fee),))
+    before = snapshot(db)
+    client = TestClient(create_app(database=db))
+    with db.session_factory() as session:
+        payload = jsonable_encoder(
+            read_clean_account(session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30), isin=ISIN)
+        )
+    (row,) = payload["instruments"]
+    assert row["buys"]["value"] == "100000"
+    assert row["pnl"]["value"] == "10000"
+    period = {"start": "2030-03-31", "end": "2030-04-30"}
+    ordinary = client.get("/api/returns/overall?include_instrument_summaries=true")
+    assert ordinary.status_code == 200, ordinary.text
+    normal = ordinary.json()
+    assert normal["contract_version"] == "returns_overall_v2"
+    displayed = next(item for item in normal["instruments"] if item["isin"] == ISIN)
+    assert displayed["accounts"][0]["pnl"]["value"] == row["pnl"]["value"]
+    assert displayed["accounts"][0]["period"] == period
+    card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+    assert card.status_code == 200, card.text
+    card_row = card.json()["accounts"][0]
+    assert card.json()["contract_version"] == "returns_instrument_card_v2"
+    assert card_row["clean"] == row
+    assert card_row["period"] == period
+    selected = client.get("/api/returns/overview", params={"scope": f"source:{ACCOUNT}", **period})
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["contract_version"] == "returns_source_v2"
+    assert selected.json()["selected"]["pnl"]["value"] == row["pnl"]["value"]
+    assert selected.json()["instruments"][0]["pnl"]["value"] == row["pnl"]["value"]
+    detail = client.get(
+        "/api/returns/instrument", params={"scope": f"source:{ACCOUNT}", "isin": ISIN, **period}
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["contract_version"] == "returns_source_detail_v2"
+    assert detail.json()["pnl"]["value"] == row["pnl"]["value"]
+    assert detail.json()["analysis"]["pnl"]["value"] is None
+    assert snapshot(db) == before
+
+
+def test_clean_income_disclosure_matches_overview_and_keeps_repeated_receipts(db):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    save(db, bond=None, trades=(), extra=(("Дивиденды", ISIN, "25"), ("Дивиденды", ISIN, "25")))
+    save(
+        db,
+        bond=None,
+        trades=(),
+        extra=(("Дивиденды", ISIN, "25"), ("Дивиденды", ISIN, "25")),
+        marker="overlap",
+    )
+    before = snapshot(db)
+    client = TestClient(create_app(database=db))
+    overview = client.get("/api/returns/overall?include_instrument_summaries=true").json()
+    response = client.get("/api/returns/income", params={"kind": "dividend"})
+    assert response.status_code == 200, response.text
+    income = response.json()
+    row = next(item for item in overview["instruments"] if item["isin"] == ISIN)
+    assert income["contract_version"] == "returns_income_v2"
+    assert row["accounts"][0]["dividends"]["value"] == "5000"
+    assert income["instruments"][0]["accounts"][0]["amount"]["value"] == "5000"
+    assert [event["amount"]["value"] for event in income["events"]] == ["2500", "2500"]
+    assert snapshot(db) == before
+
+
+def test_clean_instrument_result_ignores_account_costs_and_preserves_receipts(db):
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+
+    save(
+        db,
+        stock=("0", "1", "0", "1100"),
+        bond=None,
+        trades=((ISIN, "1", "1000", "0", "5"),),
+        extra=(
+            ("Комиссия", "Unallocated synthetic charge", "-7"),
+            ("Налог", "Unallocated synthetic tax", "-11"),
+        ),
+    )
+    before = snapshot(db)
+    response = TestClient(create_app(database=db)).get(
+        "/api/returns/overall?include_instrument_summaries=true"
+    )
+    assert response.status_code == 200, response.text
+    item = next(row for row in response.json()["instruments"] if row["isin"] == ISIN)
+    assert item["accounts"][0]["pnl"]["value"] == "10000", item["accounts"][0]["pnl"]
+    assert snapshot(db) == before
+
+
 def test_overlap_conflicting_valuations_and_trades_are_not_selected(db):
     save(db)
     save(

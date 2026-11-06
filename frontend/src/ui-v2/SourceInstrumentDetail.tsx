@@ -314,11 +314,13 @@ export function SourceInstrumentDetail({
   instrumentType = "bond",
   payoutPreviewHere = false,
   personalResult = false,
+  operationsOnly = false,
 }: {
   analysis: InstrumentAnalysis<Money>;
   instrumentType?: string | null;
   payoutPreviewHere?: boolean;
   personalResult?: boolean;
+  operationsOnly?: boolean;
 }) {
   const bond = instrumentType === "bond";
   const estimate = analysis.statement_estimate;
@@ -335,151 +337,157 @@ export function SourceInstrumentDetail({
   }
   return (
     <>
-      <p>
-        Интервал: ({analysis.opening_date}, {analysis.closing_date}].
-      </p>
-      {personalResult && (
+      {!operationsOnly && (
         <>
-          <p className={styles.note}>
-            По сохранённым выпискам выбранного счёта. Расчёт предварительный.
+          <p>
+            Интервал: ({analysis.opening_date}, {analysis.closing_date}].
           </p>
-          <div className={styles.summary}>
-            <Metric title="Мой результат за период, ₽" metric={analysis.pnl} />
-            <div className={styles.card}>
-              <h4>Позиция на {dateText(analysis.closing.date)}</h4>
-              <p className={styles.value}>{money(analysis.closing.reported_value_kopecks)}</p>
-              <p>
-                Количество: {observed(analysis.opening.quantity)} →{" "}
-                {observed(analysis.closing.quantity)}
-              </p>
-              <p className={styles.note}>Стоимость по выписке</p>
-              {analysis.closing.quantity !== null &&
-                /^0+(?:\.0+)?$/.test(analysis.closing.quantity) && (
-                  <p>Позиция закрыта на эту дату</p>
-                )}
-              {bond && analysis.closing.valuation_basis === "reported_unknown" && (
-                <p className={styles.note}>Состав стоимости / НКД не подтверждён.</p>
-              )}
-            </div>
-            <div className={styles.card}>
-              <h4>Полученные выплаты</h4>
-              <p>
-                Купоны: <strong>{money(analysis.components.coupons.value)}</strong>
-              </p>
-              <p className={styles.note}>{statusLabel(analysis.components.coupons.status)}</p>
-              <p>
-                Дивиденды: <strong>{money(analysis.components.dividends.value)}</strong>
-              </p>
-              <p className={styles.note}>{statusLabel(analysis.components.dividends.status)}</p>
+          {personalResult && (
+            <>
               <p className={styles.note}>
-                После удержаний. Уже учтены в результате, когда он доступен.
+                По сохранённым выпискам выбранного счёта. Расчёт предварительный.
               </p>
+              <div className={styles.summary}>
+                <Metric title="Мой результат за период, ₽" metric={analysis.pnl} />
+                <div className={styles.card}>
+                  <h4>Позиция на {dateText(analysis.closing.date)}</h4>
+                  <p className={styles.value}>{money(analysis.closing.reported_value_kopecks)}</p>
+                  <p>
+                    Количество: {observed(analysis.opening.quantity)} →{" "}
+                    {observed(analysis.closing.quantity)}
+                  </p>
+                  <p className={styles.note}>Стоимость по выписке</p>
+                  {analysis.closing.quantity !== null &&
+                    /^0+(?:\.0+)?$/.test(analysis.closing.quantity) && (
+                      <p>Позиция закрыта на эту дату</p>
+                    )}
+                  {bond && analysis.closing.valuation_basis === "reported_unknown" && (
+                    <p className={styles.note}>Состав стоимости / НКД не подтверждён.</p>
+                  )}
+                </div>
+                <div className={styles.card}>
+                  <h4>Полученные выплаты</h4>
+                  <p>
+                    Купоны: <strong>{money(analysis.components.coupons.value)}</strong>
+                  </p>
+                  <p className={styles.note}>{statusLabel(analysis.components.coupons.status)}</p>
+                  <p>
+                    Дивиденды: <strong>{money(analysis.components.dividends.value)}</strong>
+                  </p>
+                  <p className={styles.note}>{statusLabel(analysis.components.dividends.status)}</p>
+                  <p className={styles.note}>
+                    После удержаний. Уже учтены в результате, когда он доступен.
+                  </p>
+                </div>
+              </div>
+              <details>
+                <summary>Доходность в процентах · Modified Dietz за период</summary>
+                <p>
+                  {dateText(analysis.opening_date)} — {dateText(analysis.closing_date)}.
+                  Приблизительная доходность за этот интервал, не годовая. Начало периода не
+                  переносится на первую покупку.
+                </p>
+                <Metric
+                  title="Modified Dietz · приблизительно, за период"
+                  metric={analysis.modified_dietz}
+                  percent
+                />
+              </details>
+            </>
+          )}
+          <details open={personalResult ? undefined : true}>
+            <summary>Количество и оценка на границах периода</summary>
+            <div className={styles.grid}>
+              <Endpoint title="Начало" value={analysis.opening} />
+              <Endpoint title="Конец" value={analysis.closing} />
             </div>
-          </div>
-          <details>
-            <summary>Доходность в процентах · Modified Dietz за период</summary>
+          </details>
+          {!personalResult && (
+            <>
+              <h4>Полный экономический результат</h4>
+              <div className={styles.grid}>
+                <Metric title="Полный P&L, ₽" metric={analysis.pnl} />
+                <Metric
+                  title="Modified Dietz · приблизительно, за период"
+                  metric={analysis.modified_dietz}
+                  percent
+                />
+              </div>
+            </>
+          )}
+          {hasEstimate ? (
+            <details open={personalResult ? undefined : true}>
+              <summary>Условная оценка по стоимости в выписке</summary>
+              <section className={styles.estimate} aria-label="Условная оценка по выписке">
+                <h4>Условная доходность по стоимости из выписки</h4>
+                <p>
+                  {bond
+                    ? "Состав оценки / НКД не подтверждён. "
+                    : "Оценка зависит от допущений источника. "}
+                  Условные показатели не являются полным экономическим результатом.
+                </p>
+                <div className={styles.grid}>
+                  <Metric title="Условный результат, ₽" metric={estimate.pnl} />
+                  <Metric
+                    title="Условный Modified Dietz · приблизительно, за период"
+                    metric={estimate.modified_dietz}
+                    percent
+                  />
+                </div>
+                <Reasons codes={estimate.assumptions} />
+              </section>
+            </details>
+          ) : (
+            <details>
+              <summary>Условная оценка недоступна</summary>
+              <Reasons
+                codes={[...estimate.pnl.reason_codes, ...estimate.modified_dietz.reason_codes]}
+              />
+            </details>
+          )}
+          {!personalResult && (
             <p>
-              {dateText(analysis.opening_date)} — {dateText(analysis.closing_date)}. Приблизительная
-              доходность за этот интервал, не годовая. Начало периода не переносится на первую
-              покупку.
+              <strong>
+                {bond ? "Известный компонент купонов:" : "Известный компонент дивидендов:"}
+              </strong>{" "}
+              {money((bond ? analysis.components.coupons : analysis.components.dividends).value)} ·{" "}
+              {statusLabel(
+                (bond ? analysis.components.coupons : analysis.components.dividends).status,
+              )}
+              . Он не заменяет полный результат.
             </p>
+          )}
+          <details>
+            <summary>Известные компоненты, выплаты и расходы</summary>
             <Metric
-              title="Modified Dietz · приблизительно, за период"
-              metric={analysis.modified_dietz}
-              percent
+              title="Известная часть результата · не полный P&L"
+              metric={analysis.known_subtotal}
             />
+            <div className={styles.grid}>
+              {Object.entries(analysis.components).map(([name, metric]) => (
+                <Metric
+                  key={name}
+                  title={
+                    (
+                      {
+                        buys: "Покупки",
+                        sells: "Продажи",
+                        coupons: "Купоны",
+                        dividends: "Дивиденды",
+                        redemption: "Погашение",
+                        fees: "Отдельные комиссии",
+                        taxes: "Отдельные налоги",
+                        valuation_and_trades: "Оценка и сделки, включая встроенные расходы",
+                      } as Record<string, string>
+                    )[name]
+                  }
+                  metric={metric}
+                />
+              ))}
+            </div>
           </details>
         </>
       )}
-      <details open={personalResult ? undefined : true}>
-        <summary>Количество и оценка на границах периода</summary>
-        <div className={styles.grid}>
-          <Endpoint title="Начало" value={analysis.opening} />
-          <Endpoint title="Конец" value={analysis.closing} />
-        </div>
-      </details>
-      {!personalResult && (
-        <>
-          <h4>Полный экономический результат</h4>
-          <div className={styles.grid}>
-            <Metric title="Полный P&L, ₽" metric={analysis.pnl} />
-            <Metric
-              title="Modified Dietz · приблизительно, за период"
-              metric={analysis.modified_dietz}
-              percent
-            />
-          </div>
-        </>
-      )}
-      {hasEstimate ? (
-        <details open={personalResult ? undefined : true}>
-          <summary>Условная оценка по стоимости в выписке</summary>
-          <section className={styles.estimate} aria-label="Условная оценка по выписке">
-            <h4>Условная доходность по стоимости из выписки</h4>
-            <p>
-              {bond
-                ? "Состав оценки / НКД не подтверждён. "
-                : "Оценка зависит от допущений источника. "}
-              Условные показатели не являются полным экономическим результатом.
-            </p>
-            <div className={styles.grid}>
-              <Metric title="Условный результат, ₽" metric={estimate.pnl} />
-              <Metric
-                title="Условный Modified Dietz · приблизительно, за период"
-                metric={estimate.modified_dietz}
-                percent
-              />
-            </div>
-            <Reasons codes={estimate.assumptions} />
-          </section>
-        </details>
-      ) : (
-        <details>
-          <summary>Условная оценка недоступна</summary>
-          <Reasons
-            codes={[...estimate.pnl.reason_codes, ...estimate.modified_dietz.reason_codes]}
-          />
-        </details>
-      )}
-      {!personalResult && (
-        <p>
-          <strong>
-            {bond ? "Известный компонент купонов:" : "Известный компонент дивидендов:"}
-          </strong>{" "}
-          {money((bond ? analysis.components.coupons : analysis.components.dividends).value)} ·{" "}
-          {statusLabel((bond ? analysis.components.coupons : analysis.components.dividends).status)}
-          . Он не заменяет полный результат.
-        </p>
-      )}
-      <details>
-        <summary>Известные компоненты, выплаты и расходы</summary>
-        <Metric
-          title="Известная часть результата · не полный P&L"
-          metric={analysis.known_subtotal}
-        />
-        <div className={styles.grid}>
-          {Object.entries(analysis.components).map(([name, metric]) => (
-            <Metric
-              key={name}
-              title={
-                (
-                  {
-                    buys: "Покупки",
-                    sells: "Продажи",
-                    coupons: "Купоны",
-                    dividends: "Дивиденды",
-                    redemption: "Погашение",
-                    fees: "Отдельные комиссии",
-                    taxes: "Отдельные налоги",
-                    valuation_and_trades: "Оценка и сделки, включая встроенные расходы",
-                  } as Record<string, string>
-                )[name]
-              }
-              metric={metric}
-            />
-          ))}
-        </div>
-      </details>
       <details open={personalResult ? undefined : true}>
         <summary>Сделки и выплаты ({instrumentEvents.length})</summary>
         <p className={styles.note}>

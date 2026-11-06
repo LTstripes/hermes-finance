@@ -137,6 +137,217 @@ def _saved_investment(db, monkeypatch):
         )
 
 
+def test_clean_ui_and_ai_use_current_exact_investment_proof_with_fee_mismatch(db, monkeypatch):
+    from datetime import UTC, datetime
+
+    import test_statement_import_mybroker_preflight as fixture_module
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.main import create_app
+    from hermes_finance.services.ai_financial_review import assemble_ai_financial_review
+    from hermes_finance.services.clean_instrument_return import read_clean_overview
+
+    original = fixture_module.investment_original
+
+    def with_different_fee():
+        root = ET.fromstring(original())
+        root.find(".//{MyBroker}Details[@trade_no]").set("summ_nkd", "0")
+        for row in root.findall(".//{MyBroker}rn"):
+            operation = row.find("{MyBroker}oper_type")
+            if operation.get("oper_type", "").startswith("Комиссия по сделке"):
+                row.find(".//{MyBroker}p_code[@volume]").set("volume", "-11.00")
+        return ET.tostring(root, encoding="utf-8")
+
+    monkeypatch.setattr(fixture_module, "investment_original", with_different_fee)
+    _saved_investment(db, monkeypatch)
+    with db.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=PROOF_END)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+        source = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=PROOF_START,
+            closing_date=PROOF_END,
+            available_period=True,
+        )
+        analysis = source.instruments[0].analysis
+        assert analysis.events[0].native_trade_amount_kopecks is not None, (
+            analysis.events,
+            analysis.reason_codes,
+            analysis.coverage,
+        )
+        assert getattr(analysis.coverage, "fee_only_bridge", False), (
+            analysis.reason_codes,
+            analysis.coverage,
+            source.instruments[0].instrument_type,
+        )
+        assert source.instruments[0].instrument_type == "stock", source.instruments[0]
+        from hermes_finance.services.clean_instrument_return import project_clean_analysis
+
+        direct = project_clean_analysis(analysis, "RU000A000000", instrument_type="stock")
+        assert direct.pnl.value == 10000, (direct, analysis)
+        clean = read_clean_overview(session)
+        assert clean["accounts"][0]["period"] == {"start": PROOF_START, "end": PROOF_END}, clean[
+            "accounts"
+        ][0]["period"]
+        row = clean["accounts"][0]["result"]["instruments"][0]
+        assert row["buys"]["value"] == "100000", row
+        assert row["pnl"]["value"] == "10000"
+        ai = assemble_ai_financial_review(
+            session,
+            generated_at=datetime(2030, 2, 1, tzinfo=UTC),
+            evaluated_on=date(2030, 2, 1),
+            format_version="3.0.0",
+        )
+        ai_row = ai["sections"]["clean_returns"]["data"]["accounts"][0]["instruments"][0]
+        assert ai_row["pnl"]["value"] == "10000"
+    response = TestClient(create_app(database=db)).get(
+        "/api/returns/overall?include_instrument_summaries=true"
+    )
+    assert response.status_code == 200
+    assert response.json()["instruments"][0]["accounts"][0]["pnl"]["value"] == "10000"
+    assert snapshot(db) == before
+
+
+def test_available_period_without_dates_keeps_native_reader(db, monkeypatch):
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _saved_investment(db, monkeypatch)
+
+    def unexpected_proof(*args, **kwargs):
+        pytest.fail("an unbounded available period must not select the latest investment proof")
+
+    monkeypatch.setattr(proofs, "instrument_result", unexpected_proof)
+    with db.session_factory() as session:
+        assert read_instrument_returns(session, source_account=ACCOUNT, available_period=True)
+
+
+def test_clean_exact_period_does_not_drop_other_overlapping_source_instruments(db, monkeypatch):
+    from hermes_finance.services.clean_instrument_return import read_clean_overview
+
+    _saved_investment(db, monkeypatch)
+    save(db, month=1, stock=None, bond=("0", "1", "0", "1100"), trades=(), marker="second")
+    with db.session_factory() as session:
+        overview = read_clean_overview(session)
+    isins = {
+        row["isin"] for account in overview["accounts"] for row in account["result"]["instruments"]
+    }
+    assert {"RU000A000000", "RU000A000001"} <= isins
+
+
+def test_empty_exact_proof_does_not_hide_available_native_instrument(db, monkeypatch):
+    from hermes_finance.services.source_instrument_returns import (
+        SourceInstrumentReturns,
+        read_instrument_returns,
+    )
+
+    _saved_investment(db, monkeypatch)
+    monkeypatch.setattr(
+        proofs,
+        "instrument_result",
+        lambda *args, **kwargs: SourceInstrumentReturns(ACCOUNT, (), (), ()),
+    )
+    with db.session_factory() as session:
+        result = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=PROOF_START,
+            closing_date=PROOF_END,
+            available_period=True,
+        )
+    assert any(row.isin == "RU000A000000" for row in result.instruments)
+
+
+def test_stale_exact_proof_keeps_available_native_observations(db, monkeypatch):
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _saved_investment(db, monkeypatch)
+    with db.session_factory() as session:
+        classification = session.scalar(
+            select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
+        )
+        classification.classification = (
+            "unknown" if classification.classification != "unknown" else "fee"
+        )
+        session.commit()
+    with db.session_factory() as session:
+        assert proofs.read_reports(session, source_account=ACCOUNT)[0]["status"] == "stale"
+        result = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=PROOF_START,
+            closing_date=PROOF_END,
+            available_period=True,
+        )
+    row = next(row for row in result.instruments if row.isin == "RU000A000000")
+    assert "investment_proof_stale" not in row.analysis.reason_codes
+
+
+def test_backup_copy_stale_proof_preserves_observed_clean_components(db, monkeypatch, tmp_path):
+    from shutil import copyfile
+
+    import test_statement_import_mybroker_preflight as fixture_module
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.database import create_database
+    from hermes_finance.main import create_app
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    original = fixture_module.investment_original
+
+    def stock_without_nkd():
+        root = ET.fromstring(original())
+        root.find(".//{MyBroker}Details[@trade_no]").set("summ_nkd", "0")
+        return ET.tostring(root, encoding="utf-8")
+
+    monkeypatch.setattr(fixture_module, "investment_original", stock_without_nkd)
+    _saved_investment(db, monkeypatch)
+    with db.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=PROOF_END)
+    db.engine.dispose()
+    copy_path = tmp_path / "synthetic-backup-copy.sqlite3"
+    copyfile(db.database_path, copy_path)
+    copied = create_database(copy_path)
+    try:
+        before = snapshot(copied)
+        before_bytes = copy_path.read_bytes()
+        with copied.session_factory() as session:
+            assert proofs.read_reports(session, source_account=ACCOUNT)[0]["status"] == "stale"
+            clean = read_clean_account(
+                session,
+                ACCOUNT,
+                PROOF_START,
+                PROOF_END,
+                isin="RU000A000000",
+                include_purchases=True,
+            )
+        row = clean["instruments"][0]
+        assert row["buys"]["value"] == "100000", row
+        assert row["closing_value"]["value"] == "110000", row
+        assert row["pnl"]["value"] == "10000", row
+        with TestClient(create_app(copied)) as client:
+            response = client.get("/api/returns/instrument-card", params={"isin": "RU000A000000"})
+            ai = client.get(
+                "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
+            )
+        assert response.status_code == 200
+        assert ai.status_code == 200
+        account = response.json()["accounts"][0]
+        ai_account = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+        assert account["clean"]["buys"]["value"] == "100000"
+        assert account["clean"]["closing_value"]["value"] == "110000"
+        assert account["ai_account_ref"] == ai_account["account_ref"]
+        assert account["period"] == ai_account["period"]
+        assert ai_account["instruments"][0]["buys"]["value"] == "100000"
+        assert snapshot(copied) == before
+        assert copy_path.read_bytes() == before_bytes
+    finally:
+        copied.engine.dispose()
+
+
 def test_v3_proof_remains_current_only_with_exact_unchanged_dependencies(db, monkeypatch):
     with monkeypatch.context() as previous:
         previous.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_v3")

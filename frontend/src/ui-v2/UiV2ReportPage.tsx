@@ -98,7 +98,7 @@ function ReportValues({ point }: { point: CapitalCompositionPoint }) {
               {values[metric.testId]}
             </p>
             {metric.primary ? (
-              <PortfolioCoverageNote coverage={point.portfolio_source_coverage} />
+              <PortfolioCoverageNote coverage={point.portfolio_source_coverage} month={point} />
             ) : null}
             <p className={styles.metricDetail}>{metric.detail}</p>
           </article>

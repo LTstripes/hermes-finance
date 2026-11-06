@@ -507,7 +507,8 @@ def api_overview(db, start=START, end=END):
     app.dependency_overrides[session_for_request] = session
     with TestClient(app) as client:
         response = client.get(
-            "/api/returns/overview", params={"scope": SCOPE, "start": start, "end": end}
+            "/api/returns/overview",
+            params={"scope": SCOPE, "start": start, "end": end, "basis": "legacy"},
         )
     assert response.status_code == 200, response.text
     return Overview.model_validate(response.json())
@@ -1101,7 +1102,13 @@ def test_detail_api_reuses_dated_analysis_with_provenance_unknowns_and_replay(db
         for isin in (ISIN, BOND):
             response = client.get(
                 "/api/returns/instrument",
-                params={"scope": SCOPE, "start": START, "end": END, "isin": isin},
+                params={
+                    "scope": SCOPE,
+                    "start": START,
+                    "end": END,
+                    "isin": isin,
+                    "basis": "legacy",
+                },
             )
             assert response.status_code == 200, response.text
             assert response.headers["cache-control"] == "no-store"
@@ -1251,8 +1258,10 @@ def test_detail_api_preserves_persisted_payout_and_stale_link(db, stale):
     if stale:
         assert payout["effective_isin"] is source_payout["effective_isin"] is None
         assert "payout_link_stale" in payout["reason_codes"]
-        assert detail["pnl"]["value"] is detail["rate"]["value"] is None
-        assert detail["analysis"]["known_subtotal"]["status"] == "partial"
+        assert detail["pnl"]["value"] == "10000", source["instruments"][0]["analysis"]["coverage"]
+        assert "clean_partial_result" in detail["pnl"]["reason_codes"]
+        assert detail["rate"]["value"] is None
+        assert detail["clean"]["known_result"]["status"] == "partial"
         assert not detail["analysis"]["coverage"]["payouts"]["complete"]
     else:
         assert payout["effective_isin"] == ISIN

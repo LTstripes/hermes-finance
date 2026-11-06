@@ -119,6 +119,7 @@ def test_preview_apply_readback_exact_bridge_and_closed_months_unchanged(source)
     assert preview["action"] == "create" and preview["can_apply"]
     assert list(session.scalars(select(OwnerManualGoldHistory))) == []
     assert economic_rows(database) == before
+
     response, _ = confirm(session, intent(source))
     row = gold.read_gold_history(session, response["history"]["history_id"])
     assert response["accepted_revision"] == 1 and not response["duplicate"]
@@ -134,6 +135,39 @@ def test_preview_apply_readback_exact_bridge_and_closed_months_unchanged(source)
     assert row["valuation"]["date"] == "2033-03-29"
     assert row["valuation"]["snapshot_date"] == "2033-03-31"
     assert row["result"]["valuation_date"] == "2033-03-29"
+    assert economic_rows(database) == before
+
+
+@pytest.mark.parametrize("fee_unknown", [False, True])
+def test_clean_overview_gold_ignores_fees_without_changing_receipt(source, fee_unknown):
+    from hermes_finance.services.ai_financial_review import assemble_ai_financial_review
+    from hermes_finance.services.returns_overall import read_clean_overall
+
+    database, session, *_ = source
+    payload = intent(source)
+    if fee_unknown:
+        payload["events"][0].update(fee_state="unknown", fee_rub=None)
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[session_for_request] = lambda: session
+    preview = TestClient(app).post("/api/owner-manual-gold-history/preview", json=payload)
+    assert preview.status_code == 200
+    assert preview.json()["clean_result"]["value"] == "950000"
+    response, request = confirm(session, payload)
+    before = economic_rows(database)
+    overview = read_clean_overall(session)
+    history = overview["gold"]["histories"][0]
+    assert history["total_result"]["value"] == "950000"
+    assert history["realized_result"]["value"] is None
+    assert history["unrealized_result"]["value"] is None
+    report = assemble_ai_financial_review(session, format_version="3.0.0")
+    exported = report["sections"]["clean_returns"]["data"]["gold"][0]
+    assert exported["total_result"] == history["total_result"]
+    assert exported["valuation_date"] == history["valuation_date"]
+    assert (
+        gold.apply_gold_history(session, request)["accepted_revision"]
+        == response["accepted_revision"]
+    )
     assert economic_rows(database) == before
 
 
@@ -196,9 +230,16 @@ def test_stale_preview_rejects_without_source_effects(source, dependency):
     ],
 )
 def test_incomplete_and_unproved_quantity_never_become_zero_result(source, change, reason):
+    from hermes_finance.services.clean_instrument_return import clean_gold_metric
+
     response, _ = confirm(source[1], intent(source, **change))
     assert response["history"]["result"]["total_result_kopecks"] is None
     assert reason in response["history"]["reason_codes"]
+    clean = clean_gold_metric(response["history"]["result"])
+    assert clean["value"] is None
+    assert reason in clean["reason_codes"]
+    assert response["history"]["result"]["buy_amount_kopecks"] == "3200000"
+    assert response["history"]["result"]["sale_amount_kopecks"] == "1000000"
 
 
 def test_unknown_fees_stay_unknown_and_known_zero_is_explicit(source):

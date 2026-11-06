@@ -53,7 +53,7 @@ function ReportRowCells({ row }: { row: ArchiveReportRow }) {
             : "—"}
           {coverage && (coverage.status !== "complete" || partial) ? (
             <span className={reportStyles.coverageLine}>
-              <PortfolioCoverageNote coverage={point.portfolio_source_coverage} />
+              <PortfolioCoverageNote coverage={point.portfolio_source_coverage} month={point} />
             </span>
           ) : null}
           {partial ? (

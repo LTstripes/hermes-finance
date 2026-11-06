@@ -27,7 +27,7 @@ export function overallFixture(): Overall {
     rate: m("-0.04", "fraction"),
   };
   return {
-    contract_version: "returns_overall_v1",
+    contract_version: "returns_overall_v2",
     dividend_income: {
       known_total: m("700", "kopecks", "known_source_history_dividends"),
       partial: true,
@@ -221,8 +221,33 @@ export function instrumentCardFixture(isin = "RU000A000002"): InstrumentCard {
     event.trade_time = "2030-04-12 10:30:00";
     event.cash_settlement_date = event.depository_settlement_date = "2030-04-14";
   }
+  const clean = (detail: typeof detailA) => {
+    const part = (value: string | null) => ({
+      value,
+      status: value === null ? ("unavailable" as const) : ("supported" as const),
+      reason_codes: [],
+      assumptions: [],
+    });
+    return {
+      isin,
+      opening_date: detail.period.start,
+      closing_date: detail.period.end,
+      opening_value: part(detail.analysis.opening.economic_value_kopecks),
+      closing_value: part(detail.analysis.closing.economic_value_kopecks),
+      buys: part(detail.buys.value),
+      sells: part(detail.sells.value),
+      coupons: part(detail.coupons.value),
+      dividends: part(detail.dividends.value),
+      payouts: part(null),
+      redemption: part(null),
+      valuation_and_trades: part(null),
+      known_result: part(detail.pnl.value),
+      pnl: part(detail.pnl.value),
+      modified_dietz: part(detail.rate.value),
+    };
+  };
   return {
-    contract_version: "returns_instrument_card_v1",
+    contract_version: "returns_instrument_card_v2",
     isin,
     name: isin === "RU000A000003" ? "Проданная облигация" : "Учебная акция",
     kind: "stock",
@@ -233,6 +258,7 @@ export function instrumentCardFixture(isin = "RU000A000002"): InstrumentCard {
       pnl: m("800"),
       coupons: m("3500"),
       dividends: m("700"),
+      payouts: m("4200"),
       valuation_and_trades: m("-3400"),
       redemption: m("0"),
       costs: m("0"),
@@ -253,6 +279,7 @@ export function instrumentCardFixture(isin = "RU000A000002"): InstrumentCard {
         exclusion_reason: null,
         reason_codes: [],
         detail: detailA,
+        clean: clean(detailA),
       },
       {
         scope: "source:SYNTH-B",
@@ -265,6 +292,7 @@ export function instrumentCardFixture(isin = "RU000A000002"): InstrumentCard {
         exclusion_reason: null,
         reason_codes: [],
         detail: detailB,
+        clean: clean(detailB),
       },
     ],
     reason_codes: [],
@@ -275,7 +303,7 @@ export function incomeFixture(kind: IncomeKind = "coupon"): Income {
     kind === "coupon" ? overallFixture().coupon_income : overallFixture().dividend_income;
   const amount = m(kind === "coupon" ? "3500" : "700");
   return {
-    contract_version: "returns_income_v1",
+    contract_version: "returns_income_v2",
     kind,
     summary,
     instruments: [

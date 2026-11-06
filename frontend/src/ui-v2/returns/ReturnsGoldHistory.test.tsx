@@ -123,7 +123,8 @@ test("gold preview binds exact intent; confirmation waits for independent GET be
   const preview = await screen.findByRole("region", { name: "Предпросмотр истории золота" });
   expect(preview).toHaveTextContent("2044-03-30");
   expect(preview).toHaveTextContent("снимок месяца 2044-03-31");
-  expect(preview).toHaveTextContent("Налоги не предоставлены");
+  expect(preview).toHaveTextContent("Комиссии и налоги не входят в результат");
+  expect(preview).toHaveTextContent("1 000,00 ₽");
   fireEvent.click(within(preview).getByRole("button", { name: "Подтвердить сохранение истории" }));
   await waitFor(() => expect(api.calls.some((call) => call.path.endsWith("/50"))).toBe(true));
   expect(screen.queryByText(/подтверждена независимым чтением/)).toBeNull();
@@ -249,7 +250,7 @@ test("gold saved DRAFT quote keeps its actual quote date and separate snapshot d
   expect(screen.queryByLabelText(/Новая цена/)).toBeNull();
 });
 
-test("gold missing quote preserves independently known realized result without a valuation date", async () => {
+test("gold missing quote preserves known trade amounts without inventing a result", async () => {
   const history = goldHistoryFixture();
   history.valuation = null;
   history.result.total_result_kopecks = null;
@@ -261,8 +262,8 @@ test("gold missing quote preserves independently known realized result without a
   history.result.unrealized_reason_codes = ["gold_quote_unavailable"];
   install({ histories: [history] });
   setup();
-  const realized = await screen.findByText("От продажи");
-  expect(realized.nextElementSibling).toHaveTextContent("0,00 ₽");
+  const sales = await screen.findByText("Продажи");
+  expect(sales.nextElementSibling).toHaveTextContent("0,00 ₽");
   expect(screen.getByText(/Операции учтены по/)).toHaveTextContent("оценка не подтверждена");
   expect(screen.queryByText("Изменение стоимости остатка")).toBeNull();
   expect(screen.queryByText("Общий результат", { selector: "dt" })).toBeNull();

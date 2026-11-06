@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, field_serializer
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.clean_return_types import CleanInstrument
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.instrument_return import InstrumentAnalysis
 from hermes_finance.services import returns_basket, returns_view
@@ -124,6 +125,7 @@ class AcceptedIncome(AcceptedIncomeAmounts):
 
 
 class Overview(DTO):
+    contract_version: Literal["returns_source_v2", "returns_capital_v1"] | None = None
     account_link: AccountLink | None = None
     scope: str
     breakdown: ReturnBreakdown | None
@@ -180,6 +182,8 @@ class Event(DTO):
 
 
 class Detail(Instrument):
+    contract_version: Literal["returns_source_detail_v2"] | None = None
+    clean: CleanInstrument | None = None
     scope: str
     analysis: InstrumentAnalysis
     opening_quantity: str | None
@@ -239,18 +243,27 @@ def context(response: Response, session: Session = Depends(session_for_request))
     return returns_view.read_context(session)
 
 
-@router.get("/overview", response_model=Overview)
-def overview(selected: dict = Depends(selection), session: Session = Depends(session_for_request)):
-    return read(returns_view.read_overview, session, **selected)
-
-
-@router.get("/instrument", response_model=Detail)
-def instrument(
-    isin: Annotated[str, Query(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")],
+@router.get("/overview", response_model=Overview, response_model_exclude_unset=True)
+def overview(
+    basis: Literal["clean", "legacy"] = "clean",
     selected: dict = Depends(selection),
     session: Session = Depends(session_for_request),
 ):
-    return read(returns_view.read_detail, session, isin=isin, **selected)
+    reader = (
+        returns_view.read_clean_source_overview if basis == "clean" else returns_view.read_overview
+    )
+    return read(reader, session, **selected)
+
+
+@router.get("/instrument", response_model=Detail, response_model_exclude_unset=True)
+def instrument(
+    isin: Annotated[str, Query(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")],
+    basis: Literal["clean", "legacy"] = "clean",
+    selected: dict = Depends(selection),
+    session: Session = Depends(session_for_request),
+):
+    reader = returns_view.read_clean_source_detail if basis == "clean" else returns_view.read_detail
+    return read(reader, session, isin=isin, **selected)
 
 
 class BasketCell(DTO):

@@ -155,7 +155,11 @@ class AiFinancialReviewValidationError(RuntimeError):
 
 def _schema_path(version: str = SCHEMA_VERSION) -> Path:
     filename = (
-        "ai_financial_review.v2.schema.json"
+        "ai_financial_review.v3_1.schema.json"
+        if version == "3.1.0"
+        else "ai_financial_review.v3.schema.json"
+        if version == "3.0.0"
+        else "ai_financial_review.v2.schema.json"
         if version in ai_review_payloads.VERSIONS
         else "ai_financial_review.schema.json"
     )
@@ -1657,7 +1661,10 @@ def assemble_ai_financial_review(
 ) -> dict[str, object]:
     """Compose the canonical AI financial review from accepted read models."""
 
-    if format_version not in SUPPORTED_V1_VERSIONS | ai_review_payloads.VERSIONS:
+    if format_version not in SUPPORTED_V1_VERSIONS | ai_review_payloads.VERSIONS | {
+        "3.0.0",
+        "3.1.0",
+    }:
         raise ValueError("unsupported AI financial review format version")
     version = forecast_version.strip()
     if not version:
@@ -1955,20 +1962,48 @@ def assemble_ai_financial_review(
         ),
     }
 
+    clean_data = None
     with source_read_snapshot(session):
         source_account_refs = {}
-        sections["source_returns"] = source_returns_section(
-            session,
-            as_of_date=date.fromisoformat(str(package_metadata["as_of_date"])),
-            reporting_period=reporting_period,
-            source_account_refs=source_account_refs,
-            financial_account_refs=account_ref_by_id,
-        )
-        sections["returns_overall"] = returns_overall_section(
-            session,
-            source_account_refs=source_account_refs,
-            source_section=sections["source_returns"],
-        )
+        if format_version in {"3.0.0", "3.1.0"}:
+            from hermes_finance.services.clean_instrument_return import (
+                clean_export_data,
+                read_clean_overview,
+            )
+            from hermes_finance.services.returns_overall import read_clean_overall
+
+            clean_overall = read_clean_overall(session)
+            conflicts = {
+                component["id"]
+                for component in clean_overall["mixed_result"]["components"]
+                if component.get("exclusion_reason") == "source_account_identity_mapping_conflict"
+            }
+            purchases = format_version == "3.1.0"
+            clean_data = clean_export_data(
+                read_clean_overview(session, include_purchases=purchases),
+                gold=clean_overall["gold"],
+                include_purchases=purchases,
+                purchase_conflicts=conflicts,
+            )
+            sections["source_returns"] = _section(
+                status="unavailable", reasons=("superseded_by_clean_returns",), data=None
+            )
+            sections["returns_overall"] = _section(
+                status="unavailable", reasons=("superseded_by_clean_returns",), data=None
+            )
+        else:
+            sections["source_returns"] = source_returns_section(
+                session,
+                as_of_date=date.fromisoformat(str(package_metadata["as_of_date"])),
+                reporting_period=reporting_period,
+                source_account_refs=source_account_refs,
+                financial_account_refs=account_ref_by_id,
+            )
+            sections["returns_overall"] = returns_overall_section(
+                session,
+                source_account_refs=source_account_refs,
+                source_section=sections["source_returns"],
+            )
 
     coverage = {
         "domains": {
@@ -2166,6 +2201,51 @@ def assemble_ai_financial_review(
         _legacy_returns_context(report)
         report["schema_version"] = "1.5.0"
         report["$schema"] = SCHEMA_URI.replace(SCHEMA_VERSION, "1.5.0")
+    if format_version in {"3.0.0", "3.1.0"}:
+        report["schema_version"] = format_version
+        report["$schema"] = SCHEMA_URI.replace(SCHEMA_VERSION, format_version)
+        report["sections"].pop("source_returns")
+        report["sections"].pop("returns_overall")
+        report["sections"]["clean_returns"] = _section(
+            status="partial", reasons=("source_only_not_financial_close",), data=clean_data
+        )
+        # The accepted Performance section is an account-cash calculation and
+        # includes actual deductions. Do not present it as the clean return.
+        report["sections"]["performance"] = _section(
+            status="unavailable", reasons=("clean_capital_return_unavailable",), data=None
+        )
+        domains = report["coverage"]["domains"]
+        domains.pop("source_returns", None)
+        domains.pop("returns_overall", None)
+        domains["clean_returns"] = {
+            "status": "partial",
+            "reason_codes": ["source_only_not_financial_close"],
+        }
+        domains["performance"] = {
+            "status": "unavailable",
+            "reason_codes": ["clean_capital_return_unavailable"],
+        }
+        report["field_states"] = [
+            row
+            for row in report["field_states"]
+            if row["path"]
+            not in {"sections.source_returns", "sections.returns_overall", "sections.performance"}
+        ]
+        report["warnings"] = [
+            row
+            for row in report["warnings"]
+            if row["scope"]
+            not in {"sections.source_returns", "sections.returns_overall", "sections.performance"}
+        ]
+        report["field_states"].append(
+            {
+                "path": "sections.performance",
+                "status": "unavailable",
+                "reason_codes": ["clean_capital_return_unavailable"],
+                "message": "The cash-based Performance return is not a clean security return.",
+            }
+        )
+        report["field_states"].sort(key=lambda item: str(item["path"]))
     if format_version in ai_review_payloads.VERSIONS:
         report = ai_review_payloads.normalize_source_payloads(report, format_version=format_version)
     validate_ai_financial_review(report)
