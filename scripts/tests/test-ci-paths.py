@@ -21,13 +21,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ci_paths import (
     AREAS,
+    AUTONOMOUS_BACKEND_TESTS,
+    AUTONOMOUS_SCRIPT_TESTS,
     BACKEND_AREAS,
     BACKEND_TEST_AREAS,
     FRONTEND_AREAS,
     classify_repo,
     selected_areas,
 )
+from ci_run_receipt import inherited_verdict, timing_summary
+from ci_run_receipt import main as receipt_main
 from docs_only_ci import DiffRecord
+from visual_audit_paths import should_run
 
 ROOT = Path(__file__).resolve().parents[2]
 FULL = frozenset(AREAS)
@@ -79,9 +84,43 @@ def record(path: str, **overrides: object) -> DiffRecord:
 
 
 class SelectionTests(unittest.TestCase):
+    def test_autonomous_test_consumers_and_unverified_tests(self) -> None:
+        for name in AUTONOMOUS_BACKEND_TESTS:
+            self.assertTrue((ROOT / "backend/tests" / name).is_file())
+            self.assertEqual(
+                selected_areas([record("backend/tests/" + name)]), {"backend"}
+            )
+        for path in AUTONOMOUS_SCRIPT_TESTS:
+            self.assertTrue((ROOT / path).is_file())
+            self.assertIn(
+                "python3 " + path, (ROOT / ".github/workflows/ci.yml").read_text()
+            )
+            self.assertEqual(selected_areas([record(path)]), {"checks"})
+        for path in (
+            "frontend/src/lib/money.test.ts",
+            "frontend/src/ui-v2/UiV2MonthSources.test.tsx",
+        ):
+            self.assertEqual(selected_areas([record(path)]), {"frontend"})
+        self.assertEqual(
+            selected_areas([record("backend/tests/test_unverified.py")]),
+            BACKEND_TEST_AREAS,
+        )
+        for path in [*(ROOT / "frontend/src").rglob("*"),
+                     *(ROOT / "frontend/e2e").rglob("*"),
+                     *(ROOT / "frontend").glob("*.ts")]:
+            if path.suffix not in {".ts", ".tsx"} or ".test." in path.name:
+                continue
+            # Product source must not consume unit tests. A new dependency must
+            # be classified before standalone test changes can remain narrow.
+            self.assertNotRegex(
+                path.read_text(encoding="utf-8"),
+                r'(?:from\s*|import\s*\()["\'][^"\']*\.test(?:[.\'"/])',
+                str(path),
+            )
+
     def test_backend_test_only_pr_omits_heavy_browser_and_visual(self) -> None:
         selected = selected_areas([record("backend/tests/test_accounts.py")])
-        self.assertEqual(selected, frozenset({"backend", "release", "windows"}))
+        self.assertEqual(selected, frozenset({"backend"}))
 
     def test_frontend_source_selects_both_heavy_areas(self) -> None:
         selected = selected_areas([record("frontend/src/App.tsx")])
@@ -173,7 +212,6 @@ class SelectionTests(unittest.TestCase):
     def test_shared_build_dependency_release_and_unknown_inputs_are_full(self) -> None:
         for path in (
             "scripts/prepare-runtime.ps1",
-            "scripts/tests/test-ci-paths.py",
             "scripts/ci_paths.py",
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",
@@ -297,9 +335,13 @@ class GitTests(unittest.TestCase):
 
     def test_standalone_backend_test_and_shared_fixture_actual_diffs(self) -> None:
         head = self.commit("backend/tests/test_accounts.py", b"synthetic test module\n")
-        self.assertEqual(classify_repo(self.repo, self.base, head), BACKEND_TEST_AREAS)
+        self.assertEqual(
+            classify_repo(self.repo, self.base, head), frozenset({"backend"})
+        )
         docs = self.commit("README.md", b"synthetic docs\n")
-        self.assertEqual(classify_repo(self.repo, self.base, docs), BACKEND_TEST_AREAS)
+        self.assertEqual(
+            classify_repo(self.repo, self.base, docs), frozenset({"backend"})
+        )
         fixture = self.commit("backend/tests/_statement_pdf.py", b"synthetic helper\n")
         self.assertEqual(classify_repo(self.repo, docs, fixture), BACKEND_AREAS)
         source = self.commit(
@@ -405,19 +447,24 @@ class WorkflowTests(unittest.TestCase):
         visual_run: str = "false",
         visual_result: str = "success",
         cancelled: bool = False,
+        action: str = "synchronize",
+        label: str = "",
     ) -> bool:
         expr = self.condition(job)
-        for label in ("ci:full", "ci:windows"):
+        for control_label in ("ci:full", "ci:windows"):
             expr = expr.replace(
-                f"contains(github.event.pull_request.labels.*.name, '{label}')",
-                str(label in {value.lower() for value in labels}),
+                f"contains(github.event.pull_request.labels.*.name, '{control_label}')",
+                str(control_label in {value.lower() for value in labels}),
             )
         values = {
             "github.event_name": event,
+            "github.event.action": action,
+            "github.event.label.name": label.lower(),
             "needs.docs-only-classify.result": result,
             "needs.docs-only-classify.outputs.mode": mode,
             "needs.visual-audit-paths.outputs.run": visual_run,
             "needs.visual-audit-paths.result": visual_result,
+            "needs.privacy.outputs.visual": visual_run,
         }
         values.update(
             {
@@ -427,10 +474,114 @@ class WorkflowTests(unittest.TestCase):
         )
         for name in sorted(values, key=len, reverse=True):
             expr = expr.replace(name, repr(values[name]))
-        expr = expr.replace("always()", "True").replace("!cancelled()", str(not cancelled))
+        expr = expr.replace("!(", "not (")
+        expr = expr.replace("always()", "True").replace(
+            "!cancelled()", str(not cancelled)
+        )
         expr = expr.replace("!True", "False").replace("!False", "True")
         expr = " ".join(expr.replace("&&", " and ").replace("||", " or ").split())
         return bool(eval(expr, {"__builtins__": {}}, {}))
+
+    def test_frontend_unit_tests_omit_both_visual_workflows_and_keep_fallbacks(self) -> None:
+        paths = ['frontend/src/lib/money.test.ts', 'frontend/src/ui-v2/UiV2MonthSources.test.tsx']
+        self.assertEqual(selected_areas([record(path) for path in paths]), {'frontend'})
+        self.assertFalse(should_run(paths))
+        self.assertFalse(self.runs('visual-audit', visual_run='false'))
+        self.workflow = (ROOT / '.github/workflows/ui-v2-evidence.yml').read_text(encoding='utf-8')
+        self.assertIn('fetch-depth: 0', self.job('privacy'))
+        self.assertIn('python3 scripts/ci_paths.py --base "$BASE_SHA" --head "$HEAD_SHA"', self.job('privacy'))
+        self.assertIn('visual: $' + '{{ steps.classify.outputs.visual }}', self.job('privacy'))
+        self.assertFalse(self.runs('ui-evidence', visual_run='false'))
+        for output in ('true', '', 'garbage'):
+            self.assertTrue(self.runs('ui-evidence', visual_run=output))
+        self.assertTrue(self.runs('ui-evidence', visual_run='false', labels=('ci:full',)))
+
+    def test_label_event_matrix_and_failed_same_head_cannot_turn_green(self) -> None:
+        for job in (*OWNERS, "visual-audit", "docs-fast-path"):
+            for label in ("triage", "ci:full-extra", ""):
+                self.assertFalse(
+                    self.runs(
+                        job,
+                        action="labeled",
+                        label=label,
+                        labels=("ci:full", "ci:windows"),
+                    )
+                )
+            for label in ("ci:full", "ci:windows"):
+                self.assertEqual(
+                    self.runs(job, action="labeled", label=label, labels=(label,)),
+                    self.runs(job, labels=(label,)),
+                )
+        current = {"id": 20, "head_sha": "synthetic"}
+        previous = {
+            "id": 19,
+            "head_sha": "synthetic",
+            "event": "pull_request",
+            "pull_requests": [{"number": 3}],
+            "status": "completed",
+            "conclusion": "success",
+            "html_url": "synthetic-run",
+        }
+        self.assertEqual(inherited_verdict([previous], current, 3), previous)
+        for status, conclusion in (
+            ("completed", "failure"),
+            ("completed", "cancelled"),
+            ("in_progress", None),
+            ("queued", None),
+            ("completed", "skipped"),
+        ):
+            with self.assertRaises(ValueError):
+                inherited_verdict(
+                    [
+                        {**previous, "id": 18},
+                        {**previous, "status": status, "conclusion": conclusion},
+                    ],
+                    current,
+                    3,
+                )
+        for runs in (
+            [],
+            [{**previous, "head_sha": "other"}],
+            [{**previous, "pull_requests": []}],
+        ):
+            with self.assertRaises(ValueError):
+                inherited_verdict(runs, current, 3)
+        final = self.job("ci-ok")
+        self.assertIn("run: python3 scripts/ci_run_receipt.py", final)
+        self.assertIn("ORGANIZATIONAL_LABEL:", final)
+        self.assertIn("actions: read", final)
+
+    def test_attempt_receipt_separates_rerun_pause_from_execution(self) -> None:
+        def run(number, start):
+            return {
+                "run_attempt": number,
+                "run_started_at": f"2040-01-01T{start}Z",
+                "status": "completed",
+            }
+
+        def job(start, end):
+            return {
+                "name": "synthetic",
+                "started_at": f"2040-01-01T{start}Z",
+                "completed_at": f"2040-01-01T{end}Z",
+                "steps": [],
+            }
+
+        summary = timing_summary(
+            [
+                (run(1, "00:00:00"), [job("00:00:00", "00:19:00")]),
+                (run(2, "01:21:31"), [job("01:21:31", "01:29:56")]),
+            ],
+            "2040-01-01T01:29:56Z",
+        )
+        self.assertIn("| 1 | 1140 | — |", summary)
+        self.assertIn("| 2 | 505 | 3751 |", summary)
+        self.assertIn("1140s", summary)
+
+    def test_receipt_api_unavailable_cannot_green_an_organizational_label(self) -> None:
+        for organizational, expected in (("true", 1), ("false", 0)):
+            with patch.dict(os.environ, {"ORGANIZATIONAL_LABEL": organizational, "GITHUB_RUN_ID": "20"}), patch("ci_run_receipt.get", side_effect=OSError("synthetic unavailable")):
+                self.assertEqual(receipt_main(), expected)
 
     def test_linux_job_conditions_for_every_area_and_failure_state(self) -> None:
         for job in ("backend-quality", "backend-tests", "frontend", "g04-browser"):
@@ -646,7 +797,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("    name: ci-ok\n", final)
         self.assertIn("    runs-on: ubuntu-latest\n", final)
         self.assertIn("NEEDS_JSON: $" + "{{ toJSON(needs) }}", final)
-        script = textwrap.dedent(final.split("python3 - <<'PY'\n", 1)[1]).split("\nPY", 1)[0]
+        script = textwrap.dedent(
+            final.split("python3 - <<'PY'\n", 1)[1].split("          PY", 1)[0]
+        )
         for job in dependencies:
             for result in ("success", "skipped", "failure", "cancelled", "unknown"):
                 results = {name: {"result": "skipped"} for name in dependencies}
@@ -664,7 +817,9 @@ class WorkflowTests(unittest.TestCase):
 
     def test_ci_ok_summary_preserves_skips_and_failure_results(self) -> None:
         final = self.job("ci-ok")
-        script = textwrap.dedent(final.split("python3 - <<'PY'\n", 1)[1]).split("\nPY", 1)[0]
+        script = textwrap.dedent(
+            final.split("python3 - <<'PY'\n", 1)[1].split("          PY", 1)[0]
+        )
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             summary = Path(directory) / "summary.md"
             results = {

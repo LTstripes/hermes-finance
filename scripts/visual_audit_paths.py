@@ -32,6 +32,10 @@ def normalize_path(path: str) -> str:
 
 def is_visual_audit_path(path: str) -> bool:
     normalized = normalize_path(path)
+    # Match ci_paths' autonomous Vitest inputs. Unsafe records still force full
+    # coverage through ci_paths; this path-only helper cannot grant that omission.
+    if normalized.startswith("frontend/src/") and normalized.endswith((".test.ts", ".test.tsx")):
+        return False
     if normalized in VISUAL_AUDIT_PATHS:
         return True
     if normalized.startswith(VISUAL_AUDIT_PREFIXES):

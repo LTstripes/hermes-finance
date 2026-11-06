@@ -650,22 +650,37 @@ Do not copy matrix counts, shard lists, timeout values or selected Windows node 
 
 For ordinary PRs, the area classifier selects G04/real-backend journeys for
 frontend changes and backend source/migration changes. Standalone backend-test-only
-PRs retain backend, release and Windows coverage but omit browser journeys. Shared
+PRs retain backend coverage but omit browser journeys; only the classifier's
+audited autonomous modules also omit release/Windows jobs. Unverified modules
+keep release/Windows coverage. Frontend unit-test-only inputs select the existing
+frontend job; production imports of unit tests are prohibited by the path checks.
+The explicit autonomous scripts-test list runs in its existing Privacy consumer,
+without a general scripts exemption. Shared
 backend test fixtures/helpers and their imported test families retain browser
 coverage; an import-closure regression guards these dependencies. The
 mocked visual audit follows frontend inputs; shared/unknown paths, unsafe Git
 records, unavailable classification or missing outputs retain full coverage.
 Both endpoint and PR-owned diffs are checked so a base advance cannot hide an
-input. The UI evidence workflow retains its separate frontend path filter.
+input. The UI evidence workflow retains its frontend trigger and uses the same
+exact-head area classifier before its heavy job. Standalone unit tests also omit
+the legacy visual-path match; unsafe Git records still force full coverage.
 
 Add the existing `ci:full` label to a PR to request all product jobs, including
 browser and visual checks. The label event starts CI; the full visual run keeps
 all viewports/scenarios without duplicate-evidence omission. Canonical main
 pushes remain full, and release verification does not consult PR area outputs.
+The `ci:windows` label retains the existing Windows/release opt-in. Other label
+events omit product jobs and cannot cancel product runs. Their required verdict
+inherits only the latest completed successful CI run for the same PR/head;
+failed, cancelled, pending or unavailable evidence fails closed. A skipped suite
+does not repair previous failed evidence.
 The required `ci-ok` gate waits for every CI job, reports actual results in its
 log and summary (including `skipped`), and rejects failures/cancellations. An
 omitted job is not evidence that its suite passed. Repository protection and
 release safety requirements remain unchanged.
+Its bounded Actions snapshot reports attempt wall time separately from pauses
+before reruns and lists expensive completed jobs/steps when available. These
+overlapping durations are not CPU time, runner queue measurements or a new ledger.
 
 The [documentation-only classifier](../scripts/docs_only_ci.py) permits only its proven non-executable prose fast path. A green Documentation fast path reports classification/privacy/diff evidence, not omitted product suites. Canonical main pushes and release gates retain full verification.
 

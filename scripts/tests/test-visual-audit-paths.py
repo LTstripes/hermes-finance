@@ -34,6 +34,8 @@ class VisualAuditPathTests(unittest.TestCase):
             "docs/RELEASE_AUTOMATION.md",
             "README.md",
             "frontend/README.md",
+            "frontend/src/lib/money.test.ts",
+            "frontend/src/ui-v2/UiV2MonthSources.test.tsx",
         ]
         for path in paths:
             with self.subTest(path=path):

@@ -427,12 +427,39 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
         new URL(response.url()).pathname === "/api/broker-months/apply" &&
         response.request().method() === "POST",
     );
+    // Reproduce the observed 5.02 s intake read without slowing the backend or
+    // changing Apply/Close semantics. Arm before Apply invalidates the queries.
+    let delayedIntakeReads = 0;
+    const intakeListUrl = (url: URL) =>
+      url.pathname === "/api/broker-months/intakes" &&
+      url.searchParams.get("include_unbound") === "true" &&
+      !url.searchParams.has("reporting_month_id");
+    await page.route(intakeListUrl, async (route) => {
+      const response = await route.fetch();
+      await new Promise((resolve) => setTimeout(resolve, 5500));
+      delayedIntakeReads++;
+      await route.fulfill({ response });
+    });
+    const sourcesRefreshed = page.waitForResponse(
+      (response) => intakeListUrl(new URL(response.url())) && response.request().method() === "GET",
+      // This read took 5.02 s in the failing CI trace. Bound only this source
+      // refresh, leaving the suite and normal locator budgets unchanged.
+      { timeout: 15000 },
+    );
     await apply.click();
     expect((await applied).ok()).toBe(true);
     await expect(
       page.getByText(/Сохранённый результат подтверждён независимым чтением/),
     ).toBeVisible();
-    await page.waitForLoadState("networkidle");
+    const refreshed = await sourcesRefreshed;
+    expect(refreshed.ok()).toBe(true);
+    expect(await refreshed.finished()).toBeNull();
+    expect(delayedIntakeReads).toBeGreaterThan(0);
+    // The disclosure is rendered only after the intake query leaves isFetching.
+    await expect(
+      page.getByText("Подробности инструментов и предварительных выплат", { exact: true }),
+    ).toBeVisible({ timeout: 15000 });
+    await page.unroute(intakeListUrl);
     await openDisclosure(page, "Подробности инструментов и предварительных выплат");
     for (const name of ["Synthetic stock", "Synthetic bond"]) {
       await page.getByRole("button", { name, exact: true }).click();
