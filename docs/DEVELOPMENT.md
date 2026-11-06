@@ -1078,6 +1078,13 @@ operations, not user-facing SLAs.
 <a id="d5"></a>
 ## 5. Delivery, integration and documentation maintenance
 
+For mechanical version preparation, first author the target release notes, then
+run `python scripts/prepare_release_version.py X.Y.Z` in the task checkout. The
+helper refuses inconsistent existing identities and missing notes; it changes
+local metadata and version assertions only. Review the diff and run the existing
+independent release identity tests before delivery. It does not create a tag,
+publish a release, merge, update Stable or perform UAT.
+
 Worker may commit/push the assigned branch and open the authorized PR. Return baseline/target, exact candidate SHA, branch/workspace, changed files/stat, actual checks/limits and final HEAD/remote/working-tree readback. Use one linked issue/PR receipt; no new process ledger. When required, independent review and Owner UAT remain separate gates.
 
 Integrator inspects exact diff/privacy/contracts and applicable review/UAT, then uses expected-head guarded integration when authorized. Current required PR checks must pass on the accepted candidate; the final canonical main push CI must pass on the exact release SHA. A full CI per small task is not a policy requirement, but configured required jobs remain binding until safely changed. Only main is canonical/releasable; integration/* is staging. Changed semantics return for review; proven nonsemantic edits may reuse applicable evidence with original scope. Worker cannot merge, force-push, delete branches/tags, publish or change repository settings without separate authority.
