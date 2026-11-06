@@ -25,9 +25,32 @@ AREAS = ("backend", "frontend", "browser", "visual", "release", "windows")
 # Real-backend journeys consume backend source/migrations and the frontend.
 # Standalone backend tests do not change those journeys. Mocked visual tests use
 # frontend inputs; unknown/shared inputs still select every area.
-# Keep the existing release and Windows ownership for all backend changes.
+# Runtime and shared test consumers keep their existing ownership.
 BACKEND_AREAS = frozenset({"backend", "browser", "release", "windows"})
 BACKEND_TEST_AREAS = frozenset({"backend", "release", "windows"})
+AUTONOMOUS_BACKEND_TESTS = frozenset(
+    f"test_{name}.py"
+    for name in (
+        "accounts",
+        "cash",
+        "comments",
+        "debts",
+        "deposits",
+        "expenses",
+        "goals",
+        "incomes",
+    )
+)
+AUTONOMOUS_SCRIPT_TESTS = frozenset(
+    f"scripts/tests/test-{name}.py"
+    for name in (
+        "ci-paths",
+        "docs-only-ci",
+        "pr-concurrency",
+        "ui-evidence-identity",
+        "visual-audit-paths",
+    )
+)
 FRONTEND_AREAS = frozenset({"frontend", "browser", "visual", "windows"})
 # Dependency/build/toolchain changes are shared, even under a product tree.
 PRODUCT_PREFIXES = {
@@ -57,6 +80,10 @@ BROWSER_TEST_PREFIXES = (
 def backend_test_areas(path: str) -> frozenset[str]:
     """Only standalone top-level test modules may omit browser journeys."""
     relative = path.removeprefix("backend/tests/")
+    # Audited direct consumers: backend matrix only. Unknown/new tests retain
+    # the old conservative selection until their shared consumers are checked.
+    if relative in AUTONOMOUS_BACKEND_TESTS:
+        return frozenset({"backend"})
     if (
         "/" not in relative
         and relative.startswith("test_")
@@ -78,7 +105,8 @@ def selected_areas(records: list[DiffRecord] | None) -> frozenset[str]:
             record.binary
             or record.status not in {"A", "M"}
             or record.new_mode != REGULAR_FILE
-            or record.old_mode != (ABSENT_MODE if record.status == "A" else REGULAR_FILE)
+            or record.old_mode
+            != (ABSENT_MODE if record.status == "A" else REGULAR_FILE)
             or record.old_path not in {None, record.new_path}
             or not _plain_relative_path(record.new_path)
             or any(ord(char) < 32 or ord(char) == 127 for char in record.new_path)
@@ -87,10 +115,21 @@ def selected_areas(records: list[DiffRecord] | None) -> frozenset[str]:
         # Executable and packaging inputs are shared even inside a product tree.
         # Keep this before prose/product matching so safety jobs cannot be omitted.
         parts = record.new_path.lower().split("/")
-        if parts[-1].endswith(".ps1") or {"scripts", "packaging", "release", "installer"}.intersection(
-            parts[:-1]
-        ):
+        if record.new_path in AUTONOMOUS_SCRIPT_TESTS:
+            selected.add("checks")  # Privacy runs these; this is not docs-only.
+            continue
+        if parts[-1].endswith(".ps1") or {
+            "scripts",
+            "packaging",
+            "release",
+            "installer",
+        }.intersection(parts[:-1]):
             return full
+        if record.new_path.startswith("frontend/src/") and record.new_path.endswith(
+            (".test.ts", ".test.tsx")
+        ):
+            selected.add("frontend")
+            continue
         if ordinary_doc_path(record.new_path):
             continue
         for prefix, areas in PRODUCT_PREFIXES.items():
@@ -125,7 +164,9 @@ def classify_repo(repo: Path, base: str, head: str) -> frozenset[str]:
         # detection before they can narrow this gate.
         for record in records:
             if not ordinary_doc_path(record.new_path):
-                code, blob, _stderr = _git(repo, "cat-file", "blob", f"{head}:{record.new_path}")
+                code, blob, _stderr = _git(
+                    repo, "cat-file", "blob", f"{head}:{record.new_path}"
+                )
                 if code != 0 or b"\0" in blob:
                     return full
         return selected_areas(records)

@@ -30,12 +30,18 @@ RELEASE_GROUP = "hermes-finance-guarded-release"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
 
 
+LABEL_GUARD = "(!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows')"
+CI_PREDICATE = PREDICATE.replace(
+    "&& !startsWith", "&& " + LABEL_GUARD + " && !startsWith", 1
+)
+
+
 def group_expression(workflow_file: str) -> str:
     return (
         "format('{0}--{1}--"
         + workflow_file
         + "--{2}', github.repository, github.workflow, case("
-        + PREDICATE
+        + (CI_PREDICATE if workflow_file == "ci.yml" else PREDICATE)
         + ", format('pr-{0}', github.event.pull_request.number || github.run_id), "
         + "format('run-{0}', github.run_id)))"
     )
@@ -281,9 +287,11 @@ class Run:
     base_ref: str | None = None
     pr_number: int | None = None
     sha: str | None = None
+    action: str = "synchronize"
+    label: str = ""
 
     def context(self) -> dict:
-        event: dict = {}
+        event: dict = {"action": self.action, "label": {"name": self.label}}
         if self.pr_number is not None:
             event["pull_request"] = {"number": self.pr_number}
         github = {
@@ -390,7 +398,7 @@ class PullRequestConcurrencyTests(unittest.TestCase):
             self.expressions["ui-v2-evidence.yml"][0],
             group_expression("ui-v2-evidence.yml"),
         )
-        self.assertEqual(self.expressions["ci.yml"][1], PREDICATE)
+        self.assertEqual(self.expressions["ci.yml"][1], CI_PREDICATE)
         self.assertEqual(self.expressions["ui-v2-evidence.yml"][1], PREDICATE)
         self.assertNotEqual(
             self.expressions["ci.yml"][0], self.expressions["ui-v2-evidence.yml"][0]
@@ -407,8 +415,8 @@ class PullRequestConcurrencyTests(unittest.TestCase):
             self.ui,
         )
         self.assertNotIn("\n  push:\n", self.ui)
-        self.assertEqual(self.ci.count("uses: actions/checkout@"), 13)
-        self.assertEqual(self.ci.count(CHECKOUT_PIN), 13)
+        self.assertEqual(self.ci.count("uses: actions/checkout@"), 14)
+        self.assertEqual(self.ci.count(CHECKOUT_PIN), 14)
         self.assertEqual(self.ui.count(CHECKOUT_PIN), 2)
         self.assertEqual(self.ui.count("ref: ${{ github.event.pull_request.head.sha }}"), 2)
         self.assertIn("needs: privacy", self.ui)
@@ -472,6 +480,34 @@ class PullRequestConcurrencyTests(unittest.TestCase):
         self.assertFalse(accepted_success_evidence("cancelled", artifact_name("aaa"), "bbb"))
         self.assertTrue(accepted_success_evidence("success", artifact_name("bbb"), "bbb"))
         self.assertNotEqual(artifact_name("aaa"), artifact_name("bbb"))
+
+    def test_organizational_label_neither_cancels_nor_queues_product_ci(self) -> None:
+        ordinary = Run("ci.yml", "CI", "pull_request", 100, pr_number=10, sha="same")
+        label = Run(
+            "ci.yml",
+            "CI",
+            "pull_request",
+            101,
+            pr_number=10,
+            sha="same",
+            action="labeled",
+            label="triage",
+        )
+        self.assertFalse(cancels(self._policy(ordinary), self._policy(label), 100, 101))
+        self.assertFalse(waits(self._policy(ordinary), self._policy(label), 100, 101))
+        for name in ("ci:full", "ci:windows"):
+            control = Run(
+                "ci.yml",
+                "CI",
+                "pull_request",
+                102,
+                pr_number=10,
+                action="labeled",
+                label=name,
+            )
+            self.assertTrue(
+                cancels(self._policy(ordinary), self._policy(control), 100, 102)
+            )
 
     def test_different_prs_do_not_share_a_cancel_group(self) -> None:
         first = self._policy(

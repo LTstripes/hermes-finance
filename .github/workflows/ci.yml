@@ -13,8 +13,8 @@ permissions:
 # their own stale attempts. main and integration/* head/base each use a unique
 # run group, so they are neither cancelled nor queued behind another run.
 concurrency:
-  group: ${{ format('{0}--{1}--ci.yml--{2}', github.repository, github.workflow, case(github.event_name == 'pull_request' && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/'), format('pr-{0}', github.event.pull_request.number || github.run_id), format('run-{0}', github.run_id))) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/') }}
+  group: ${{ format('{0}--{1}--ci.yml--{2}', github.repository, github.workflow, case(github.event_name == 'pull_request' && (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/'), format('pr-{0}', github.event.pull_request.number || github.run_id), format('run-{0}', github.run_id))) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') && !startsWith(github.head_ref || '', 'integration/') && !startsWith(github.base_ref || '', 'integration/') }}
 
 jobs:
   privacy:
@@ -86,6 +86,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.backend != 'false'))
@@ -125,6 +126,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.backend != 'false'))
@@ -223,6 +225,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
@@ -268,6 +271,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.frontend != 'false'))
@@ -309,6 +313,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.browser != 'false'))
@@ -476,6 +481,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' || needs.visual-audit-paths.outputs.run == 'true' ||
       needs.visual-audit-paths.result != 'success' ||
       needs.visual-audit-paths.outputs.run != 'false' ||
@@ -552,6 +558,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
@@ -625,6 +632,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
@@ -666,6 +674,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
@@ -762,6 +771,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       github.event_name == 'pull_request' &&
       needs.docs-only-classify.result == 'success' &&
       needs.docs-only-classify.outputs.mode == 'docs-only' &&
@@ -821,6 +831,9 @@ jobs:
       - docs-fast-path
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     timeout-minutes: 5
 
     steps:
@@ -848,3 +861,15 @@ jobs:
               print(f"CI jobs did not succeed: {bad}", file=sys.stderr)
               sys.exit(1)
           PY
+
+      - name: Check out receipt implementation
+        if: always()
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Summarize attempts or retain prior label verdict
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ORGANIZATIONAL_LABEL: ${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && !(github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') }}
+        run: python3 scripts/ci_run_receipt.py
