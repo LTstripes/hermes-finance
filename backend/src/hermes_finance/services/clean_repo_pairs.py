@@ -446,9 +446,17 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
             return analysis, _barrier_analysis(
                 analysis, analysis.opening_date + timedelta(days=1), views
             )
-        # A prior leg can represent an obligation still open at the boundary.
-        # Do not infer that it was closed merely from its own settlement date.
-        if execution <= analysis.closing_date:
+        # A conflicting delivery can precede execution. Missing delivery has
+        # no provable lower bound, even for an execution after this period.
+        try:
+            delivery = date.fromisoformat(trade["depo_settlement_date"])
+        except (ValueError, TypeError, KeyError):
+            delivery = None
+        if (
+            execution <= analysis.closing_date
+            or delivery is None
+            or delivery <= analysis.closing_date
+        ):
             relevant.append(trade)
     if not relevant:
         return analysis, analysis
@@ -520,6 +528,35 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
 def _barrier_analysis(analysis, barrier, views):
     """Isolate unknown REPO from FIFO only; keep unrelated blockers intact."""
     proven_local = set()
+    conflicting_identities = {}
+
+    def witnessed_conflict(event):
+        refs = []
+        for view in views:
+            identities = repo_return_identities(view)
+            for observed in view["document"].get("trades", ()):
+                if observed.get("core", {}).get(
+                    "source_account"
+                ) != event.native_source_account or not set(observed.get("ids", ())) & set(
+                    event.native_ids
+                ):
+                    continue
+                identity = identities.get(observed.get("ordinal"))
+                if (
+                    observed.get("section") != "completed"
+                    or observed.get("core", {}).get("isin") != event.isin
+                    or tuple(observed.get("ids", ())) != event.native_ids
+                    or identity is None
+                    or identity[0] != event.native_identity
+                ):
+                    return False
+                refs.append(f"trade:{view['id']}:{observed['section']}:{observed['ordinal']}")
+        return (
+            len(refs) >= 2
+            and len(refs) == len(set(refs))
+            and set(refs) == set(event.source_references)
+        )
+
     for view in views:
         identities = repo_return_identities(view)
         for trade in view["document"].get("trades", ()):
@@ -534,6 +571,7 @@ def _barrier_analysis(analysis, barrier, views):
                     "trade_missing_settlement",
                     "depository_settlement_missing",
                     "trade_currency_unsupported",
+                    "overlapping_trade_conflict",
                 }
                 if (
                     event.native_identity == witness[0]
@@ -555,14 +593,78 @@ def _barrier_analysis(analysis, barrier, views):
                         "depository_settlement_missing" not in reasons
                         or trade.get("depo_settlement_date") is None
                     )
+                    and ("overlapping_trade_conflict" not in reasons or witnessed_conflict(event))
                 ):
                     proven_local.add(event.event_key)
+                    if "overlapping_trade_conflict" in reasons:
+                        conflicting_identities[event.native_identity] = (
+                            event.native_source_account,
+                            event.isin,
+                            event.native_ids,
+                            event.source_references,
+                        )
+    for event in analysis.events:
+        if (
+            event.kind == "UNRESOLVED"
+            and event.attribution_basis == "conflicting_trade_observation"
+            and event.native_identity in conflicting_identities
+            and (event.native_source_account, event.isin, event.native_ids, event.source_references)
+            == conflicting_identities[event.native_identity]
+            and set(event.reason_codes) <= {"repo_trade_unsupported", "overlapping_trade_conflict"}
+        ):
+            proven_local.add(event.event_key)
     repo_events = [
         e
         for e in analysis.events
         if set(e.reason_codes) == {"repo_trade_unsupported"} or e.event_key in proven_local
     ]
     remaining = tuple(e for e in analysis.events if e not in repo_events)
+    # A net position that is not explained by all known security movements
+    # may conceal an earlier purchase. A later REPO boundary cannot prove
+    # which lot an earlier sale consumed in that case.
+    quantity_known = analysis.opening.quantity is not None and analysis.closing.quantity is not None
+    quantity_events = [e for e in analysis.events if e.kind in {"BUY", "SELL", "REDEMPTION"}]
+    if any(e.quantity_delta is None or e.isin is None or not e.current for e in quantity_events):
+        quantity_known = False
+    for event in quantity_events:
+        if "repo_trade_unsupported" not in event.reason_codes:
+            if set(event.reason_codes) - {"trade_components_missing", "trade_nkd_basis_unknown"}:
+                quantity_known = False
+            continue
+        witnesses = []
+        for view in views:
+            identities = repo_return_identities(view)
+            for trade in view["document"].get("trades", ()):
+                if trade.get("core", {}).get(
+                    "source_account"
+                ) != event.native_source_account or not set(trade.get("ids", ())) & set(
+                    event.native_ids
+                ):
+                    continue
+                identity = identities.get(trade.get("ordinal"))
+                try:
+                    valid = (
+                        trade.get("section") == "completed"
+                        and trade.get("core", {}).get("isin") == event.isin
+                        and identity is not None
+                        and identity[0] == event.native_identity
+                        and Decimal(trade["core"]["quantity"]) == event.quantity_delta
+                    )
+                except (ValueError, TypeError, KeyError, ArithmeticError):
+                    valid = False
+                witnesses.append(valid)
+        if not witnesses or not all(witnesses):
+            quantity_known = False
+    if quantity_known:
+        with localcontext() as context:
+            context.prec = 200
+            quantity_known = (
+                analysis.opening.quantity
+                + sum((e.quantity_delta for e in quantity_events), Decimal(0))
+                == analysis.closing.quantity
+            )
+    if not quantity_known:
+        barrier = analysis.opening_date + timedelta(days=1)
     coverage = _RepoBarrierCoverage(analysis.coverage, barrier=barrier)
     for name, ignored in (
         (
@@ -586,6 +688,7 @@ def _barrier_analysis(analysis, barrier, views):
             "trade_missing_settlement",
             "depository_settlement_missing",
             "trade_currency_unsupported",
+            "overlapping_trade_conflict",
         }:
             if any(
                 e.event_key in proven_local and reason in e.reason_codes for e in repo_events

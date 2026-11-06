@@ -1598,6 +1598,197 @@ def test_pending_b_identifier_is_rejected_by_existing_parser():
         parse_mybroker(ElementTree.tostring(root), FILENAME)
 
 
+def test_unexplained_closing_quantity_prevents_false_closed_purchase(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def mutate(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+            if index == 3:
+                row.set("trade_no", "B90001")
+                row.set("repo_no", "B90002")
+                row.set("comment", "репо ч.1")
+
+    save(
+        db,
+        stock=("0", "2", "0", "200"),
+        bond=None,
+        trades=(
+            (ISIN, "1", "100", "0", "0"),
+            (ISIN, "-1", "180", "0", "0"),
+            (ISIN, "1", "100", "0", "0"),
+        ),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    instrument = result["instruments"][0]
+    assert instrument["sells"]["value"] == "18000"
+    rows = instrument["purchases"]
+    assert rows and rows[0]["cost_kopecks"] == "10000"
+    assert rows[0]["price_result_kopecks"] is None and rows[0]["status"] == "partial"
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    with db.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(db)
+    with TestClient(create_app(db)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+    assert card.status_code == ai.status_code == 200
+    account = card.json()["accounts"][0]
+    exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert (
+        account["ai_account_ref"] == exported["account_ref"]
+        and account["period"] == exported["period"]
+    )
+    assert account["purchases"][0]["price_result_kopecks"] is None
+    assert exported["instruments"][0]["purchases"][0]["price_result_kopecks"] is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("sale_delivery", [2, 3, 4])
+def test_repo_boundary_considers_ordinary_delivery_after_execution(db, sale_delivery):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def mutate(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set(
+                "save_depo_settlement_date", f"{sale_delivery if index == 2 else index:02}.04.2030"
+            )
+            if index == 3:
+                row.set("trade_no", "B90001")
+                row.set("repo_no", "B90002")
+                row.set("comment", "репо ч.1")
+
+    save(
+        db,
+        stock=("0", "1", "0", "100"),
+        bond=None,
+        trades=(
+            (ISIN, "1", "100", "0", "0"),
+            (ISIN, "-1", "180", "0", "0"),
+            (ISIN, "1", "100", "0", "0"),
+        ),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    rows = result["instruments"][0]["purchases"]
+    assert rows and rows[0]["cost_kopecks"] == "10000"
+    if sale_delivery == 2:
+        assert rows[0]["price_result_kopecks"] == "8000"
+    else:
+        assert rows[0]["price_result_kopecks"] is None and rows[0]["status"] == "partial"
+
+
+@pytest.mark.parametrize(
+    "conflict", ["late", "early_delivery", "missing_delivery", "different_qty", "ordinary"]
+)
+def test_late_repo_conflict_preserves_only_proven_closed_prefix(db, conflict):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def make(changed):
+        def mutate(root):
+            for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+                stamp = f"{index:02}.04.2030 09:00:00"
+                row.set("db_time", f"{stamp}\n{stamp}")
+                row.set("save_settlement_date", f"{index:02}.04.2030")
+                row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+                if index == 3:
+                    row.set("trade_no", "B90001")
+                    row.set("repo_no", "B90002")
+                    row.set("comment", "репо ч.1")
+                    if changed:
+                        row.set("summ_trade", "110")
+                        if conflict == "early_delivery":
+                            row.set("save_depo_settlement_date", "01.04.2030")
+                        if conflict == "missing_delivery":
+                            row.attrib.pop("save_depo_settlement_date", None)
+                        if conflict == "different_qty":
+                            row.set("qty", "2")
+                if index == 1 and changed and conflict == "ordinary":
+                    row.set("summ_trade", "101")
+
+        return mutate
+
+    args = dict(
+        stock=("0", "1", "0", "100"),
+        bond=None,
+        trades=(
+            (ISIN, "1", "100", "0", "0"),
+            (ISIN, "-1", "180", "0", "0"),
+            (ISIN, "1", "100", "0", "0"),
+        ),
+    )
+    save(db, **args, mutate=make(False), marker="first")
+    save(db, **args, mutate=make(True), marker="second")
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    rows = result["instruments"][0]["purchases"]
+    if conflict == "late":
+        observed = by_isin(read(db))[ISIN].analysis
+        assert rows and rows[0]["price_result_kopecks"] == "8000", (
+            observed.coverage,
+            [
+                (e.event_key, e.native_identity, e.reason_codes, e.source_references)
+                for e in observed.events
+            ],
+        )
+    else:
+        assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    with db.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(db)
+    with TestClient(create_app(db)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+    assert card.status_code == ai.status_code == 200
+    account = card.json()["accounts"][0]
+    exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert account["ai_account_ref"] == exported["account_ref"]
+    assert account["period"] == exported["period"]
+    exported_rows = exported["instruments"][0]["purchases"]
+    card_rows = account["purchases"]
+    if card_rows is None:
+        assert exported_rows is None
+    else:
+        assert [{k: v for k, v in row.items() if k != "id"} for row in card_rows] == [
+            {k: v for k, v in row.items() if k != "id"} for row in exported_rows
+        ]
+        assert (card_rows[0]["price_result_kopecks"] == "8000") == (conflict == "late")
+    assert snapshot(db) == before
+
+
 def test_fifo_repo_custody_cannot_ignore_unavailable_intermediate_inventory(db):
     from hermes_finance.services.clean_instrument_return import read_clean_account
 

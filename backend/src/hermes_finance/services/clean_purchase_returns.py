@@ -203,7 +203,12 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
     trades = ordered
     if repo_barrier is not None:
         repo_index = next(
-            (i for i, row in enumerate(trades) if row[1] >= repo_barrier), len(trades)
+            (
+                i
+                for i, row in enumerate(trades)
+                if max(row[1], row[3], row[0].depository_settlement_date) >= repo_barrier
+            ),
+            len(trades),
         )
         ambiguous_at = min(ambiguous_at, repo_index) if ambiguous_at is not None else repo_index
 
