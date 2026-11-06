@@ -907,9 +907,11 @@ Unexpected tag/release state fails closed. The helper never force-updates or del
 
 `docs/release-notes-X.Y.Z.md` is the publication payload, not the durable place
 for a pending candidate gate. Before the release-control request is created,
-owner UAT must be complete and candidate-only status wording must be replaced
-with publication-ready facts. Candidate preparation state remains in the
-release record and execution history until that gate passes.
+complete any Owner UAT required by the change or an explicit accepted gate;
+otherwise record that it was not performed. Replace candidate-only status
+wording with publication-ready facts, never claiming an unperformed UAT passed.
+Keep candidate preparation state and applicable gate results in the release
+record and execution history.
 
 The shared publication helper checks the notes before resolving tools, fetching
 refs, creating a tag or calling GitHub. Both the guarded workflow and the manual
