@@ -418,9 +418,18 @@ Ambiguous identity is always a failure, never a prompt that defaults to Continue
 <a id="o1-0014-launcher-runtime-profile-safety-77-7-uat-copy-process"></a>
 #### 7. UAT-copy process
 
-Goal: **production → explicit Preview copy** so 0.7 can run on realistic owner data.
+Goal: **production backup → explicit isolated Preview copy** when a task requires
+representative Owner data.
 
 This is an owner-only action. It is not part of daily Start. Agents never perform it and never receive the copy.
+
+The Launcher named in the historical sequence below has been retired. No
+supported, verified producer for a fresh Preview copy from an ordinary backup is
+currently documented. `prepare-preview.ps1` prepares an existing isolated
+profile; it does not create the copy. Until a producer is accepted, do not
+improvise a copy or manually create a sidecar to bypass the boundary. The WIP
+[#1100](https://github.com/LTstripes/hermes-finance/pull/1100) does not provide
+a working copy or Preview handoff.
 
 
 <a id="o1-0014-launcher-runtime-profile-safety-77-71-why-not-post-apibackupsidrestore"></a>
@@ -430,9 +439,9 @@ Existing restore replaces the **currently running profile’s** database after a
 
 
 <a id="o1-0014-launcher-runtime-profile-safety-77-72-sequence"></a>
-#### 7.2 Sequence
+#### 7.2 Historical sequence and retained safety requirements
 
-1. Owner chooses `Refresh Preview from production backup` (launcher) or an equivalent owner-only script. Daily Start must not do this implicitly.
+1. The former `Refresh Preview from production backup` Launcher action is no longer available. A replacement must be explicitly accepted before use. Daily Start must not perform this implicitly.
 2. Preview must be stopped. v1 also requires Stable to be stopped so there is no confusion about which instance owns `8000` and so the copy is taken against a quiet runtime. If a current production backup already exists, creating that backup may use the existing SQLite online backup API while Stable is still running; the **copy into Preview** still happens with Preview stopped.
 3. Create or select a production backup from Stable’s ignored `data/backups/` using the existing backup mechanism (`create_backup` / `finance_backup_*.sqlite3`). Do not copy a live locked `finance.db` by raw filesystem copy if a backup file is available.
 4. Validate the backup as SQLite (`integrity_check`, readable `alembic_version`). Do **not** require the backup schema to match the Preview checkout’s head — Preview may be newer.
@@ -447,7 +456,7 @@ Existing restore replaces the **currently running profile’s** database after a
 <a id="o1-0014-launcher-runtime-profile-safety-77-73-one-way-rule"></a>
 #### 7.3 One-way rule
 
-- Production → Preview copy is allowed only through this workflow.
+- Production backup → Preview copy requires an accepted owner-only producer satisfying these boundaries; the historical Launcher action is not available.
 - Preview → production copy is forbidden.
 - Production recovery remains the existing backup/restore path inside the Stable profile.
 - The copy is owner-only. It must live in the preview runtime, never in an agent clone, and must not be committed.
@@ -907,9 +916,11 @@ Unexpected tag/release state fails closed. The helper never force-updates or del
 
 `docs/release-notes-X.Y.Z.md` is the publication payload, not the durable place
 for a pending candidate gate. Before the release-control request is created,
-owner UAT must be complete and candidate-only status wording must be replaced
-with publication-ready facts. Candidate preparation state remains in the
-release record and execution history until that gate passes.
+complete any Owner UAT required by the change or an explicit accepted gate;
+otherwise record that it was not performed. Replace candidate-only status
+wording with publication-ready facts, never claiming an unperformed UAT passed.
+Keep candidate preparation state and applicable gate results in the release
+record and execution history.
 
 The shared publication helper checks the notes before resolving tools, fetching
 refs, creating a tag or calling GitHub. Both the guarded workflow and the manual
