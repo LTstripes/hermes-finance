@@ -4,6 +4,7 @@ No classification, financial fact or receipt is written by a return reader.
 """
 
 import json
+import re
 
 from sqlalchemy import select
 
@@ -60,12 +61,36 @@ def payout_source_unambiguous(views, view, event_date):
     return len(covered) == 1 and covered[0]["id"] == view["id"]
 
 
+def _issuer_bond_in_account(resolver, security, selected, account, day):
+    """Find the single catalogue bond of this issuer bought in the account by the payment."""
+    issuer = re.sub(r"^(?:ПАО|АО|ООО)\s*", "", security.issuer_name, flags=re.IGNORECASE)
+    issuer = " ".join(issuer.strip('"«» ').casefold().split())
+    held = {
+        trade["core"].get("isin")
+        for _, view, error in selected
+        if view is not None and not error
+        for trade in view["document"].get("trades", [])
+        if trade.get("state") == "settled"
+        and trade["core"].get("source_account") == account
+        and str(trade.get("settlement_date") or "9") <= day
+    }
+    matches = [
+        (target, instrument)
+        for target, instrument in resolver.instruments.items()
+        if instrument.instrument_type == "bond"
+        and instrument.isin in held
+        and " ".join((instrument.name or "").casefold().split()).startswith(issuer + " ")
+    ]
+    return matches[0] if issuer and len(matches) == 1 else None
+
+
 def analytical_coupon_links(session, selected, native_scope, *, historical_evidence=None):
     """Resolve old coupon rows for this read without changing saved decisions.
 
     Every covering original must contain the same occurrence multiplicity and
     account-bound source facts. A current explicit issue mapping identifies the
-    bond; neither the issuer name nor a coincident amount creates a mapping.
+    bond. Without one, the issuer may identify it only when it matches exactly
+    one catalogue bond bought in this account by the payment date.
     """
     from collections import Counter, defaultdict
 
@@ -145,46 +170,54 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
             continue
         target, status = resolver.resolve(security)
         instrument = resolver.instruments.get(target)
-        if (
-            status != "linked"
-            or instrument is None
-            or instrument.instrument_type != "bond"
-            or not instrument.isin
-        ):
-            continue
-        mapped_isin = resolver.reg_isins.get(security.reg_number)
-        related = resolver._related(mapped_isin or security.reg_number)
-        registration = resolver._related(security.reg_number)
-        if (
-            (not mapped_isin and not resolver.mapping_targets.get(security.reg_number))
-            or (mapped_isin and mapped_isin != instrument.isin)
-            or resolver._candidates(related) != {target}
-            or related & resolver.conflicts
-            or registration & resolver.conflicts
-            or not resolver._candidates(registration) <= {target}
-        ):
-            continue
-        bindings = list(
-            session.scalars(
-                select(BrokerIdentityMapping).where(
-                    BrokerIdentityMapping.provider == "alfa_mybroker",
-                    BrokerIdentityMapping.subject_kind == "instrument",
-                    BrokerIdentityMapping.provider_identity.in_(related | registration),
+        issuer_match = (
+            None
+            if status == "linked"
+            else _issuer_bond_in_account(resolver, security, selected, account, day)
+        )
+        if issuer_match is not None:
+            target, instrument = issuer_match
+        else:
+            if (
+                status != "linked"
+                or instrument is None
+                or instrument.instrument_type != "bond"
+                or not instrument.isin
+            ):
+                continue
+            mapped_isin = resolver.reg_isins.get(security.reg_number)
+            related = resolver._related(mapped_isin or security.reg_number)
+            registration = resolver._related(security.reg_number)
+            if (
+                (not mapped_isin and not resolver.mapping_targets.get(security.reg_number))
+                or (mapped_isin and mapped_isin != instrument.isin)
+                or resolver._candidates(related) != {target}
+                or related & resolver.conflicts
+                or registration & resolver.conflicts
+                or not resolver._candidates(registration) <= {target}
+            ):
+                continue
+            bindings = list(
+                session.scalars(
+                    select(BrokerIdentityMapping).where(
+                        BrokerIdentityMapping.provider == "alfa_mybroker",
+                        BrokerIdentityMapping.subject_kind == "instrument",
+                        BrokerIdentityMapping.provider_identity.in_(related | registration),
+                    )
                 )
             )
-        )
-        identities_match = True
-        for alias in {row.provider_identity for row in bindings}:
-            active = [
-                row
-                for row in bindings
-                if row.provider_identity == alias and row.status == "effective"
-            ]
-            if len(active) != 1 or active[0].hermes_instrument_id != target:
-                identities_match = False
-                break
-        if not identities_match:
-            continue
+            identities_match = True
+            for alias in {row.provider_identity for row in bindings}:
+                active = [
+                    row
+                    for row in bindings
+                    if row.provider_identity == alias and row.status == "effective"
+                ]
+                if len(active) != 1 or active[0].hermes_instrument_id != target:
+                    identities_match = False
+                    break
+            if not identities_match:
+                continue
         valid = True
         for _, view, row, choice, ref in members:
             source = bound_import(session, view)

@@ -215,11 +215,7 @@ export function ReturnsInstrumentCard({
                             {value.assumptions.length > 0 && (
                               <small>
                                 {" "}
-                                ·{" "}
-                                {value.assumptions[0] === "trade_face_value_missing"
-                                  ? "Номинал сделки не подтверждён."
-                                  : reasonCopy(value.assumptions[0], { surface: "returns" })
-                                      .message}
+                                · {reasonCopy(value.assumptions[0], { surface: "returns" }).message}
                               </small>
                             )}
                           </p>
@@ -326,9 +322,6 @@ export function ReturnsInstrumentCard({
                             <td>
                               {money(purchase.price_result_kopecks)}
                               {purchase.status === "partial" && <small>Данные неполные</small>}
-                              {purchase.reason_codes.includes("trade_face_value_missing") && (
-                                <small>Номинал не подтверждён</small>
-                              )}
                               {purchase.reason_codes.includes("source_nkd_conflict") && (
                                 <small>Расхождение по НКД</small>
                               )}

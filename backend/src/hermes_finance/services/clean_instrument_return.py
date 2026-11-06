@@ -8,33 +8,63 @@ from hermes_finance.domain.clean_instrument_return import (
     calculate_clean_return,
     clean_trade_date,
     cost_only_trade,
+    trade_amount_with_nkd,
+)
+
+# Account-level gaps that statement quantities and an instrument's own trades
+# outweigh. Anything else, such as an unknown structure or a PDF conflict, stays.
+_ACCOUNT_SOURCE_GAPS = frozenset(
+    {
+        "4_Transfers_unsupported",
+        "5_UFSR_unsupported",
+        "cross_boundary_settlement",
+        "custody_cancellation_unresolved",
+        "negative_observed_holding",
+        "payout_link_missing",
+        "payout_link_unresolved_no_match",
+        "quantity_events_incomplete",
+        "quantity_reconciliation_mismatch",
+        "redemption_amortization_unsupported",
+        "unattributed_income",
+        "unmatched_trade_money",
+        "unparsed_source_rows",
+        "unrecognized_money",
+    }
 )
 
 
+def instrument_scoped_reasons(analysis, isin, reasons):
+    """Keep only reasons that can still concern this reconciled instrument."""
+    own = set()
+    foreign = set()
+    for event in analysis.events:
+        (own if event.isin == isin else foreign).update(event.reason_codes)
+    own.discard("unmatched_trade_money")
+    return {
+        reason
+        for reason in reasons
+        if reason in own or (reason not in foreign and reason not in _ACCOUNT_SOURCE_GAPS)
+    }
+
+
 def _clean_endpoint(endpoint, instrument_type):
-    # An explicitly empty position has no accrued interest. A nonzero dirty
-    # bond value cannot be made clean without an actual accrued-interest value.
+    """Return the position value on the same NKD-inclusive basis as trades."""
     if (
         endpoint.quantity == 0
         and endpoint.reported_value_kopecks == 0
         and not (set(endpoint.reason_codes) - {"bond_valuation_basis_unknown"})
     ):
         return 0
+    if endpoint.economic_value_kopecks is not None:
+        return None if endpoint.reason_codes else endpoint.economic_value_kopecks
+    # A bond statement value carries NKD; its unproved breakdown is not needed.
     if (
-        instrument_type == "stock"
-        and endpoint.accrued_interest_kopecks in (None, 0)
-        and endpoint.economic_value_kopecks is not None
-        and not endpoint.reason_codes
+        instrument_type == "bond"
+        and endpoint.reported_value_kopecks is not None
+        and set(endpoint.reason_codes) == {"bond_valuation_basis_unknown"}
     ):
-        return endpoint.economic_value_kopecks
-    if (
-        endpoint.economic_value_kopecks is None
-        or endpoint.accrued_interest_kopecks is None
-        or endpoint.accrued_interest_kopecks < 0
-        or endpoint.accrued_interest_kopecks > endpoint.economic_value_kopecks
-    ):
-        return None
-    return endpoint.economic_value_kopecks - endpoint.accrued_interest_kopecks
+        return endpoint.reported_value_kopecks
+    return None
 
 
 def clean_gold_metric(observed, *, current=True):
@@ -129,6 +159,9 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
                 if not reason.startswith("payout_link_") and reason != "unattributed_income"
             }
         if quantity_reconciled:
+            # Statement quantities and this instrument's trades agree, so a
+            # transfer or an account row of another issue cannot change it.
+            reasons = instrument_scoped_reasons(analysis, isin, reasons)
             if name == "events":
                 for reason in recoverable_trade_reasons:
                     affected = [event for event in analysis.events if reason in event.reason_codes]
@@ -142,15 +175,11 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
                     analysis.coverage, "fee_only_bridge", False
                 ):
                     reasons.discard("native_money_cash_bridge_mismatch")
-            if name == "quantity":
-                reasons -= {
-                    "quantity_events_incomplete",
-                    "quantity_reconciliation_mismatch",
-                    "cross_boundary_settlement",
-                    "negative_observed_holding",
-                }
         return (coverage.complete or bool(coverage.reason_codes)) and not reasons
 
+    payouts_known = complete("payouts")
+    # An unattributed account row may be a payout of this bond, so the result
+    # stays visible and carries one note instead of being withheld.
     clean = calculate_clean_return(
         analysis.opening_date,
         analysis.closing_date,
@@ -158,9 +187,18 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         closing,
         tuple(events),
         trades_complete=clean_complete("events") and clean_complete("quantity"),
-        payouts_complete=complete("payouts"),
+        payouts_complete=payouts_known
+        or (
+            quantity_reconciled
+            and not instrument_scoped_reasons(
+                analysis,
+                isin,
+                set(analysis.coverage["payouts"].reason_codes) - ignored_cost_reasons,
+            )
+        ),
         redemptions_complete=clean_complete("quantity"),
         valuation_complete=opening is not None and closing is not None,
+        result_assumptions=() if payouts_known else ("account_money_unattributed",),
     )
     if "source_sections_not_financially_accepted" in getattr(analysis, "reason_codes", ()):
         reason = "source_sections_not_financially_accepted"
@@ -209,23 +247,19 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
 
 
 def _clean_quantity_reconciled(analysis, events, isin):
-    """Recheck principal dates and holdings before removing cost-only blockers."""
+    """Prove this instrument from its own trades and statement quantities."""
     from collections import defaultdict
     from decimal import Decimal, localcontext
 
-    if (
-        not any(cost_only_trade(event) for event in events)
-        and ("cross_boundary_settlement" not in analysis.coverage["quantity"].reason_codes)
-        and not getattr(analysis.coverage, "fee_only_bridge", False)
-    ):
-        return False
     if any(
-        event.isin != isin and event.kind in {"BUY", "SELL", "REDEMPTION"}
+        event.isin is None and event.kind in {"BUY", "SELL", "REDEMPTION"}
         for event in analysis.events
     ):
         return False
     q0, q1 = analysis.opening.quantity, analysis.closing.quantity
     if q0 is None or q1 is None:
+        return False
+    if not any(event.kind in {"BUY", "SELL", "REDEMPTION"} for event in events):
         return False
     daily = defaultdict(Decimal)
     with localcontext() as context:
@@ -242,7 +276,7 @@ def _clean_quantity_reconciled(analysis, events, isin):
                 return False
             if event.kind in {"BUY", "SELL"}:
                 principal_day = clean_trade_date(event)
-                if principal_day is None:
+                if principal_day is None or trade_amount_with_nkd(event) is None:
                     return False
                 cash_inside = analysis.opening_date < principal_day <= analysis.closing_date
             else:

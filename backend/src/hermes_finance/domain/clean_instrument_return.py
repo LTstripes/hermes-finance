@@ -5,7 +5,7 @@ Account cash balances and the historical cash-economic calculation are separate.
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from hermes_finance.domain.instrument_return import InstrumentEvent, Metric
@@ -81,6 +81,22 @@ def clean_trade_amount(event: InstrumentEvent) -> int | None:
         if nkd is not None and 0 <= nkd <= amount:
             return amount - nkd
     return _priced_bond_principal(event)
+
+
+def trade_amount_with_nkd(event: InstrumentEvent) -> int | None:
+    """Return the trade money including NKD, excluding commission.
+
+    Purchases, valuations and coupons are compared on one basis: a coupon
+    returns NKD paid at purchase, and a statement position value carries NKD.
+    """
+    principal = clean_trade_amount(event)
+    if principal is None:
+        return None
+    if event.native_total_basis == "excludes_paid_nkd":
+        nkd = event.accrued_interest_kopecks
+        # An unknown or invalid NKD never blocks the trade the statement proves.
+        return principal + nkd if nkd is not None and nkd >= 0 else principal
+    return event.native_trade_amount_kopecks
 
 
 def _missing_fee_principal_consistent(event: InstrumentEvent) -> bool:
@@ -262,8 +278,10 @@ def _priced_bond_without_costs(event: InstrumentEvent) -> bool:
 
 def clean_trade_assumptions(event: InstrumentEvent) -> tuple[str, ...]:
     """Disclose contradictory NKD while retaining independently proved principal."""
+    # The trade total comes from the statement; only a recalculation needs face.
+    assumptions = tuple(a for a in event.assumptions if a != "trade_face_value_missing")
     if not _priced_bond_without_costs(event):
-        return event.assumptions
+        return assumptions
     price = _priced_bond_principal(event)
     total = event.native_trade_amount_kopecks
     nkd = event.accrued_interest_kopecks
@@ -279,8 +297,8 @@ def clean_trade_assumptions(event: InstrumentEvent) -> tuple[str, ...]:
         expected = nkd if nkd is not None and nkd >= 0 else total - price
         conflict |= abs(sum(leg.account_cash_kopecks for leg in legs) - sign * expected) > 1
     if not conflict:
-        return event.assumptions
-    return tuple(sorted(set(event.assumptions) | {"source_nkd_conflict"}))
+        return assumptions
+    return tuple(sorted(set(assumptions) | {"source_nkd_conflict"}))
 
 
 def _fee_only_overlap(event: InstrumentEvent) -> bool:
@@ -348,6 +366,7 @@ def calculate_clean_return(
     payouts_complete: bool,
     redemptions_complete: bool,
     valuation_complete: bool,
+    result_assumptions: tuple[str, ...] = (),
 ) -> CleanInstrumentReturn:
     """Calculate from attributable current observations, preserving partial facts.
 
@@ -359,6 +378,8 @@ def calculate_clean_return(
         raise ValueError("opening_date must precede closing_date")
     values = {kind: [] for kind in ("BUY", "SELL", "COUPON", "DIVIDEND", "REDEMPTION")}
     assumptions = {kind: set() for kind in values}
+    assumptions["COUPON"].update(result_assumptions)
+    assumptions["DIVIDEND"].update(result_assumptions)
     dated_flows = []
     seen_events = set()
     seen_legs = set()
@@ -400,7 +421,7 @@ def calculate_clean_return(
                 payout_gap = True
             continue
         if event.kind in {"BUY", "SELL"}:
-            value = clean_trade_amount(event)
+            value = trade_amount_with_nkd(event)
             if value is None:
                 trade_gap = True
                 continue
@@ -516,8 +537,12 @@ def calculate_clean_return(
         )
         if missing
     )
+    # An empty position has no capital to weight before its first trade.
+    interval_start = opening_date
+    if opening_clean == 0 and dated_flows:
+        interval_start = max(opening_date, min(row[0] for row in dated_flows) - timedelta(days=1))
     row = calculate_interval_return(
-        (opening_date, opening_clean), (closing_date, closing_clean), dated_flows
+        (interval_start, opening_clean), (closing_date, closing_clean), dated_flows
     )
     used = tuple(sorted(set().union(*assumptions.values())))
     result_status = available_status(used)

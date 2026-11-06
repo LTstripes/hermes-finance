@@ -6927,6 +6927,19 @@ quantities cannot produce a total from valuation and partial trades; known
 purchase and sale components remain visible. Explicit `basis=legacy` preserves the prior Returns projections for
 consumers that still need their original semantics.
 
+Owner decision 2026-11-07: an instrument's return compares one money basis. Bond
+purchases and sales keep the statement trade total including NKD, the position
+value is the statement value, and coupons are counted in full; commissions and
+taxes stay excluded. Separating NKD would count NKD returned by a coupon as income.
+An instrument is proved by its own trades reconciling to statement quantities.
+Then account rows of other issues, unattributed money and unsupported statement
+sections do not withhold its result: an unattributed row adds the single note
+`account_money_unattributed`. An instrument's own payout conflict still withholds
+the full result. A coupon without an explicit mapping may be attributed in the
+clean projection only when its issuer matches exactly one catalogue bond bought
+in that account by the payment date. The period rate of an empty opening position
+starts at its first trade. Saved decisions and receipts are not changed.
+
 The recommended AI financial review requests version `3.1.0` and includes the
 same source-scoped clean operands under `sections.clean_returns` with file-local
 account references. Each account retains its own period and metric coverage.

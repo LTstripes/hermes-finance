@@ -8,7 +8,9 @@ import pytest
 from hermes_finance.domain.clean_instrument_return import (
     calculate_clean_return,
     clean_trade_amount,
+    clean_trade_assumptions,
     cost_only_trade,
+    trade_amount_with_nkd,
 )
 from hermes_finance.domain.instrument_return import CashLeg, Coverage, Endpoint, InstrumentEvent
 from hermes_finance.services.clean_instrument_return import project_clean_analysis
@@ -162,17 +164,17 @@ def calc(events, **kwargs):
     )
 
 
-def test_clean_principal_net_receipt_and_costs_excluded():
+def test_trade_money_with_nkd_net_receipt_and_costs_excluded():
     result = calc(
         (trade("BUY", 102000, 2000), cash("DIVIDEND", 8700), cash("FEE", -900), cash("TAX", -1300))
     )
-    assert result.buys.value == 100000
+    assert result.buys.value == 102000
     assert result.payouts.value == 8700
-    assert result.valuation_and_trades.value == 10000
-    assert result.pnl.value == 18700
+    assert result.valuation_and_trades.value == 8000
+    assert result.pnl.value == 16700
     with localcontext() as context:
         context.prec = 60
-        assert result.modified_dietz.value == Decimal(18700) / Decimal(45650)
+        assert round(result.modified_dietz.value, 6) == Decimal("0.190925")
 
 
 def test_price_and_actual_payout_breakdown_uses_same_period_and_excludes_costs():
@@ -249,7 +251,7 @@ def test_missing_fee_alone_does_not_hide_a_valid_trade():
         reason_codes=("trade_components_missing",),
         quantity_delta=Decimal(1),
     )
-    assert calc((buy,)).pnl.value == 10000
+    assert calc((buy,)).pnl.value == 8000
     unknown_sign = replace(buy, quantity_delta=None)
     assert calc((unknown_sign,)).pnl.value is None
 
@@ -268,7 +270,8 @@ def test_linked_principal_posting_date_drives_weighting_and_conflicts_stay_unkno
     result = calc((buy,))
     with localcontext() as context:
         context.prec = 60
-        assert result.modified_dietz.value == Decimal(10000) / (Decimal(100000) * 25 / 30)
+        days = (END - earlier).days + 1
+        assert result.modified_dietz.value == Decimal(8000) / (Decimal(102000) * (days - 1) / days)
     second = replace(leg, date=DAY, ownership="m2")
     assert calc((replace(buy, cash_legs=(leg, second)),)).pnl.value is None
 
@@ -286,14 +289,14 @@ def test_projection_keeps_foreign_redemption_and_account_cost_outside_security()
         coverage=coverage,
     )
     result = project_clean_analysis(analysis, "ZZ0000000011")
-    assert result.pnl.value == 10000
+    assert result.pnl.value == 8000
     assert result.redemption.value == 0
-    unknown_bond = replace(analysis.closing, accrued_interest_kopecks=None)
+    unknown_nkd = replace(analysis.closing, accrued_interest_kopecks=None)
     assert (
         project_clean_analysis(
-            replace_namespace(analysis, closing=unknown_bond), "ZZ0000000011"
+            replace_namespace(analysis, closing=unknown_nkd), "ZZ0000000011"
         ).pnl.value
-        is None
+        == 8000
     )
 
 
@@ -363,7 +366,7 @@ def test_real_principal_and_delivery_crossing_still_blocks_clean_result():
     assert clean.pnl.value is None and clean.known_result.value is None
 
 
-def test_cost_boundary_recheck_does_not_erase_unrelated_missing_trade():
+def test_unattributed_row_does_not_hide_reconciled_instrument_trades():
     prior = date(2029, 12, 20)
     buy = replace(
         trade("BUY", 102000, 2000),
@@ -396,7 +399,7 @@ def test_cost_boundary_recheck_does_not_erase_unrelated_missing_trade():
         coverage=coverage,
     )
     clean = project_clean_analysis(analysis, "ZZ0000000011")
-    assert clean.pnl.value is None and clean.known_result.value is None
+    assert clean.pnl.value == clean.known_result.value == 10000
 
 
 def test_positive_tax_does_not_block_clean_trade_result(monkeypatch):
@@ -426,7 +429,7 @@ def test_positive_tax_does_not_block_clean_trade_result(monkeypatch):
     )
     assert "cost_sign_conflict" in analysis.coverage["events"].reason_codes
     clean = project_clean_analysis(analysis, "ZZ0000000011")
-    assert clean.pnl.value == 10000
+    assert clean.pnl.value == 8000
 
 
 def replace_namespace(value, **changes):
@@ -502,13 +505,11 @@ def test_sale_assumption_applies_only_to_lots_consumed_by_that_sale():
     sale = replace(
         buy("sale", 18000, "-1", date(2030, 1, 12)),
         kind="SELL",
-        assumptions=("trade_face_value_missing",),
+        assumptions=("income_assumed",),
     )
     rows = case([first, second, sale], quantity="1", closing=15000)
     assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
-    assert rows[0]["status"] == "partial" and rows[0]["reason_codes"] == [
-        "trade_face_value_missing"
-    ]
+    assert rows[0]["status"] == "partial" and rows[0]["reason_codes"] == ["income_assumed"]
     assert rows[1]["price_result_kopecks"] == "-5000" and rows[1]["status"] == "supported"
 
 
@@ -646,7 +647,7 @@ def test_later_unknown_sale_proceeds_do_not_hide_earlier_closed_purchase():
     assert rows[1]["price_result_kopecks"] is None
 
 
-def test_fifo_excludes_fees_and_paid_nkd_from_buy_and_sale():
+def test_fifo_excludes_fees_and_keeps_nkd_in_buy_and_sale():
     first = replace(
         buy("a", 10200, "1", date(2030, 1, 10)),
         native_total_basis="includes_paid_nkd",
@@ -661,8 +662,11 @@ def test_fifo_excludes_fees_and_paid_nkd_from_buy_and_sale():
         commission_kopecks=1100,
     )
     row = case([first, sale, cash("FEE", -900), cash("TAX", -1300)], quantity="0", closing=0)[0]
-    assert row["cost_kopecks"] == "10000" and row["sale_proceeds_kopecks"] == "18000"
-    assert row["price_result_kopecks"] == "8000" and row["return_fraction"] == "0.8"
+    assert row["cost_kopecks"] == "10200" and row["sale_proceeds_kopecks"] == "18300"
+    assert row["price_result_kopecks"] == "8100"
+    with localcontext() as context:
+        context.prec = 200
+        assert Decimal(row["return_fraction"]) == Decimal(8100) / Decimal(10200)
 
 
 def test_fifo_rejects_ambiguous_same_day_order_and_zero_cost_rate_is_unknown():
@@ -711,7 +715,7 @@ def test_fifo_rejects_mismatched_execution_date_and_native_timestamp():
 
 def test_observed_purchase_fallback_requires_unique_current_identity_and_clean_cost():
     original = replace(buy("a", 10000, "1", date(2030, 1, 10)), native_identity="native-a")
-    rows = case([original], quantity="1", closing=11000, complete=False)
+    rows = case([original], quantity="2", closing=11000, complete=False)
     assert rows and rows[0]["cost_kopecks"] == "10000"
     assert rows[0]["status"] == "partial" and rows[0]["price_result_kopecks"] is None
     assert rows[0]["remaining_quantity"] is None and rows[0]["return_fraction"] is None
@@ -771,7 +775,7 @@ def test_fifo_checks_actual_linked_money_date_not_only_native_settlement(role):
     assert case([event], quantity="1", closing=11000) is None
 
 
-def test_purchase_principal_excludes_nkd_and_missing_commission_does_not_block():
+def test_purchase_cost_keeps_nkd_and_missing_commission_does_not_block():
     event = replace(
         buy("bond", 10200, "1", date(2030, 1, 10)),
         native_total_basis="includes_paid_nkd",
@@ -781,8 +785,8 @@ def test_purchase_principal_excludes_nkd_and_missing_commission_does_not_block()
         reason_codes=("trade_components_missing",),
     )
     result = case([event], quantity="1", closing=11000)
-    assert result[0]["cost_kopecks"] == "10000"
-    assert result[0]["price_result_kopecks"] == "1000"
+    assert result[0]["cost_kopecks"] == "10200"
+    assert result[0]["price_result_kopecks"] == "800"
 
 
 def test_zero_and_rounding_are_known_and_add_to_total():
@@ -793,7 +797,7 @@ def test_zero_and_rounding_are_known_and_add_to_total():
     assert any(row["price_result_kopecks"] == "0" for row in rows)
 
 
-@pytest.mark.parametrize("shape", ["sale", "quantity", "incomplete", "missing_date", "wrong_isin"])
+@pytest.mark.parametrize("shape", ["sale", "quantity", "missing_date", "wrong_isin"])
 def test_unknown_or_disposed_inventory_does_not_invent_results(shape):
     one = buy("a", 10000, "1", date(2030, 1, 10))
     two = buy("b", 20000, "1", date(2030, 1, 11))
@@ -808,7 +812,131 @@ def test_unknown_or_disposed_inventory_does_not_invent_results(shape):
             [one, two],
             quantity="3" if shape == "quantity" else "2",
             closing=None if shape == "missing_value" else 30000,
-            complete=shape != "incomplete",
         )
         is None
     )
+
+
+def scoped_case(*, payout_reasons=("unattributed_income",), other=()):
+    buy = replace(
+        trade("BUY", 102000, 2000),
+        quantity_delta=Decimal(1),
+        depository_settlement_date=DAY,
+        cash_legs=(CashLeg("principal", DAY, -100000, 100000, ("principal",), "principal"),),
+    )
+    coverage = {name: Coverage(True) for name in ("events", "quantity")}
+    coverage["events"] = Coverage(False, ("unrecognized_money", "unparsed_source_rows"))
+    coverage["quantity"] = Coverage(False, ("4_Transfers_unsupported",))
+    coverage["payouts"] = Coverage(False, payout_reasons)
+    unknown = replace(
+        cash("FEE", -100),
+        kind="UNRESOLVED",
+        isin=None,
+        counted=False,
+        current=False,
+        reason_codes=("unrecognized_money",),
+    )
+    return SimpleNamespace(
+        opening_date=START,
+        closing_date=END,
+        opening=Endpoint(START, Decimal(0), 0, None, None, "reported_unknown"),
+        closing=Endpoint(
+            END,
+            Decimal(1),
+            99000,
+            None,
+            None,
+            "reported_unknown",
+            (),
+            ("bond_valuation_basis_unknown",),
+        ),
+        events=(buy, unknown, *other),
+        coverage=coverage,
+    )
+
+
+def test_account_rows_of_other_issues_do_not_hide_a_reconciled_bond():
+    result = project_clean_analysis(scoped_case(), "ZZ0000000011", instrument_type="bond")
+    assert result.closing_value.value == 99000
+    assert result.buys.value == 102000
+    assert result.pnl.value == -3000
+    assert result.pnl.status == "provisional"
+    assert result.pnl.assumptions == ("account_money_unattributed",)
+
+
+def test_own_payout_conflict_still_withholds_the_full_result():
+    analysis = scoped_case(payout_reasons=("pdf_xml_payout_mismatch",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value is None
+    assert result.valuation_and_trades.value == -3000
+
+
+def test_unreconciled_quantity_keeps_account_gaps():
+    analysis = scoped_case()
+    analysis.closing = replace(analysis.closing, quantity=Decimal(2))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value is None and result.valuation_and_trades.value is None
+
+
+def test_trade_money_keeps_statement_total_and_tolerates_unknown_nkd():
+    assert trade_amount_with_nkd(trade("BUY", 102000, 2000)) == 102000
+    excluded = trade("BUY", 100000, 2000, basis="excludes_paid_nkd")
+    assert trade_amount_with_nkd(excluded) == 102000
+    assert trade_amount_with_nkd(replace(excluded, accrued_interest_kopecks=None)) == 100000
+    assert trade_amount_with_nkd(trade("BUY", None, 2000)) is None
+
+
+def test_face_value_note_is_not_a_trade_amount_assumption():
+    event = replace(trade("BUY", 102000, 2000), assumptions=("trade_face_value_missing",))
+    assert clean_trade_assumptions(event) == ()
+
+
+def test_return_rate_starts_at_the_first_trade_of_an_empty_position():
+    result = calc((trade("BUY", 102000, 2000),))
+    days = (END - DAY).days + 1
+    with localcontext() as context:
+        context.prec = 60
+        assert result.modified_dietz.value == Decimal(8000) / (Decimal(102000) * (days - 1) / days)
+
+
+class FakeResolver:
+    def __init__(self, *rows):
+        self.instruments = {
+            index: SimpleNamespace(name=name, isin=isin, instrument_type="bond")
+            for index, (name, isin) in enumerate(rows, 1)
+        }
+
+
+def issuer_view(*isins, settled="2030-01-05"):
+    trades = [
+        {
+            "state": "settled",
+            "settlement_date": settled,
+            "core": {"isin": isin, "source_account": "a"},
+        }
+        for isin in isins
+    ]
+    return (None, {"document": {"trades": trades}}, None)
+
+
+@pytest.mark.parametrize(
+    "rows, isins, day, found",
+    [
+        ((("Agro 001P-01", "ZZ0000000011"),), ("ZZ0000000011",), "2030-02-01", True),
+        (
+            (("Agro 001P-01", "ZZ0000000011"), ("Agro 001P-02", "ZZ0000000029")),
+            ("ZZ0000000011", "ZZ0000000029"),
+            "2030-02-01",
+            False,
+        ),
+        ((("Other 001P-01", "ZZ0000000011"),), ("ZZ0000000011",), "2030-02-01", False),
+        ((("Agro 001P-01", "ZZ0000000011"),), ("ZZ0000000029",), "2030-02-01", False),
+        ((("Agro 001P-01", "ZZ0000000011"),), ("ZZ0000000011",), "2030-01-01", False),
+    ],
+)
+def test_issuer_identifies_a_coupon_only_for_one_bond_held_in_the_account(rows, isins, day, found):
+    from hermes_finance.services.source_return_evidence import _issuer_bond_in_account
+
+    security = SimpleNamespace(issuer_name='ООО "Agro"')
+    match = _issuer_bond_in_account(FakeResolver(*rows), security, [issuer_view(*isins)], "a", day)
+    assert (match is not None) == found

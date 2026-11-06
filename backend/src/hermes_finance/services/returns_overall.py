@@ -1132,6 +1132,14 @@ def read_clean_instrument_card(session, isin):
                     else [],
                 )
 
+        # Every account of this instrument has a full result of its own.
+        whole = bool(card["accounts"]) and all(
+            account["clean"]
+            and account["clean"]["pnl"]["value"] is not None
+            and account["scope"] not in identity_conflicts
+            for account in card["accounts"]
+        )
+
         def total(field):
             if any(
                 account["clean"] and account["scope"] in identity_conflicts
@@ -1154,11 +1162,12 @@ def read_clean_instrument_card(session, isin):
                 return _unknown("source_account_identity_mapping_conflict")
             rows = [account["clean"][field] for account in card["accounts"] if account["clean"]]
             values = [int(row["value"]) for row in rows if row["value"] is not None]
+            complete = whole and len(values) == len(rows)
             return returns_view.metric(
                 sum(values) if values else None,
-                reasons=("clean_partial_result",),
+                reasons=() if complete else ("clean_partial_result",),
                 method="known_clean_instruments",
-                estimate=True,
+                estimate=not complete,
             )
 
         card["summary"].update(
@@ -1173,6 +1182,24 @@ def read_clean_instrument_card(session, isin):
             taxes=_unknown("costs_excluded_from_returns"),
             rate=_unknown("combined_rate_periods_and_flows_not_proven", rate=True),
         )
+        if whole:
+            quantities = [
+                account["detail"]["closing_quantity"] if account["detail"] else None
+                for account in card["accounts"]
+            ]
+            if None not in quantities:
+                card["summary"]["quantity"] = {
+                    "value": format(sum(Decimal(q) for q in quantities), "f"),
+                    "partial": False,
+                    "reason_codes": [],
+                }
+            card["summary"].update(partial=False, reason_codes=[])
+            card["reason_codes"] = []
+            if len(card["accounts"]) == 1:
+                rate = card["accounts"][0]["clean"]["modified_dietz"]
+                card["summary"]["rate"] = returns_view.metric(
+                    rate["value"], method="modified_dietz", unit="fraction", estimate=True
+                )
         card["contract_version"] = "returns_instrument_card_v2"
         return card
 

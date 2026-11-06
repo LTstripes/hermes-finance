@@ -1562,8 +1562,8 @@ def test_current_receipt_allows_clean_trade_and_coupon_without_changing_receipt(
         event.attribution_basis != "analytical_coupon_mapping"
         for event in legacy.instruments[0].analysis.events
     )
-    assert clean["buys"]["value"] == "100000"
-    assert clean["sells"]["value"] == "101000"
+    assert clean["buys"]["value"] == "102000"
+    assert clean["sells"]["value"] == "103000"
     assert clean["coupons"]["value"] == "3000"
     assert clean["pnl"]["value"] == "4000"
     assert clean["purchases"][0]["price_result_kopecks"] == "1000"

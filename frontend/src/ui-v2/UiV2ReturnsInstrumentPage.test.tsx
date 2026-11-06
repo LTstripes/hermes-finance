@@ -270,7 +270,7 @@ test("unclassified account activity leaves observed purchase cost visible as par
   expect(region.queryByText("80,00 ₽")).toBeNull();
 });
 
-test("bond purchase keeps provisional result and identifies the missing face value", async () => {
+test("bond purchase keeps a provisional result without a face value warning", async () => {
   const card = instrumentCardFixture();
   card.accounts[0].purchases = [
     {
@@ -299,7 +299,7 @@ test("bond purchase keeps provisional result and identifies the missing face val
     await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
   );
   expect(region.getByText("10,00 ₽")).toBeVisible();
-  expect(region.getByText("Номинал не подтверждён")).toBeVisible();
+  expect(region.queryByText("Номинал не подтверждён")).not.toBeInTheDocument();
   expect(region.getByText("Данные неполные")).toBeVisible();
 });
 
