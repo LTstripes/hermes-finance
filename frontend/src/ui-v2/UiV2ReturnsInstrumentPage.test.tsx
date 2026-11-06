@@ -206,6 +206,32 @@ test("unclassified account activity leaves observed purchase cost visible as par
   expect(region.queryByText("80,00 ₽")).toBeNull();
 });
 
+test("bond purchase keeps provisional result and identifies the missing face value", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "bond-buy",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "100000",
+      sale_proceeds_kopecks: "101000",
+      value_kopecks: "0",
+      price_result_kopecks: "1000",
+      return_fraction: "0.01",
+      status: "partial",
+      reason_codes: ["trade_face_value_missing"],
+    },
+  ];
+  vi.stubGlobal("fetch", vi.fn(async () => response(card)));
+  setup("/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31");
+  const region = within(await screen.findByRole("region", { name: "Результат сохранённых покупок" }));
+  expect(region.getByText("10,00 ₽")).toBeVisible();
+  expect(region.getByText("Номинал не подтверждён")).toBeVisible();
+  expect(region.getByText("Данные неполные")).toBeVisible();
+});
+
 test("same-day buys sold together show both supported price results", async () => {
   const card = instrumentCardFixture();
   card.accounts[0].purchases = [

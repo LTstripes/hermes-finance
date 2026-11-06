@@ -132,7 +132,7 @@ def _observed_purchase_facts(analysis, isin, *, instrument_type):
                 "price_result_kopecks": None,
                 "return_fraction": None,
                 "status": "partial",
-                "reason_codes": ["purchase_allocation_unproven"],
+                "reason_codes": ["purchase_allocation_unproven", *sorted(event.assumptions)],
             }
         )
     return sorted(rows, key=lambda row: (row["date"], row["id"])) or None
@@ -318,6 +318,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                             "remaining": q if untouched else None,
                             "cost": amount,
                             "proceeds": 0 if untouched else None,
+                            "assumptions": set(event.assumptions),
                         }
                     )
                 continue
@@ -331,6 +332,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                         "remaining": q,
                         "cost": amount,
                         "proceeds": 0,
+                        "assumptions": set(event.assumptions),
                     }
                 )
                 if amount is not None:
@@ -358,6 +360,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             )
             for (lot, part), share in zip(consumed, shares, strict=True):
                 lot["remaining"] -= part
+                lot["assumptions"].update(event.assumptions)
                 lot["proceeds"] = (
                     lot["proceeds"] + share
                     if lot["proceeds"] is not None and share is not None
@@ -423,6 +426,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                 reasons.append("sale_proceeds_unknown")
             if value is None:
                 reasons.append("closing_value_unknown")
+            reasons.extend(sorted(lot["assumptions"]))
             results.append(
                 {
                     "id": hashlib.sha256(lot["key"].encode("utf-8")).hexdigest()[:24],
@@ -441,7 +445,9 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                     "return_fraction": format(Decimal(result) / Decimal(lot["cost"]), "f")
                     if result is not None and lot["cost"]
                     else None,
-                    "status": "supported" if result is not None else "partial",
+                    "status": "supported"
+                    if result is not None and not lot["assumptions"]
+                    else "partial",
                     "reason_codes": reasons,
                 }
             )

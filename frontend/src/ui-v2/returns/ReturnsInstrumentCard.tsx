@@ -266,6 +266,9 @@ export function ReturnsInstrumentCard({
                             <td>
                               {money(purchase.price_result_kopecks)}
                               {purchase.status === "partial" && <small>Данные неполные</small>}
+                              {purchase.reason_codes.includes("trade_face_value_missing") && (
+                                <small>Номинал не подтверждён</small>
+                              )}
                             </td>
                             <td>
                               {purchase.return_fraction === null ? (

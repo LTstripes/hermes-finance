@@ -399,6 +399,22 @@ def test_fifo_partial_sale_uses_original_cost_and_matches_instrument_price_resul
     assert sum(int(row["price_result_kopecks"]) for row in rows) == 3000
 
 
+def test_sale_assumption_applies_only_to_lots_consumed_by_that_sale():
+    first = buy("a", 10000, "1", date(2030, 1, 10))
+    second = buy("b", 20000, "1", date(2030, 1, 11))
+    sale = replace(
+        buy("sale", 18000, "-1", date(2030, 1, 12)),
+        kind="SELL",
+        assumptions=("trade_face_value_missing",),
+    )
+    rows = case([first, second, sale], quantity="1", closing=15000)
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
+    assert rows[0]["status"] == "partial" and rows[0]["reason_codes"] == [
+        "trade_face_value_missing"
+    ]
+    assert rows[1]["price_result_kopecks"] == "-5000" and rows[1]["status"] == "supported"
+
+
 def test_fifo_full_sale_and_unattributed_payout_stays_at_instrument():
     first = buy("a", 10000, "1", date(2030, 1, 10))
     sale = replace(buy("sale", 18000, "-1", date(2030, 1, 12)), kind="SELL")

@@ -6848,6 +6848,11 @@ When every component is known the contributions must sum exactly to
 `valuation_and_trades`. Missing clean principal, sale proceeds or open-position
 valuation leaves the affected field and result unknown while preserving
 independently supported components and closed-lot results.
+An assumption attached to a purchase or an allocated sale is retained on
+the affected purchase as a reason and makes its status `partial`, even when
+the amount and percentage are available. In particular,
+`trade_face_value_missing` identifies the unconfirmed bond face value; the
+card and AI report expose the same status and reason.
 If FIFO coverage is insufficient, an individually current purchase with a
 unique native identity, valid dated delivery and independently established
 clean principal remains visible with `status=partial` and reason

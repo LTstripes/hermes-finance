@@ -2869,6 +2869,72 @@ def test_mybroker_native_total_once_in_monthly_and_dated_read(db, qty, expected,
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("missing_face", ["both", "buy", "sell", "none"])
+def test_bond_purchase_reports_face_value_assumption_in_card_and_ai(db, missing_face):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    def mutate(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+            row.set("Price", "100" if index == 1 else "101")
+            if missing_face == "both" or missing_face == ("buy" if index == 1 else "sell"):
+                row.attrib.pop("nominal", None)
+
+    save(
+        db,
+        stock=None,
+        bond=("0", "0", "0", "0"),
+        trades=((BOND, "1", "1020", "20", "2"), (BOND, "-1", "1030", "20", "2")),
+        mutate=mutate,
+    )
+    native = by_isin(read(db))[BOND].analysis
+    assert ("trade_face_value_missing" in native.events[0].assumptions) == (
+        missing_face in {"both", "buy"}
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=BOND,
+            include_purchases=True,
+        )
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    item = result["instruments"][0]
+    assert item["valuation_and_trades"]["status"] == (
+        "supported" if missing_face == "none" else "provisional"
+    )
+    assert ("trade_face_value_missing" in item["valuation_and_trades"]["assumptions"]) == (
+        missing_face != "none"
+    )
+    rows = item["purchases"]
+    assert (
+        rows and rows[0]["cost_kopecks"] == "100000" and rows[0]["price_result_kopecks"] == "1000"
+    )
+    assert rows[0]["status"] == ("supported" if missing_face == "none" else "partial")
+    assert ("trade_face_value_missing" in rows[0]["reason_codes"]) == (missing_face != "none")
+    before = snapshot(db)
+    with TestClient(create_app(db)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": BOND})
+        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+    assert card.status_code == ai.status_code == 200
+    account = card.json()["accounts"][0]
+    exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert (
+        account["ai_account_ref"] == exported["account_ref"]
+        and account["period"] == exported["period"]
+    )
+    card_row, ai_row = account["purchases"][0], exported["instruments"][0]["purchases"][0]
+    assert card_row["status"] == ai_row["status"] == rows[0]["status"]
+    assert card_row["reason_codes"] == ai_row["reason_codes"] == rows[0]["reason_codes"]
+    assert snapshot(db) == before
+
+
 @pytest.mark.parametrize("field,value", [("provider", "other"), ("parser", "mybroker-s1-v99")])
 def test_mybroker_definition_requires_supported_frozen_source_scope(db, monkeypatch, field, value):
     save(db)
