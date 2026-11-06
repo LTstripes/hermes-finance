@@ -68,7 +68,7 @@ jobs:
         run: npm run build
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Capture synthetic comparison and v2 behavior
         run: npm run audit:visual -- --project=1440x900 --grep "ui-v2"

@@ -54,7 +54,7 @@ Invoke-Case "main push and release gate execute the synthetic audit" {
     Assert-True -Condition ($workflow -match '(?m)^  push:\s*$') -Message "CI must retain a push trigger."
     Assert-True -Condition ($workflow -match '(?m)^    branches: \[main\]\s*$') -Message "The visual audit release path must include main pushes."
     Assert-True -Condition ($workflow -match 'npm run audit:visual') -Message "CI must invoke npm run audit:visual."
-    Assert-True -Condition ($workflow -match 'npx playwright install --with-deps chromium') -Message "CI must install the pinned Playwright browser dependencies."
+    Assert-True -Condition ($workflow -match 'npx playwright install chromium') -Message "CI must install the pinned Playwright browser without the slow optional apt font packages."
     Assert-True -Condition ($workflow -match '(?ms)^  release-safety:.*?test-visual-audit-workflow\.ps1') -Message "Release safety must verify the visual-audit workflow contract."
 }
 

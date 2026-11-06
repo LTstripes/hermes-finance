@@ -351,7 +351,7 @@ jobs:
 
       - name: Install Playwright Chromium
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Run G04 and Performance synthetic real-backend journeys
         env:
@@ -507,7 +507,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       # The checkout above stays the merge ref on a pull request. Omit the
       # 1440 evidence grep only when that checkout's tree is the PR head and
