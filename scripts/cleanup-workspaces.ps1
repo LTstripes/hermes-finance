@@ -29,7 +29,7 @@ $ErrorActionPreference = 'Stop'
 # Installed at <Finance container>/ops/workspace-cleanup; no arbitrary root input.
 $script:FinanceDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $script:WorkspaceDirectory = Join-Path $script:FinanceDirectory 'Hermes\workspaces'
-$script:ApprovedRoots = @('codex', 'opencode', 'grok', 'hermes' | ForEach-Object { Join-Path $script:WorkspaceDirectory $_ })
+$script:ApprovedRoots = @('codex', 'opencode', 'grok', 'hermes', 'claude' | ForEach-Object { Join-Path $script:WorkspaceDirectory $_ })
 if (-not $PSBoundParameters.ContainsKey('Root')) { $Root = $script:ApprovedRoots }
 $script:ExpectedOrigin = 'https://github.com/LTstripes/hermes-finance.git'
 $script:LogDirectory = Join-Path $script:FinanceDirectory 'ops'
