@@ -1,5 +1,5 @@
 ﻿# Run tests. Never modifies source files.
-#   .\scripts\test.ps1                      # backend pytest + frontend vitest + typecheck + build (as before)
+#   .\scripts\test.ps1                      # show scope choices; no tests run
 #   .\scripts\test.ps1 -Backend             # backend pytest only
 #   .\scripts\test.ps1 -Frontend [-ChangedSince <sha>]   # vitest (optionally --changed <sha>) + tsc -b, no vite build
 #   .\scripts\test.ps1 -Paths backend/tests/test_x.py,frontend/src/a.test.ts
@@ -13,10 +13,20 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $backendDir = Join-Path $repoRoot "backend"; $frontendDir = Join-Path $repoRoot "frontend"
 
 try {
+    if (-not ($Backend -or $Frontend -or $Full -or $Paths)) {
+        Write-Host 'Choose a scope: -Paths <test files>, -Backend, -Frontend, or -Full. No tests ran.'
+        exit 2
+    }
+    if ($Paths) {
+        $requested = @($Paths | ForEach-Object { $_ -split '[ ,;]+' } | Where-Object { $_ } | ForEach-Object { $_ -replace '\\', '/' })
+        if ($requested.Count -eq 0 -or @($requested | Where-Object { $_ -notlike 'backend/*' -and $_ -notlike 'frontend/*' }).Count -gt 0) {
+            throw 'Each selected path must begin with backend/ or frontend/.'
+        }
+    }
     $scope = Resolve-CheckScope -Backend:$Backend -Frontend:$Frontend -Full:$Full -Paths $Paths
+    if (-not ($scope.Backend -or $scope.Frontend)) { throw 'No backend or frontend test paths were selected.' }
     $tools = Assert-ScopeReady -Scope $scope -RepoRoot $repoRoot
-    $legacyDefault = -not ($Backend -or $Frontend -or $Full -or $Paths)
-    $doBuild = $Full -or $Build -or $legacyDefault
+    $doBuild = $Full -or $Build
     Write-Host ("Plan: backend={0} frontend={1} full={2} build={3} bePaths=[{4}] fePaths=[{5}] changedSince={6}" -f $scope.Backend, $scope.Frontend, $scope.Full, $doBuild, ($scope.BackendPaths -join ' '), ($scope.FrontendPaths -join ' '), $ChangedSince)
 
     if ($scope.Backend) {

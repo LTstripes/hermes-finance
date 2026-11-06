@@ -793,6 +793,11 @@ selection is targeted evidence, not a claim that unrelated lanes passed.
 
 The root [scripts/test.ps1](../scripts/test.ps1) is an optional developer convenience, not a mandatory handoff command. It does not replace the [canonical workflow](../.github/workflows/ci.yml), which owns the full set of product, browser, privacy, release and Windows jobs. Use their actual results and D4's proportional rules instead of duplicating them locally for each role.
 
+Without a scope the helper prints its choices and exits with code 2 without
+running checks. Select `-Paths`, `-Backend` or `-Frontend` for the intended
+coverage; use `-Full` explicitly for the complete local backend/frontend run
+and production build. An empty or unrecognized path selection is not a pass.
+
 Browser acceptance protects the real synthetic monthly journey and unique financial/lifecycle interactions. Its current project selection and execution order live in the workflow and project configuration; a docs-only fast path does not claim those journeys passed. Retired Launcher/phone coverage must not be restored by an old candidate; preserve the supported direct-runtime and desktop guarantees.
 
 Playwright suites share `frontend/playwright.config.ts`. From `frontend`, run
