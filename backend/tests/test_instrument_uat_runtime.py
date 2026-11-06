@@ -84,6 +84,36 @@ def test_cli_dispatch_never_imports_standard_or_calls_migration(monkeypatch):
     )
 
 
+@pytest.mark.parametrize(
+    ("error", "category"),
+    [
+        (scratch.ScratchError("scratch_profile_mismatch"), "configuration"),
+        (scratch.ScratchError("scratch_snapshot_has_sidecars"), "snapshot"),
+        (scratch.ScratchError("scratch_runtime_not_prepared"), "runtime"),
+        (scratch.ScratchError("scratch_schema_drift"), "database_validation"),
+        (scratch.ScratchError("private path and account"), "unknown"),
+        (ValueError("private path and account"), "unknown"),
+        (scratch.ScratchError(["unhashable private data"]), "unknown"),
+    ],
+)
+def test_preflight_failure_reports_only_allowlisted_reason(monkeypatch, capsys, error, category):
+    from contextlib import contextmanager
+
+    @contextmanager
+    def fail(*args):
+        raise error
+        yield
+
+    monkeypatch.setattr(uat.sys, "platform", "win32")
+    monkeypatch.setattr(uat, "reader_runtime", fail)
+    with pytest.raises(SystemExit) as result:
+        uat.main(["--manifest", "private path", "--readiness-token", TOKEN, "--check"])
+    assert result.value.code == 1
+    captured = capsys.readouterr()
+    assert captured.out == f"instrument_uat_reason={category}\n"
+    assert captured.err == "instrument_uat_failed_closed\n"
+
+
 def test_four_canonical_readers_parity_no_dml_and_bond_block(source_reader, monkeypatch):
     db, binding, stock, bond = source_reader
     monkeypatch.setattr(command, "upgrade", lambda *a, **kw: pytest.fail("migration invoked"))
@@ -456,6 +486,10 @@ def test_windows_start_and_owned_cleanup(snapshot, tmp_path, fault):
         )
         assert (result.returncode == 0) == (fault is None), result.stdout + result.stderr
         assert ("is ready" in result.stdout) == (fault is None)
+        if fault in {"identity", "kind", "unprepared"}:
+            expected = {"identity": "snapshot", "kind": "configuration", "unprepared": "runtime"}
+            assert f"instrument_uat_reason={expected[fault]}" in result.stdout
+            assert str(manifest) not in result.stdout + result.stderr
         assert files(Path(document["database"])) == before
     finally:
         if held:

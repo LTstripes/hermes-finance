@@ -608,6 +608,15 @@ The persistent launcher is bounded to eight hours and buffers inner stdout;
 its initial “Starting” message is not a readiness assertion. `-ExitAfterReady`
 returns the verified ready message after owned cleanup.
 
+When Python preflight fails, the local launcher may additionally print one
+`instrument_uat_reason` category: `configuration`, `boundary`, `runtime`,
+`snapshot`, `database_validation`, `binding`, `platform`, or `unknown`. The
+category identifies an area to investigate, not a successful check or a reason
+to bypass it. Earlier bootstrap failures and failures after preflight may have
+no category. Do not share manifests, paths, tokens, database identities or raw
+exception output when seeking help. A failure still requires investigation and
+an explicitly authorized new start after its cause is resolved.
+
 
 <a id="o2-instrument_uat_runtime-1-read-and-ingress-guarantees"></a>
 #### Read and ingress guarantees

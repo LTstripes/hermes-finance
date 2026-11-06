@@ -70,8 +70,24 @@ try {
     try {
         $env:PYTHONPATH = ''
         $env:PYTHONHOME = ''
-        $null = & $python -m hermes_finance.instrument_uat --manifest $Manifest --readiness-token $token --check 2>&1
-        if ($LASTEXITCODE -ne 0) { throw 'validation failed' }
+        # Windows PowerShell converts native stderr to ErrorRecord; retain it
+        # only for filtering and always decide using the native exit status.
+        $savedErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $preflightOutput = @(& $python -m hermes_finance.instrument_uat --manifest $Manifest --readiness-token $token --check 2>&1)
+            $preflightExitCode = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $savedErrorActionPreference
+        }
+        if ($preflightExitCode -ne 0) {
+            # Relay only fixed categories, never arbitrary child output or errors.
+            $allowedReasons = @('instrument_uat_reason=configuration','instrument_uat_reason=boundary','instrument_uat_reason=runtime','instrument_uat_reason=snapshot','instrument_uat_reason=database_validation','instrument_uat_reason=binding','instrument_uat_reason=platform','instrument_uat_reason=unknown')
+            foreach ($line in $preflightOutput) {
+                if ($allowedReasons -ccontains [string]$line) { Write-Host ([string]$line); break }
+            }
+            throw 'validation failed'
+        }
         if (@(Get-NetTCPConnection -LocalPort $uatPort -State Listen -ErrorAction SilentlyContinue).Count) { throw 'port occupied' }
         $uatProcess = Start-Process -FilePath $python -WorkingDirectory (Join-Path $checkout 'backend') -WindowStyle Hidden -PassThru -ArgumentList @(
             '-m','hermes_finance.instrument_uat','--manifest',('"'+$Manifest+'"'),'--readiness-token',$token)

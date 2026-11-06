@@ -45,6 +45,79 @@ READER_PATH = re.compile(
     r"/api/instruments/[1-9][0-9]*/(cash-income|eod-observations|known-trades|conditional-return)"
 )
 
+# Only fixed, non-identifying categories may leave the local preflight. Never
+# print exception messages: filesystem and database exceptions can contain data.
+PREFLIGHT_REASONS = {
+    **dict.fromkeys(
+        (
+            "scratch_config_invalid",
+            "scratch_profile_invalid",
+            "scratch_profile_mismatch",
+            "scratch_ambiguous_profile",
+            "scratch_arguments_invalid",
+            "uat_readiness_token_invalid",
+        ),
+        "configuration",
+    ),
+    **dict.fromkeys(
+        (
+            "scratch_path_invalid",
+            "scratch_local_path_required",
+            "scratch_local_drive_required",
+            "scratch_config_in_checkout",
+            "scratch_boundary_overlap",
+            "scratch_workspace_inventory_required",
+            "scratch_test_inventory_required",
+            "scratch_git_not_independent",
+            "scratch_executing_checkout_mismatch",
+        ),
+        "boundary",
+    ),
+    **dict.fromkeys(
+        (
+            "scratch_powershell_unavailable",
+            "scratch_runtime_not_prepared",
+            "scratch_interpreter_mismatch",
+        ),
+        "runtime",
+    ),
+    **dict.fromkeys(
+        (
+            "scratch_snapshot_binding_invalid",
+            "scratch_database_identity_mismatch",
+            "scratch_snapshot_has_sidecars",
+            "scratch_snapshot_hash_mismatch",
+            "scratch_snapshot_busy",
+            "scratch_snapshot_linked",
+            "scratch_loaded_database_mismatch",
+        ),
+        "snapshot",
+    ),
+    **dict.fromkeys(
+        (
+            "scratch_schema_head_mismatch",
+            "scratch_integrity_failed",
+            "scratch_foreign_keys_failed",
+            "scratch_schema_drift",
+        ),
+        "database_validation",
+    ),
+    **dict.fromkeys(
+        ("uat_static_manifest_invalid", "uat_manifest_changed", "uat_binding_changed"), "binding"
+    ),
+    "uat_windows_required": "platform",
+}
+
+
+def preflight_reason(error):
+    if isinstance(error, scratch.ScratchError) and len(error.args) == 1:
+        code = error.args[0]
+        if isinstance(code, str):
+            return PREFLIGHT_REASONS.get(code, "unknown")
+    if isinstance(error, scratch.safety.RecoveryRehearsalError):
+        return "boundary"
+    return "unknown"
+
 
 def readiness_proof(token, document, pid, started):
     message = "|".join(
@@ -261,8 +334,9 @@ def main(arguments=None):
                 uvicorn.Server(uvicorn.Config(app, access_log=False, log_level="critical")).run(
                     sockets=[listener]
                 )
-    except (Exception, KeyboardInterrupt):
+    except (Exception, KeyboardInterrupt) as error:
         print("instrument_uat_failed_closed", file=sys.stderr)
+        print("instrument_uat_reason=" + preflight_reason(error))
         raise SystemExit(1) from None
 
 
