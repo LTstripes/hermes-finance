@@ -29,21 +29,25 @@ def _instant(event):
 def _missing_fee_only(event, trade):
     try:
         amount = Decimal(trade["core"]["trade_amount"])
-        accrued = Decimal(trade["accrued_interest"])
         quantity = Decimal(trade["core"]["quantity"])
     except (ValueError, TypeError, KeyError, ArithmeticError):
         return False
     return (
-        trade.get("bank_commission") is None
+        (trade.get("bank_commission") is None or trade.get("accrued_interest") is None)
         and amount.is_finite()
         and amount >= 0
-        and accrued.is_finite()
-        and accrued >= 0
         and quantity.is_finite()
         and quantity != 0
         and event.quantity_delta == quantity
         and event.attribution_basis == "native_trade_settlement"
-        and set(event.reason_codes) == {"repo_trade_unsupported", "trade_components_missing"}
+        and {"repo_trade_unsupported", "trade_components_missing"} <= set(event.reason_codes)
+        and set(event.reason_codes)
+        <= {
+            "repo_trade_unsupported",
+            "trade_components_missing",
+            "trade_missing_settlement",
+            "depository_settlement_missing",
+        }
     )
 
 
@@ -437,7 +441,6 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
     for trade in source_trades:
         try:
             execution = date.fromisoformat(trade["core"]["trade_time"][:10])
-            settlement = date.fromisoformat(trade["settlement_date"])
         except (ValueError, TypeError, KeyError):
             # An undated obligation could affect the entire selected interval.
             return analysis, _barrier_analysis(
@@ -450,6 +453,11 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
     if not relevant:
         return analysis, analysis
     barrier = min(date.fromisoformat(t["core"]["trade_time"][:10]) for t in relevant)
+    for trade in relevant:
+        try:
+            barrier = min(barrier, date.fromisoformat(trade["depo_settlement_date"]))
+        except (ValueError, TypeError, KeyError):
+            barrier = analysis.opening_date + timedelta(days=1)
     barrier = max(barrier, analysis.opening_date + timedelta(days=1))
     if not allow_pair:
         return analysis, _barrier_analysis(analysis, barrier, views)
@@ -511,7 +519,7 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
 
 def _barrier_analysis(analysis, barrier, views):
     """Isolate unknown REPO from FIFO only; keep unrelated blockers intact."""
-    proven_missing_fee = set()
+    proven_local = set()
     for view in views:
         identities = repo_return_identities(view)
         for trade in view["document"].get("trades", ()):
@@ -519,18 +527,40 @@ def _barrier_analysis(analysis, barrier, views):
             if not witness:
                 continue
             for event in analysis.events:
+                reasons = set(event.reason_codes)
+                allowed = {
+                    "repo_trade_unsupported",
+                    "trade_components_missing",
+                    "trade_missing_settlement",
+                    "depository_settlement_missing",
+                    "trade_currency_unsupported",
+                }
                 if (
                     event.native_identity == witness[0]
                     and event.native_ids == tuple(trade.get("ids", ()))
                     and event.native_source_account == trade["core"]["source_account"]
                     and event.isin == trade["core"]["isin"]
-                    and _missing_fee_only(event, trade)
+                    and event.current
+                    and event.attribution_basis == "native_trade_settlement"
+                    and "repo_trade_unsupported" in reasons
+                    and reasons <= allowed
+                    and (
+                        "trade_components_missing" not in reasons or _missing_fee_only(event, trade)
+                    )
+                    and (
+                        "trade_missing_settlement" not in reasons
+                        or trade.get("settlement_date") is None
+                    )
+                    and (
+                        "depository_settlement_missing" not in reasons
+                        or trade.get("depo_settlement_date") is None
+                    )
                 ):
-                    proven_missing_fee.add(event.event_key)
+                    proven_local.add(event.event_key)
     repo_events = [
         e
         for e in analysis.events
-        if set(e.reason_codes) == {"repo_trade_unsupported"} or e.event_key in proven_missing_fee
+        if set(e.reason_codes) == {"repo_trade_unsupported"} or e.event_key in proven_local
     ]
     remaining = tuple(e for e in analysis.events if e not in repo_events)
     coverage = _RepoBarrierCoverage(analysis.coverage, barrier=barrier)
@@ -551,12 +581,16 @@ def _barrier_analysis(analysis, barrier, views):
         ),
     ):
         old = coverage[name]
-        if (
-            name == "events"
-            and proven_missing_fee
-            and not any("trade_components_missing" in event.reason_codes for event in remaining)
-        ):
-            ignored = ignored | {"trade_components_missing"}
+        for reason in {
+            "trade_components_missing",
+            "trade_missing_settlement",
+            "depository_settlement_missing",
+            "trade_currency_unsupported",
+        }:
+            if any(
+                e.event_key in proven_local and reason in e.reason_codes for e in repo_events
+            ) and not any(reason in event.reason_codes for event in remaining):
+                ignored = ignored | {reason}
         reasons = tuple(reason for reason in old.reason_codes if reason not in ignored)
         coverage[name] = Coverage(not reasons and (old.complete or bool(old.reason_codes)), reasons)
     return replace(analysis, events=remaining, coverage=coverage)

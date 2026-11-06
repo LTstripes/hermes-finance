@@ -1348,7 +1348,18 @@ def test_fifo_reader_same_isin_repo_and_unique_ordinary_trades(db, paired, repo_
         assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
 
 
-@pytest.mark.parametrize("repo_fee", ["0", None])
+@pytest.mark.parametrize(
+    "repo_fee",
+    [
+        "0",
+        None,
+        "missing_depo",
+        "missing_cash",
+        "missing_both_costs",
+        "depo_before_execution",
+        "foreign_currency",
+    ],
+)
 @pytest.mark.parametrize("extra_missing", [False, True])
 def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(
     db, repo_fee, extra_missing
@@ -1366,6 +1377,14 @@ def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(
                 row.set("trade_no", "B90001")
                 row.set("repo_no", "B90002")
                 row.set("comment", "репо ч.1")
+                if repo_fee == "missing_depo":
+                    row.attrib.pop("save_depo_settlement_date", None)
+                if repo_fee == "missing_cash":
+                    row.attrib.pop("save_settlement_date", None)
+                if repo_fee == "depo_before_execution":
+                    row.set("save_depo_settlement_date", "01.04.2030")
+                if repo_fee == "foreign_currency":
+                    row.set("curr_calc", "USD")
 
     save(
         db,
@@ -1374,7 +1393,20 @@ def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(
         trades=(
             (ISIN, "1", "100", "0", "0"),
             (ISIN, "-1", "180", "0", "0"),
-            (ISIN, "1", "100", "0", repo_fee),
+            (
+                ISIN,
+                "1",
+                "100",
+                None if repo_fee == "missing_both_costs" else "0",
+                None
+                if repo_fee == "missing_both_costs"
+                else (
+                    "0"
+                    if repo_fee
+                    in {"missing_depo", "missing_cash", "depo_before_execution", "foreign_currency"}
+                    else repo_fee
+                ),
+            ),
             *(((ISIN, "1", "100", "0", None),) if extra_missing else ()),
         ),
         mutate=mutate,
@@ -1390,11 +1422,17 @@ def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(
         )
     rows = result["instruments"][0]["purchases"]
     observed = by_isin(read(db))[ISIN].analysis
-    assert rows and rows[0]["price_result_kopecks"] == "8000", (
+    assert rows, (
         observed.coverage,
         [(e.native_identity, e.reason_codes, e.attribution_basis) for e in observed.events],
     )
-    assert rows[0]["remaining_quantity"] == "0"
+    if repo_fee in {"missing_depo", "depo_before_execution"}:
+        assert rows[0]["price_result_kopecks"] is None and rows[0]["status"] == "partial"
+        assert rows[0]["cost_kopecks"] == "10000"
+        assert result["instruments"][0]["sells"]["value"] == "18000"
+    else:
+        assert rows[0]["price_result_kopecks"] == "8000"
+        assert rows[0]["remaining_quantity"] == "0"
     with db.session_factory() as session:
         create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
     before = snapshot(db)
@@ -1412,7 +1450,9 @@ def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(
         {k: v for k, v in row.items() if k != "id"}
         for row in exported["instruments"][0]["purchases"]
     ] == [{k: v for k, v in row.items() if k != "id"} for row in account["purchases"]]
-    assert account["purchases"][0]["price_result_kopecks"] == "8000"
+    assert account["purchases"][0]["price_result_kopecks"] == (
+        None if repo_fee in {"missing_depo", "depo_before_execution"} else "8000"
+    )
     assert snapshot(db) == before
 
 
