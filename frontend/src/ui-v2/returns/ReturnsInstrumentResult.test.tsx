@@ -52,13 +52,13 @@ test("preserves exact large money and negative period rate from the server", () 
   expect(screen.getByText("Modified Dietz · за период, не годовая")).toBeVisible();
   expect(screen.queryByText("Не все показатели доступны")).toBeNull();
 });
-test("known zero remains numeric while a missing percentage has a visible explanation", () => {
+test("known zero remains numeric while a missing percentage has an on-demand explanation", () => {
   setup({ result: { pnl: m("0"), rate: m(null, "fraction", "modified_dietz") } });
   expect(screen.getByText("0 ₽")).toBeVisible();
   expect(screen.getByText("—")).toBeVisible();
-  expect(
-    screen.getAllByText("Не хватает стоимости на границе периода.").some((e) => e.closest("small")),
-  ).toBe(true);
+  expect(screen.getByLabelText("Подробнее: Доходность инструмента")).toBeVisible();
+  screen.getByLabelText("Подробнее: Доходность инструмента").click();
+  expect(screen.getByText("Не хватает стоимости на границе периода.")).toBeVisible();
 });
 test("clean partial and a true clean zero remain distinct and visible", () => {
   const partial = {
@@ -67,7 +67,7 @@ test("clean partial and a true clean zero remain distinct and visible", () => {
     reason_codes: ["clean_partial_result"],
   };
   const view = setup({ result: { pnl: partial, rate: m(null, "fraction") } });
-  expect(screen.getByText("Известная часть результата ₽")).toBeVisible();
+  expect(screen.getByText("Сумма по доступным данным ₽")).toBeVisible();
   expect(screen.getByText("+12 ₽")).toBeVisible();
   view.rerender(
     <MemoryRouter>
@@ -81,7 +81,7 @@ test("clean partial and a true clean zero remain distinct and visible", () => {
   );
   expect(screen.getByText("Результат ₽")).toBeVisible();
   expect(screen.getByText("0 ₽")).toBeVisible();
-  expect(screen.queryByText("Известная часть результата ₽")).toBeNull();
+  expect(screen.queryByText("Сумма по доступным данным ₽")).toBeNull();
 });
 test("missing detail never becomes zero or a conditional or partial result", () => {
   const detail = detailFixture();
@@ -126,11 +126,11 @@ test("assumptions on analysis, metrics and events remain visible and deduplicate
   );
   expect(notes.closest("details")?.textContent?.match(/Номинал сделки/g)).toHaveLength(1);
 });
-test("absent result shows two unavailable values and a review status", () => {
+test("absent result shows dashes without repeating a status or inventing zero", () => {
   const { container } = setup({ result: null });
   expect(within(container).getAllByText("—")).toHaveLength(2);
-  expect(screen.getByText("Результат недоступен")).toBeVisible();
-  expect(screen.getByText("Доходность недоступна")).toBeVisible();
+  expect(screen.queryByText("Результат недоступен")).toBeNull();
+  expect(screen.queryByText("Доходность недоступна")).toBeNull();
   expect(screen.queryByText("0 ₽")).toBeNull();
 });
 

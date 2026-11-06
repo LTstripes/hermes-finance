@@ -1,5 +1,4 @@
 import type { InstrumentAnalysis } from "../../api/sourceReturns";
-import { reasonCopy } from "../../lib/reasonCopy";
 import styles from "./InstrumentResult.module.css";
 import { displayMetric, type Metric, unavailable } from "./model";
 import { Explanation, Value, visibleReturnReasons } from "./ReturnsInfo";
@@ -31,10 +30,6 @@ export function ReturnsInstrumentResult({
   const reasons = visibleReturnReasons([
     ...new Set([...reasonCodes, ...(analysis?.reason_codes ?? [])]),
   ]).filter((code) => !pnl.reason_codes.includes(code) && !rate.reason_codes.includes(code));
-  const status = (metric: Metric, fallback: string) =>
-    metric.reason_codes.length
-      ? reasonCopy(metric.reason_codes[0], { surface: "returns" }).message
-      : fallback;
   const usedAssumptions = [
     ...new Set([
       ...(analysis?.assumptions ?? []),
@@ -59,19 +54,17 @@ export function ReturnsInstrumentResult({
         <div>
           <dt>
             {originalPnl.reason_codes.includes("clean_partial_result")
-              ? "Известная часть результата ₽"
+              ? "Сумма по доступным данным ₽"
               : "Результат ₽"}
           </dt>
           <dd>
             <Value metric={pnl} label="Результат инструмента" signed />
-            {pnl.value === null && <small>{status(pnl, "Результат недоступен")}</small>}
           </dd>
         </div>
         <div>
           <dt>Доходность %</dt>
           <dd>
             <Value metric={rate} label="Доходность инструмента" />
-            {rate.value === null && <small>{status(rate, "Доходность недоступна")}</small>}
           </dd>
         </div>
       </dl>
