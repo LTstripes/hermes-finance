@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
 import { money } from "../SourceInstrumentDetail";
 import { cardOperations, cardQuantityStatus, hasAmount, nonzeroAmount } from "./cardPresentation";
-import { cleanMetric, getInstrumentCard } from "./cards";
+import { cleanMetric, getInstrumentCard, selectCardScope } from "./cards";
 import styles from "./InstrumentCard.module.css";
 import resultStyles from "./InstrumentResult.module.css";
 import { dateLabel, displayMetric } from "./model";
@@ -21,6 +21,8 @@ export function ReturnsInstrumentCard({
   capitalAccount,
   capitalRequested = false,
   selectedScope,
+  selectedStart,
+  selectedEnd,
   close,
   standalone = false,
   accountLabels = {},
@@ -43,7 +45,10 @@ export function ReturnsInstrumentCard({
     queryFn: ({ signal }) => getInstrumentCard(isin, signal),
     staleTime: 0,
   });
-  const data = !query.isError ? query.data : undefined;
+  const selection = query.data
+    ? selectCardScope(query.data, selectedScope, selectedStart, selectedEnd)
+    : null;
+  const data = !query.isError ? selection?.card : undefined;
   const limitedAccounts =
     data?.accounts
       .map((account) => ({
@@ -98,6 +103,12 @@ export function ReturnsInstrumentCard({
       ) : query.isFetching && !data ? (
         <p role="status">Загружаем инструмент…</p>
       ) : null}
+      {selection?.mismatch && !query.isFetching && (
+        <p role="alert">
+          Счёт или период изменились с момента открытия списка. Вернитесь к доходности и выберите их
+          снова.
+        </p>
+      )}
       {query.isFetching && data ? <p role="status">Обновляем данные…</p> : null}
       {data && (
         <>
@@ -115,7 +126,11 @@ export function ReturnsInstrumentCard({
                     : "Ценная бумага"}{" "}
               · {data.isin}
             </span>
-            <p className={styles.muted}>По сохранённым выпискам, за доступную историю.</p>
+            <p className={styles.muted}>
+              {selectedScope && data.accounts[0]?.period
+                ? `Выбранный счёт · ${dateLabel(data.accounts[0].period.start)} – ${dateLabel(data.accounts[0].period.end)}`
+                : "По сохранённым выпискам, за доступную историю."}
+            </p>
           </header>
           {capitalRequested && matches.length !== 1 && (
             <p className={styles.notice}>
@@ -128,7 +143,7 @@ export function ReturnsInstrumentCard({
               <section className={`${styles.fact} ${styles.primary}`}>
                 <h3>Известный результат</h3>
                 <strong>{displayMetric(data.summary.pnl, true)}</strong>
-                <small>За доступную историю</small>
+                <small>{selectedScope ? "За указанный период" : "За доступную историю"}</small>
               </section>
             )}
             {data.summary.quantity.value !== null && (

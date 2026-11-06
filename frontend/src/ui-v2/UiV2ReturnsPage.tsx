@@ -102,8 +102,24 @@ export default function UiV2ReturnsPage() {
             a.name.localeCompare(b.name, "ru")
           : compareDecimal(a.pnl.value, b.pnl.value) * (sort === "pnl-asc" ? 1 : -1),
   );
-  const instrumentHref = (isin: string) =>
-    `/v2/returns/instrument/${isin}?${new URLSearchParams({ back: `${location.pathname}${location.search}` })}`;
+  const instrumentHref = (isin: string) => {
+    const next = new URLSearchParams({ back: `${location.pathname}${location.search}` });
+    if (scope !== "all") {
+      next.set("detail_scope", scope);
+      const period = rows
+        .find((row) => row.isin === isin)
+        ?.accounts.find((a) => a.scope === scope)?.period;
+      if (period) {
+        next.set("detail_start", period.start);
+        next.set("detail_end", period.end);
+      } else {
+        // A missing overview period is not authority to substitute another interval.
+        next.set("detail_start", "unavailable");
+        next.set("detail_end", "unavailable");
+      }
+    }
+    return `/v2/returns/instrument/${isin}?${next}`;
+  };
   const summaryAccountHref = (accountScope: string) => {
     const next = new URLSearchParams(params);
     next.set("accounts", accountScope);

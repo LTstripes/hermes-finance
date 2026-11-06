@@ -14,6 +14,8 @@ export default function UiV2ReturnsInstrumentPage({
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const back = instrumentBackTarget(params.get("back"));
+  const selection = (key: string) =>
+    params.getAll(key).length > 1 ? "invalid-duplicate" : params.get(key);
   return (
     <UiV2Shell active="returns" header={null}>
       {validIsin(isin) ? (
@@ -27,9 +29,9 @@ export default function UiV2ReturnsInstrumentPage({
             params.getAll("capital_account").length === 1 ? params.get("capital_account") : null
           }
           capitalRequested={params.has("capital_account")}
-          selectedScope={params.get("detail_scope")}
-          selectedStart={params.get("detail_start")}
-          selectedEnd={params.get("detail_end")}
+          selectedScope={selection("detail_scope")}
+          selectedStart={selection("detail_start")}
+          selectedEnd={selection("detail_end")}
           backLabel={back.startsWith("/v2/capital") ? "К капиталу" : "К доходности"}
           close={() => navigate(back)}
         />

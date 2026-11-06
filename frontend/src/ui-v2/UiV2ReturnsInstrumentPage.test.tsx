@@ -40,6 +40,66 @@ function setup(
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("selected scope and exact period show only that account's known return", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(instrumentCardFixture())),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
+  expect(screen.getByText("Выбранный счёт · 30.04.2030 – 31.05.2030")).toBeVisible();
+  const result = screen.getByRole("heading", { name: "Известный результат" }).closest("section");
+  expect(result).toHaveTextContent("+12 ₽");
+  expect(result).not.toHaveTextContent("+8 ₽");
+  const accounts = within(screen.getByRole("region", { name: "Позиции и результат по счетам" }));
+  expect(accounts.getByText("Учебный счёт А")).toBeVisible();
+  expect(accounts.queryByText("Учебный счёт Б")).toBeNull();
+});
+
+test.each([
+  [null, "50", "partial", "+0,50 ₽"],
+  ["0", "0", "supported", "0 ₽"],
+] as const)(
+  "selected account keeps its partial value or genuine zero",
+  async (pnl, known, status, shown) => {
+    const card = instrumentCardFixture();
+    const clean = card.accounts[0].clean;
+    if (!clean) throw new Error("synthetic clean fixture missing");
+    clean.pnl.value = pnl;
+    clean.pnl.status = pnl === null ? "unavailable" : "supported";
+    clean.known_result.value = known;
+    clean.known_result.status = status;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response(card)),
+    );
+    setup(
+      "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+    );
+    const heading = await screen.findByRole("heading", { name: "Известный результат" });
+    expect(heading.closest("section")).toHaveTextContent(shown);
+  },
+);
+
+test.each([
+  "detail_scope=source%3ASYNTH-A&detail_start=2030-04-01&detail_end=2030-04-30",
+  "detail_scope=source%3AMISSING",
+  "detail_scope=source%3ASYNTH-A&detail_scope=source%3ASYNTH-B",
+  "detail_scope=source%3ASYNTH-A&detail_start=2030-04-30",
+  "detail_scope=",
+  "detail_scope=source%3ASYNTH-A&detail_start=&detail_end=",
+])("a changed or ambiguous scope never substitutes another result: %s", async (selection) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(instrumentCardFixture())),
+  );
+  setup(`/v2/returns/instrument/RU000A000002?${selection}`);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Счёт или период изменились");
+  expect(screen.queryByRole("heading", { name: "Известный результат" })).toBeNull();
+});
+
 test("background refresh keeps the card and signals that data is updating", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let finish: (value: Response) => void = () => {};

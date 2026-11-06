@@ -266,9 +266,25 @@ test("card links preserve filtered context and do not load card before entry", a
   const link = within(screen.getByRole("table")).getByRole("link", { name: "Учебная акция" });
   expect(link.getAttribute("href")).toContain("/v2/returns/instrument/RU000A000002?back=");
   expect(decodeURIComponent(link.getAttribute("href") ?? "")).toContain("q=акция");
+  const target = new URL(link.getAttribute("href") ?? "", "http://test.invalid");
+  expect(target.searchParams.get("detail_scope")).toBe("source:SYNTH-A");
+  expect(target.searchParams.get("detail_start")).toBe("2030-04-30");
+  expect(target.searchParams.get("detail_end")).toBe("2030-05-31");
   expect(calls).toHaveLength(1);
   fireEvent.click(link);
   await screen.findByRole("heading", { name: "Отдельная карточка" });
+});
+test("an unknown overview period cannot silently select a different card period", async () => {
+  const data = overallFixture();
+  data.instruments[0].accounts[0].period = null;
+  install(data);
+  setup("/v2/returns?accounts=source%3ASYNTH-A&q=акция");
+  const link = within(await screen.findByRole("table")).getByRole("link", {
+    name: "Учебная акция",
+  });
+  const target = new URL(link.getAttribute("href") ?? "", "http://test.invalid");
+  expect(target.searchParams.get("detail_start")).toBe("unavailable");
+  expect(target.searchParams.get("detail_end")).toBe("unavailable");
 });
 test("paid income loads on disclosure, filters selected accounts and retains repeated legitimate occurrences", async () => {
   const data = overallFixture();

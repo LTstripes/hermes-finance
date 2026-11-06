@@ -1,4 +1,5 @@
 import { apiRequest } from "../../api/client";
+import type { InstrumentMetric } from "../../api/sourceReturns";
 import {
   type AccountLink,
   type Detail,
@@ -8,7 +9,6 @@ import {
 } from "./model";
 import { validDetailPeriod, validIsin } from "./navigation";
 import type { CouponIncome } from "./overall";
-import type { InstrumentMetric } from "../../api/sourceReturns";
 
 export type CleanInstrument = {
   isin: string;
@@ -78,6 +78,70 @@ export type InstrumentCard = {
   }[];
   reason_codes: string[];
 };
+
+/** Select one producer-owned account, never reuse another account's aggregate. */
+export function selectCardScope(
+  card: InstrumentCard,
+  scope: string | null | undefined,
+  start: string | null | undefined,
+  end: string | null | undefined,
+): { card: InstrumentCard | null; mismatch: boolean } {
+  if (scope == null && start == null && end == null) return { card, mismatch: false };
+  const matches = card.accounts.filter((account) => account.scope === scope);
+  if (
+    !scope ||
+    matches.length !== 1 ||
+    (start == null) !== (end == null) ||
+    (start != null &&
+      end != null &&
+      (!validDetailPeriod({ start, end }) ||
+        matches[0].period?.start !== start ||
+        matches[0].period?.end !== end))
+  )
+    return { card: null, mismatch: true };
+  const account = matches[0];
+  const clean = account.clean;
+  const empty = {
+    ...card.summary.pnl,
+    value: null,
+    estimate: true,
+    reason_codes: ["selected_components_incomplete"],
+  };
+  const metric = (key: keyof CleanInstrument): Metric => {
+    const value = clean?.[key];
+    return value && typeof value === "object" && "status" in value ? cleanMetric(value) : empty;
+  };
+  const quantity = account.detail?.closing_quantity ?? null;
+  return {
+    card: {
+      ...card,
+      accounts: [account],
+      summary: {
+        ...card.summary,
+        quantity: {
+          value: quantity,
+          partial: true,
+          reason_codes: quantity === null ? ["instrument_accounts_missing_or_excluded"] : [],
+        },
+        valuation_dates: account.valuation_date ? [account.valuation_date] : [],
+        reported_value: metric("closing_value"),
+        pnl:
+          clean?.pnl.value !== null && clean?.pnl.value !== undefined
+            ? metric("pnl")
+            : metric("known_result"),
+        coupons: metric("coupons"),
+        dividends: metric("dividends"),
+        valuation_and_trades: metric("valuation_and_trades"),
+        redemption: metric("redemption"),
+        costs: empty,
+        taxes: empty,
+        rate: clean ? cleanMetric(clean.modified_dietz, true) : { ...empty, unit: "fraction" },
+        reason_codes: account.reason_codes,
+      },
+    },
+    mismatch: false,
+  };
+}
 export type IncomeKind = "coupon" | "dividend";
 export type Income = {
   contract_version: "returns_income_v2";
