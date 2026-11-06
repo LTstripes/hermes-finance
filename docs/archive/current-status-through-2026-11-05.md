@@ -731,4 +731,3 @@ Historical delivery evidence is retained in [#940](https://github.com/LTstripes/
 the corresponding PR receipts and published [v1.6.0 release notes](../release-notes-1.6.0.md).
 Previous release scope remains in [v1.7.0 release notes](../release-notes-1.7.0.md).
 Current combined release scope is in [v1.7.1 release notes](../release-notes-1.7.1.md).
-
