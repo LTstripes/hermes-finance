@@ -26,6 +26,27 @@ def _instant(event):
     return value
 
 
+def _missing_fee_only(event, trade):
+    try:
+        amount = Decimal(trade["core"]["trade_amount"])
+        accrued = Decimal(trade["accrued_interest"])
+        quantity = Decimal(trade["core"]["quantity"])
+    except (ValueError, TypeError, KeyError, ArithmeticError):
+        return False
+    return (
+        trade.get("bank_commission") is None
+        and amount.is_finite()
+        and amount >= 0
+        and accrued.is_finite()
+        and accrued >= 0
+        and quantity.is_finite()
+        and quantity != 0
+        and event.quantity_delta == quantity
+        and event.attribution_basis == "native_trade_settlement"
+        and set(event.reason_codes) == {"repo_trade_unsupported", "trade_components_missing"}
+    )
+
+
 def without_proven_closed_repo(analysis, views, isin):
     """Return a disposable copy only if every affected REPO is fully proven."""
     repo_events = [e for e in analysis.events if "repo_trade_unsupported" in e.reason_codes]
@@ -36,7 +57,7 @@ def without_proven_closed_repo(analysis, views, isin):
         or not e.current
         or not e.native_identity
         or not e.native_identity.startswith("repo:")
-        or set(e.reason_codes) != {"repo_trade_unsupported"}
+        or not set(e.reason_codes) <= {"repo_trade_unsupported", "trade_components_missing"}
         for e in repo_events
     ):
         return analysis
@@ -44,6 +65,27 @@ def without_proven_closed_repo(analysis, views, isin):
     if len(ids) != len(repo_events):
         return analysis
     native_ids = {e.native_ids for e in repo_events}
+    tokens = {
+        (event.native_source_account, event.native_ids[0])
+        for event in repo_events
+        if len(event.native_ids) == 1
+    }
+    for view in views:
+        counts = defaultdict(int)
+        for trade in view["document"].get("trades", ()):
+            for token in trade.get("ids", ()):
+                key = (trade.get("core", {}).get("source_account"), token)
+                if key not in tokens:
+                    continue
+                counts[key] += 1
+                if (
+                    trade.get("section") != "completed"
+                    or not trade.get("repo_observed")
+                    or trade.get("core", {}).get("isin") != isin
+                ):
+                    return analysis
+        if any(count != 1 for count in counts.values()):
+            return analysis
 
     # Witnessed identity and reciprocal partner/leg facts are reconstructed
     # from retained inventory, not from a guessed B-number match.
@@ -121,6 +163,10 @@ def without_proven_closed_repo(analysis, views, isin):
             or event.depository_settlement_date is None
             or event.cash_settlement_date.isoformat() != trade["settlement_date"]
             or event.depository_settlement_date.isoformat() != trade["depo_settlement_date"]
+            or (
+                "trade_components_missing" in event.reason_codes
+                and not _missing_fee_only(event, trade)
+            )
         ):
             return analysis
         if trade["repo_leg"] == "репо ч.1":
@@ -198,6 +244,12 @@ def without_proven_closed_repo(analysis, views, isin):
         ),
     ):
         old = coverage[name]
+        if (
+            name == "events"
+            and any("trade_components_missing" in e.reason_codes for e in repo_events)
+            and not any("trade_components_missing" in e.reason_codes for e in remaining)
+        ):
+            ignored = ignored | {"trade_components_missing"}
         reasons = tuple(reason for reason in old.reason_codes if reason not in ignored)
         coverage[name] = Coverage(not reasons and (old.complete or bool(old.reason_codes)), reasons)
     return replace(analysis, events=remaining, coverage=coverage)
@@ -258,6 +310,101 @@ def saved_proof_repo_evidence_complete(session, source_account, start, end, view
     return True
 
 
+def _closed_historical_repo_tokens(views, account, isin, opening):
+    """Prove reciprocal, identical witnessed occurrences ended before opening."""
+    occurrences = defaultdict(list)
+    for view in views:
+        identities = repo_return_identities(view)
+        for trade in view["document"].get("trades", ()):
+            if trade.get("core", {}).get("source_account") != account:
+                continue
+            for token in trade.get("ids", ()):
+                occurrences[token].append((view, trade, identities.get(trade.get("ordinal"))))
+    closed = set()
+
+    def identical(entries):
+        if not entries or len({id(view) for view, _, _ in entries}) != len(entries):
+            return False
+        signatures = []
+        for _, trade, witness in entries:
+            if (
+                not witness
+                or trade.get("section") != "completed"
+                or trade.get("state") != "settled"
+            ):
+                return False
+            signatures.append(
+                digest(
+                    [
+                        trade.get("core"),
+                        trade.get("ids"),
+                        trade.get("settlement_date"),
+                        trade.get("depo_settlement_date"),
+                        trade.get("settlement_time"),
+                        trade.get("bank_commission"),
+                        trade.get("accrued_interest"),
+                        trade.get("face_value"),
+                        witness,
+                    ]
+                )
+            )
+        return len(set(signatures)) == 1
+
+    for own, entries in occurrences.items():
+        if not identical(entries):
+            continue
+        view, trade, witness = entries[0]
+        if not witness or trade.get("core", {}).get("isin") != isin:
+            continue
+        partner, leg_digest = witness[1]
+        peers = occurrences.get(partner, ())
+        if not identical(peers):
+            continue
+        peer, peer_witness = peers[0][1:]
+        leg_names = {digest("репо ч.1"): "репо ч.1", digest("репо ч.2"): "репо ч.2"}
+        try:
+            first = {**trade, "repo_partner": partner, "repo_leg": leg_names[leg_digest]}
+            second = {
+                **peer,
+                "repo_partner": peer_witness[1][0],
+                "repo_leg": leg_names[peer_witness[1][1]],
+            }
+            if _repo_pair_blockers([first, second], date.min, opening):
+                continue
+            times = [datetime.fromisoformat(t["core"]["trade_time"]) for t in (first, second)]
+            if any(t.tzinfo is not None for t in times):
+                continue
+            if any(
+                instant.date() > date.fromisoformat(trade[field])
+                for trade, instant in zip((first, second), times, strict=True)
+                for field in ("settlement_date", "depo_settlement_date")
+            ):
+                continue
+            earlier, later = times if first["repo_leg"] == "репо ч.1" else times[::-1]
+            if earlier >= later:
+                continue
+            for token, items in ((own, entries), (partner, peers)):
+                member_views = {id(item[0]) for item in items}
+                observed_trade = items[0][1]
+                execution = date.fromisoformat(observed_trade["core"]["trade_time"][:10])
+                settlement = max(
+                    date.fromisoformat(observed_trade[field])
+                    for field in ("settlement_date", "depo_settlement_date")
+                )
+                if any(
+                    date.fromisoformat(v["covered_from"]) <= execution
+                    and settlement <= date.fromisoformat(v["covered_to"])
+                    and id(v) not in member_views
+                    for v in views
+                ):
+                    break
+            else:
+                closed.update((own, partner))
+        except (ValueError, TypeError, KeyError, ArithmeticError):
+            continue
+    return closed
+
+
 def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=True):
     """Prove a closed pair or preserve only FIFO facts before an uncertain REPO."""
     accounts = {
@@ -271,9 +418,12 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
             for view in views
             for trade in view["document"].get("trades", ())
         ):
-            return analysis, _barrier_analysis(analysis, analysis.opening_date + timedelta(days=1))
+            return analysis, _barrier_analysis(
+                analysis, analysis.opening_date + timedelta(days=1), views
+            )
         return analysis, analysis
     account = next(iter(accounts))
+    historical = _closed_historical_repo_tokens(views, account, isin, analysis.opening_date)
     source_trades = [
         trade
         for view in views
@@ -281,6 +431,7 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
         if trade.get("repo_observed")
         and trade.get("core", {}).get("isin") == isin
         and trade.get("core", {}).get("source_account") == account
+        and not (len(trade.get("ids", ())) == 1 and trade["ids"][0] in historical)
     ]
     relevant = []
     for trade in source_trades:
@@ -289,7 +440,9 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
             settlement = date.fromisoformat(trade["settlement_date"])
         except (ValueError, TypeError, KeyError):
             # An undated obligation could affect the entire selected interval.
-            return analysis, _barrier_analysis(analysis, analysis.opening_date + timedelta(days=1))
+            return analysis, _barrier_analysis(
+                analysis, analysis.opening_date + timedelta(days=1), views
+            )
         # A prior leg can represent an obligation still open at the boundary.
         # Do not infer that it was closed merely from its own settlement date.
         if execution <= analysis.closing_date:
@@ -299,7 +452,7 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
     barrier = min(date.fromisoformat(t["core"]["trade_time"][:10]) for t in relevant)
     barrier = max(barrier, analysis.opening_date + timedelta(days=1))
     if not allow_pair:
-        return analysis, _barrier_analysis(analysis, barrier)
+        return analysis, _barrier_analysis(analysis, barrier, views)
     raw_repo = [
         event for event in analysis.events if "repo_trade_unsupported" in event.reason_codes
     ]
@@ -316,7 +469,7 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
                     continue
                 witness = identities.get(trade.get("ordinal"))
                 if witness is None:
-                    return analysis, _barrier_analysis(analysis, barrier)
+                    return analysis, _barrier_analysis(analysis, barrier, views)
                 identity = witness[0]
                 if identity in seen:
                     continue
@@ -326,7 +479,7 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
                     settlement = date.fromisoformat(trade["settlement_date"])
                     delivery = date.fromisoformat(trade["depo_settlement_date"])
                 except (ValueError, TypeError, KeyError, ArithmeticError):
-                    return analysis, _barrier_analysis(analysis, barrier)
+                    return analysis, _barrier_analysis(analysis, barrier, views)
                 synthetic.append(
                     InstrumentEvent(
                         event_key="clean-ephemeral:" + identity,
@@ -348,17 +501,37 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
                     )
                 )
         if not synthetic:
-            return analysis, _barrier_analysis(analysis, barrier)
+            return analysis, _barrier_analysis(analysis, barrier, views)
         candidate = replace(analysis, events=(*analysis.events, *synthetic))
     proven = without_proven_closed_repo(candidate, views, isin)
     if proven is not candidate:
         return proven, proven
-    return analysis, _barrier_analysis(analysis, barrier)
+    return analysis, _barrier_analysis(analysis, barrier, views)
 
 
-def _barrier_analysis(analysis, barrier):
+def _barrier_analysis(analysis, barrier, views):
     """Isolate unknown REPO from FIFO only; keep unrelated blockers intact."""
-    repo_events = [e for e in analysis.events if set(e.reason_codes) == {"repo_trade_unsupported"}]
+    proven_missing_fee = set()
+    for view in views:
+        identities = repo_return_identities(view)
+        for trade in view["document"].get("trades", ()):
+            witness = identities.get(trade.get("ordinal"))
+            if not witness:
+                continue
+            for event in analysis.events:
+                if (
+                    event.native_identity == witness[0]
+                    and event.native_ids == tuple(trade.get("ids", ()))
+                    and event.native_source_account == trade["core"]["source_account"]
+                    and event.isin == trade["core"]["isin"]
+                    and _missing_fee_only(event, trade)
+                ):
+                    proven_missing_fee.add(event.event_key)
+    repo_events = [
+        e
+        for e in analysis.events
+        if set(e.reason_codes) == {"repo_trade_unsupported"} or e.event_key in proven_missing_fee
+    ]
     remaining = tuple(e for e in analysis.events if e not in repo_events)
     coverage = _RepoBarrierCoverage(analysis.coverage, barrier=barrier)
     for name, ignored in (
@@ -378,6 +551,12 @@ def _barrier_analysis(analysis, barrier):
         ),
     ):
         old = coverage[name]
+        if (
+            name == "events"
+            and proven_missing_fee
+            and not any("trade_components_missing" in event.reason_codes for event in remaining)
+        ):
+            ignored = ignored | {"trade_components_missing"}
         reasons = tuple(reason for reason in old.reason_codes if reason not in ignored)
         coverage[name] = Coverage(not reasons and (old.complete or bool(old.reason_codes)), reasons)
     return replace(analysis, events=remaining, coverage=coverage)

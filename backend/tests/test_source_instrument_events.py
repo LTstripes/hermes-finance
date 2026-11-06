@@ -1283,7 +1283,8 @@ def test_overlapping_account_cost_gap_stays_with_account(db, description, accoun
 
 
 @pytest.mark.parametrize("paired", [True, False])
-def test_fifo_reader_same_isin_repo_and_unique_ordinary_trades(db, paired):
+@pytest.mark.parametrize("repo_fee", ["0", None])
+def test_fifo_reader_same_isin_repo_and_unique_ordinary_trades(db, paired, repo_fee):
     from hermes_finance.services.clean_instrument_return import read_clean_account
 
     def repo_after_ordinary(root):
@@ -1299,7 +1300,7 @@ def test_fifo_reader_same_isin_repo_and_unique_ordinary_trades(db, paired):
                 row.set("repo_no", f"B9000{2 if index == 11 else 1}")
                 row.set("comment", f"репо ч.{index - 10}")
 
-    repo = [(ISIN, "5", "500", "0", "0")]
+    repo = [(ISIN, "5", "500", "0", repo_fee)]
     if paired:
         repo.append((ISIN, "-5", "501", "0", "0"))
     save(
@@ -1326,12 +1327,34 @@ def test_fifo_reader_same_isin_repo_and_unique_ordinary_trades(db, paired):
             [(e.kind, e.native_ids, e.native_identity, e.reason_codes) for e in analysis.events],
         )
         assert rows[0]["price_result_kopecks"] == "15000"
+        from hermes_finance.services.clean_repo_pairs import without_proven_closed_repo
+        from hermes_finance.services.source_monthly_returns import _selected_sources
+
+        with db.session_factory() as session:
+            selected, _ = _selected_sources(session, ACCOUNT)
+            views = [view for _, view, error in selected if not error]
+        assert without_proven_closed_repo(analysis, views, ISIN) is not analysis
+        conflict = deepcopy(views)
+        pending = deepcopy(
+            next(t for t in conflict[0]["document"]["trades"] if t.get("repo_observed"))
+        )
+        pending["section"] = "pending"
+        pending["core"]["isin"] = BOND
+        conflict[0]["document"]["trades"].append(pending)
+        assert without_proven_closed_repo(analysis, conflict, ISIN) is analysis
+        pending["ids"] = ["B99999"]
+        assert without_proven_closed_repo(analysis, conflict, ISIN) is not analysis
     else:
         assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
 
 
-def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(db):
+@pytest.mark.parametrize("repo_fee", ["0", None])
+@pytest.mark.parametrize("extra_missing", [False, True])
+def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(
+    db, repo_fee, extra_missing
+):
     from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.reporting_months import create_reporting_month
 
     def mutate(root):
         for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
@@ -1346,12 +1369,13 @@ def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(db)
 
     save(
         db,
-        stock=("0", "1", "0", "100"),
+        stock=("0", "2" if extra_missing else "1", "0", "200" if extra_missing else "100"),
         bond=None,
         trades=(
             (ISIN, "1", "100", "0", "0"),
             (ISIN, "-1", "180", "0", "0"),
-            (ISIN, "1", "100", "0", "0"),
+            (ISIN, "1", "100", "0", repo_fee),
+            *(((ISIN, "1", "100", "0", None),) if extra_missing else ()),
         ),
         mutate=mutate,
     )
@@ -1365,8 +1389,31 @@ def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(db)
             include_purchases=True,
         )
     rows = result["instruments"][0]["purchases"]
-    assert rows and rows[0]["price_result_kopecks"] == "8000"
+    observed = by_isin(read(db))[ISIN].analysis
+    assert rows and rows[0]["price_result_kopecks"] == "8000", (
+        observed.coverage,
+        [(e.native_identity, e.reason_codes, e.attribution_basis) for e in observed.events],
+    )
     assert rows[0]["remaining_quantity"] == "0"
+    with db.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(db)
+    with TestClient(create_app(db)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+        report = client.get(
+            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
+        )
+    assert card.status_code == report.status_code == 200
+    account = card.json()["accounts"][0]
+    exported = report.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert exported["account_ref"] == account["ai_account_ref"]
+    assert exported["period"] == account["period"]
+    assert [
+        {k: v for k, v in row.items() if k != "id"}
+        for row in exported["instruments"][0]["purchases"]
+    ] == [{k: v for k, v in row.items() if k != "id"} for row in account["purchases"]]
+    assert account["purchases"][0]["price_result_kopecks"] == "8000"
+    assert snapshot(db) == before
 
 
 @pytest.mark.parametrize("same_day_delivery", [False, True])
@@ -1408,6 +1455,107 @@ def test_fifo_reader_repo_checks_intermediate_custody_under_all_day_orders(db, s
         )
     rows = result["instruments"][0]["purchases"]
     assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+
+
+@pytest.mark.parametrize("closed", [True, False])
+@pytest.mark.parametrize("overlap", [None, "identical", "missing", "changed", "duplicate"])
+def test_fifo_reader_closed_repo_before_selected_period_does_not_hide_later_purchase(
+    db, closed, overlap
+):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def repo(root):
+        for i, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            row.set("trade_no", f"B9000{i}")
+            row.set("repo_no", f"B9000{3 - i}")
+            row.set("comment", f"репо ч.{i}")
+            stamp = f"{i:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{i:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{i:02}.04.2030")
+
+    def ordinary(root):
+        for i, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{i:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{i:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{i:02}.04.2030")
+
+    save(
+        db,
+        4,
+        stock=("0", "0" if closed else "1", "0", "0" if closed else "100"),
+        bond=None,
+        trades=(
+            (ISIN, "1", "100", "0", "0"),
+            *(((ISIN, "-1", "101", "0", "0"),) if closed else ()),
+        ),
+        mutate=repo,
+    )
+    if overlap:
+
+        def overlap_repo(root):
+            repo(root)
+            collection = root.find(".//m:Tablix2/m:Details_Collection", NS)
+            if overlap == "missing" and closed:
+                collection.remove(collection[-1])
+            elif overlap == "changed":
+                collection[0].set("qty", "2")
+            elif overlap == "duplicate":
+                collection.append(deepcopy(collection[0]))
+
+        save(
+            db,
+            4,
+            stock=("0", "0" if closed else "1", "0", "0" if closed else "100"),
+            bond=None,
+            trades=(
+                (ISIN, "1", "100", "0", "0"),
+                *(((ISIN, "-1", "101", "0", "0"),) if closed else ()),
+            ),
+            mutate=overlap_repo,
+            marker="overlap",
+        )
+    save(
+        db,
+        5,
+        stock=(
+            "0" if closed else "1",
+            "0" if closed else "1",
+            "0" if closed else "100",
+            "0" if closed else "100",
+        ),
+        bond=None,
+        trades=((ISIN, "1", "100", "0", "0"), (ISIN, "-1", "180", "0", "0")),
+        mutate=ordinary,
+    )
+    with db.session_factory() as session:
+        data = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 4, 30),
+            date(2030, 5, 31),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    rows = data["instruments"][0]["purchases"]
+    if closed and overlap in (None, "identical"):
+        assert rows and rows[0]["price_result_kopecks"] == "8000"
+    else:
+        assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+
+
+def test_pending_b_identifier_is_rejected_by_existing_parser():
+    from xml.etree import ElementTree
+
+    from test_statement_import_mybroker import FILENAME, fixture
+
+    from hermes_finance.statement_import.mybroker import MyBrokerError, parse_mybroker
+
+    root = ElementTree.fromstring(fixture(pending=True, money=False))
+    root.find(".//{MyBroker}Details2").set("trade_no1", "B90001")
+    with pytest.raises(MyBrokerError, match="trade_ids_ambiguous"):
+        parse_mybroker(ElementTree.tostring(root), FILENAME)
 
 
 def test_fifo_repo_custody_cannot_ignore_unavailable_intermediate_inventory(db):
