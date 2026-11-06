@@ -9,6 +9,7 @@ from hermes_finance.services import source_investment_proofs as proofs
 # any parser, classification, payout-linking, Decimal/money/XIRR or evidence logic.
 # Whole files deliberately require review even for nonsemantic edits within them.
 SEMANTIC_MODULES = (
+    "domain/clean_instrument_return.py",
     "domain/instrument_return.py",
     "domain/money_security.py",
     "domain/monthly_return_chain.py",
@@ -44,8 +45,8 @@ SEMANTIC_MODULES = (
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v10",
-    "a6abe469351bd98f21b168b53ecdd7902231976ae9821ab81acc96370324be27",
+    "source_investment_semantics_v11",
+    "98f86070d018a0f2a9183bf64f68a685a559dea7161f81b5686a3619a4984f72",
 )
 
 

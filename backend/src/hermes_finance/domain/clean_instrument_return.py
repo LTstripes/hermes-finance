@@ -6,6 +6,7 @@ Account cash balances and the historical cash-economic calculation are separate.
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from hermes_finance.domain.instrument_return import InstrumentEvent, Metric
 from hermes_finance.domain.monthly_return_chain import calculate_interval_return
@@ -27,8 +28,49 @@ class CleanInstrumentReturn:
     modified_dietz: Metric
 
 
+def _priced_bond_principal(event: InstrumentEvent) -> int | None:
+    """Calculate only from the dated, explicitly sourced price and face."""
+    amount = event.native_trade_amount_kopecks
+    if amount is None or amount < 0:
+        return None
+    # The source's bond price is a percentage of the trade-date face value.
+    # Convert directly to kopecks: /100 for percent and *100 for RUB cancel.
+    price, face, quantity = event.unit_price, event.face_value, event.quantity_delta
+    if (
+        event.provider != "alfa_mybroker"
+        or event.kind not in {"BUY", "SELL"}
+        or not event.native_identity
+        or len(event.native_ids) != 2
+        or "repo_trade_unsupported" in event.reason_codes
+        or event.price_unit != "PERCENT_OF_FACE"
+        or event.execution_date is None
+        or event.face_value_date != event.execution_date
+        or any(
+            not isinstance(value, Decimal) or not value.is_finite()
+            for value in (price, face, quantity)
+        )
+        or price < 0
+        or face <= 0
+        or quantity == 0
+        or (quantity > 0) != (event.kind == "BUY")
+    ):
+        return None
+    try:
+        with localcontext() as context:
+            context.prec = 200
+            priced = int(
+                (price * face * abs(quantity)).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+            )
+        # The supported source total includes nonnegative NKD. Preserve its
+        # existing one-kopeck per-trade tolerance; a smaller total conflicts
+        # with the independently calculated principal.
+        return priced if amount + 1 >= priced else None
+    except ArithmeticError:
+        return None
+
+
 def clean_trade_amount(event: InstrumentEvent) -> int | None:
-    """Extract the security principal, never guessing a missing NKD basis."""
+    """Extract clean principal from supported source operands."""
     amount = event.native_trade_amount_kopecks
     if amount is None or amount < 0:
         return None
@@ -36,10 +78,9 @@ def clean_trade_amount(event: InstrumentEvent) -> int | None:
         return amount
     if event.native_total_basis == "includes_paid_nkd":
         nkd = event.accrued_interest_kopecks
-        if nkd is None or nkd < 0 or nkd > amount:
-            return None
-        return amount - nkd
-    return None
+        if nkd is not None and 0 <= nkd <= amount:
+            return amount - nkd
+    return _priced_bond_principal(event)
 
 
 def _missing_fee_principal_consistent(event: InstrumentEvent) -> bool:
@@ -55,6 +96,8 @@ def _missing_fee_principal_consistent(event: InstrumentEvent) -> bool:
     if nkd is None or nkd < 0 or clean_trade_amount(event) is None:
         return False
     sign = -1 if event.kind == "BUY" else 1
+    if any(sign * leg.account_cash_kopecks < 0 for leg in (*principal, *nkd_legs)):
+        return False
     dirty = event.native_trade_amount_kopecks + (
         nkd if event.native_total_basis == "excludes_paid_nkd" else 0
     )
@@ -92,7 +135,8 @@ def fee_only_trade_conflict(event: InstrumentEvent) -> bool:
         or not event.current
         or event.counted
         or event.reason_codes != ("trade_money_cash_conflict",)
-        or event.quantity_delta is None
+        or not isinstance(event.quantity_delta, Decimal)
+        or not event.quantity_delta.is_finite()
         or (event.kind == "BUY" and event.quantity_delta <= 0)
         or (event.kind == "SELL" and event.quantity_delta >= 0)
         or event.commission_kopecks is None
@@ -114,6 +158,8 @@ def fee_only_trade_conflict(event: InstrumentEvent) -> bool:
     ):
         return False
     sign = -1 if event.kind == "BUY" else 1
+    if any(sign * leg.account_cash_kopecks < 0 for leg in (*roles["principal"], *roles["nkd"])):
+        return False
     nkd = event.accrued_interest_kopecks
     dirty = event.native_trade_amount_kopecks + (
         nkd if event.native_total_basis == "excludes_paid_nkd" else 0
@@ -129,8 +175,155 @@ def fee_only_trade_conflict(event: InstrumentEvent) -> bool:
     )
 
 
+def _clean_trade_chronology(event: InstrumentEvent) -> bool:
+    principal_date = clean_trade_date(event)
+    return (
+        event.execution_date is not None
+        and principal_date is not None
+        and event.depository_settlement_date is not None
+        and event.execution_date <= principal_date
+        and event.execution_date <= event.depository_settlement_date
+    )
+
+
+def _priced_bond_without_costs(event: InstrumentEvent) -> bool:
+    """The source price proves principal even when legacy cost fields are absent."""
+    if (
+        event.provider != "alfa_mybroker"
+        or event.price_unit != "PERCENT_OF_FACE"
+        or event.kind not in {"BUY", "SELL"}
+        or not event.current
+        or event.counted
+        or not event.native_identity
+        or len(event.native_ids) != 2
+        or not _clean_trade_chronology(event)
+        or not event.reason_codes
+        or not set(event.reason_codes)
+        <= {
+            "trade_components_missing",
+            "trade_nkd_basis_unknown",
+            "trade_nkd_basis_conflict",
+            "trade_money_cash_conflict",
+            "overlapping_trade_conflict",
+            "overlap_trade_commission_only",
+            "overlap_trade_nkd_only",
+        }
+        or bool("overlapping_trade_conflict" in event.reason_codes)
+        != bool(
+            {"overlap_trade_commission_only", "overlap_trade_nkd_only"} & set(event.reason_codes)
+        )
+        or not isinstance(event.quantity_delta, Decimal)
+        or not event.quantity_delta.is_finite()
+        or (event.kind == "BUY" and event.quantity_delta <= 0)
+        or (event.kind == "SELL" and event.quantity_delta >= 0)
+    ):
+        return False
+    priced = _priced_bond_principal(event)
+    amount = clean_trade_amount(event)
+    if priced is None or amount is None or abs(priced - amount) > 1:
+        return False
+    if any(leg.role not in {"principal", "nkd", "commission"} for leg in event.cash_legs):
+        return False
+    principal = [leg for leg in event.cash_legs if leg.role == "principal"]
+    if len({leg.date for leg in principal}) > 1:
+        return False
+    nkd = event.accrued_interest_kopecks
+    if (
+        not principal
+        and nkd is not None
+        and nkd >= 0
+        and abs(event.native_trade_amount_kopecks - priced - nkd) > 1
+        and "overlap_trade_nkd_only" not in event.reason_codes
+    ):
+        return False
+    sign = -1 if event.kind == "BUY" else 1
+    if any(sign * leg.account_cash_kopecks < 0 for leg in principal):
+        return False
+    if not principal:
+        return True
+    paid = sum(leg.account_cash_kopecks for leg in principal)
+    return (
+        paid == sign * amount
+        or (
+            "overlap_trade_nkd_only" in event.reason_codes
+            and event.attribution_basis == "native_trade_settlement"
+            and event.native_total_basis == "includes_paid_nkd"
+            and not any(leg.role == "nkd" for leg in event.cash_legs)
+            and paid == sign * event.native_trade_amount_kopecks
+        )
+        or (
+            nkd is None
+            and event.native_total_basis is None
+            and not any(leg.role == "nkd" for leg in event.cash_legs)
+            and paid == sign * event.native_trade_amount_kopecks
+        )
+    )
+
+
+def clean_trade_assumptions(event: InstrumentEvent) -> tuple[str, ...]:
+    """Disclose contradictory NKD while retaining independently proved principal."""
+    if not _priced_bond_without_costs(event):
+        return event.assumptions
+    price = _priced_bond_principal(event)
+    total = event.native_trade_amount_kopecks
+    nkd = event.accrued_interest_kopecks
+    legs = [leg for leg in event.cash_legs if leg.role == "nkd"]
+    sign = -1 if event.kind == "BUY" else 1
+    conflict = bool(
+        {"trade_nkd_basis_conflict", "overlap_trade_nkd_only"} & set(event.reason_codes)
+    )
+    if nkd is not None:
+        conflict |= nkd < 0 or abs(total - price - nkd) > 1
+    if legs:
+        conflict |= any(sign * leg.account_cash_kopecks < 0 for leg in legs)
+        expected = nkd if nkd is not None and nkd >= 0 else total - price
+        conflict |= abs(sum(leg.account_cash_kopecks for leg in legs) - sign * expected) > 1
+    if not conflict:
+        return event.assumptions
+    return tuple(sorted(set(event.assumptions) | {"source_nkd_conflict"}))
+
+
+def _fee_only_overlap(event: InstrumentEvent) -> bool:
+    """Keep a legacy conflict visible while using its identical clean principal."""
+    return (
+        event.provider == "alfa_mybroker"
+        and event.kind in {"BUY", "SELL"}
+        and event.current
+        and not event.counted
+        and bool(event.native_identity)
+        and len(event.native_ids) == 2
+        and _clean_trade_chronology(event)
+        and {"overlapping_trade_conflict", "overlap_trade_commission_only"}.issubset(
+            event.reason_codes
+        )
+        and set(event.reason_codes)
+        <= {
+            "overlapping_trade_conflict",
+            "overlap_trade_commission_only",
+            "trade_components_missing",
+            "trade_money_cash_conflict",
+        }
+        and (
+            "trade_components_missing" not in event.reason_codes or event.commission_kopecks is None
+        )
+        and isinstance(event.quantity_delta, Decimal)
+        and event.quantity_delta.is_finite()
+        and (
+            (event.kind == "BUY" and event.quantity_delta > 0)
+            or (event.kind == "SELL" and event.quantity_delta < 0)
+        )
+        and clean_trade_amount(event) is not None
+        and _missing_fee_principal_consistent(event)
+    )
+
+
 def cost_only_trade(event: InstrumentEvent) -> bool:
-    return missing_fee_only(event) or fee_only_trade_conflict(event)
+    return (
+        missing_fee_only(event)
+        or fee_only_trade_conflict(event)
+        or _priced_bond_without_costs(event)
+        or _fee_only_overlap(event)
+    )
 
 
 def clean_trade_date(event: InstrumentEvent) -> date | None:
@@ -233,8 +426,13 @@ def calculate_clean_return(
                 dated_flows.append((leg.date, -leg.account_cash_kopecks, "confirmed"))
             continue
         values[kind].append(value)
-        assumptions[kind].update(event.assumptions)
+        assumptions[kind].update(clean_trade_assumptions(event))
         dated_flows.append((day, flow, "confirmed"))
+
+    def available_status(used):
+        if "source_nkd_conflict" in used:
+            return "partial"
+        return "provisional" if used else "supported"
 
     def component(kind, incomplete):
         observed = values[kind]
@@ -246,9 +444,7 @@ def calculate_clean_return(
             if observed and incomplete
             else "unavailable"
             if incomplete
-            else "provisional"
-            if used
-            else "supported",
+            else available_status(used),
             (
                 "clean_trades_incomplete"
                 if kind in {"BUY", "SELL"}
@@ -297,13 +493,7 @@ def calculate_clean_return(
     price_status = (
         "unavailable"
         if price is None
-        else (
-            "partial"
-            if trade_gap or redemption_gap
-            else "provisional"
-            if price_assumptions
-            else "supported"
-        )
+        else ("partial" if trade_gap or redemption_gap else available_status(price_assumptions))
     )
     price_reasons = tuple(
         reason
@@ -330,7 +520,7 @@ def calculate_clean_return(
         (opening_date, opening_clean), (closing_date, closing_clean), dated_flows
     )
     used = tuple(sorted(set().union(*assumptions.values())))
-    result_status = "provisional" if used else "supported"
+    result_status = available_status(used)
     pnl = Metric(
         row.growth_kopecks if complete else None,
         result_status if complete and row.growth_kopecks is not None else "unavailable",

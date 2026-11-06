@@ -50,7 +50,7 @@ test("selected scope and exact period show only that account's known return", as
   );
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(screen.getByText("Выбранный счёт · 30.04.2030 – 31.05.2030")).toBeVisible();
-  const result = screen.getByRole("heading", { name: "Известный результат" }).closest("section");
+  const result = screen.getByRole("heading", { name: "Сумма по данным" }).closest("section");
   expect(result).toHaveTextContent("+12 ₽");
   expect(result).not.toHaveTextContent("+8 ₽");
   const accounts = within(screen.getByRole("region", { name: "Позиции и результат по счетам" }));
@@ -78,8 +78,9 @@ test("known trade amounts stay visible when the result is unavailable", async ()
     "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
   );
   const facts = within(await screen.findByRole("region", { name: "Известные суммы сделок" }));
-  expect(facts.getByText("Учебный счёт А")).toBeVisible();
-  expect(facts.getByText(/Покупки · известная часть:/)).toHaveTextContent("1 000");
+  expect(facts.queryByText("Учебный счёт А")).toBeNull();
+  expect(facts.getByText(/Покупки:/)).toHaveTextContent("1 000");
+  expect(facts.getByText("Включены не все операции.")).toBeVisible();
   expect(facts.getByText(/Продажи:/)).toHaveTextContent("0");
   expect(facts.getByText(/сами по себе не являются доходностью/)).toBeVisible();
   expect(facts.queryByText("Учебный счёт Б")).toBeNull();
@@ -302,6 +303,39 @@ test("bond purchase keeps provisional result and identifies the missing face val
   expect(region.getByText("Данные неполные")).toBeVisible();
 });
 
+test("shows known purchase result and explains conflicting NKD", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "bond-buy",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "100000",
+      sale_proceeds_kopecks: "101000",
+      value_kopecks: "0",
+      price_result_kopecks: "1000",
+      return_fraction: "0.01",
+      status: "partial",
+      reason_codes: ["source_nkd_conflict"],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("10,00 ₽")).toBeVisible();
+  expect(region.getByText("Расхождение по НКД")).toBeVisible();
+  expect(region.getByText("Данные неполные")).toBeVisible();
+});
+
 test("same-day buys sold together show both supported price results", async () => {
   const card = instrumentCardFixture();
   card.accounts[0].purchases = [
@@ -374,7 +408,7 @@ test("selected scope shows producer-owned price, payouts and result with redempt
     region.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
   ).toHaveTextContent("+120 ₽");
   expect(
-    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
+    region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
   ).toHaveTextContent("+70 ₽");
   expect(region.getByText(/Погашение включено в стоимость и сделки/)).toBeVisible();
   expect(screen.getByText("В отчёте AI: source-account-2")).toBeVisible();
@@ -405,8 +439,8 @@ test("unknown and genuine zero payout are not confused", async () => {
     region.getByRole("heading", { name: "Стоимость и сделки" }).closest("section"),
   ).toHaveTextContent("—");
   expect(
-    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
-  ).toHaveTextContent("Известная часть");
+    region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
+  ).toHaveTextContent("+120 ₽");
 });
 
 test("older v2 card without additive payouts field leaves it unknown", async () => {
@@ -444,7 +478,7 @@ test.each([
     setup(
       "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
     );
-    const heading = await screen.findByRole("heading", { name: "Известный результат" });
+    const heading = await screen.findByRole("heading", { name: "Сумма по данным" });
     expect(heading.closest("section")).toHaveTextContent(shown);
   },
 );
@@ -463,7 +497,7 @@ test.each([
   );
   setup(`/v2/returns/instrument/RU000A000002?${selection}`);
   expect(await screen.findByRole("alert")).toHaveTextContent("Счёт или период изменились");
-  expect(screen.queryByRole("heading", { name: "Известный результат" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Сумма по данным" })).toBeNull();
 });
 
 test("background refresh keeps the card and signals that data is updating", async () => {
@@ -679,7 +713,7 @@ test("partial component account sets are labelled known constituents without imp
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(screen.getByRole("heading", { name: "Из чего сложился результат" })).toBeVisible();
-  expect(screen.getByText(/Показаны известные составляющие/)).toBeVisible();
+  expect(screen.getByText("Комиссии, налоги и НКД не входят в расчёт.")).toBeVisible();
   expect(
     screen.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
   ).toHaveTextContent("+49,77 ₽");
@@ -745,7 +779,36 @@ test("standalone instrument explains paid income greater than its exact total", 
   expect(region.getByText(/Купоны: \+10 ₽/)).toBeVisible();
   expect(region.getByText(/Дивиденды: \+5 ₽/)).toBeVisible();
   expect(
-    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
+    region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
   ).toHaveTextContent("+4 ₽");
   expect(region.queryByText(/^Комиссии:/)).toBeNull();
 });
+
+test.each([true, false])(
+  "card explains missing summary values once, with reasons=%s",
+  async (withReasons) => {
+    const card = instrumentCardFixture();
+    for (const key of ["valuation_and_trades", "payouts", "pnl"] as const) {
+      card.summary[key] = {
+        ...card.summary[key],
+        value: null,
+        reason_codes: withReasons ? ["missing_endpoint"] : [],
+      };
+    }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response(card)),
+    );
+    setup("/v2/returns/instrument/RU000A000002");
+    const section = await screen.findByRole("region", { name: "Разложение результата" });
+    const note = within(section).getByRole("note");
+    expect(note).toBeVisible();
+    expect(note).toHaveTextContent(
+      withReasons
+        ? "Не хватает стоимости на границе периода."
+        : "Нет подтверждённого значения для этого периода.",
+    );
+    expect(note.textContent?.split(".").filter(Boolean)).toHaveLength(1);
+    expect(within(section).getAllByText("—")).toHaveLength(3);
+  },
+);

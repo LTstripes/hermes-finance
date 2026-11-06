@@ -1104,19 +1104,18 @@ def read_clean_instrument_card(session, isin):
                 account["purchases"] = None if account["scope"] in identity_conflicts else purchases
             if pair:
                 period = pair[0]["period"]
-                detail = account["detail"]
-                if not detail or detail["period"] != period:
-                    try:
-                        detail = returns_view.read_detail(
-                            session,
-                            scope=account["scope"],
-                            start=period["start"],
-                            end=period["end"],
-                            isin=isin,
-                            native_period=True,
-                        )
-                    except (ValueError, LookupError):
-                        detail = None
+                try:
+                    detail = returns_view.read_detail(
+                        session,
+                        scope=account["scope"],
+                        start=period["start"],
+                        end=period["end"],
+                        isin=isin,
+                        native_period=True,
+                        clean_projection=True,
+                    )
+                except (ValueError, LookupError):
+                    detail = None
                 if detail:
                     account["detail"] = returns_view.apply_clean_detail(detail, pair[1])
                 else:
@@ -1226,6 +1225,7 @@ def read_clean_income(session, *, kind):
                 closing_date=period["end"],
                 include_monthly_history=False,
                 available_period=True,
+                clean_projection=True,
             )
             for row in source.instruments:
                 for event in row.analysis.events:

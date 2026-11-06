@@ -919,7 +919,8 @@ def test_clean_card_keeps_scope_operations_and_does_not_sum_mapping_conflicts(
     )
     calls = []
 
-    def detail(session, *, scope, start, end, isin, native_period):
+    def detail(session, *, scope, start, end, isin, native_period, clean_projection):
+        assert clean_projection is True
         calls.append((scope, start, end, native_period))
         return {"period": {"start": start, "end": end}, "events": ["synthetic"]}
 
@@ -1202,6 +1203,7 @@ def test_clean_card_closed_fifo_purchase_survives_later_unknown_buy_amount(db):
             row.set("db_time", f"{stamp}\n{stamp}")
             row.set("Price", price)
         rows[-1].attrib.pop("summ_nkd", None)
+        rows[-1].attrib.pop("nominal", None)
 
     save(
         db,

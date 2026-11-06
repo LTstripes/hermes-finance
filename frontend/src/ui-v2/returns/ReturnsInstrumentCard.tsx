@@ -12,7 +12,7 @@ import { dateLabel, displayMetric, isPartialResult } from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
-import { Explanation, visibleReturnReasons } from "./ReturnsInfo";
+import { Explanation, MissingMetricNote, visibleReturnReasons } from "./ReturnsInfo";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
@@ -150,44 +150,51 @@ export function ReturnsInstrumentCard({
           )}
           <section className={styles.panel} aria-label="Разложение результата">
             <h2>Из чего сложился результат</h2>
-            <p>Показаны известные составляющие; комиссии, налоги и НКД не входят в расчёт.</p>
+            <p>Комиссии, налоги и НКД не входят в расчёт.</p>
+            {[data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl].some(
+              isPartialResult,
+            ) && <p>В сумму входят только рассчитанные составляющие.</p>}
             <div className={styles.facts}>
               {(
                 [
                   ["Стоимость и сделки", data.summary.valuation_and_trades],
                   ["Полученные выплаты", data.summary.payouts],
-                  ["Известный результат", data.summary.pnl],
+                  ["Сумма по данным", data.summary.pnl],
                 ] as const
               ).map(([label, value]) => (
                 <section
-                  className={`${styles.fact} ${label === "Известный результат" ? styles.primary : ""}`}
+                  className={`${styles.fact} ${label === "Сумма по данным" ? styles.primary : ""}`}
                   key={label}
                 >
                   <h3>{label}</h3>
                   <strong>{displayMetric(value, true)}</strong>
-                  {isPartialResult(value) && <small>Известная часть</small>}
                   {value.value !== null && value.estimate && !isPartialResult(value) && (
                     <small>Оценка</small>
-                  )}
-                  {value.value === null && value.reason_codes.length > 0 && (
-                    <small>
-                      {reasonCopy(value.reason_codes[0], { surface: "returns" }).message}
-                    </small>
                   )}
                 </section>
               ))}
             </div>
+            <MissingMetricNote
+              metrics={[data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl]}
+            />
             {accountsWithKnownTrades.length > 0 && (
               <section aria-label="Известные суммы сделок">
                 <h3>Известные суммы сделок</h3>
                 <p>Эти суммы сами по себе не являются доходностью.</p>
+                {accountsWithKnownTrades.some(
+                  (account) =>
+                    account.clean?.buys.status === "partial" ||
+                    account.clean?.sells.status === "partial",
+                ) && <p>Включены не все операции.</p>}
                 {accountsWithKnownTrades.map((account) => {
                   const clean = account.clean;
                   if (!clean || (clean.buys.value === null && clean.sells.value === null))
                     return null;
                   return (
                     <div key={account.scope}>
-                      <strong>{accountLabels[account.scope] ?? account.label}</strong>
+                      {!selectedScope && (
+                        <strong>{accountLabels[account.scope] ?? account.label}</strong>
+                      )}
                       {account.period && (
                         <p>
                           {dateLabel(account.period.start)} – {dateLabel(account.period.end)}
@@ -203,12 +210,8 @@ export function ReturnsInstrumentCard({
                         .map(([label, value]) => (
                           <p key={label}>
                             {label}
-                            {value.status === "partial"
-                              ? " · известная часть"
-                              : value.status === "provisional"
-                                ? " · оценка"
-                                : ""}
-                            : {displayMetric(cleanMetric(value))}
+                            {value.status === "provisional" ? " · оценка" : ""}:{" "}
+                            {displayMetric(cleanMetric(value))}
                             {value.assumptions.length > 0 && (
                               <small>
                                 {" "}
@@ -235,15 +238,14 @@ export function ReturnsInstrumentCard({
                 ] as const
               ).map(([label, value]) => (
                 <p key={label}>
-                  {label}
-                  {isPartialResult(value) ? " · известная часть" : ""}: {displayMetric(value, true)}
+                  {label}: {displayMetric(value, true)}
                 </p>
               ))}
             </details>
             {nonzeroAmount(data.summary.redemption) && (
               <p>
-                Погашение{isPartialResult(data.summary.redemption) ? " · известная часть" : ""}{" "}
-                включено в стоимость и сделки: {displayMetric(data.summary.redemption, true)}
+                Погашение включено в стоимость и сделки:{" "}
+                {displayMetric(data.summary.redemption, true)}
               </p>
             )}
           </section>
@@ -326,6 +328,9 @@ export function ReturnsInstrumentCard({
                               {purchase.status === "partial" && <small>Данные неполные</small>}
                               {purchase.reason_codes.includes("trade_face_value_missing") && (
                                 <small>Номинал не подтверждён</small>
+                              )}
+                              {purchase.reason_codes.includes("source_nkd_conflict") && (
+                                <small>Расхождение по НКД</small>
                               )}
                             </td>
                             <td>
@@ -414,7 +419,16 @@ export function ReturnsInstrumentCard({
                                 reasonCodes={account.reason_codes}
                               />
                               <details>
-                                <summary>Известные составляющие</summary>
+                                <summary>Составляющие результата</summary>
+                                {[
+                                  account.clean.buys,
+                                  account.clean.sells,
+                                  account.clean.coupons,
+                                  account.clean.dividends,
+                                  account.clean.redemption,
+                                ].some((part) => part.status === "partial") && (
+                                  <p>Включены не все операции.</p>
+                                )}
                                 {(
                                   [
                                     ["Покупки", account.clean.buys],
@@ -427,9 +441,7 @@ export function ReturnsInstrumentCard({
                                   .filter(([, part]) => part.value !== null)
                                   .map(([label, part]) => (
                                     <p key={label}>
-                                      {label}
-                                      {part.status === "partial" ? " · известная часть" : ""}:{" "}
-                                      {displayMetric(cleanMetric(part))}
+                                      {label}: {displayMetric(cleanMetric(part))}
                                     </p>
                                   ))}
                               </details>

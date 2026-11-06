@@ -11,6 +11,23 @@ from hermes_finance.statement_import.mybroker import NS, PROVIDER, digest
 from hermes_finance.statement_import.mybroker_return_structure import _inventory_tree
 
 
+def trade_observation_conflict(observations):
+    """Compare lifecycle endpoints and present settlement times by state."""
+    pending, settled = [], []
+    times = {}
+    for view, trade in observations:
+        state = trade.get("state")
+        if state == "pending":
+            pending.append(view["covered_to"])
+        elif state == "settled":
+            settled.append(view["covered_to"])
+        if trade.get("settlement_time"):
+            times.setdefault(state, set()).add(trade["settlement_time"])
+    return bool(pending and settled and max(pending) >= min(settled)) or any(
+        len(values) > 1 for values in times.values()
+    )
+
+
 def repo_return_identities(view):
     """Return ordinal -> (projection identity, partner/leg signature).
 

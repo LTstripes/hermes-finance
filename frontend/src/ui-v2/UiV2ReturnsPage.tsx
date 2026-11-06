@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
-import { reasonCopy } from "../lib/reasonCopy";
 import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
@@ -25,6 +24,7 @@ import { capitalGoldTarget, goldTargets } from "./returns/navigation";
 import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
 import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
+import { MissingMetricNote } from "./returns/ReturnsInfo";
 import { ReturnsInstrumentResult } from "./returns/ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./returns/ReturnsResultMeta";
 import { UiV2Shell } from "./UiV2Shell";
@@ -238,14 +238,6 @@ export default function UiV2ReturnsPage() {
               <p role="alert">Выбранный счёт недоступен. Выберите другой счёт.</p>
             ) : (
               <>
-                {(result?.partial ||
-                  (["coupon", "dividend"] as const).some(
-                    (k) => selectedIncome(data, scope, k).included_accounts < accounts.length,
-                  )) && (
-                  <p className={layout.notice} role="status">
-                    Показаны известные составляющие; часть истории может отсутствовать.
-                  </p>
-                )}
                 <div
                   className={styles.cards}
                   style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
@@ -255,9 +247,10 @@ export default function UiV2ReturnsPage() {
                       className={`${styles.card} ${styles.primaryCard}`}
                       aria-label="Результат"
                     >
-                      <h2>Известный результат бумаг за доступную историю</h2>
+                      <h2>Сумма по бумагам за доступную историю</h2>
                       <div className={layout.value}>{displayMetric(result.amount, true)}</div>
                       <small>По выбранным счетам за совпадающий период</small>
+                      {result.partial && <small>Учтены не все составляющие результата</small>}
                     </section>
                   )}
                   {(["coupon", "dividend"] as const).map((incomeKind) => {
@@ -331,7 +324,7 @@ export default function UiV2ReturnsPage() {
                 {chartRows.length > 0 && resultPeriods.size === 1 && (
                   <section className={styles.panel} aria-label="Вклад инструментов">
                     <div className={layout.heading}>
-                      <h2>Вклад инструментов</h2>
+                      <h2>Суммы по инструментам</h2>
                       <span className={layout.note}>Результат в рублях за доступную историю</span>
                     </div>
                     <div className={layout.plot}>
@@ -354,13 +347,16 @@ export default function UiV2ReturnsPage() {
                               />
                             </div>
                             <strong>
-                              {isPartialResult(r.pnl) ? "Известная часть: " : ""}
                               {displayMetric(r.pnl, true)}
+                              {isPartialResult(r.pnl) && <sup aria-hidden="true">*</sup>}
                             </strong>
                           </div>
                         );
                       })}
                     </div>
+                    {chartRows.some((r) => isPartialResult(r.pnl)) && (
+                      <p className={layout.note}>* Учтены не все составляющие результата.</p>
+                    )}
                   </section>
                 )}
                 <section className={styles.panel} aria-labelledby="returns-instruments">
@@ -408,7 +404,7 @@ export default function UiV2ReturnsPage() {
                         <thead>
                           <tr>
                             <th>Инструмент</th>
-                            <th>Результат</th>
+                            <th>Сумма по данным</th>
                             <th>Полученный доход</th>
                           </tr>
                         </thead>
@@ -439,43 +435,30 @@ export default function UiV2ReturnsPage() {
                                   >
                                     <details>
                                       <summary>
-                                        <span className={layout.instrumentAccountName}>
-                                          {label(a.scope, a.label)}
-                                        </span>{" "}
-                                        ·{" "}
+                                        {scope === "all" && (
+                                          <>
+                                            <span className={layout.instrumentAccountName}>
+                                              {label(a.scope, a.label)}
+                                            </span>{" "}
+                                            ·{" "}
+                                          </>
+                                        )}
                                         {a.resultAvailable ? (
                                           <>
                                             <strong>
-                                              {isPartialResult(a.pnl) ? "Известная часть: " : ""}
                                               {displayMetric(a.pnl, true)}
+                                              {isPartialResult(a.pnl) && (
+                                                <sup aria-hidden="true">*</sup>
+                                              )}
                                             </strong>{" "}
                                             · {displayMetric(a.rate)}
                                           </>
                                         ) : (
                                           "Нет доступного результата"
                                         )}
-                                        {a.resultAvailable && a.pnl.value === null && (
-                                          <small>
-                                            {a.pnl.reason_codes.length
-                                              ? reasonCopy(a.pnl.reason_codes[0], {
-                                                  surface: "returns",
-                                                }).message
-                                              : "Результат недоступен"}
-                                          </small>
-                                        )}
-                                        {a.resultAvailable &&
-                                          a.pnl.value !== null &&
-                                          a.rate.value === null && (
-                                            <small>
-                                              {a.rate.reason_codes.length
-                                                ? reasonCopy(a.rate.reason_codes[0], {
-                                                    surface: "returns",
-                                                  }).message
-                                                : "Доходность недоступна"}
-                                            </small>
-                                          )}
                                       </summary>
                                       <ReturnsInstrumentResult
+                                        showMissingNote={false}
                                         result={a.resultAvailable ? a : null}
                                         reasonCodes={
                                           a.resultAvailable
@@ -494,6 +477,9 @@ export default function UiV2ReturnsPage() {
                                         accountLink={a.account_link}
                                       />
                                     </details>
+                                    {a.resultAvailable && (
+                                      <MissingMetricNote metrics={[a.pnl, a.rate]} />
+                                    )}
                                   </section>
                                 ))}
                               </td>
@@ -509,6 +495,9 @@ export default function UiV2ReturnsPage() {
                           ))}
                         </tbody>
                       </table>
+                      {rows.some((r) => r.accounts.some((a) => isPartialResult(a.pnl))) && (
+                        <p className={layout.note}>* Учтены не все составляющие результата.</p>
+                      )}
                     </div>
                   ) : (
                     <p>Бумаги не найдены.</p>
@@ -520,17 +509,17 @@ export default function UiV2ReturnsPage() {
                   )}
                 </section>
                 {resultPeriods.size === 1 &&
-                  rows.some((r) => r.pnl.value !== null && r.pnl.value !== "0") && (
+                  rows.some(
+                    (r) => !isPartialResult(r.pnl) && r.pnl.value !== null && r.pnl.value !== "0",
+                  ) && (
                     <section className={styles.panel} aria-label="Лидеры и отстающие">
                       <h2>Лидеры и отстающие</h2>
-                      {rows.some((r) => isPartialResult(r.pnl)) && (
-                        <p>Порядок основан на показанных суммах; часть результатов неполна.</p>
-                      )}
                       <div className={layout.leaders}>
                         {([true, false] as const)
                           .filter((positive) =>
                             rows.some(
                               (r) =>
+                                !isPartialResult(r.pnl) &&
                                 r.pnl.value !== null &&
                                 compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
                             ),
@@ -542,6 +531,7 @@ export default function UiV2ReturnsPage() {
                                 {rows
                                   .filter(
                                     (r) =>
+                                      !isPartialResult(r.pnl) &&
                                       r.pnl.value !== null &&
                                       compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
                                   )
@@ -563,7 +553,6 @@ export default function UiV2ReturnsPage() {
                                         {r.name}
                                       </Link>
                                       <strong className={layout.leaderAmount}>
-                                        {isPartialResult(r.pnl) ? "Известная часть: " : ""}
                                         {displayMetric(r.pnl, true)}
                                       </strong>
                                     </li>

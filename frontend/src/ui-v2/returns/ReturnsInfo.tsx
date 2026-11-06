@@ -63,6 +63,22 @@ export function Explanation({ codes, context }: { codes: string[]; context?: Rea
     </>
   );
 }
+/** Explain only missing operands, once per message, next to the displayed metrics. */
+export function MissingMetricNote({ metrics }: { metrics: readonly Metric[] }) {
+  const messages = [
+    ...new Set(
+      metrics
+        .filter((metric) => metric.value === null)
+        .map((metric) => {
+          const code = visibleReturnReasons(metric.reason_codes)[0];
+          return code
+            ? reasonCopy(code, { surface: "returns" }).message
+            : "Нет подтверждённого значения для этого периода.";
+        }),
+    ),
+  ];
+  return messages.length ? <p role="note">{messages.join(" ")}</p> : null;
+}
 export function Info({ label, children }: { label: string; children: ReactNode }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const [open, setOpen] = useState(false);

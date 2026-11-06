@@ -15,6 +15,7 @@ from sqlalchemy import select
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.instrument_return import (
     AccountReconciliation,
+    Coverage,
     InstrumentAnalysis,
     InstrumentEvent,
     Metric,
@@ -254,6 +255,7 @@ def _income(
     resolved_redemptions=frozenset(),
     events=(),
     historical_evidence=None,
+    analytical_payouts=None,
 ):
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
     from hermes_finance.services.source_instrument_events import payout_attribution
@@ -308,6 +310,7 @@ def _income(
                     views=views,
                     historical_evidence=historical_evidence,
                     canonical_matches=payout_groups,
+                    analytical_payouts=analytical_payouts,
                 )
                 if basis in {"accepted_money", "current_source_proof"}:
                     flow = replace(flow, status="confirmed")
@@ -569,10 +572,14 @@ def _trade_cash_total(amount, nkd, fee, quantity, basis):
 
 
 def _trades(session, views, isin, month, instrument_type, flags):
-    from hermes_finance.services.source_trade_identity import repo_return_identities
+    from hermes_finance.services.source_trade_identity import (
+        repo_return_identities,
+        trade_observation_conflict,
+    )
 
     groups = defaultdict(list)
     documents = defaultdict(list)
+    occurrences = defaultdict(list)
     for view in views:
         repo_ids = view.get("return_repo_identities")
         for trade in view["document"].get("trades", []):
@@ -590,6 +597,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
                     )
                 key = trade.get("identity") or trade.get("return_identity") or object()
                 documents[key].append(view["document"])
+                occurrences[key].append((view, trade))
                 # Keep unresolved occurrences separate solely to flag their months;
                 # they are never eligible for counting or deduplication.
                 # A position nominal has no proven validity at the trade date.
@@ -650,7 +658,7 @@ def _trades(session, views, isin, month, instrument_type, flags):
                 )
                 for t in selected
             }
-            if len(signatures) != 1:
+            if len(signatures) != 1 or trade_observation_conflict(occurrences[key]):
                 flags.add("overlapping_trade_conflict")
                 invalid = True
                 continue
@@ -1120,6 +1128,135 @@ def _with_return_breakdown(result, views, *, account_rows=()):
     )
 
 
+def _clean_proof_constraints(analysis, proof):
+    """Keep exact current proof boundaries and conflicts in the clean read."""
+    if proof is None or (analysis.opening_date, analysis.closing_date) != (
+        proof.opening_date,
+        proof.closing_date,
+    ):
+        return analysis
+    relevant = {
+        "pdf_xml_position_mismatch",
+        "pdf_position_invalid",
+        "pdf_position_date_missing",
+        "pdf_position_date_invalid",
+        "pdf_payout_row_invalid",
+        "pdf_xml_payout_mismatch",
+        "payout_identity_ambiguous",
+        "pdf_actual_payout_section_missing",
+        "pdf_account_period_invalid",
+    }
+    coverage = dict(analysis.coverage)
+
+    def proved_zero(native, confirmed):
+        if (
+            native.quantity == confirmed.quantity == 0
+            and native.reported_value_kopecks is None
+            and confirmed.reported_value_kopecks == confirmed.economic_value_kopecks == 0
+            and native.source_references
+            and set(native.reason_codes) <= {"missing_endpoint", "bond_valuation_basis_unknown"}
+            and all(
+                proof.coverage[name].complete for name in ("quantity", "endpoints", "valuation")
+            )
+        ):
+            return replace(
+                native,
+                reported_value_kopecks=0,
+                economic_value_kopecks=0,
+                reason_codes=tuple(r for r in native.reason_codes if r != "missing_endpoint"),
+            )
+        return native
+
+    opening = proved_zero(analysis.opening, proof.opening)
+    closing = proved_zero(analysis.closing, proof.closing)
+    reasons = set(analysis.reason_codes)
+    inherited = set()
+    for name, old in coverage.items():
+        conflicts = set(proof.coverage[name].reason_codes) & relevant
+        if conflicts:
+            inherited.update(conflicts)
+            coverage[name] = Coverage(False, tuple(sorted(set(old.reason_codes) | conflicts)))
+    endpoint_conflicts = set(coverage["endpoints"].reason_codes) & relevant
+    if endpoint_conflicts:
+        closing = replace(
+            closing,
+            economic_value_kopecks=None,
+            reason_codes=tuple(sorted(set(closing.reason_codes) | endpoint_conflicts)),
+        )
+    return replace(
+        analysis,
+        opening=opening,
+        closing=closing,
+        coverage=coverage,
+        reason_codes=tuple(sorted(reasons | inherited)),
+    )
+
+
+_PDF_PAYOUT_CONFLICTS = {
+    "pdf_payout_row_invalid",
+    "pdf_xml_payout_mismatch",
+    "payout_identity_ambiguous",
+    "pdf_actual_payout_section_missing",
+    "pdf_account_period_invalid",
+}
+
+
+def _clean_historical_payout_conflicts(analysis, proof):
+    if not (
+        analysis.opening_date < proof.closing_date and proof.opening_date < analysis.closing_date
+    ):
+        return analysis
+    conflicts = set(proof.coverage["payouts"].reason_codes) & _PDF_PAYOUT_CONFLICTS
+    if not conflicts:
+        return analysis
+    coverage = dict(analysis.coverage)
+    coverage["payouts"] = Coverage(
+        False, tuple(sorted(set(coverage["payouts"].reason_codes) | conflicts))
+    )
+    return replace(
+        analysis,
+        coverage=coverage,
+        reason_codes=tuple(sorted(set(analysis.reason_codes) | conflicts)),
+    )
+
+
+def _clean_historical_position_conflicts(analysis, proof):
+    """Retain a current PDF position conflict at a boundary in this period."""
+    boundary = proof.closing_date
+    if not analysis.opening_date <= boundary <= analysis.closing_date:
+        return analysis
+    conflicts = set(proof.reason_codes) & {
+        "pdf_xml_position_mismatch",
+        "pdf_position_invalid",
+        "pdf_position_date_missing",
+        "pdf_position_date_invalid",
+    }
+    if not conflicts:
+        return analysis
+    coverage = dict(analysis.coverage)
+    quantity = coverage["quantity"]
+    coverage["quantity"] = Coverage(False, tuple(sorted(set(quantity.reason_codes) | conflicts)))
+
+    def conflicted(endpoint):
+        return replace(
+            endpoint,
+            economic_value_kopecks=None,
+            reason_codes=tuple(sorted(set(endpoint.reason_codes) | conflicts)),
+        )
+
+    return replace(
+        analysis,
+        opening=conflicted(analysis.opening)
+        if boundary == analysis.opening_date
+        else analysis.opening,
+        closing=conflicted(analysis.closing)
+        if boundary == analysis.closing_date
+        else analysis.closing,
+        coverage=coverage,
+        reason_codes=tuple(sorted(set(analysis.reason_codes) | conflicts)),
+    )
+
+
 @coherent_read_operation
 def read_instrument_returns(
     session,
@@ -1132,12 +1269,13 @@ def read_instrument_returns(
     include_monthly_history: bool = True,
     available_period: bool = False,
     excluded_periods=(),
+    clean_projection: bool = False,
 ) -> SourceInstrumentReturns:
     """Isolate unreadable sources and individual operand gaps; perform no writes.
 
     Presentation callers may omit the unused monthly/all-time projections.
-    Selected interval analysis, events, gaps and reconciliation stay identical;
-    the ordinary source API retains its full history by default.
+    Default readers retain the ordinary source and proof semantics. Only the
+    clean projection may add its independently validated analytical links.
     """
     from hermes_finance.services.source_bond_valuation import (
         FILE_PATH_KEY,
@@ -1166,7 +1304,8 @@ def read_instrument_returns(
         instrument_result(
             session, source_account, selected, requested_isin, opening_date, closing_date
         )
-        if not available_period
+        if clean_projection
+        or not available_period
         or (
             opening_date is not None
             and closing_date is not None
@@ -1179,14 +1318,25 @@ def read_instrument_returns(
     from hermes_finance.services.returns_account_link import account_link
 
     link = account_link(session, source_account)
-    if investment is not None and (
-        not available_period
-        or (
-            bool(investment.instruments)
-            and not any(gap.code == "investment_proof_stale" for gap in investment.gaps)
+    if (
+        not clean_projection
+        and investment is not None
+        and (
+            not available_period
+            or (
+                bool(investment.instruments)
+                and not any(gap.code == "investment_proof_stale" for gap in investment.gaps)
+            )
         )
     ):
         return replace(investment, account_link=link)
+    clean_proofs = (
+        {row.isin: row.analysis for row in investment.instruments}
+        if clean_projection
+        and investment is not None
+        and not any(gap.code == "investment_proof_stale" for gap in investment.gaps)
+        else {}
+    )
     cancellation_dates, _ = resolve_proof(session, source_account, selected, native_scope)
     from hermes_finance.services.source_redemption_evidence import verified_redemptions
 
@@ -1278,11 +1428,42 @@ def read_instrument_returns(
     identities = _identities(views)
     event_gaps = []
     native_account = next(iter(native_scope)) if native_scope else None
-    from hermes_finance.services.source_return_evidence import historical_payout_evidence
-
-    historical_evidence = historical_payout_evidence(
-        session, source_account, selected, native_scope
+    from hermes_finance.services.source_return_evidence import (
+        analytical_coupon_links,
+        historical_payout_evidence,
     )
+
+    retained_proofs = {} if clean_projection else None
+    historical_evidence = historical_payout_evidence(
+        session, source_account, selected, native_scope, retained_proofs
+    )
+    analytical_payouts = (
+        analytical_coupon_links(
+            session, selected, native_scope, historical_evidence=historical_evidence
+        )
+        if clean_projection
+        else None
+    )
+    if analytical_payouts:
+        from hermes_finance.services.source_money_classifications import source_reference
+
+        dates = {
+            source_reference(view["id"], row): date.fromisoformat(row["date"])
+            for view in views
+            for row in view["document"].get("money", [])
+        }
+        analytical_payouts = {
+            ref: isin
+            for ref, isin in analytical_payouts.items()
+            if not any(
+                proof.opening_date < dates[ref] <= proof.closing_date
+                and set(proof.coverage["payouts"].reason_codes) & _PDF_PAYOUT_CONFLICTS
+                for proof in [
+                    *([clean_proofs[isin]] if isin in clean_proofs else []),
+                    *(retained_proofs or {}).get(isin, ()),
+                ]
+            )
+        }
     events, references = read_events(
         session,
         views,
@@ -1290,6 +1471,7 @@ def read_instrument_returns(
         native_account or source_account,
         event_gaps,
         historical_evidence=historical_evidence,
+        analytical_payouts=analytical_payouts,
     )
     from hermes_finance.services.source_redemption_evidence import apply_verified_redemptions
 
@@ -1320,6 +1502,7 @@ def read_instrument_returns(
         resolved_redemptions=resolved_redemptions,
         events=events,
         historical_evidence=historical_evidence,
+        analytical_payouts=analytical_payouts,
     )
     ambiguous_payouts = {
         ref
@@ -1403,6 +1586,11 @@ def read_instrument_returns(
                 gaps,
                 reviewed_basis=reviewed_basis,
             )
+            if clean_projection:
+                analysis = _clean_proof_constraints(analysis, clean_proofs.get(isin))
+                for proof in (retained_proofs or {}).get(isin, ()):
+                    analysis = _clean_historical_position_conflicts(analysis, proof)
+                    analysis = _clean_historical_payout_conflicts(analysis, proof)
             outer_analysis = analysis
             if (
                 available_period
@@ -1487,6 +1675,11 @@ def read_instrument_returns(
                         ),
                         reason_codes=tuple(sorted(set(analysis.reason_codes) | set(reason))),
                     )
+            if clean_projection and analysis is not outer_analysis:
+                analysis = _clean_proof_constraints(analysis, clean_proofs.get(isin))
+                for proof in (retained_proofs or {}).get(isin, ()):
+                    analysis = _clean_historical_position_conflicts(analysis, proof)
+                    analysis = _clean_historical_payout_conflicts(analysis, proof)
             # Instrument R2 does not grant account reconciliation/EOD authority.
             account_analyses.append(
                 analyse(views, isin, kind, first, last, events, references, gaps)

@@ -56,9 +56,15 @@ test("known zero remains numeric while a missing percentage has a visible explan
   setup({ result: { pnl: m("0"), rate: m(null, "fraction", "modified_dietz") } });
   expect(screen.getByText("0 ₽")).toBeVisible();
   expect(screen.getByText("—")).toBeVisible();
-  expect(
-    screen.getAllByText("Не хватает стоимости на границе периода.").some((e) => e.closest("small")),
-  ).toBe(true);
+  expect(screen.getByRole("note")).toBeVisible();
+  expect(screen.getByRole("note")).toHaveTextContent("Не хватает стоимости на границе периода.");
+  const info = screen.getByLabelText("Подробнее: Доходность инструмента");
+  expect(info.closest("details")).not.toHaveAttribute("open");
+  info.click();
+  const details = info.closest("details");
+  if (!details) throw new Error("missing details");
+  expect(within(details).getByText("Не хватает стоимости на границе периода.")).toBeVisible();
+  expect(within(details).getByText("Подробности")).toBeVisible();
 });
 test("clean partial and a true clean zero remain distinct and visible", () => {
   const partial = {
@@ -67,7 +73,7 @@ test("clean partial and a true clean zero remain distinct and visible", () => {
     reason_codes: ["clean_partial_result"],
   };
   const view = setup({ result: { pnl: partial, rate: m(null, "fraction") } });
-  expect(screen.getByText("Известная часть результата ₽")).toBeVisible();
+  expect(screen.getByText("Сумма по доступным данным ₽")).toBeVisible();
   expect(screen.getByText("+12 ₽")).toBeVisible();
   view.rerender(
     <MemoryRouter>
@@ -81,7 +87,7 @@ test("clean partial and a true clean zero remain distinct and visible", () => {
   );
   expect(screen.getByText("Результат ₽")).toBeVisible();
   expect(screen.getByText("0 ₽")).toBeVisible();
-  expect(screen.queryByText("Известная часть результата ₽")).toBeNull();
+  expect(screen.queryByText("Сумма по доступным данным ₽")).toBeNull();
 });
 test("missing detail never becomes zero or a conditional or partial result", () => {
   const detail = detailFixture();
@@ -126,11 +132,13 @@ test("assumptions on analysis, metrics and events remain visible and deduplicate
   );
   expect(notes.closest("details")?.textContent?.match(/Номинал сделки/g)).toHaveLength(1);
 });
-test("absent result shows two unavailable values and a review status", () => {
+test("absent result shows dashes without repeating a status or inventing zero", () => {
   const { container } = setup({ result: null });
   expect(within(container).getAllByText("—")).toHaveLength(2);
-  expect(screen.getByText("Результат недоступен")).toBeVisible();
-  expect(screen.getByText("Доходность недоступна")).toBeVisible();
+  expect(screen.getByRole("note")).toBeVisible();
+  expect(screen.getByRole("note")).toHaveTextContent(
+    "Нет подтверждённого значения для этого периода.",
+  );
   expect(screen.queryByText("0 ₽")).toBeNull();
 });
 
@@ -140,4 +148,38 @@ test("excluded or stale events do not label the result with unused assumptions",
   detail.analysis.events[0].current = false;
   setup({ result: detail, analysis: detail.analysis });
   expect(screen.queryByText("Допущения")).toBeNull();
+});
+
+test("missing metrics with equal translated reasons have one visible explanation", () => {
+  setup({
+    result: {
+      pnl: { ...m(null), reason_codes: ["unknown_flow"] },
+      rate: { ...m(null, "fraction"), reason_codes: ["unknown_flows"] },
+    },
+  });
+  const note = screen.getByRole("note");
+  expect(note).toBeVisible();
+  expect(note).toHaveTextContent(/^Не все движения денег определены\.$/);
+  expect(screen.getAllByText("—")).toHaveLength(2);
+});
+
+test("numeric zero and partial values do not acquire a missing-data note from reason codes", () => {
+  setup({
+    result: {
+      pnl: { ...m("0"), reason_codes: ["clean_partial_result", "missing_endpoint"] },
+      rate: { ...m("0", "fraction"), reason_codes: ["missing_endpoint"] },
+    },
+  });
+  expect(screen.getByText("0 ₽")).toBeVisible();
+  expect(screen.getByText("0,00%")).toBeVisible();
+  expect(screen.getByText("Сумма по доступным данным ₽")).toBeVisible();
+  expect(screen.queryByRole("note")).toBeNull();
+});
+
+test("a null metric without reasons receives a short visible fallback", () => {
+  setup({ result: { pnl: { ...m(null), reason_codes: [] }, rate: m("0", "fraction") } });
+  expect(screen.getByRole("note")).toBeVisible();
+  expect(screen.getByRole("note")).toHaveTextContent(
+    "Нет подтверждённого значения для этого периода.",
+  );
 });

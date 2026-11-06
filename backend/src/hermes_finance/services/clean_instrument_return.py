@@ -8,7 +8,6 @@ from hermes_finance.domain.clean_instrument_return import (
     calculate_clean_return,
     clean_trade_date,
     cost_only_trade,
-    fee_only_trade_conflict,
 )
 
 
@@ -107,14 +106,16 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         event for event in analysis.events if "trade_money_cash_conflict" in event.reason_codes
     ]
     fee_conflicts_only = bool(conflicts) and all(
-        event.isin == isin and fee_only_trade_conflict(event) for event in conflicts
+        event.isin == isin and cost_only_trade(event) for event in conflicts
     )
-    missing_components = [
-        event for event in analysis.events if "trade_components_missing" in event.reason_codes
-    ]
-    fee_missing_only = bool(missing_components) and all(
-        event.isin == isin and cost_only_trade(event) for event in missing_components
-    )
+    recoverable_trade_reasons = {
+        "trade_components_missing",
+        "trade_nkd_basis_unknown",
+        "trade_nkd_basis_conflict",
+        "overlapping_trade_conflict",
+        "overlap_trade_commission_only",
+        "overlap_trade_nkd_only",
+    }
 
     def clean_complete(name):
         coverage = analysis.coverage[name]
@@ -129,8 +130,12 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
             }
         if quantity_reconciled:
             if name == "events":
-                if fee_missing_only:
-                    reasons.discard("trade_components_missing")
+                for reason in recoverable_trade_reasons:
+                    affected = [event for event in analysis.events if reason in event.reason_codes]
+                    if affected and all(
+                        event.isin == isin and cost_only_trade(event) for event in affected
+                    ):
+                        reasons.discard(reason)
                 if fee_conflicts_only:
                     reasons.discard("trade_money_cash_conflict")
                 if instrument_type == "stock" and getattr(
@@ -142,6 +147,7 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
                     "quantity_events_incomplete",
                     "quantity_reconciliation_mismatch",
                     "cross_boundary_settlement",
+                    "negative_observed_holding",
                 }
         return (coverage.complete or bool(coverage.reason_codes)) and not reasons
 
@@ -272,6 +278,7 @@ def read_clean_account(session, source_account, start, end, *, isin=None, includ
         closing_date=end,
         include_monthly_history=False,
         available_period=True,
+        clean_projection=True,
     )
     views = None
     if include_purchases or any(
