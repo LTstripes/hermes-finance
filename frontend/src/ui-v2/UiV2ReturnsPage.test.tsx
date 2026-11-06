@@ -156,13 +156,16 @@ test("collapsed account row identifies a known partial result without hiding it"
   const partialAccount = within(row).getByRole("region", { name: "Учебный счёт А" });
   const completeAccount = within(row).getByRole("region", { name: "Учебный счёт Б" });
   expect(partialAccount.querySelector("details")).not.toHaveAttribute("open");
-  expect(partialAccount.querySelector("summary")).toHaveTextContent("Известная часть: +12 ₽");
+  expect(partialAccount.querySelector("summary")).toHaveTextContent("+12 ₽");
+  expect(partialAccount.querySelector("summary")).toHaveTextContent("*");
   expect(completeAccount.querySelector("summary")).not.toHaveTextContent("Известная часть");
-  fireEvent.click(within(partialAccount).getByText(/Известная часть:/));
-  expect(within(partialAccount).getByText("Известная часть результата ₽")).toBeVisible();
+  const partialSummary = partialAccount.querySelector("summary");
+  if (!partialSummary) throw new Error("missing partial summary");
+  fireEvent.click(partialSummary);
+  expect(within(partialAccount).getByText("Сумма по доступным данным ₽")).toBeVisible();
 });
 
-test("comparison and leaders label a known partial amount, including zero", async () => {
+test("comparison shows partial amounts without ranking them as full returns", async () => {
   const data = overallFixture();
   data.instruments = data.instruments.map((instrument) => ({
     ...instrument,
@@ -182,13 +185,46 @@ test("comparison and leaders label a known partial amount, including zero", asyn
   setup("/v2/returns?accounts=source%3ASYNTH-A");
   const table = await screen.findByRole("table");
   const zeroRow = within(table).getByRole("row", { name: /Проданная облигация/ });
-  expect(zeroRow.querySelector("summary")).toHaveTextContent("Известная часть: 0 ₽");
-  expect(screen.getByRole("region", { name: "Вклад инструментов" })).toHaveTextContent(
-    "Известная часть: +12 ₽",
+  expect(zeroRow.querySelector("summary")).toHaveTextContent("0 ₽");
+  expect(zeroRow.querySelector("summary")).not.toHaveTextContent("Учебный счёт А");
+  expect(screen.getByRole("region", { name: "Вклад инструментов" })).toHaveTextContent("+12 ₽");
+  expect(
+    screen.queryByText("Показаны известные составляющие; часть истории может отсутствовать."),
+  ).toBeNull();
+  const leaders = screen.queryByRole("region", { name: "Лидеры и отстающие" });
+  if (leaders) expect(leaders).not.toHaveTextContent("Учебная акция");
+});
+
+test("shows the five largest confirmed losses without ranking partial or missing amounts", async () => {
+  const data = overallFixture();
+  const template = data.instruments[1];
+  data.instruments = ["-100", "-200", "-300", "-400", "-500", "-600", "-9999", null].map(
+    (value, index) => ({
+      ...template,
+      isin: `LOSS${index}`,
+      name: `Проверка ${index}`,
+      accounts: template.accounts.map((account) => ({
+        ...account,
+        native_period: true,
+        period: { start: "2030-04-30", end: "2030-10-31" },
+        pnl: {
+          ...account.pnl,
+          value,
+          reason_codes: index === 6 ? ["clean_partial_result"] : [],
+        },
+      })),
+    }),
   );
-  const leaders = screen.getByRole("region", { name: "Лидеры и отстающие" });
-  expect(leaders).toHaveTextContent("Известная часть: +12 ₽");
-  expect(leaders).toHaveTextContent("часть результатов неполна");
+  install(data);
+  setup("/v2/returns?accounts=source%3ASYNTH-A");
+  const leaders = await screen.findByRole("region", { name: "Лидеры и отстающие" });
+  const losses = within(leaders).getByRole("heading", { name: "Наибольший убыток" }).parentElement;
+  if (!losses) throw new Error("missing losses section");
+  expect(within(losses).getAllByRole("listitem")).toHaveLength(5);
+  expect(losses).toHaveTextContent("Проверка 5");
+  expect(losses).not.toHaveTextContent("Проверка 0");
+  expect(losses).not.toHaveTextContent("Проверка 6");
+  expect(losses).not.toHaveTextContent("Проверка 7");
 });
 test("one account selection keeps its own period without inventing an aggregate rate", async () => {
   const data = overallFixture();
@@ -216,7 +252,7 @@ test("exact native account eligibility excludes conflicts, keeps source provisio
   setup();
   const total = await screen.findByRole("region", { name: "Результат" });
   expect(total).toHaveTextContent("0 ₽");
-  expect(screen.getByText(/Показаны известные составляющие/)).toBeVisible();
+  expect(screen.queryByText(/Показаны известные составляющие/)).toBeNull();
   const table = screen.getByRole("table");
   expect(table).toHaveTextContent("+12 ₽");
   expect(table).not.toHaveTextContent("−4 ₽");
@@ -380,10 +416,13 @@ test("instrument results retain each account's money, rate and own dates, includ
   const row = within(table).getByRole("row", { name: /Учебная акция/ });
   const a = within(row).getByRole("region", { name: "Учебный счёт А" });
   const b = within(row).getByRole("region", { name: "Учебный счёт Б" });
-  expect(within(a).getAllByText("Не хватает стоимости на границе периода.")[0]).toBeVisible();
+  expect(a.querySelector("summary")).not.toHaveTextContent("Не хватает стоимости");
+  expect(within(a).getByRole("note")).toBeVisible();
+  expect(within(a).getByRole("note")).toHaveTextContent("Не хватает стоимости на границе периода.");
   fireEvent.click(within(a).getByText("Учебный счёт А"));
   fireEvent.click(within(b).getByText("Учебный счёт Б"));
   expect(a).toHaveTextContent("0 ₽");
+  expect(within(a).getAllByRole("note")).toHaveLength(1);
   expect(a).toHaveTextContent("Не хватает стоимости на границе периода");
   expect(a).toHaveTextContent("30.04.2030 — 31.05.2030");
   expect(b).toHaveTextContent("−4 ₽");

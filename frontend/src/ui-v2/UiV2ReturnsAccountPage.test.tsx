@@ -659,10 +659,9 @@ test("instrument row exposes both server metrics and visible missing-evidence re
   expect(zero).toHaveTextContent("0,00%");
   const missing = within(section).getByRole("row", { name: /Учебная облигация/ });
   expect(missing).toHaveTextContent("Не хватает стоимости на границе периода");
-  expect(
-    within(missing)
-      .getAllByText("Не хватает стоимости на границе периода.")
-      .some((e) => e.closest("small")),
-  ).toBe(true);
+  expect(within(missing).getByRole("note")).toBeVisible();
+  expect(within(missing).getByRole("note")).toHaveTextContent(
+    "Не хватает стоимости на границе периода.",
+  );
   expect(missing).toHaveTextContent("30.04.2030 — 31.05.2030");
 });

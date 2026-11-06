@@ -911,12 +911,18 @@ def read_clean_source_detail(session, *, scope, start, end, isin):
         if len(data["instruments"]) != 1:
             raise LookupError("returns_instrument_missing")
         detail = read_detail(
-            session, scope=scope, start=start, end=end, isin=isin, native_period=True
+            session,
+            scope=scope,
+            start=start,
+            end=end,
+            isin=isin,
+            native_period=True,
+            clean_projection=True,
         )
         return apply_clean_detail(detail, data["instruments"][0])
 
 
-def read_detail(session, *, scope, start, end, isin, native_period=False):
+def read_detail(session, *, scope, start, end, isin, native_period=False, clean_projection=False):
     with source_read_snapshot(session):
         resolved = _validate_scope(session, scope)
         if not scope.startswith("source:"):
@@ -929,6 +935,7 @@ def read_detail(session, *, scope, start, end, isin, native_period=False):
             isin=isin,
             include_monthly_history=False,
             available_period=native_period,
+            clean_projection=clean_projection,
         )
         if len(result.instruments) != 1:
             raise LookupError("returns_instrument_missing")

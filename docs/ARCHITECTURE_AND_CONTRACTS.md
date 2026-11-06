@@ -2619,6 +2619,11 @@ dependencies, including for REPO or gift scopes, without rewriting receipts.
 Earlier compatibility edges retain their existing narrower scope restrictions.
 This compatibility requires independent review before release.
 
+The v11 revision adds clean-projection-only trade recovery and analytical
+coupon attribution. It does not change investment-proof derivation. Read-only
+compatibility with v10 recomputes the same complete live dependencies and never
+rewrites a receipt; it requires independent financial review before release.
+
 The read-only compatibility edge admits exactly the released 1.9.4 producing
 implementation (`a381dbf1`, package digest
 `0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81`)
@@ -6805,8 +6810,26 @@ source/account/class detail modes keep their own supported meaning and URLs.
 The ordinary Returns overview and instrument card use `returns_overall_v2` and
 `returns_instrument_card_v2`. They share one source-scoped read over existing
 originals and use explicit account and EOD period boundaries. Clean trade
-principal excludes NKD where its inclusion basis and amount are known. Fees and
-taxes do not enter the result. Coupons and dividends use the actually received
+principal excludes NKD where its inclusion basis and amount are known. A settled
+MyBroker bond trade can also use its own price in percent, signed quantity and
+explicit trade-date face value to establish clean principal, rounded to kopecks
+with `ROUND_HALF_UP`; it does not infer face value from a position or assume NKD.
+Identity, chronological settlement, linked principal and source conflicts remain
+checked. A source total below the clean principal by more than one kopeck is a
+conflict, not evidence for the derived value; an absent or sub-kopeck source
+total cannot be used. When NKD and the source total's basis are unknown, a
+linked cash leg that agrees with that total may represent the dirty amount;
+the separately proved price still determines clean principal without imputing
+the difference to NKD. If independently proved price and linked principal agree
+but the NKD facts conflict, the known clean amount remains available as partial
+with a specific explanation, never as supported or as complete profit.
+Fee- or NKD-only differences between exact overlapping trade occurrences remain a
+legacy conflict but do not hide a separately reconciled clean principal. For a
+bond NKD overlap, every original must independently prove the same dated-price
+principal; identity, price, quantity, currency, chronology and principal conflicts
+remain effective. The excluded NKD discrepancy remains a partial-source note. A REPO
+observation in any version of the same trade prevents that fee-only recovery.
+Fees and taxes do not enter the result. Coupons and dividends use the actually received
 cash, without fabricating gross payments. The projection does not write source
 records or financial receipts and does not equate security returns with changes
 in account capital. A nonzero bond valuation without known accrued interest is
@@ -6816,9 +6839,34 @@ return. Rates remain unavailable when their operands are incomplete.
 If trade or redemption coverage is incomplete, a closing valuation cannot be
 combined with only the observed trades and presented as an investment result;
 independently observed receipts remain available. A missing or conflicting
-commission does not invalidate clean principal only after linked principal and
-NKD amounts, ownership, settlement dates, and position quantities have been
-checked. Conflicting or ambiguous principal remains unknown.
+commission does not invalidate clean principal only after available linked
+principal/NKD legs, ownership, settlement dates, and position quantities have
+been checked. Conflicting or ambiguous principal remains unknown.
+
+For this clean projection, a saved `unresolved_no_match` coupon may be linked
+analytically through a current unique explicit registration-to-ISIN mapping.
+Its exact source account, date, positive received amount, currency, classification
+and issue must agree; every original covering that date must be readable and
+contain the same occurrence multiplicity. Overlapping originals must agree on
+the row timestamp, and conflicting source or receipt evidence prevents the
+link. Existing historical evidence, including a conflict, or Money occurrence
+ownership takes precedence over this analytical fallback. Identical rows within
+one original stay distinct. The saved classification,
+link, confirmations and receipts remain unchanged, and assumed source status is
+not promoted to confirmed. A current investment proof remains authoritative for
+legacy source readers; the clean projection reads its independent original
+events even when a proof covers the same interval. Analytical coupon mappings
+are not added to legacy AI `source_returns` or `returns_overall` details. A
+current proof's instrument-specific PDF position conflict remains effective
+when its closing boundary lies within or at the boundary of the selected
+period, including a period spanning multiple originals. A proven zero position
+may fill a missing source value at the same boundary only when the current
+proof independently establishes that zero without a conflict. A current PDF
+payout contradiction also remains effective on every intersecting payout interval,
+without blocking a later disjoint interval or independently proved price result.
+Identical coupon occurrences retain their multiplicity only with exact evidence
+for the complete group in at least one current original and equal multiplicity
+in all covering originals; one receipt cannot attest a second occurrence.
 Commission and NKD posting dates do not substitute for a security principal
 settlement when checking a period boundary; genuine principal and delivery
 crossings still remain incomplete. Fee- and tax-only sign conflicts remain

@@ -60,6 +60,177 @@ def payout_source_unambiguous(views, view, event_date):
     return len(covered) == 1 and covered[0]["id"] == view["id"]
 
 
+def analytical_coupon_links(session, selected, native_scope, *, historical_evidence=None):
+    """Resolve old coupon rows for this read without changing saved decisions.
+
+    Every covering original must contain the same occurrence multiplicity and
+    account-bound source facts. A current explicit issue mapping identifies the
+    bond; neither the issuer name nor a coincident amount creates a mapping.
+    """
+    from collections import Counter, defaultdict
+
+    from hermes_finance.domain.money_security import parse_money_security
+    from hermes_finance.persistence import BrokerIdentityMapping
+    from hermes_finance.services.broker_money_ownership import owners
+    from hermes_finance.services.broker_statement_provisional import _minor
+    from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+    from hermes_finance.services.source_money_classifications import source_reference
+    from hermes_finance.services.source_monthly_returns import _native_scope
+    from hermes_finance.statement_import.money import normalize_currency
+
+    if not selected or native_scope is None or len(native_scope) != 1:
+        return {}
+    if any(original is None for original, _, _ in selected):
+        return {}
+    if not any(
+        choice.get("classification") == "coupon"
+        and choice.get("instrument_link_status") == "unresolved_no_match"
+        for _, view, error in selected
+        if view is not None and not error
+        for choice in view["money_classifications"]
+    ):
+        return {}
+    account = next(iter(native_scope))
+    resolver = MoneyInstrumentResolver(session)
+    usable = {}
+    groups = defaultdict(list)
+    for original, view, error in selected:
+        if (
+            error
+            or view is None
+            or _native_scope(view["document"]) != native_scope
+            or view["document"].get("provider") != "alfa_mybroker"
+            or view["document"].get("parser") != "mybroker-s1-v2"
+            or "period_inferred_from_content" in view["document"].get("warnings", [])
+        ):
+            continue
+        usable[original.id] = view
+        saved = {row["source_reference"]: row for row in view["money_classifications"]}
+        for row in view["document"].get("money", []):
+            ref = source_reference(view["id"], row)
+            choice = saved.get(ref)
+            if choice is None:
+                continue
+            signature = digest(
+                {k: v for k, v in row.items() if k not in {"ordinal", "last_update"}}
+                | {
+                    "currency": normalize_currency(row.get("currency")),
+                    "operation": choice["operation"],
+                    "narrative": choice["narrative"],
+                }
+            )
+            groups[(row["date"], signature)].append((original, view, row, choice, ref))
+
+    result = {}
+    for (day, _), members in groups.items():
+        if not any(
+            c.get("instrument_link_status") == "unresolved_no_match" for _, _, _, c, _ in members
+        ):
+            continue
+        # Existing historical evidence, including a conflict tombstone, has
+        # priority over an inferred mapping for the whole occurrence group.
+        if historical_evidence and any(ref in historical_evidence for _, _, _, _, ref in members):
+            continue
+        covering = [o for o, _, _ in selected if str(o.covered_from) <= day <= str(o.covered_to)]
+        if not covering or any(original.id not in usable for original in covering):
+            continue
+        counts = Counter(original.id for original, _, _, _, _ in members)
+        if set(counts) != {original.id for original in covering} or len(set(counts.values())) != 1:
+            continue
+        if len(covering) > 1 and len({row.get("last_update") for _, _, row, _, _ in members}) != 1:
+            continue
+        first = members[0][3]
+        security = parse_money_security(first["narrative"])
+        if security is None or security.kind != "coupon":
+            continue
+        target, status = resolver.resolve(security)
+        instrument = resolver.instruments.get(target)
+        if (
+            status != "linked"
+            or instrument is None
+            or instrument.instrument_type != "bond"
+            or not instrument.isin
+        ):
+            continue
+        mapped_isin = resolver.reg_isins.get(security.reg_number)
+        related = resolver._related(mapped_isin or security.reg_number)
+        registration = resolver._related(security.reg_number)
+        if (
+            (not mapped_isin and not resolver.mapping_targets.get(security.reg_number))
+            or (mapped_isin and mapped_isin != instrument.isin)
+            or resolver._candidates(related) != {target}
+            or related & resolver.conflicts
+            or registration & resolver.conflicts
+            or not resolver._candidates(registration) <= {target}
+        ):
+            continue
+        bindings = list(
+            session.scalars(
+                select(BrokerIdentityMapping).where(
+                    BrokerIdentityMapping.provider == "alfa_mybroker",
+                    BrokerIdentityMapping.subject_kind == "instrument",
+                    BrokerIdentityMapping.provider_identity.in_(related | registration),
+                )
+            )
+        )
+        identities_match = True
+        for alias in {row.provider_identity for row in bindings}:
+            active = [
+                row
+                for row in bindings
+                if row.provider_identity == alias and row.status == "effective"
+            ]
+            if len(active) != 1 or active[0].hermes_instrument_id != target:
+                identities_match = False
+                break
+        if not identities_match:
+            continue
+        valid = True
+        for _, view, row, choice, ref in members:
+            source = bound_import(session, view)
+            occurrence = (
+                {"import_id": source.id, "section": "money", "ordinal": row["ordinal"]}
+                if source is not None
+                else None
+            )
+            if (
+                row.get("source_account") != account
+                or not view["covered_from"] <= day <= view["covered_to"]
+                or normalize_currency(row.get("currency")) != "RUB"
+                or normalize_currency(choice.get("currency")) != "RUB"
+                or _minor(row.get("amount")) != choice.get("amount_kopecks")
+                or choice.get("amount_kopecks") is None
+                or choice["amount_kopecks"] <= 0
+                or str(choice.get("date")) != day
+                or choice.get("classification") != "coupon"
+                or choice.get("origin") not in {"default_rule", "user_choice"}
+                or choice.get("status") != first.get("status")
+                or choice.get("security_reg_number") != security.reg_number
+                or choice.get("security_issuer") != security.issuer_name
+                or not (
+                    (
+                        choice.get("instrument_link_status") == "unresolved_no_match"
+                        and choice.get("instrument_id") is None
+                    )
+                    or (
+                        choice.get("instrument_link_status") == "linked"
+                        and choice.get("instrument_id") == target
+                    )
+                )
+                or not _source_allows_payout(session, view, instrument.isin)
+                or (occurrence is not None and owners(session, [occurrence]))
+                or effective_payout_match(
+                    session, view, row, choice, resolver, allow_multiple=True, check_choice=False
+                )
+                is not None
+            ):
+                valid = False
+                break
+        if valid:
+            result.update((ref, instrument.isin) for _, _, _, _, ref in members)
+    return result
+
+
 def canonical_payout_groups(session, views, resolver=None):
     """Exact accepted cohorts, shared by account and instrument projections.
 
@@ -379,7 +550,9 @@ def effective_section_blockers(session, source, codes):
     return set(coverage_disposition(session, source, accounts.pop(), codes)["effective_blockers"])
 
 
-def historical_payout_evidence(session, source_account, selected, native_scope):
+def historical_payout_evidence(
+    session, source_account, selected, native_scope, retained_proofs=None
+):
     """Reuse current original-bound components, never interior endpoint values.
 
     Values are exact (intake, ordinal) identities. None is a conflict tombstone,
@@ -399,6 +572,10 @@ def historical_payout_evidence(session, source_account, selected, native_scope):
         session, source_account=source_account, analyses=analyses, include_xirr=False
     )
     current = {r["proof_id"] for r in reports if r["status"] == "current"}
+    if retained_proofs is not None:
+        for proof_id in current:
+            for isin, analysis in analyses.get(proof_id, {}).items():
+                retained_proofs.setdefault(isin, []).append(analysis)
     result = {}
     identity_errors = {
         "payout_identity_ambiguous",
@@ -466,7 +643,9 @@ def historical_payout_evidence(session, source_account, selected, native_scope):
     return result
 
 
-def effective_historical_payout(session, views, view, row, saved, resolver, evidence):
+def effective_historical_payout(
+    session, views, view, row, saved, resolver, evidence, *, allow_multiple=False
+):
     """One exact source group may reuse an agreed current historical payout.
 
     Return (ISIN, conflict). A failed proof never manufactures Money authority.
@@ -477,20 +656,34 @@ def effective_historical_payout(session, views, view, row, saved, resolver, evid
         return None, False
     covering = [v for v in (views or [view]) if v["covered_from"] <= row["date"] <= v["covered_to"]]
     signature = {k: v for k, v in row.items() if k not in {"ordinal", "last_update"}}
-    matches = []
+    matches, group_refs = [], []
+    multiplicity = sum(
+        {k: v for k, v in raw.items() if k not in {"ordinal", "last_update"}} == signature
+        for raw in view["document"].get("money", [])
+    )
     for candidate in covering:
         rows = [
             r
             for r in candidate["document"].get("money", [])
             if {k: v for k, v in r.items() if k not in {"ordinal", "last_update"}} == signature
         ]
-        if len(rows) != 1:
+        if not rows or len(rows) != (multiplicity if allow_multiple else 1):
             return None, False
-        ref = source_reference(candidate["id"], rows[0])
-        choices = [c for c in candidate["money_classifications"] if c["source_reference"] == ref]
-        if len(choices) != 1:
-            return None, False
-        matches.append((candidate, rows[0], choices[0], ref))
+        refs = []
+        for raw in rows:
+            ref = source_reference(candidate["id"], raw)
+            choices = [
+                c for c in candidate["money_classifications"] if c["source_reference"] == ref
+            ]
+            if len(choices) != 1:
+                return None, False
+            refs.append(ref)
+            matches.append((candidate, raw, choices[0], ref))
+        group_refs.append(refs)
+    # One attested row cannot attest another identical occurrence. Require a
+    # whole original's group and equal multiplicity in every covering original.
+    if multiplicity > 1 and not any(all(ref in evidence for ref in refs) for refs in group_refs):
+        return None, False
     known = [evidence[ref] for _, _, _, ref in matches if ref in evidence]
     if not known:
         return None, False

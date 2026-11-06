@@ -33,7 +33,10 @@ from hermes_finance.services.source_money_classifications import (
     source_reference,
 )
 from hermes_finance.services.source_monthly_returns import _money
-from hermes_finance.services.source_trade_identity import repo_return_identities
+from hermes_finance.services.source_trade_identity import (
+    repo_return_identities,
+    trade_observation_conflict,
+)
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, digest
 
@@ -226,15 +229,23 @@ def payout_attribution(
     views=None,
     historical_evidence=None,
     canonical_matches=None,
+    analytical_payouts=None,
 ):
-    """Validate a persisted decision; never replace it with a newly possible link."""
+    """Preserve the saved decision while projecting independently proved links."""
     from hermes_finance.services.source_instrument_returns import _attribute
 
     if historical_evidence and session is not None and view is not None and raw is not None:
         from hermes_finance.services.source_return_evidence import effective_historical_payout
 
         proven, conflict = effective_historical_payout(
-            session, views, view, raw, saved, resolver, historical_evidence
+            session,
+            views,
+            view,
+            raw,
+            saved,
+            resolver,
+            historical_evidence,
+            allow_multiple=analytical_payouts is not None,
         )
         if conflict:
             return None, "current_source_proof", ("source_payout_evidence_conflict",)
@@ -257,6 +268,15 @@ def payout_attribution(
         )
         if proven is not None:
             return proven, "accepted_money", ()
+    if (
+        status == "unresolved_no_match"
+        and analytical_payouts
+        and view is not None
+        and raw is not None
+    ):
+        reference = source_reference(view["id"], raw)
+        if isin := analytical_payouts.get(reference):
+            return isin, "analytical_coupon_mapping", ()
     if status == "linked":
         security = parse_money_security(saved["narrative"])
         if (
@@ -297,7 +317,70 @@ def payout_attribution(
     return isin, "legacy_text", () if isin else ("unattributed_income",)
 
 
-def read_events(session, views, identities, native_account, gaps, *, historical_evidence=None):
+def _same_priced_bond_principal(observations):
+    """Compare every original using the existing dated-price principal rule."""
+    from hermes_finance.domain.clean_instrument_return import _priced_bond_principal
+    from hermes_finance.services.source_instrument_returns import _minor, _trade_core
+
+    signatures, amounts = set(), set()
+    for view, trade in observations:
+        if (
+            view["document"].get("provider") != PROVIDER
+            or view["document"].get("parser") != "mybroker-s1-v2"
+            or trade.get("section") != "completed"
+            or trade.get("state") != "settled"
+            or trade.get("repo_observed")
+            or trade.get("repo_signature")
+        ):
+            return False
+        core = _trade_core(trade["core"])
+        execution = _date(core["trade_time"][:10])
+        quantity = _decimal(core.get("quantity"))
+        event = InstrumentEvent(
+            event_key="overlap-comparison",
+            provider=PROVIDER,
+            native_source_account=core["source_account"],
+            isin=core["isin"],
+            kind="BUY" if quantity is not None and quantity > 0 else "SELL",
+            source_references=(),
+            event_date=execution,
+            native_identity=trade.get("identity"),
+            native_ids=tuple(trade.get("ids", [])),
+            execution_date=execution,
+            quantity_delta=quantity,
+            unit_price=_decimal(core.get("price")),
+            price_unit="PERCENT_OF_FACE",
+            face_value=_decimal(trade.get("face_value")),
+            face_value_date=execution,
+            native_trade_amount_kopecks=_minor(core.get("trade_amount")),
+        )
+        principal = _priced_bond_principal(event)
+        if principal is None:
+            return False
+        amounts.add(principal)
+        signatures.add(
+            _fingerprint(
+                (
+                    {k: v for k, v in core.items() if k != "trade_amount"},
+                    trade.get("settlement_date"),
+                    trade.get("depo_settlement_date"),
+                    tuple(trade.get("ids", [])),
+                )
+            )
+        )
+    return len(signatures) == len(amounts) == 1
+
+
+def read_events(
+    session,
+    views,
+    identities,
+    native_account,
+    gaps,
+    *,
+    historical_evidence=None,
+    analytical_payouts=None,
+):
     from hermes_finance.services.source_instrument_returns import (
         InstrumentReturnGap,
         _bond_total_basis,
@@ -363,6 +446,7 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                         views=views,
                         historical_evidence=historical_evidence,
                         canonical_matches=payout_groups,
+                        analytical_payouts=analytical_payouts,
                     )
                     if basis in {"accepted_money", "current_source_proof"}:
                         # The current exact receipt confirms this payout's role,
@@ -377,7 +461,11 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                             metadata["names"].add(
                                 parse_money_security(row["narrative"]).issuer_name
                             )
-                        elif basis in {"accepted_money", "current_source_proof"}:
+                        elif basis in {
+                            "accepted_money",
+                            "current_source_proof",
+                            "analytical_coupon_mapping",
+                        }:
                             metadata["types"].add(
                                 "bond" if flow.classification == "coupon" else "stock"
                             )
@@ -599,11 +687,44 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
             )
             for _, t in selected
         }
-        if (
-            len(signatures) != 1
-            or len({digest(_trade_core(t["core"])) for _, t in observations}) != 1
-        ):
+        without_commission = {
+            _fingerprint(
+                (
+                    _trade_core(t["core"]),
+                    t.get("settlement_date"),
+                    t.get("depo_settlement_date"),
+                    t.get("accrued_interest"),
+                    _face_signature(t) if kind == "bond" else None,
+                    t.get("repo_observed"),
+                    t.get("repo_signature"),
+                )
+            )
+            for _, t in observations
+        }
+        core_signatures = {digest(_trade_core(t["core"])) for _, t in observations}
+        lifecycle_conflict = trade_observation_conflict(observations)
+        if len(signatures) != 1 or len(core_signatures) != 1 or lifecycle_conflict:
             reasons.add("overlapping_trade_conflict")
+            if (
+                len(selected) > 1
+                and len({v["id"] for v, _ in selected}) == len(selected)
+                and len(without_commission) == 1
+                and len(core_signatures) == 1
+                and not lifecycle_conflict
+                and len({t.get("bank_commission") for _, t in selected}) > 1
+                and not any(
+                    t.get("repo_observed") or t.get("repo_signature") for _, t in observations
+                )
+            ):
+                reasons.add("overlap_trade_commission_only")
+            elif (
+                kind == "bond"
+                and len(selected) > 1
+                and len({v["id"] for v, _ in selected}) == len(selected)
+                and not lifecycle_conflict
+                and _same_priced_bond_principal(observations)
+            ):
+                reasons.add("overlap_trade_nkd_only")
         if normalize_currency(core.get("currency")) != "RUB":
             reasons.add("trade_currency_unsupported")
         if trade.get("repo_observed"):
@@ -729,6 +850,12 @@ def read_events(session, views, identities, native_account, gaps, *, historical_
                 unit_price=_decimal(core.get("price")),
                 price_unit="PERCENT_OF_FACE"
                 if kind == "bond"
+                and trade.get("section") == "completed"
+                and all(
+                    v["document"].get("provider") == PROVIDER
+                    and v["document"].get("parser") == "mybroker-s1-v2"
+                    for v, _ in observations
+                )
                 else "RUB_PER_UNIT"
                 if kind == "stock"
                 else "UNKNOWN",

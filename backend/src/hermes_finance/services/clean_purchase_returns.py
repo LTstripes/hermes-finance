@@ -8,6 +8,7 @@ from decimal import ROUND_FLOOR, Decimal, localcontext
 
 from hermes_finance.domain.clean_instrument_return import (
     clean_trade_amount,
+    clean_trade_assumptions,
     clean_trade_date,
     cost_only_trade,
 )
@@ -132,7 +133,7 @@ def _observed_purchase_facts(analysis, isin, *, instrument_type):
                 "price_result_kopecks": None,
                 "return_fraction": None,
                 "status": "partial",
-                "reason_codes": ["purchase_allocation_unproven", *sorted(event.assumptions)],
+                "reason_codes": ["purchase_allocation_unproven", *clean_trade_assumptions(event)],
             }
         )
     return sorted(rows, key=lambda row: (row["date"], row["id"])) or None
@@ -186,19 +187,36 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                 permitted_event_reasons.add("unrecognized_money")
         if event.isin == isin and event.kind in {"BUY", "SELL"}:
             permitted_event_reasons.update(set(event.reason_codes) & missing_component_reasons)
+            if cost_only_trade(event):
+                permitted_event_reasons.update(
+                    set(event.reason_codes)
+                    & {
+                        "overlapping_trade_conflict",
+                        "overlap_trade_commission_only",
+                        "overlap_trade_nkd_only",
+                        "trade_money_cash_conflict",
+                        "trade_nkd_basis_conflict",
+                    }
+                )
     event_coverage = coverage["events"]
     if (not event_coverage.complete and not event_coverage.reason_codes) or (
         set(event_coverage.reason_codes) - permitted_event_reasons
     ):
         return None
     quantity_coverage = coverage["quantity"]
+    permitted_quantity_reasons = {
+        "quantity_events_incomplete",
+        "quantity_reconciliation_mismatch",
+        "cross_boundary_settlement",
+    }
+    if "negative_observed_holding" in quantity_coverage.reason_codes:
+        from hermes_finance.services.clean_instrument_return import _clean_quantity_reconciled
+
+        scoped_events = [event for event in analysis.events if event.isin == isin]
+        if _clean_quantity_reconciled(analysis, scoped_events, isin):
+            permitted_quantity_reasons.add("negative_observed_holding")
     if (not quantity_coverage.complete and not quantity_coverage.reason_codes) or (
-        set(quantity_coverage.reason_codes)
-        - {
-            "quantity_events_incomplete",
-            "quantity_reconciliation_mismatch",
-            "cross_boundary_settlement",
-        }
+        set(quantity_coverage.reason_codes) - permitted_quantity_reasons
     ):
         return None
     trades = []
@@ -318,7 +336,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                             "remaining": q if untouched else None,
                             "cost": amount,
                             "proceeds": 0 if untouched else None,
-                            "assumptions": set(event.assumptions),
+                            "assumptions": set(clean_trade_assumptions(event)),
                         }
                     )
                 continue
@@ -332,7 +350,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                         "remaining": q,
                         "cost": amount,
                         "proceeds": 0,
-                        "assumptions": set(event.assumptions),
+                        "assumptions": set(clean_trade_assumptions(event)),
                     }
                 )
                 if amount is not None:
@@ -360,7 +378,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             )
             for (lot, part), share in zip(consumed, shares, strict=True):
                 lot["remaining"] -= part
-                lot["assumptions"].update(event.assumptions)
+                lot["assumptions"].update(clean_trade_assumptions(event))
                 lot["proceeds"] = (
                     lot["proceeds"] + share
                     if lot["proceeds"] is not None and share is not None

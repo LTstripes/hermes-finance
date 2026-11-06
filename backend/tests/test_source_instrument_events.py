@@ -3304,3 +3304,674 @@ def test_historical_payout_projection_preserves_overlap_and_conflict_guards(db, 
         assert not any(e.counted for e in instrument.analysis.events if e.kind == "DIVIDEND")
     assert result.financial_authority == "none"
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("face_present", [True, False])
+@pytest.mark.parametrize("overlap", [False, True])
+def test_clean_bond_price_uses_dated_trade_nominal_without_nkd(db, face_present, overlap):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def prices(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", stamp)
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+            row.set("Price", "100" if index == 1 else "101")
+            if not face_present:
+                row.attrib.pop("nominal", None)
+
+    save(
+        db,
+        stock=None,
+        bond=("0", "0", "0", "0"),
+        trades=((BOND, "1", "1020", None, "2"), (BOND, "-1", "1030", None, "2")),
+        mutate=prices,
+    )
+    if overlap:
+        save(
+            db,
+            stock=None,
+            bond=("0", "0", "0", "0"),
+            trades=((BOND, "1", "1020", None, "3"), (BOND, "-1", "1030", None, "3")),
+            mutate=prices,
+            marker="overlap",
+        )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=BOND,
+            include_purchases=True,
+        )["instruments"][0]
+    if face_present:
+        assert result["buys"]["value"] == "100000"
+        assert result["sells"]["value"] == "101000"
+        assert result["valuation_and_trades"]["value"] == result["pnl"]["value"] == "1000"
+        assert result["purchases"][0]["price_result_kopecks"] == "1000"
+    else:
+        assert result["buys"]["value"] is None
+        assert result["valuation_and_trades"]["value"] is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "buy_amount,expected", [("900", None), ("900.001", None), ("999.98", None), ("999.99", "1000")]
+)
+def test_clean_bond_rejects_source_total_below_price_principal(db, buy_amount, expected):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def prices(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            row.set("db_time", f"{index:02}.04.2030 09:00:00")
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+            row.set("Price", "100" if index == 1 else "101")
+
+    save(
+        db,
+        stock=None,
+        bond=("0", "0", "0", "0"),
+        trades=((BOND, "1", buy_amount, None, "2"), (BOND, "-1", "1030", None, "2")),
+        mutate=prices,
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=BOND,
+            include_purchases=True,
+        )["instruments"][0]
+    assert result["pnl"]["value"] == expected
+    if expected is None:
+        assert result["buys"]["value"] is None
+        assert result["purchases"] is None or result["purchases"][0]["price_result_kopecks"] is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "nkd_leg_conflict",
+        "nkd_leg_fee_conflict",
+        "negative_nkd",
+        "missing_face",
+        "buy_reversed_leg",
+        "sell_reversed_leg",
+        "negative_holding",
+    ],
+)
+def test_clean_bond_retains_only_independently_proved_principal(db, case):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def prices_and_money(root):
+        rows = root.findall(".//m:Details[@trade_no]", NS)
+        for index, row in enumerate(rows, 1):
+            day = 3 - index if case == "negative_holding" else index
+            row.set("db_time", f"{day:02}.04.2030 09:00:00")
+            row.set("save_settlement_date", f"{day:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{day:02}.04.2030")
+            row.set("Price", "100" if index == 1 else "101")
+        if case == "missing_face":
+            rows[0].attrib.pop("nominal", None)
+        if case in {"nkd_leg_conflict", "nkd_leg_fee_conflict", "missing_face"}:
+            _add_money(
+                root, "Расчеты по сделке 10000000001", "principal", "-1000", day="2030-04-01"
+            )
+            _add_money(root, "Расчеты по сделке 10000000001", "НКД", "-5", day="2030-04-01")
+        if case == "buy_reversed_leg":
+            _add_money(
+                root, "Расчеты по сделке 10000000001", "principal", "-2000", day="2030-04-01"
+            )
+            _add_money(root, "Расчеты по сделке 10000000001", "principal", "1000", day="2030-04-01")
+        if case == "sell_reversed_leg":
+            _add_money(root, "Расчеты по сделке 10000000002", "principal", "2000", day="2030-04-02")
+            _add_money(root, "Расчеты по сделке 10000000002", "principal", "-990", day="2030-04-02")
+
+    nkd = "-20" if case in {"negative_nkd", "negative_holding"} else "20"
+    fee = "2" if case == "nkd_leg_fee_conflict" else None
+    save(
+        db,
+        stock=None,
+        bond=("0", "0", "0", "0"),
+        trades=((BOND, "1", "1020", nkd, fee), (BOND, "-1", "1030", nkd, fee)),
+        mutate=prices_and_money,
+    )
+    if case == "nkd_leg_conflict":
+        from hermes_finance.services.reporting_months import create_reporting_month
+
+        with db.session_factory() as session:
+            create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=BOND,
+            include_purchases=True,
+        )["instruments"][0]
+    if case in {"nkd_leg_conflict", "nkd_leg_fee_conflict", "negative_nkd"}:
+        assert result["pnl"]["value"] == "1000"
+        assert result["pnl"]["status"] == "partial"
+        assert "source_nkd_conflict" in result["pnl"]["assumptions"]
+        assert result["purchases"][0]["price_result_kopecks"] == "1000"
+        assert result["purchases"][0]["status"] == "partial"
+        assert "source_nkd_conflict" in result["purchases"][0]["reason_codes"]
+        if case == "nkd_leg_conflict":
+            with TestClient(create_app(database=db)) as client:
+                card = client.get("/api/returns/instrument-card", params={"isin": BOND})
+                ai = client.get(
+                    "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
+                )
+            assert card.status_code == ai.status_code == 200
+            account = card.json()["accounts"][0]
+            export = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+            ai_row = next(row for row in export["instruments"] if row["isin"] == BOND)
+            assert account["clean"]["pnl"] == ai_row["pnl"]
+            assert ai_row["pnl"]["status"] == "partial"
+            assert account["purchases"][0]["reason_codes"] == ai_row["purchases"][0]["reason_codes"]
+    else:
+        assert result["pnl"]["value"] is None
+        assert result["purchases"] is None or result["purchases"][0]["price_result_kopecks"] is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "difference",
+    [
+        "fee",
+        "fee_missing_first",
+        "fee_missing_second",
+        "linked_fee",
+        "principal",
+        "linked_principal",
+        "settlement_time",
+        "settlement_time_only",
+        "settlement_time_absent",
+    ],
+)
+def test_clean_overlap_ignores_only_commission_difference(db, difference):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    first_fee = None if difference == "fee_missing_first" else "2"
+    second_fee = (
+        None
+        if difference == "fee_missing_second"
+        else "2"
+        if difference == "settlement_time_only"
+        else "3"
+    )
+    money = ()
+    if difference in {"linked_fee", "linked_principal"}:
+        money = (
+            (
+                "Расчеты по сделке 10000000001",
+                "Principal",
+                "-999" if difference == "linked_principal" else "-1000",
+                10,
+            ),
+            ("Комиссия по сделке 10000000001", "Fee", "-4", 10),
+        )
+    for marker, fee, amount in (
+        ("a", first_fee, "1000"),
+        ("b", second_fee, "1001" if difference == "principal" else "1000"),
+    ):
+
+        def source(root):
+            trade_date(10, price="1000", money=money)(root)
+            if difference in {"settlement_time", "settlement_time_only", "settlement_time_absent"}:
+                trade = root.find(".//m:Details[@trade_no]", NS)
+                if difference == "settlement_time_absent" and marker == "b":
+                    trade.attrib.pop("settlement_time", None)
+                else:
+                    hour = "13" if marker == "b" else "10"
+                    trade.set("settlement_time", f"10.04.2030 {hour}:00:00")
+
+        save(
+            db,
+            stock=("0", "1", "0", "1100"),
+            bond=None,
+            trades=((ISIN, "1", amount, None, fee),),
+            marker=marker,
+            mutate=source,
+        )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )["instruments"][0]
+    if difference not in {
+        "principal",
+        "linked_principal",
+        "settlement_time",
+        "settlement_time_only",
+    }:
+        assert result["buys"]["value"] == "100000"
+        assert result["pnl"]["value"] == "10000"
+        assert result["purchases"][0]["cost_kopecks"] == "100000"
+    else:
+        assert result["pnl"]["value"] is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("pending_repo", [False, True])
+def test_clean_fee_overlap_does_not_ignore_pending_conflict(db, pending_repo):
+    from xml.etree import ElementTree as ET
+
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def prices_and_repo(include_pending):
+        def mutate(root):
+            rows = root.findall(".//m:Details[@trade_no]", NS)
+            for index, row in enumerate(rows, 1):
+                row.set("db_time", f"{index:02}.04.2030 09:00:00")
+                row.set("save_settlement_date", f"{index:02}.04.2030")
+                row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+                row.set("Price", "1000" if index == 1 else "1100")
+            if not include_pending:
+                return
+            report = root.find("m:Trades/m:Report", NS)
+            table = ET.SubElement(report, "{MyBroker}Tablix3")
+            collection = ET.SubElement(table, "{MyBroker}Details2_Collection")
+            pending = deepcopy(rows[0])
+            for old, new in (
+                ("trade_no", "trade_no1"),
+                ("db_time", "db_time2"),
+                ("qty", "qty2"),
+                ("Price", "Price2"),
+                ("summ_trade", "summ_trade2"),
+                ("curr_calc", "curr_calc2"),
+                ("acc_code", "acc_code2"),
+                ("isin_reg", "isin_reg1"),
+                ("save_settlement_date", "save_settlement_date3"),
+                ("save_depo_settlement_date", "save_depo_settlement_date3"),
+                ("settlement_time", "settlement_time2"),
+                ("bank_tax", "bank_tax2"),
+                ("summ_nkd", "summ_nkd2"),
+            ):
+                if old in pending.attrib:
+                    pending.set(new, pending.attrib.pop(old))
+            if pending_repo:
+                pending.set("repo_no1", "B90002")
+            pending.tag = "{MyBroker}Details2"
+            collection.append(pending)
+
+        return mutate
+
+    for marker, fee, repo in (("a", "2", True), ("b", "3", False)):
+        save(
+            db,
+            stock=("0", "0", "0", "0"),
+            bond=None,
+            trades=((ISIN, "1", "1000", None, fee), (ISIN, "-1", "1100", None, fee)),
+            marker=marker,
+            mutate=prices_and_repo(repo),
+        )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )["instruments"][0]
+    assert result["pnl"]["value"] is None
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "first_state,first_end,first_time,second_state,second_end,second_time,conflict",
+    [
+        ("pending", "2030-04-15", None, "settled", "2030-04-30", None, False),
+        ("pending", "2030-04-30", None, "settled", "2030-04-30", None, True),
+        ("pending", "2030-05-01", None, "settled", "2030-04-30", None, True),
+        ("settled", "2030-04-30", "10", "settled", "2030-04-30", "13", True),
+        ("settled", "2030-04-30", None, "settled", "2030-04-30", "13", False),
+        ("pending", "2030-04-15", "10", "settled", "2030-04-30", "13", False),
+    ],
+)
+def test_trade_overlap_respects_lifecycle_and_present_settlement_times(
+    first_state, first_end, first_time, second_state, second_end, second_time, conflict
+):
+    from hermes_finance.services.source_trade_identity import trade_observation_conflict
+
+    observations = [
+        ({"covered_to": first_end}, {"state": first_state, "settlement_time": first_time}),
+        ({"covered_to": second_end}, {"state": second_state, "settlement_time": second_time}),
+    ]
+    assert trade_observation_conflict(observations) is conflict
+
+
+@pytest.mark.parametrize(
+    "overlap",
+    [
+        "single",
+        "same",
+        "duplicates",
+        "missing",
+        "fewer_duplicates",
+        "changed_timestamp",
+        "unmapped",
+        "ambiguous",
+        "revoked",
+    ],
+)
+def test_clean_old_coupon_uses_unique_current_mapping_without_writes(db, overlap):
+    from test_source_money_classifications_service import COUPON_SECURITY, _security_mapping
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    one = (("Перевод", COUPON_SECURITY, "30"),)
+    first = one * (2 if overlap in {"duplicates", "fewer_duplicates"} else 1)
+    save(db, trades=(), extra=first, marker="a")
+    if overlap not in {"single", "unmapped", "ambiguous", "revoked"}:
+        second = () if overlap == "missing" else one if overlap == "fewer_duplicates" else first
+
+        def change_timestamp(root):
+            if overlap == "changed_timestamp":
+                for node in root.findall(".//m:rn", NS):
+                    node.set("last_update", "2030-04-18T00:00:00")
+
+        save(db, trades=(), extra=second, marker="b", mutate=change_timestamp)
+    with db.session_factory() as session:
+        target = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
+        session.add(target)
+        session.commit()
+        if overlap != "unmapped":
+            mappings.set_mapping(session, "4B02-09-99999-Z-001P", BOND)
+        if overlap == "ambiguous":
+            other = Instrument(
+                name="Other synthetic bond", instrument_type="bond", isin="RU000A000002"
+            )
+            session.add(other)
+            session.flush()
+            _security_mapping(session, other, alias="4B02-09-99999-Z-001P", isin=other.isin)
+            session.commit()
+        if overlap == "revoked":
+            _security_mapping(
+                session, target, alias="4B02-09-99999-Z-001P", isin=target.isin, status="revoked"
+            )
+            session.commit()
+        statuses = [
+            row.instrument_link_status
+            for row in session.scalars(select(SourceMoneyClassification))
+            if row.classification == "coupon"
+        ]
+    assert statuses and set(statuses) == {"unresolved_no_match"}
+    before = snapshot(db)
+    with db.session_factory() as session:
+        row = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=BOND,
+        )["instruments"][0]
+    if overlap in {
+        "missing",
+        "fewer_duplicates",
+        "changed_timestamp",
+        "unmapped",
+        "ambiguous",
+        "revoked",
+    }:
+        assert row["coupons"]["value"] is None
+    else:
+        assert row["coupons"]["value"] == ("6000" if overlap == "duplicates" else "3000")
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("cost_difference", ["commission", "nkd"])
+def test_clean_combined_sources_reach_overview_card_income_and_ai(db, cost_difference):
+    from test_source_money_classifications_service import COUPON_SECURITY
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    def prices(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", stamp)
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+            row.set("Price", "100" if index == 1 else "101")
+
+    for marker, fee in (("a", "2"), ("b", "3")):
+        save(
+            db,
+            stock=None,
+            bond=("0", "0", "0", "0"),
+            trades=(
+                (
+                    BOND,
+                    "1",
+                    "1025" if marker == "b" and cost_difference == "nkd" else "1020",
+                    "25" if marker == "b" else "20",
+                    fee,
+                ),
+                (
+                    BOND,
+                    "-1",
+                    "1035" if marker == "b" and cost_difference == "nkd" else "1030",
+                    "25" if marker == "b" else "20",
+                    fee,
+                ),
+            )
+            if cost_difference == "nkd"
+            else ((BOND, "1", "1020", None, fee), (BOND, "-1", "1030", None, fee)),
+            extra=(("Перевод", COUPON_SECURITY, "30"),),
+            mutate=prices,
+            marker=marker,
+        )
+    with db.session_factory() as session:
+        session.add(Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND))
+        session.commit()
+        mappings.set_mapping(session, "4B02-09-99999-Z-001P", BOND)
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    before = snapshot(db)
+    with TestClient(create_app(database=db)) as client:
+        overview = client.get("/api/returns/overall?include_instrument_summaries=true")
+        card = client.get("/api/returns/instrument-card", params={"isin": BOND})
+        income = client.get("/api/returns/income", params={"kind": "coupon"})
+        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+    assert overview.status_code == card.status_code == income.status_code == ai.status_code == 200
+    summary = next(row for row in overview.json()["instruments"] if row["isin"] == BOND)
+    account = card.json()["accounts"][0]
+    exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    ai_row = next(row for row in exported["instruments"] if row["isin"] == BOND)
+    assert account["period"] == exported["period"] == summary["accounts"][0]["period"]
+    assert account["clean"]["pnl"]["value"] == ai_row["pnl"]["value"] == "4000"
+    assert summary["accounts"][0]["pnl"]["value"] == "4000"
+    assert account["clean"]["coupons"]["value"] == ai_row["coupons"]["value"] == "3000"
+    assert [row["amount"]["value"] for row in income.json()["events"] if row["isin"] == BOND] == [
+        "3000"
+    ]
+    assert (
+        account["purchases"][0]["price_result_kopecks"]
+        == ai_row["purchases"][0]["price_result_kopecks"]
+        == "1000"
+    )
+    assert snapshot(db) == before
+
+
+def test_analytical_coupon_mapping_keeps_native_accounts_separate(db):
+    from test_source_money_classifications_service import COUPON_SECURITY
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def other_account(root):
+        for row in root.iter():
+            for key in ("acc_code", "acc_code2"):
+                if key in row.attrib:
+                    row.set(key, "7654321-001")
+
+    save(db, trades=(), extra=(("Перевод", COUPON_SECURITY, "30"),), marker="a")
+    save(
+        db,
+        trades=(),
+        extra=(("Перевод", COUPON_SECURITY, "70"),),
+        marker="b",
+        mutate=other_account,
+    )
+    with db.session_factory() as session:
+        session.add(Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND))
+        session.commit()
+        mappings.set_mapping(session, "4B02-09-99999-Z-001P", BOND)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        results = [
+            read_clean_account(session, account, date(2030, 3, 31), date(2030, 4, 30), isin=BOND)[
+                "instruments"
+            ][0]["coupons"]["value"]
+            for account in (ACCOUNT, "7654321-001")
+        ]
+    assert results == ["3000", "7000"]
+    assert snapshot(db) == before
+
+
+def test_analytical_coupon_never_overrides_conflicting_historical_evidence(db, monkeypatch):
+    from test_source_money_classifications_service import COUPON_SECURITY
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services import source_return_evidence
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.source_money_classifications import source_reference
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+
+    coupons = (("Перевод", COUPON_SECURITY, "30"),) * 2
+    for marker in ("a", "b"):
+        save(db, trades=(), extra=coupons, marker=marker)
+    with db.session_factory() as session:
+        session.add(Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND))
+        session.commit()
+        mappings.set_mapping(session, "4B02-09-99999-Z-001P", BOND)
+        selected, _ = _selected_sources(session, ACCOUNT)
+        view = selected[0][1]
+        ref = source_reference(view["id"], view["document"]["money"][0])
+    # None is the existing current-proof conflict tombstone, not missing proof.
+    monkeypatch.setattr(
+        source_return_evidence, "historical_payout_evidence", lambda *_: {ref: None}
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30), isin=BOND
+        )["instruments"][0]
+    assert result["coupons"]["value"] is None
+    assert snapshot(db) == before
+
+
+def test_analytical_coupon_does_not_override_existing_money_ownership(db, monkeypatch):
+    from types import SimpleNamespace
+
+    from test_source_money_classifications_service import COUPON_SECURITY
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services import broker_money_ownership, source_return_evidence
+    from hermes_finance.services.source_monthly_returns import _selected_sources
+
+    save(db, trades=(), extra=(("Перевод", COUPON_SECURITY, "30"),))
+    with db.session_factory() as session:
+        session.add(Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND))
+        session.commit()
+        mappings.set_mapping(session, "4B02-09-99999-Z-001P", BOND)
+        selected, native_scope = _selected_sources(session, ACCOUNT)
+        monkeypatch.setattr(
+            source_return_evidence, "bound_import", lambda *_: SimpleNamespace(id=1)
+        )
+        monkeypatch.setattr(source_return_evidence, "_source_allows_payout", lambda *_: True)
+        monkeypatch.setattr(source_return_evidence, "effective_payout_match", lambda *a, **k: None)
+        monkeypatch.setattr(broker_money_ownership, "owners", lambda *_: [])
+        assert list(
+            source_return_evidence.analytical_coupon_links(session, selected, native_scope).values()
+        ) == [BOND]
+        monkeypatch.setattr(broker_money_ownership, "owners", lambda *_: [{"role": "fee"}])
+        assert not source_return_evidence.analytical_coupon_links(session, selected, native_scope)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    "difference", ["nkd", "dirty_total", "missing_nkd", "price", "face", "small_total", "principal"]
+)
+def test_clean_bond_overlap_uses_same_proved_principal_despite_costs(db, difference, reverse):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    sources = ["a", "b"]
+    if reverse:
+        sources.reverse()
+    for marker in sources:
+
+        def mutate(root):
+            for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+                row.set("db_time", f"{index:02}.04.2030 09:00:00")
+                row.set("save_settlement_date", f"{index:02}.04.2030")
+                row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+                row.set("Price", "100" if index == 1 else "101")
+                if marker == "b" and index == 1 and difference == "price":
+                    row.set("Price", "100.1")
+                if marker == "b" and index == 1 and difference == "face":
+                    row.set("nominal", "2000")
+            if difference == "principal":
+                _add_money(
+                    root, "Расчеты по сделке 10000000001", "principal", "-999", day="2030-04-01"
+                )
+
+        nkd = (
+            None
+            if marker == "b" and difference == "missing_nkd"
+            else "25"
+            if marker == "b"
+            else "20"
+        )
+        amount = (
+            "999"
+            if marker == "b" and difference == "small_total"
+            else "1025"
+            if marker == "b" and difference == "dirty_total"
+            else "1020"
+        )
+        sale = "1035" if marker == "b" and difference == "dirty_total" else "1030"
+        save(
+            db,
+            stock=None,
+            bond=("0", "0", "0", "0"),
+            trades=((BOND, "1", amount, nkd, "2"), (BOND, "-1", sale, nkd, "2")),
+            marker=marker,
+            mutate=mutate,
+        )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        for _ in range(2):
+            row = read_clean_account(
+                session,
+                ACCOUNT,
+                date(2030, 3, 31),
+                date(2030, 4, 30),
+                isin=BOND,
+                include_purchases=True,
+            )["instruments"][0]
+            if difference in {"nkd", "dirty_total", "missing_nkd"}:
+                assert row["buys"]["value"] == "100000"
+                assert row["sells"]["value"] == "101000"
+                assert row["pnl"]["value"] == "1000"
+                assert row["purchases"][0]["price_result_kopecks"] == "1000"
+            else:
+                assert row["pnl"]["value"] is None
+    assert snapshot(db) == before

@@ -1402,6 +1402,413 @@ def saved_investment_preview(database, monkeypatch):
     return result
 
 
+@pytest.fixture
+def current_bond_receipt(database, monkeypatch, request):
+    import sys
+    from dataclasses import replace
+
+    from test_source_money_classifications_service import COUPON_SECURITY
+    from test_statement_import_broker_statement_provisional import _add_money
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.persistence import Instrument, SourceMoneyClassification
+    from hermes_finance.services import security_reg_isin_mappings, source_investment_proofs
+
+    variant = getattr(request, "param", None)
+    service, _, raw, report, _ = investment_case()
+    root = ET.fromstring(raw)
+    position = root.find(".//{MyBroker}Details[@ISIN1]")
+    position.attrib.update(
+        active_type="Облигации",
+        income_rest="0",
+        real_rest="0",
+        forward_rest="0",
+        income_volume="0",
+        real_volume="0",
+        nominal="1000",
+    )
+    trade = root.find(".//{MyBroker}Details[@trade_no]")
+    trade.attrib.update(
+        qty="1",
+        Price="100",
+        nominal="1000",
+        summ_trade="1020",
+        bank_tax="10",
+        db_time="17.01.2030 09:00:00",
+        save_settlement_date="17.01.2030",
+        save_depo_settlement_date="17.01.2030",
+    )
+    trade.attrib.pop("summ_nkd", None)
+    sale = deepcopy(trade)
+    sale.attrib.update(
+        trade_no="10000000002\n2000000002",
+        qty="-1",
+        Price="101",
+        summ_trade="1030",
+        bank_tax="0",
+        db_time="18.01.2030 09:00:00",
+        save_settlement_date="18.01.2030",
+        save_depo_settlement_date="18.01.2030",
+    )
+    root.find(
+        ".//{MyBroker}Trades/{MyBroker}Report/{MyBroker}Tablix2/{MyBroker}Details_Collection"
+    ).append(sale)
+    root.find(".//{MyBroker}p_code[@volume]").set("volume", "-1020")
+    _add_money(root, "Расчеты по сделке 10000000002", "principal", "1030", day="2030-01-18")
+    if variant == "zero_value_missing":
+        position.set("active_type", "Акции")
+        position.attrib.pop("income_volume")
+        position.attrib.pop("real_volume")
+        trade.set("summ_nkd", "0")
+        sale.set("summ_nkd", "0")
+    else:
+        _add_money(root, "Перевод", COUPON_SECURITY, "30", day="2030-01-20")
+        if variant == "duplicate_payout":
+            _add_money(root, "Перевод", COUPON_SECURITY, "30", day="2030-01-20")
+    root.find(".//{MyBroker}Details[@active_name='RUB']").set(
+        "real_rest", "2000" if variant == "zero_value_missing" else "2030"
+    )
+    raw = ET.tostring(root, encoding="utf-8")
+    doc = parse_mybroker(raw, FILENAME)
+    report = replace(
+        report,
+        positions={("1234567", ISIN): ("1", 100000) if variant == "pdf_conflict" else ("0", 0)},
+        closing={"1234567": 200000 if variant == "zero_value_missing" else 203000},
+        reported_pnl={"1234567": 0 if variant == "zero_value_missing" else 3000},
+    )
+    if variant == "duplicate_payout":
+        from hermes_finance.statement_import.investment_report import InvestmentPayout
+
+        report = replace(
+            report,
+            payouts=(
+                InvestmentPayout(
+                    "1234567",
+                    ISIN,
+                    "COUPON",
+                    date(2030, 1, 20),
+                    "RUB",
+                    6000,
+                    "synthetic-two-coupons",
+                ),
+            ),
+        )
+    if variant == "payout_conflict":
+        from hermes_finance.statement_import.investment_report import parse_investment_report
+
+        payout = parse_investment_report(investment_text(), {"1234567"}).payouts[0]
+        report = replace(report, payouts=(replace(payout, kind="COUPON"),))
+    with database.session_factory() as session:
+        if variant != "zero_value_missing":
+            session.scalar(
+                select(Instrument).where(Instrument.isin == ISIN)
+            ).instrument_type = "bond"
+        session.commit()
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "investment_case",
+        lambda: (service, doc, raw, report, service._money(doc, raw)),
+    )
+    preview = saved_investment_preview(database, monkeypatch)["persistence"]
+    assert preview["available"], preview
+    with database.session_factory() as session:
+        source_investment_proofs.confirm(
+            session,
+            form_token=preview["form_token"],
+            preview_digest=preview["preview_digest"],
+            request_id="synthetic-current-bond-proof",
+        )
+        if variant != "zero_value_missing":
+            coupon = session.scalar(
+                select(SourceMoneyClassification).where(
+                    SourceMoneyClassification.classification == "coupon"
+                )
+            )
+            assert coupon.instrument_link_status == "unresolved_no_match"
+            security_reg_isin_mappings.set_mapping(session, "4B02-09-99999-Z-001P", ISIN)
+        assert source_investment_proofs.read_reports(session)[0]["status"] == "current"
+    return database
+
+
+def test_current_receipt_allows_clean_trade_and_coupon_without_changing_receipt(
+    current_bond_receipt,
+):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services import source_investment_proofs
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    database = current_bond_receipt
+    before = snapshot(database)
+    with database.session_factory() as session:
+        legacy = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+            isin=ISIN,
+        )
+        clean = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2029, 12, 31),
+            date(2030, 1, 31),
+            isin=ISIN,
+            include_purchases=True,
+        )["instruments"][0]
+        assert source_investment_proofs.read_reports(session)[0]["status"] == "current"
+    assert all(
+        event.attribution_basis != "analytical_coupon_mapping"
+        for event in legacy.instruments[0].analysis.events
+    )
+    assert clean["buys"]["value"] == "100000"
+    assert clean["sells"]["value"] == "101000"
+    assert clean["coupons"]["value"] == "3000"
+    assert clean["pnl"]["value"] == "4000"
+    assert clean["purchases"][0]["price_result_kopecks"] == "1000"
+    assert snapshot(database) == before
+
+
+def test_analytical_coupon_does_not_enter_legacy_ai_source_returns(current_bond_receipt):
+    from hermes_finance.services.ai_source_returns import source_returns_section
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    database = current_bond_receipt
+    before = snapshot(database)
+    with database.session_factory() as session:
+        available = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            available_period=True,
+            include_monthly_history=False,
+        )
+        section = source_returns_section(
+            session, as_of_date=date(2030, 1, 31), reporting_period=(2030, 1)
+        )
+    events = [event for row in available.instruments for event in row.analysis.events]
+    assert all(event.attribution_basis != "analytical_coupon_mapping" for event in events)
+    exported = [
+        event
+        for account in section["data"]["accounts"]
+        for interval in account["intervals"]
+        for instrument in interval["instruments"]
+        for event in instrument["events"]
+    ]
+    assert events and exported
+    assert not any(event["kind"] == "COUPON" and event["counted"] for event in exported)
+    assert snapshot(database) == before
+
+
+def test_current_receipt_clean_overview_card_income_and_ai_agree(current_bond_receipt):
+    from datetime import UTC, datetime
+
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services import returns_overall
+    from hermes_finance.services.ai_financial_review import (
+        assemble_ai_financial_review,
+        validate_ai_financial_review,
+    )
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    database = current_bond_receipt
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+    before = snapshot(database)
+    with database.session_factory() as session:
+        overview = returns_overall.read_clean_overall(session, include_instrument_details=True)
+        card = returns_overall.read_clean_instrument_card(session, ISIN)
+        income = returns_overall.read_clean_income(session, kind="coupon")
+        ai = assemble_ai_financial_review(
+            session,
+            generated_at=datetime(2030, 2, 1, tzinfo=UTC),
+            evaluated_on=date(2030, 2, 1),
+            format_version="3.1.0",
+        )
+    validate_ai_financial_review(ai)
+    summary = next(row for row in overview["instruments"] if row["isin"] == ISIN)
+    account = card["accounts"][0]
+    exported = ai["sections"]["clean_returns"]["data"]["accounts"][0]
+    ai_row = next(row for row in exported["instruments"] if row["isin"] == ISIN)
+    assert summary["accounts"][0]["pnl"]["value"] == account["clean"]["pnl"]["value"]
+    assert account["clean"]["pnl"]["value"] == ai_row["pnl"]["value"] == "4000"
+    assert account["clean"]["coupons"]["value"] == ai_row["coupons"]["value"] == "3000"
+    assert [event["amount"]["value"] for event in income["events"] if event["isin"] == ISIN] == [
+        "3000"
+    ]
+    assert [
+        event["net_payout_kopecks"]
+        for event in account["detail"]["events"]
+        if event["kind"] == "COUPON" and event["counted"]
+    ] == ["3000"]
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("current_bond_receipt", ["pdf_conflict"], indirect=True)
+def test_clean_projection_does_not_hide_a_current_pdf_position_conflict(current_bond_receipt):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    database = current_bond_receipt
+    before = snapshot(database)
+    with database.session_factory() as session:
+        proof = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+            isin=ISIN,
+        )
+        assert "pdf_xml_position_mismatch" in proof.instruments[0].analysis.reason_codes
+        clean = read_clean_account(
+            session, ACCOUNT, date(2029, 12, 31), date(2030, 1, 31), isin=ISIN
+        )["instruments"][0]
+    assert clean["pnl"]["value"] is None
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("current_bond_receipt", ["payout_conflict"], indirect=True)
+def test_clean_coupon_does_not_override_a_current_pdf_payout_conflict(current_bond_receipt):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    database = current_bond_receipt
+    before = snapshot(database)
+    with database.session_factory() as session:
+        proof = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+            isin=ISIN,
+        )
+        assert "pdf_xml_payout_mismatch" in proof.instruments[0].analysis.reason_codes
+        clean = read_clean_account(
+            session, ACCOUNT, date(2029, 12, 31), date(2030, 1, 31), isin=ISIN
+        )["instruments"][0]
+    assert clean["coupons"]["value"] is None
+    assert clean["pnl"]["value"] is None
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("current_bond_receipt", ["zero_value_missing"], indirect=True)
+def test_clean_projection_preserves_current_receipt_zero_position(current_bond_receipt):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services.clean_instrument_return import (
+        project_clean_analysis,
+        read_clean_account,
+    )
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    database = current_bond_receipt
+    before = snapshot(database)
+    with database.session_factory() as session:
+        proof = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+            isin=ISIN,
+        ).instruments[0]
+        proved = project_clean_analysis(proof.analysis, ISIN, instrument_type=proof.instrument_type)
+        clean = read_clean_account(
+            session, ACCOUNT, date(2029, 12, 31), date(2030, 1, 31), isin=ISIN
+        )["instruments"][0]
+    assert proved.pnl.value == 1000
+    assert clean["pnl"]["value"] == str(proved.pnl.value)
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize(
+    "current_bond_receipt, expected",
+    [("normal", "4000"), ("pdf_conflict", None)],
+    indirect=["current_bond_receipt"],
+)
+def test_clean_period_includes_current_pdf_position_conflict_across_sources(
+    current_bond_receipt, expected
+):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services import source_investment_proofs
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.statement_import.mybroker import NS
+
+    database = current_bond_receipt
+
+    def same_bond(root):
+        position = root.find(".//m:Details[@ISIN1]", NS)
+        position.set("active_type", "Облигации")
+        position.set("nominal", "1000")
+
+    save_source(
+        database, month=2, stock=("0", "0", "0", "0"), bond=None, trades=(), mutate=same_bond
+    )
+    save_source(
+        database, month=3, stock=("0", "0", "0", "0"), bond=None, trades=(), mutate=same_bond
+    )
+    before = snapshot(database)
+    with database.session_factory() as session:
+        assert source_investment_proofs.read_reports(session)[0]["status"] == "current"
+        clean = read_clean_account(
+            session, ACCOUNT, date(2029, 12, 31), date(2030, 2, 28), isin=ISIN
+        )["instruments"][0]
+        boundary = read_clean_account(
+            session, ACCOUNT, date(2030, 1, 31), date(2030, 2, 28), isin=ISIN
+        )["instruments"][0]
+        later = read_clean_account(
+            session, ACCOUNT, date(2030, 2, 28), date(2030, 3, 31), isin=ISIN
+        )["instruments"][0]
+    assert clean["coupons"]["value"] == "3000"
+    assert clean["pnl"]["value"] == expected
+    assert boundary["pnl"]["value"] == ("0" if expected is not None else None)
+    assert later["pnl"]["value"] == "0"
+    assert snapshot(database) == before
+
+
+def test_legacy_ai_overall_native_detail_does_not_use_clean_coupon_mapping(
+    current_bond_receipt, monkeypatch
+):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services import returns_overall
+    from hermes_finance.services.ai_source_returns import (
+        returns_overall_section,
+        source_returns_section,
+    )
+
+    database = current_bond_receipt
+    before = snapshot(database)
+    with database.session_factory() as session:
+        overview = returns_overall.read_overall(session, include_instrument_details=True)
+        row = next(row for row in overview["instruments"] if row["isin"] == ISIN)
+        row["accounts"][0]["native_period"] = True
+        refs = {}
+        source = source_returns_section(
+            session,
+            as_of_date=date(2030, 1, 31),
+            reporting_period=(2030, 1),
+            source_account_refs=refs,
+        )
+        with monkeypatch.context() as patch:
+            patch.setattr(returns_overall, "read_overall", lambda *_args, **_kwargs: overview)
+            legacy = returns_overall_section(
+                session, source_account_refs=refs, source_section=source
+            )
+        clean = returns_overall.read_clean_instrument_card(session, ISIN)
+    card = next(row for row in legacy["data"]["instruments"] if row["isin"] == ISIN)
+    events = card["accounts"][0]["detail"]["analysis"]["events"]
+    assert events
+    assert not any(event["kind"] == "COUPON" and event["counted"] for event in events)
+    assert any(event["kind"] == "COUPON" for event in clean["accounts"][0]["detail"]["events"])
+    assert snapshot(database) == before
+
+
 def save_semantics_proof(database, monkeypatch, revision, request_id):
     """Issue synthetic evidence under a chosen semantics revision."""
     from hermes_finance.services import source_investment_proofs as proofs
@@ -1455,18 +1862,21 @@ def test_v10_retains_v9_legacy_interval_fixture(kind, expected):
     assert hashlib.sha256(encoded).hexdigest() == expected
 
 
-def test_v10_reads_unchanged_v9_receipt_without_writes(database, monkeypatch):
+@pytest.mark.parametrize(
+    "previous", ["source_investment_semantics_v9", "source_investment_semantics_v10"]
+)
+def test_clean_projection_reads_unchanged_old_receipt_without_writes(
+    database, monkeypatch, previous
+):
     from hermes_finance.services import source_investment_proofs as proofs
 
-    original = save_semantics_proof(
-        database, monkeypatch, "source_investment_semantics_v9", "v9-receipt"
-    )
+    original = save_semantics_proof(database, monkeypatch, previous, "old-receipt")
     before = snapshot(database)
     before_bytes = database.database_path.read_bytes()
     with database.session_factory() as session:
         current = proofs.read_reports(session)
         assert current == original
-        assert proofs.request_status(session, "v9-receipt")["current"]
+        assert proofs.request_status(session, "old-receipt")["current"]
     assert snapshot(database) == before
     assert database.database_path.read_bytes() == before_bytes
 
@@ -3151,4 +3561,86 @@ def test_bounded_month_retains_full_reader_fold_for_proof_aliases(
             closing_date=row.closing_date,
         )
         assert bounded == row
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("current_bond_receipt", ["payout_conflict"], indirect=True)
+def test_clean_period_preserves_current_pdf_payout_conflict_across_sources(current_bond_receipt):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services import source_investment_proofs
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.statement_import.mybroker import NS
+
+    database = current_bond_receipt
+
+    def same_bond(root):
+        position = root.find(".//m:Details[@ISIN1]", NS)
+        position.set("active_type", "Облигации")
+        position.set("nominal", "1000")
+
+    save_source(
+        database, month=2, stock=("0", "0", "0", "0"), bond=None, trades=(), mutate=same_bond
+    )
+    before = snapshot(database)
+    with database.session_factory() as session:
+        assert source_investment_proofs.read_reports(session)[0]["status"] == "current"
+        clean = read_clean_account(
+            session, ACCOUNT, date(2029, 12, 31), date(2030, 2, 28), isin=ISIN
+        )["instruments"][0]
+        later = read_clean_account(
+            session, ACCOUNT, date(2030, 1, 31), date(2030, 2, 28), isin=ISIN
+        )["instruments"][0]
+    assert clean["coupons"]["value"] is None
+    assert clean["pnl"]["value"] is None
+    assert clean["valuation_and_trades"]["value"] == "1000"
+    assert later["pnl"]["value"] == "0"
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("current_bond_receipt", ["duplicate_payout"], indirect=True)
+def test_clean_current_pdf_identical_coupon_occurrences_are_preserved(current_bond_receipt):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.reporting_months import create_reporting_month
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    database = current_bond_receipt
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=date(2030, 1, 31))
+    before = snapshot(database)
+    with database.session_factory() as session:
+        proof = read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=date(2029, 12, 31),
+            closing_date=date(2030, 1, 31),
+            isin=ISIN,
+        )
+        assert proof.instruments[0].analysis.components["coupons"].value == 6000
+        for _ in range(2):
+            clean = read_clean_account(
+                session, ACCOUNT, date(2029, 12, 31), date(2030, 1, 31), isin=ISIN
+            )["instruments"][0]
+            assert clean["coupons"]["value"] == "6000"
+            assert clean["pnl"]["value"] == "7000"
+    with TestClient(create_app(database=database)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+    assert card.status_code == ai.status_code == 200
+    account = card.json()["accounts"][0]
+    exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    row = next(row for row in exported["instruments"] if row["isin"] == ISIN)
+    assert account["period"] == exported["period"]
+    assert account["clean"]["coupons"] == row["coupons"]
+    assert row["coupons"]["value"] == "6000"
+    # The export deliberately uses file-local purchase IDs. All financial fields agree.
+    assert [
+        {key: value for key, value in purchase.items() if key != "id"}
+        for purchase in account["purchases"]
+    ] == [
+        {key: value for key, value in purchase.items() if key != "id"}
+        for purchase in row["purchases"]
+    ]
     assert snapshot(database) == before

@@ -36,8 +36,8 @@ VERSION = "source_return_investment_v1"
 # parsing, mybroker_return_structure, source_report_preview._money classification or
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
-SEMANTICS_REVISION = "source_investment_semantics_v10"
-_GIFT_COMPAT_REVISION = "source_investment_semantics_v10"
+SEMANTICS_REVISION = "source_investment_semantics_v11"
+_GIFT_COMPAT_REVISION = "source_investment_semantics_v11"
 _V3_COMPAT_CODE = "source_investment_semantics_v3"
 _GIFT_COMPAT_CODES = (
     "source_investment_semantics_v2",
@@ -325,7 +325,13 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
         # unchanged live dependencies, including REPO and gift scopes.
         # V10 preserves V9's legacy interval and receipt meaning; its extra
         # trade disclosures are used by the independent clean projection only.
-        codes = ("source_investment_semantics_v9", "source_investment_semantics_v8")
+        # V11's coupon mapping and trade-cost recovery are limited to the clean
+        # projection; the exact investment-proof operands remain unchanged.
+        codes = (
+            "source_investment_semantics_v10",
+            "source_investment_semantics_v9",
+            "source_investment_semantics_v8",
+        )
         older_codes = (
             "source_investment_semantics_v7",
             "source_investment_semantics_v6",

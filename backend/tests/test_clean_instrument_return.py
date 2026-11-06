@@ -1,11 +1,15 @@
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, localcontext
 from types import SimpleNamespace
 
 import pytest
 
-from hermes_finance.domain.clean_instrument_return import calculate_clean_return, clean_trade_amount
+from hermes_finance.domain.clean_instrument_return import (
+    calculate_clean_return,
+    clean_trade_amount,
+    cost_only_trade,
+)
 from hermes_finance.domain.instrument_return import CashLeg, Coverage, Endpoint, InstrumentEvent
 from hermes_finance.services.clean_instrument_return import project_clean_analysis
 from hermes_finance.services.clean_purchase_returns import clean_purchase_price_contributions
@@ -28,6 +32,99 @@ def trade(kind, amount, nkd, *, basis="includes_paid_nkd"):
         accrued_interest_kopecks=nkd,
         commission_kopecks=900,
     )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "none",
+        "undated",
+        "wrong_date",
+        "missing_face",
+        "invalid_face",
+        "wrong_unit",
+        "no_identity",
+        "repo",
+        "conflicting_total",
+        "one_kopeck_tolerance",
+        "missing_total",
+    ],
+)
+def test_bond_principal_from_dated_price_uses_exact_half_up_rounding(change):
+    event = replace(
+        trade("BUY", 102000, None, basis=None),
+        provider="alfa_mybroker",
+        native_identity="trade-1",
+        native_ids=("1", "2"),
+        execution_date=DAY,
+        unit_price=Decimal("99.9995"),
+        price_unit="PERCENT_OF_FACE",
+        face_value=Decimal("1000"),
+        face_value_date=DAY,
+        quantity_delta=Decimal("1"),
+    )
+    changes = {
+        "undated": {"face_value_date": None},
+        "wrong_date": {"face_value_date": START},
+        "missing_face": {"face_value": None},
+        "invalid_face": {"face_value": Decimal("NaN")},
+        "wrong_unit": {"price_unit": "UNKNOWN"},
+        "no_identity": {"native_identity": None},
+        "repo": {"reason_codes": ("repo_trade_unsupported",)},
+        "conflicting_total": {"native_trade_amount_kopecks": 99998},
+        "one_kopeck_tolerance": {"native_trade_amount_kopecks": 99999},
+        "missing_total": {"native_trade_amount_kopecks": None},
+    }
+    event = replace(event, **changes.get(change, {}))
+    assert clean_trade_amount(event) == (
+        100000 if change in {"none", "one_kopeck_tolerance"} else None
+    )
+
+
+@pytest.mark.parametrize("field", ["cash_settlement_date", "depository_settlement_date"])
+def test_cost_only_recovery_rejects_settlement_before_execution(field):
+    event = replace(
+        trade("BUY", 102000, None, basis=None),
+        provider="alfa_mybroker",
+        native_identity="trade-1",
+        native_ids=("1", "2"),
+        execution_date=DAY,
+        depository_settlement_date=DAY,
+        unit_price=Decimal("100"),
+        price_unit="PERCENT_OF_FACE",
+        face_value=Decimal("1000"),
+        face_value_date=DAY,
+        quantity_delta=Decimal("1"),
+        counted=False,
+        reason_codes=("trade_components_missing", "trade_nkd_basis_unknown"),
+    )
+    assert cost_only_trade(event)
+    assert not cost_only_trade(replace(event, **{field: DAY - timedelta(days=1)}))
+
+
+@pytest.mark.parametrize(
+    "paid, expected", [(-100000, True), (-102000, True), (-101999, False), (102000, False)]
+)
+def test_bond_clean_price_requires_linked_cash_to_match_price_or_unknown_basis_total(
+    paid, expected
+):
+    event = replace(
+        trade("BUY", 102000, None, basis=None),
+        provider="alfa_mybroker",
+        native_identity="trade-1",
+        native_ids=("1", "2"),
+        execution_date=DAY,
+        depository_settlement_date=DAY,
+        unit_price=Decimal("100"),
+        price_unit="PERCENT_OF_FACE",
+        face_value=Decimal("1000"),
+        face_value_date=DAY,
+        quantity_delta=Decimal("1"),
+        counted=False,
+        reason_codes=("trade_components_missing", "trade_nkd_basis_unknown"),
+        cash_legs=(CashLeg("principal", DAY, paid, -paid, ("cash",), "cash"),),
+    )
+    assert cost_only_trade(event) is expected
 
 
 def cash(kind, amount):

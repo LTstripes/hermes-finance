@@ -407,6 +407,7 @@ def test_v31_keeps_closed_purchase_when_later_bond_clean_cost_is_unknown(databas
             row.set("db_time", f"{stamp}\n{stamp}")
             row.set("Price", price)
         rows[-1].attrib.pop("summ_nkd", None)
+        rows[-1].attrib.pop("nominal", None)
 
     save(
         database,

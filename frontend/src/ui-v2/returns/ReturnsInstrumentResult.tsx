@@ -1,8 +1,7 @@
 import type { InstrumentAnalysis } from "../../api/sourceReturns";
-import { reasonCopy } from "../../lib/reasonCopy";
 import styles from "./InstrumentResult.module.css";
 import { displayMetric, type Metric, unavailable } from "./model";
-import { Explanation, Value, visibleReturnReasons } from "./ReturnsInfo";
+import { Explanation, MissingMetricNote, Value, visibleReturnReasons } from "./ReturnsInfo";
 
 function Notes({ label, codes }: { label: string; codes: string[] }) {
   if (!codes.length) return null;
@@ -19,10 +18,12 @@ export function ReturnsInstrumentResult({
   result,
   analysis,
   reasonCodes = [],
+  showMissingNote = true,
 }: {
   result: { pnl: Metric; rate: Metric; conditional_pnl?: Metric; conditional_rate?: Metric } | null;
   analysis?: InstrumentAnalysis<string>;
   reasonCodes?: string[];
+  showMissingNote?: boolean;
 }) {
   const originalPnl = result?.pnl ?? unavailable;
   const originalRate = result?.rate ?? { ...unavailable, unit: "fraction" as const };
@@ -31,10 +32,6 @@ export function ReturnsInstrumentResult({
   const reasons = visibleReturnReasons([
     ...new Set([...reasonCodes, ...(analysis?.reason_codes ?? [])]),
   ]).filter((code) => !pnl.reason_codes.includes(code) && !rate.reason_codes.includes(code));
-  const status = (metric: Metric, fallback: string) =>
-    metric.reason_codes.length
-      ? reasonCopy(metric.reason_codes[0], { surface: "returns" }).message
-      : fallback;
   const usedAssumptions = [
     ...new Set([
       ...(analysis?.assumptions ?? []),
@@ -59,22 +56,21 @@ export function ReturnsInstrumentResult({
         <div>
           <dt>
             {originalPnl.reason_codes.includes("clean_partial_result")
-              ? "Известная часть результата ₽"
+              ? "Сумма по доступным данным ₽"
               : "Результат ₽"}
           </dt>
           <dd>
             <Value metric={pnl} label="Результат инструмента" signed />
-            {pnl.value === null && <small>{status(pnl, "Результат недоступен")}</small>}
           </dd>
         </div>
         <div>
           <dt>Доходность %</dt>
           <dd>
             <Value metric={rate} label="Доходность инструмента" />
-            {rate.value === null && <small>{status(rate, "Доходность недоступна")}</small>}
           </dd>
         </div>
       </dl>
+      {showMissingNote && <MissingMetricNote metrics={[pnl, rate]} />}
       {rate.method === "modified_dietz" && <small>Modified Dietz · за период, не годовая</small>}
       {pnl.value === null && observedPayouts.length > 0 && (
         <div>
