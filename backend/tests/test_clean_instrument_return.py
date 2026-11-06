@@ -596,6 +596,38 @@ def test_fifo_rejects_mismatched_execution_date_and_native_timestamp():
     assert case([event], quantity="1", closing=11000) is None
 
 
+def test_observed_purchase_fallback_requires_unique_current_identity_and_clean_cost():
+    original = replace(buy("a", 10000, "1", date(2030, 1, 10)), native_identity="native-a")
+    rows = case([original], quantity="1", closing=11000, complete=False)
+    assert rows and rows[0]["cost_kopecks"] == "10000"
+    assert rows[0]["status"] == "partial" and rows[0]["price_result_kopecks"] is None
+    assert rows[0]["remaining_quantity"] is None and rows[0]["return_fraction"] is None
+    duplicate = replace(original, event_key="duplicate")
+    assert case([original, duplicate], quantity="2", closing=22000, complete=False) is None
+    conflict = replace(duplicate, counted=False, reason_codes=("overlapping_trade_conflict",))
+    assert case([original, conflict], quantity="2", closing=22000, complete=False) is None
+    assert (
+        case([replace(original, current=False)], quantity="1", closing=11000, complete=False)
+        is None
+    )
+    assert (
+        case(
+            [replace(original, native_total_basis=None)],
+            quantity="1",
+            closing=11000,
+            complete=False,
+        )
+        is None
+    )
+    zero = case(
+        [replace(original, native_trade_amount_kopecks=0)],
+        quantity="1",
+        closing=11000,
+        complete=False,
+    )
+    assert zero[0]["cost_kopecks"] == "0" and zero[0]["return_fraction"] is None
+
+
 @pytest.mark.parametrize("role", ["principal", "native_money"])
 def test_fifo_checks_actual_linked_money_date_not_only_native_settlement(role):
     day = date(2030, 1, 9)

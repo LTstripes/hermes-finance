@@ -173,6 +173,39 @@ test("closed purchase remains visible when the open purchase has no valuation", 
   expect(region.getByText("Данные неполные")).toBeVisible();
 });
 
+test("unclassified account activity leaves observed purchase cost visible as partial", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "observed-buy",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: null,
+      cost_kopecks: "10000",
+      sale_proceeds_kopecks: null,
+      value_kopecks: null,
+      price_result_kopecks: null,
+      return_fraction: null,
+      status: "partial",
+      reason_codes: ["purchase_allocation_unproven"],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("100,00 ₽")).toBeVisible();
+  expect(region.getByText("Данные неполные")).toBeVisible();
+  expect(region.queryByText("80,00 ₽")).toBeNull();
+});
+
 test("same-day buys sold together show both supported price results", async () => {
   const card = instrumentCardFixture();
   card.accounts[0].purchases = [

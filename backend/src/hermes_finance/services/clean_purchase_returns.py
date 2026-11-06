@@ -72,7 +72,85 @@ def _unordered_buys_resolve_as_a_group(group, prefix, by_day):
         return True
 
 
+def _observed_purchase_facts(analysis, isin, *, instrument_type):
+    """Expose independently supported purchases without inferring FIFO results."""
+    identity_counts = defaultdict(int)
+    key_counts = defaultdict(int)
+    for event in analysis.events:
+        if event.native_identity and event.kind in {"BUY", "SELL", "UNRESOLVED"}:
+            identity_counts[event.native_identity] += 1
+        key_counts[event.event_key] += 1
+    rows = []
+    for event in analysis.events:
+        if (
+            event.isin != isin
+            or event.kind != "BUY"
+            or not event.current
+            or not event.native_source_account
+            or not event.native_identity
+            or identity_counts[event.native_identity] != 1
+            or key_counts[event.event_key] != 1
+            or not (event.counted and not event.reason_codes or cost_only_trade(event))
+        ):
+            continue
+        if (
+            instrument_type == "stock"
+            and event.native_total_basis is None
+            and event.attribution_basis == "native_money_group_bridge"
+            and event.accrued_interest_kopecks in (None, 0)
+        ):
+            event = replace(event, native_total_basis="excludes_paid_nkd")
+        day, _ = _execution(event)
+        settlement = clean_trade_date(event)
+        quantity = event.quantity_delta
+        amount = clean_trade_amount(event)
+        if (
+            day is None
+            or settlement is None
+            or event.depository_settlement_date is None
+            or quantity is None
+            or not quantity.is_finite()
+            or quantity <= 0
+            or amount is None
+            or not analysis.opening_date < day <= analysis.closing_date
+            or not analysis.opening_date < settlement <= analysis.closing_date
+            or not analysis.opening_date < event.depository_settlement_date <= analysis.closing_date
+            or day > settlement
+            or day > event.depository_settlement_date
+        ):
+            continue
+        rows.append(
+            {
+                "id": hashlib.sha256(event.event_key.encode("utf-8")).hexdigest()[:24],
+                "date": day,
+                "settlement_date": settlement,
+                "quantity": format(quantity, "f"),
+                "remaining_quantity": None,
+                "cost_kopecks": str(amount),
+                "sale_proceeds_kopecks": None,
+                "value_kopecks": None,
+                "price_result_kopecks": None,
+                "return_fraction": None,
+                "status": "partial",
+                "reason_codes": ["purchase_allocation_unproven"],
+            }
+        )
+    return sorted(rows, key=lambda row: (row["date"], row["id"])) or None
+
+
 def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type):
+    """Return supported FIFO results or independently observed purchase facts."""
+    result = _fifo_purchase_price_contributions(
+        analysis, clean, isin, instrument_type=instrument_type
+    )
+    return (
+        result
+        if result is not None
+        else _observed_purchase_facts(analysis, isin, instrument_type=instrument_type)
+    )
+
+
+def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type):
     """FIFO price/sale contributions, exclusive of payouts and all costs.
 
     A zero opening inventory and complete source/quantity evidence are needed.

@@ -1657,6 +1657,119 @@ def test_unexplained_closing_quantity_prevents_false_closed_purchase(db):
     assert snapshot(db) == before
 
 
+def test_unclassified_money_preserves_independent_purchase_facts(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    def mutate(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+
+    save(
+        db,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=((ISIN, "1", "100", "0", "0"), (ISIN, "-1", "180", "0", "0")),
+        extra=(("НЕИЗВЕСТНАЯ ОПЕРАЦИЯ", "unparsed synthetic", "-1"),),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    instrument = result["instruments"][0]
+    assert instrument["sells"]["value"] == "18000"
+    rows = instrument["purchases"]
+    assert rows and rows[0]["cost_kopecks"] == "10000"
+    assert rows[0]["price_result_kopecks"] is None and rows[0]["status"] == "partial"
+    assert rows[0]["sale_proceeds_kopecks"] is None and rows[0]["remaining_quantity"] is None
+    before = snapshot(db)
+    with TestClient(create_app(db)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+    assert card.status_code == ai.status_code == 200
+    account = card.json()["accounts"][0]
+    exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert (
+        account["ai_account_ref"] == exported["account_ref"]
+        and account["period"] == exported["period"]
+    )
+    card_rows, ai_rows = account["purchases"], exported["instruments"][0]["purchases"]
+    assert card_rows[0]["cost_kopecks"] == ai_rows[0]["cost_kopecks"] == "10000"
+    assert (
+        card_rows[0]["price_result_kopecks"] is None and ai_rows[0]["price_result_kopecks"] is None
+    )
+    assert snapshot(db) == before
+
+
+def test_missing_repo_overlap_preserves_independent_purchase_facts(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    def mutate(root):
+        for index, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            stamp = f"{index:02}.04.2030 09:00:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", f"{index:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{index:02}.04.2030")
+            if index == 3:
+                row.set("trade_no", "B90001")
+                row.set("repo_no", "B90002")
+                row.set("comment", "репо ч.1")
+
+    ordinary = ((ISIN, "1", "100", "0", "0"), (ISIN, "-1", "180", "0", "0"))
+    common = dict(stock=("0", "1", "0", "100"), bond=None)
+    save(
+        db,
+        **common,
+        trades=(*ordinary, (ISIN, "1", "100", "0", "0")),
+        mutate=mutate,
+        marker="first",
+    )
+    save(db, **common, trades=ordinary, mutate=mutate, marker="second")
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    instrument = result["instruments"][0]
+    assert instrument["sells"]["value"] == "18000"
+    rows = instrument["purchases"]
+    assert rows and rows[0]["cost_kopecks"] == "10000"
+    assert rows[0]["price_result_kopecks"] is None and rows[0]["status"] == "partial"
+    before = snapshot(db)
+    with TestClient(create_app(db)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+    assert card.status_code == ai.status_code == 200
+    account = card.json()["accounts"][0]
+    exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert (
+        account["ai_account_ref"] == exported["account_ref"]
+        and account["period"] == exported["period"]
+    )
+    card_rows, ai_rows = account["purchases"], exported["instruments"][0]["purchases"]
+    assert card_rows[0]["cost_kopecks"] == ai_rows[0]["cost_kopecks"] == "10000"
+    assert (
+        card_rows[0]["price_result_kopecks"] is None and ai_rows[0]["price_result_kopecks"] is None
+    )
+    assert snapshot(db) == before
+
+
 @pytest.mark.parametrize("sale_delivery", [2, 3, 4])
 def test_repo_boundary_considers_ordinary_delivery_after_execution(db, sale_delivery):
     from hermes_finance.services.clean_instrument_return import read_clean_account

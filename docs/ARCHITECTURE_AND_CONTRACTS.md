@@ -6833,7 +6833,7 @@ current ordered source-account set; it contains no account identity. A changed
 source-account set requires a fresh card and export before comparing them.
 
 The card may also show analytical `purchases` for a single source scope and EOD
-period. It requires a proved zero opening position/value, complete source and
+period. A supported FIFO result requires a proved zero opening position/value, complete source and
 quantity evidence, no redemption, current uniquely owned trades, and reconciled
 closing quantity. Each execution must precede or coincide with its actual
 settlement and delivery; both must fall within the period. Sales consume the
@@ -6848,9 +6848,15 @@ When every component is known the contributions must sum exactly to
 `valuation_and_trades`. Missing clean principal, sale proceeds or open-position
 valuation leaves the affected field and result unknown while preserving
 independently supported components and closed-lot results.
+If FIFO coverage is insufficient, an individually current purchase with a
+unique native identity, valid dated delivery and independently established
+clean principal remains visible with `status=partial` and reason
+`purchase_allocation_unproven`. Its remaining quantity, allocated proceeds,
+value, result and percentage are unknown; observed sales remain at instrument
+level. Conflicting or duplicate identities do not establish separate purchases.
 This is Hermes analysis, not broker tax accounting, and excludes payouts,
-fees, taxes and NKD. Unsupported histories return `purchases=null` while
-underlying observed operations and independently known payouts remain visible.
+fees, taxes and NKD. If no individual purchase can be proved, unsupported
+histories return `purchases=null`; underlying operations remain visible.
 The additive account-level card field is also present in AI report 3.1.0 with
 file-local purchase references. Earlier report versions retain their contracts.
 
