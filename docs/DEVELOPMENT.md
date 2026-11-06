@@ -191,7 +191,7 @@ Claim the physical checkout before writing/testing and check ownership before de
 
 Use the matching policy section, focused evidence and the existing CI; do not automatically repeat full suites for every handoff or role change.
 Review final scope/diff/privacy and report actual checks, not inferred passes. Required independent review and Owner UAT are not replaced by green tests.
-Integration requires successful exact-candidate PR CI and canonical exact-main push CI; never describe pending checks as completed.
+Integration requires the configured required PR checks on the exact candidate; the final release requires successful full canonical main push CI on its exact SHA. If configured required checks run more broadly, they remain binding. Never describe pending checks as completed.
 
 <a id="d2-owner_data_workflow-38"></a>
 ### Atomic checkout ownership
@@ -469,6 +469,16 @@ report composition remains deferred; no new dashboard builder is warranted here.
 
 Choose affected semantic lanes and concrete regression/failure boundaries. Use existing exact-candidate CI for its actual covered jobs; do not run full local suites again just because roles change. Explicit task requirements still apply. Independent review follows D1 risk and explicit task requirements; a role change does not require repeating valid checks. No Apply/Close/Start/update or private-data UAT is authorized by a documentation change.
 
+Owner decision 2026-11-06: small changes use focused checks; run the full CI
+once on the final release candidate, not once for each small task. Calculations,
+migrations and data work require independent review; D1 retains independent
+review for other high-risk security/runtime changes. A separate Test environment
+and manual acceptance are required when the change or a specific accepted gate
+requires them, not automatically for every release. Record why they apply or
+do not apply and never describe an unperformed UAT as passed. Before Stable,
+verify a backup and check startup under O3. This decision does not waive a
+specific outstanding gate, weaken data safeguards, or authorize an action.
+
 A read-only review preflight verifies actual source access and exact candidate identity. Setup failure is UNVERIFIED; repair its cause before another preflight. Reviewer self-message is not a PASS. Synthetic tests, Windows probes, local private UAT, published release and installed runtime each retain their own provenance and limits.
 
 <a id="proportionate-cosmetic-changes"></a>
@@ -546,12 +556,12 @@ RED-first не обязателен для docs-only, форматировани
 | Изменение | Достаточное локальное evidence и дополнительный охват |
 | --- | --- |
 | Docs/process-only | Diff, ссылки/anchors, whitespace; privacy/tracked-files check при затрагивании путей/данных. Без backend/frontend full suite. |
-| Backend под принятым контрактом | Targeted regressions + backend lint/format. Полный backend охват — CI либо один локальный full, если CI его не обеспечивает. |
-| Frontend под принятым API | Targeted component/interaction tests + frontend lint/format; production build локально или в exact-candidate CI. Полный frontend охват — CI либо один локальный full при отсутствии такого CI. |
-| API/shared contract или оба слоя | Targeted проверки обеих сторон и реальных consumers; lint/build затронутых слоёв. Полный релевантный охват — соответствующие CI lanes или недостающий локальный gate. |
+| Backend под принятым контрактом | Targeted regressions + backend lint/format; полный backend охват — на финальном кандидате или при конкретном дополнительном риске. |
+| Frontend под принятым API | Targeted component/interaction tests + frontend lint/format; production build по затронутому риску или в финальном CI. |
+| API/shared contract или оба слоя | Targeted проверки обеих сторон и реальных consumers; lint/build затронутых слоёв. Полный релевантный охват — на финальном кандидате или при конкретном дополнительном риске. |
 | Financial semantics, migration, startup, backup/restore, filesystem/concurrency, security/runtime | Targeted boundary/failure regressions, полный релевантный охват и все task-specific probes. Нужны соответствующая среда, независимое ревью и применимый Owner UAT. Linux unit CI не заменяет Windows process/file-handle/path probe. |
 
-Полный локальный запуск нужен, когда CI недоступен/не покрывает релевантный слой, есть воспроизводимый local-only риск, либо его прямо требует task/ADR gate.
+Полный локальный запуск нужен, когда финальный CI недоступен или не покрывает релевантный слой, есть воспроизводимый local-only риск, либо его прямо требует task/ADR gate. Отфильтрованный PR lane мелкой задачи сам по себе не требует локального full до финального кандидата; действующие required checks при этом сохраняются.
 Для high-risk задачи CI засчитывается только за реально выполненные проверки в подходящей среде; отсутствующие platform/integration/package probes выполняются отдельно.
 Package/install smoke — финальная проверка при изменении упаковки/установки, а не причина повторять все suite перед каждым smoke.
 Не запускай frontend full для чистого backend изменения и наоборот без изменённого consumer/shared contract или отдельного требования.
@@ -581,7 +591,7 @@ Push и PR можно создать для получения CI evidence; по
 Skipped, pending, failed, чужой SHA или отфильтрованный нужный lane не являются этим доказательством.
 Зелёный check `Documentation fast path` у pull request означает только доказанную классификацию обычной неисполняемой документации и успешные сохранённые проверки privacy/diff. Он не доказывает выполнение backend, frontend, browser или Windows product suites. Push в canonical `main` и release gates этот режим не использует: они остаются полными.
 Проверки на новом executable/config/dependency состоянии должны соответствовать этому состоянию; отчёт явно связывает каждый результат с кандидатом/run.
-Для интеграции обязательны зелёный PR CI принятого кандидата и зелёный canonical main push CI точного merge SHA. Ни одно не заменяет другое.
+Для интеграции обязательны действующие required PR checks принятого кандидата; для выпуска — полный успешный canonical main push CI точного финального SHA. Если текущая автоматизация дополнительно запускает полный PR CI, дождись его обязательного результата: это не разрешение менять фильтры или обходить проверки. Сокращение автоматического дубля — отдельное проверенное изменение CI.
 Не обходи существующие required jobs; изменение coverage, filters, assertions или release guards требует явного scope и проверки сохранённого охвата.
 Reviewer/Integrator используют подтверждённое evidence кандидата. Независимость означает отдельную оценку diff/контракта, а не обязательный повтор всех тестов.
 Reviewer запускает focused reproduction/probe, когда есть спорный вывод, пробел покрытия или другое конкретное основание; для локального запуска нужна изоляция.
@@ -1063,9 +1073,9 @@ operations, not user-facing SLAs.
 <a id="d5"></a>
 ## 5. Delivery, integration and documentation maintenance
 
-Worker may commit/push the assigned branch and open the authorized PR. Return baseline/target, exact candidate SHA, branch/workspace, changed files/stat, actual checks/limits and final HEAD/remote/working-tree readback. Use one linked issue/PR receipt; no new process ledger. Required independent review and Owner UAT remain independent gates.
+Worker may commit/push the assigned branch and open the authorized PR. Return baseline/target, exact candidate SHA, branch/workspace, changed files/stat, actual checks/limits and final HEAD/remote/working-tree readback. Use one linked issue/PR receipt; no new process ledger. When required, independent review and Owner UAT remain separate gates.
 
-Integrator inspects exact diff/privacy/contracts and accepted review/UAT, then uses expected-head guarded integration when authorized. PR CI must pass on the accepted exact candidate; after merge canonical push CI must pass on the exact merge SHA. Neither replaces the other. Only main is canonical/releasable; integration/* is staging. Changed semantics return for review; proven nonsemantic edits may reuse applicable evidence with original scope. Worker cannot merge, force-push, delete branches/tags, publish or change repository settings without separate authority.
+Integrator inspects exact diff/privacy/contracts and applicable review/UAT, then uses expected-head guarded integration when authorized. Current required PR checks must pass on the accepted candidate; the final canonical main push CI must pass on the exact release SHA. A full CI per small task is not a policy requirement, but configured required jobs remain binding until safely changed. Only main is canonical/releasable; integration/* is staging. Changed semantics return for review; proven nonsemantic edits may reuse applicable evidence with original scope. Worker cannot merge, force-push, delete branches/tags, publish or change repository settings without separate authority.
 
 #### One canonical home per rule
 
@@ -1102,7 +1112,7 @@ Existing standing Owner authorization covers this standard flow without repeated
 3. Diagnose CI; make only clearly mechanical in-scope corrections on the task branch, without a concurrent writer.
 4. Reuse valid evidence and rerun failed checks for an established mechanical/infrastructure cause; follow D4, not a second full-suite ritual.
 5. Merge an accepted candidate after required PR CI/review/UAT, with an exact-head guard where supported.
-6. Read back canonical main and verify its exact push CI before reporting integration complete.
+6. Read back canonical main and accurately report its checks; before release, verify full canonical push CI for the exact final SHA. Configured required checks remain binding.
 7. Update only documentation whose meaning changed: current outcomes/gates in `CURRENT_STATUS.md`, durable concepts in
    the owning P/C/D/O subsection or their owning procedure. Keep dated records intact; add a linked later receipt when needed.
    A handoff, CI poll or unchanged candidate does not require another Wiki/status/closeout edit.

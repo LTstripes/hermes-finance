@@ -804,7 +804,7 @@ It never selects latest, follows main, updates Test, starts Hermes, runs DB migr
 <a id="o3-owner_runtime_operations-124-9-normal-future-release-sequence"></a>
 #### 9. Normal future release sequence
 
-Prepare one exact canonical candidate → isolated Test UAT → Owner acceptance → guarded publication through #124 → independent tag/release read-back → stop owned Stable → explicit backup-first OPS02 → target pin/preparation read-back → explicit Start → health/version and data-continuity check.
+Prepare one exact canonical candidate and pass its final CI → perform isolated Test and manual acceptance when required by the change or an explicit accepted gate → guarded publication through #124 → independent tag/release read-back → stop owned Stable → explicit backup-first OPS02 → target pin/preparation read-back → explicit Start → health/version and data-continuity check. The backup must be verified before Stable changes. Record any UAT not performed; an existing task-specific UAT requirement is not silently discharged by this general rule.
 
 Do not call a GitHub merge a release or a runtime update. Filesystem relocation and janitor deployment do not promote code versions.
 
