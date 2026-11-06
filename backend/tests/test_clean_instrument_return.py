@@ -628,6 +628,23 @@ def test_observed_purchase_fallback_requires_unique_current_identity_and_clean_c
     assert zero[0]["cost_kopecks"] == "0" and zero[0]["return_fraction"] is None
 
 
+@pytest.mark.parametrize("outside", [None, "cash_settlement_date", "depository_settlement_date"])
+def test_observed_purchase_fallback_requires_both_settlements_in_period(outside):
+    event = replace(
+        buy("a", 10000, "1", START),
+        native_identity="native-a",
+        cash_settlement_date=date(2030, 1, 2),
+        depository_settlement_date=date(2030, 1, 2),
+    )
+    if outside:
+        event = replace(event, **{outside: START})
+    rows = case([event], quantity="1", closing=11000, complete=False)
+    if outside:
+        assert rows is None
+    else:
+        assert rows and rows[0]["date"] == START and rows[0]["cost_kopecks"] == "10000"
+
+
 @pytest.mark.parametrize("role", ["principal", "native_money"])
 def test_fifo_checks_actual_linked_money_date_not_only_native_settlement(role):
     day = date(2030, 1, 9)

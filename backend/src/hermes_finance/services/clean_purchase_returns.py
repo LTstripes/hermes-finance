@@ -112,7 +112,7 @@ def _observed_purchase_facts(analysis, isin, *, instrument_type):
             or not quantity.is_finite()
             or quantity <= 0
             or amount is None
-            or not analysis.opening_date < day <= analysis.closing_date
+            or day > analysis.closing_date
             or not analysis.opening_date < settlement <= analysis.closing_date
             or not analysis.opening_date < event.depository_settlement_date <= analysis.closing_date
             or day > settlement

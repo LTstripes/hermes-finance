@@ -6854,6 +6854,8 @@ clean principal remains visible with `status=partial` and reason
 `purchase_allocation_unproven`. Its remaining quantity, allocated proceeds,
 value, result and percentage are unknown; observed sales remain at instrument
 level. Conflicting or duplicate identities do not establish separate purchases.
+An execution may precede the opening EOD when both its cash settlement and
+delivery are inside the selected period; preserve its actual execution date.
 This is Hermes analysis, not broker tax accounting, and excludes payouts,
 fees, taxes and NKD. If no individual purchase can be proved, unsupported
 histories return `purchases=null`; underlying operations remain visible.

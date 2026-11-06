@@ -1711,6 +1711,67 @@ def test_unclassified_money_preserves_independent_purchase_facts(db):
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("inside", [True, False])
+def test_purchase_facts_keep_execution_before_period_when_settled_inside(db, inside):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    def mutate(root):
+        row = root.find(".//m:Details[@trade_no]", NS)
+        row.set("db_time", "31.03.2030 09:00:00\n31.03.2030 09:00:00")
+        day = "01.04.2030" if inside else "31.03.2030"
+        row.set("save_settlement_date", day)
+        row.set("save_depo_settlement_date", day)
+
+    save(
+        db,
+        stock=("0" if inside else "1", "1", "0" if inside else "100", "100"),
+        bond=None,
+        trades=((ISIN, "1", "100", "0", "0"),),
+        extra=(("НЕИЗВЕСТНАЯ ОПЕРАЦИЯ", "unparsed synthetic", "-1"),),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+        create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
+    rows = result["instruments"][0]["purchases"]
+    if inside:
+        assert rows and rows[0]["date"] == date(2030, 3, 31)
+        assert rows[0]["cost_kopecks"] == "10000" and rows[0]["status"] == "partial"
+        assert rows[0]["remaining_quantity"] is None and rows[0]["price_result_kopecks"] is None
+    else:
+        assert rows is None
+    before = snapshot(db)
+    with TestClient(create_app(db)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+    assert card.status_code == ai.status_code == 200
+    account = card.json()["accounts"][0]
+    exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
+    assert (
+        account["ai_account_ref"] == exported["account_ref"]
+        and account["period"] == exported["period"]
+    )
+    ui_rows, ai_rows = account.get("purchases"), exported["instruments"][0]["purchases"]
+    if inside:
+        assert ui_rows[0]["date"] == ai_rows[0]["date"] == "2030-03-31"
+        assert ui_rows[0]["cost_kopecks"] == ai_rows[0]["cost_kopecks"] == "10000"
+        assert (
+            ui_rows[0]["price_result_kopecks"] is None
+            and ai_rows[0]["price_result_kopecks"] is None
+        )
+    else:
+        assert ui_rows is None and ai_rows is None
+    assert snapshot(db) == before
+
+
 def test_missing_repo_overlap_preserves_independent_purchase_facts(db):
     from hermes_finance.services.clean_instrument_return import read_clean_account
     from hermes_finance.services.reporting_months import create_reporting_month
