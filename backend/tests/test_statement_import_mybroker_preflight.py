@@ -1414,6 +1414,60 @@ def save_semantics_proof(database, monkeypatch, revision, request_id):
     return reports
 
 
+@pytest.mark.parametrize(
+    "kind, expected",
+    [
+        ("normal", "ee4cd0b5f1c1cdb7c689edd4aed1443df652309f0bd338f2396a9e616db0a4ee"),
+        ("fee_mismatch", "27dd011a3d49472eebb979c4efcb3ba810e3e50f58afc2d14b84119667602230"),
+        ("positive_fee", "1d48667ffe25572cd266e3bcac2f5351602a181f0ae5f7b08711947d784cfbce"),
+        ("positive_tax", "c78eaa82175022145253689ac064e9e35cc30056e777f5d6e4e7364300c7b77d"),
+    ],
+)
+def test_v10_retains_v9_legacy_interval_fixture(kind, expected):
+    import hashlib
+    import json
+
+    service, doc, raw, report, money = investment_case()
+    doc["trades"][0]["accrued_interest"] = "0"
+    if kind == "fee_mismatch":
+        money[1]["minor"] = -1100
+    elif kind == "positive_fee":
+        money[1]["minor"] = 100
+    elif kind == "positive_tax":
+        money.append(
+            {
+                **money[1],
+                "minor": 100,
+                "classification": "tax",
+                "kind": "tax",
+                "operation": "Налог",
+                "ref": "synthetic-tax",
+                "primary_id": None,
+            }
+        )
+    result = service._interval(doc, raw, report, money, {}, {}, True)
+    encoded = json.dumps(
+        result, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":")
+    ).encode()
+    assert hashlib.sha256(encoded).hexdigest() == expected
+
+
+def test_v10_reads_unchanged_v9_receipt_without_writes(database, monkeypatch):
+    from hermes_finance.services import source_investment_proofs as proofs
+
+    original = save_semantics_proof(
+        database, monkeypatch, "source_investment_semantics_v9", "v9-receipt"
+    )
+    before = snapshot(database)
+    before_bytes = database.database_path.read_bytes()
+    with database.session_factory() as session:
+        current = proofs.read_reports(session)
+        assert current == original
+        assert proofs.request_status(session, "v9-receipt")["current"]
+    assert snapshot(database) == before
+    assert database.database_path.read_bytes() == before_bytes
+
+
 def test_investment_semantics_ignores_unrelated_module_changes_without_writes(
     database, monkeypatch
 ):
@@ -1512,7 +1566,11 @@ def test_gift_v3_compatibility_preserves_exact_old_proof_without_gift(
 
 @pytest.mark.parametrize(
     "revision,expected",
-    [("source_investment_semantics_v8", "current"), ("source_investment_semantics_v7", "stale")],
+    [
+        ("source_investment_semantics_v9", "current"),
+        ("source_investment_semantics_v8", "current"),
+        ("source_investment_semantics_v7", "stale"),
+    ],
 )
 def test_v9_compatibility_preserves_v8_even_when_older_cost_scope_is_incompatible(
     database, monkeypatch, revision, expected
@@ -1567,12 +1625,17 @@ def test_investment_semantics_revision_change_stales_saved_proof(database, monke
     assert snapshot(database) == before
 
 
-def test_investment_semantics_does_not_admit_pending_old_writer_form(database, monkeypatch):
+@pytest.mark.parametrize(
+    "old_revision", ["source_investment_semantics_previous", "source_investment_semantics_v9"]
+)
+def test_investment_semantics_does_not_admit_pending_old_writer_form(
+    database, monkeypatch, old_revision
+):
     from hermes_finance.services import source_investment_proofs as proofs
     from hermes_finance.services.source_return_proofs import ProofError
 
     with monkeypatch.context() as patch:
-        patch.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_previous")
+        patch.setattr(proofs, "SEMANTICS_REVISION", old_revision)
         preview = saved_investment_preview(database, patch)["persistence"]
     before = snapshot(database)
     with database.session_factory() as session:
@@ -1609,7 +1672,7 @@ def test_investment_semantics_latest_stale_proof_has_no_older_compatible_fallbac
 
 
 @pytest.mark.parametrize("operation", ["copy", "replace"])
-@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("legacy", [False, True, "v9"])
 def test_investment_semantics_preserves_physical_database_binding(
     database, monkeypatch, tmp_path, operation, legacy
 ):
@@ -1622,7 +1685,11 @@ def test_investment_semantics_preserves_physical_database_binding(
     save_semantics_proof(
         database,
         monkeypatch,
-        proofs._GIFT_COMPAT_CODES[1] if legacy else proofs.SEMANTICS_REVISION,
+        "source_investment_semantics_v9"
+        if legacy == "v9"
+        else proofs._GIFT_COMPAT_CODES[1]
+        if legacy
+        else proofs.SEMANTICS_REVISION,
         "physical-original",
     )
     with database.session_factory() as session:
