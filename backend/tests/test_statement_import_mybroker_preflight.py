@@ -2043,7 +2043,11 @@ def test_same_isin_repo_keeps_uniquely_identified_ordinary_fifo_rows(monkeypatch
         assert len(rows) == 1 and rows[0]["price_result_kopecks"] == "15000"
         assert rows[0]["remaining_quantity"] == "5" and rows[0]["sale_proceeds_kopecks"] == "60000"
     else:
-        assert rows is None
+        assert len(rows) == 1
+        assert rows[0]["cost_kopecks"] == "100000" and rows[0]["status"] == "partial"
+        assert rows[0]["remaining_quantity"] is None and rows[0]["sale_proceeds_kopecks"] is None
+        assert rows[0]["value_kopecks"] is None and rows[0]["price_result_kopecks"] is None
+        assert rows[0]["return_fraction"] is None
 
 
 def test_report_repo_pair_does_not_hide_impossible_intermediate_custody(monkeypatch, db):
