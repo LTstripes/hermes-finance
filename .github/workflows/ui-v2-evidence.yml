@@ -20,18 +20,28 @@ jobs:
     name: Privacy guard
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      visual: ${{ steps.classify.outputs.visual }}
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - name: Check tracked files for private data
         run: python3 scripts/privacy_check.py
+      - name: Classify exact candidate consumers
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci_paths.py --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
   ui-evidence:
     needs: privacy
     name: Synthetic UI comparison
+    if: contains(github.event.pull_request.labels.*.name, 'ci:full') || needs.privacy.outputs.visual != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:

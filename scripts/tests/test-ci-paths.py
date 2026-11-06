@@ -32,6 +32,7 @@ from ci_paths import (
 from ci_run_receipt import inherited_verdict, timing_summary
 from ci_run_receipt import main as receipt_main
 from docs_only_ci import DiffRecord
+from visual_audit_paths import should_run
 
 ROOT = Path(__file__).resolve().parents[2]
 FULL = frozenset(AREAS)
@@ -463,6 +464,7 @@ class WorkflowTests(unittest.TestCase):
             "needs.docs-only-classify.outputs.mode": mode,
             "needs.visual-audit-paths.outputs.run": visual_run,
             "needs.visual-audit-paths.result": visual_result,
+            "needs.privacy.outputs.visual": visual_run,
         }
         values.update(
             {
@@ -479,6 +481,20 @@ class WorkflowTests(unittest.TestCase):
         expr = expr.replace("!True", "False").replace("!False", "True")
         expr = " ".join(expr.replace("&&", " and ").replace("||", " or ").split())
         return bool(eval(expr, {"__builtins__": {}}, {}))
+
+    def test_frontend_unit_tests_omit_both_visual_workflows_and_keep_fallbacks(self) -> None:
+        paths = ['frontend/src/lib/money.test.ts', 'frontend/src/ui-v2/UiV2MonthSources.test.tsx']
+        self.assertEqual(selected_areas([record(path) for path in paths]), {'frontend'})
+        self.assertFalse(should_run(paths))
+        self.assertFalse(self.runs('visual-audit', visual_run='false'))
+        self.workflow = (ROOT / '.github/workflows/ui-v2-evidence.yml').read_text(encoding='utf-8')
+        self.assertIn('fetch-depth: 0', self.job('privacy'))
+        self.assertIn('python3 scripts/ci_paths.py --base "$BASE_SHA" --head "$HEAD_SHA"', self.job('privacy'))
+        self.assertIn('visual: $' + '{{ steps.classify.outputs.visual }}', self.job('privacy'))
+        self.assertFalse(self.runs('ui-evidence', visual_run='false'))
+        for output in ('true', '', 'garbage'):
+            self.assertTrue(self.runs('ui-evidence', visual_run=output))
+        self.assertTrue(self.runs('ui-evidence', visual_run='false', labels=('ci:full',)))
 
     def test_label_event_matrix_and_failed_same_head_cannot_turn_green(self) -> None:
         for job in (*OWNERS, "visual-audit", "docs-fast-path"):

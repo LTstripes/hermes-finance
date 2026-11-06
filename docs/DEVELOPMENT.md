@@ -661,7 +661,9 @@ coverage; an import-closure regression guards these dependencies. The
 mocked visual audit follows frontend inputs; shared/unknown paths, unsafe Git
 records, unavailable classification or missing outputs retain full coverage.
 Both endpoint and PR-owned diffs are checked so a base advance cannot hide an
-input. The UI evidence workflow retains its separate frontend path filter.
+input. The UI evidence workflow retains its frontend trigger and uses the same
+exact-head area classifier before its heavy job. Standalone unit tests also omit
+the legacy visual-path match; unsafe Git records still force full coverage.
 
 Add the existing `ci:full` label to a PR to request all product jobs, including
 browser and visual checks. The label event starts CI; the full visual run keeps
