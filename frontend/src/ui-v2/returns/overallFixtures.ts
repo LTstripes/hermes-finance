@@ -258,6 +258,7 @@ export function instrumentCardFixture(isin = "RU000A000002"): InstrumentCard {
       pnl: m("800"),
       coupons: m("3500"),
       dividends: m("700"),
+      payouts: m("4200"),
       valuation_and_trades: m("-3400"),
       redemption: m("0"),
       costs: m("0"),

@@ -54,6 +54,7 @@ export type InstrumentCard = {
     pnl: Metric;
     coupons: Metric;
     dividends: Metric;
+    payouts: Metric;
     valuation_and_trades: Metric;
     redemption: Metric;
     costs: Metric;
@@ -75,6 +76,7 @@ export type InstrumentCard = {
     reason_codes: string[];
     detail: Detail | null;
     clean?: CleanInstrument | null;
+    ai_account_ref?: string | null;
   }[];
   reason_codes: string[];
 };
@@ -131,6 +133,7 @@ export function selectCardScope(
             : metric("known_result"),
         coupons: metric("coupons"),
         dividends: metric("dividends"),
+        payouts: metric("payouts"),
         valuation_and_trades: metric("valuation_and_trades"),
         redemption: metric("redemption"),
         costs: empty,
@@ -185,7 +188,21 @@ export async function getInstrumentCard(isin: string, signal: AbortSignal) {
     )
   )
     throw new Error("Return card context mismatch");
-  return value;
+  return {
+    ...value,
+    summary: {
+      ...value.summary,
+      payouts:
+        value.summary.payouts ??
+        ({
+          value: null,
+          unit: "kopecks",
+          method: "clean_instrument_return_v1",
+          estimate: true,
+          reason_codes: ["selected_components_incomplete"],
+        } satisfies Metric),
+    },
+  };
 }
 export async function getIncome(kind: IncomeKind, signal: AbortSignal) {
   const value = await apiRequest<Income>(`/api/returns/income?${new URLSearchParams({ kind })}`, {

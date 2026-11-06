@@ -2,12 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
+import { reasonCopy } from "../../lib/reasonCopy";
 import { money } from "../SourceInstrumentDetail";
-import { cardOperations, cardQuantityStatus, hasAmount, nonzeroAmount } from "./cardPresentation";
+import { cardOperations, cardQuantityStatus, nonzeroAmount } from "./cardPresentation";
 import { cleanMetric, getInstrumentCard, selectCardScope } from "./cards";
 import styles from "./InstrumentCard.module.css";
 import resultStyles from "./InstrumentResult.module.css";
-import { dateLabel, displayMetric } from "./model";
+import { dateLabel, displayMetric, isPartialResult } from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
@@ -138,14 +139,57 @@ export function ReturnsInstrumentCard({
               бумаги по всем счетам.
             </p>
           )}
-          <div className={styles.facts}>
-            {hasAmount(data.summary.pnl) && (
-              <section className={`${styles.fact} ${styles.primary}`}>
-                <h3>Известный результат</h3>
-                <strong>{displayMetric(data.summary.pnl, true)}</strong>
-                <small>{selectedScope ? "За указанный период" : "За доступную историю"}</small>
-              </section>
+          <section className={styles.panel} aria-label="Разложение результата">
+            <h2>Из чего сложился результат</h2>
+            <p>Показаны известные составляющие; комиссии, налоги и НКД не входят в расчёт.</p>
+            <div className={styles.facts}>
+              {(
+                [
+                  ["Стоимость и сделки", data.summary.valuation_and_trades],
+                  ["Полученные выплаты", data.summary.payouts],
+                  ["Известный результат", data.summary.pnl],
+                ] as const
+              ).map(([label, value]) => (
+                <section
+                  className={`${styles.fact} ${label === "Известный результат" ? styles.primary : ""}`}
+                  key={label}
+                >
+                  <h3>{label}</h3>
+                  <strong>{displayMetric(value, true)}</strong>
+                  {isPartialResult(value) && <small>Известная часть</small>}
+                  {value.value !== null && value.estimate && !isPartialResult(value) && (
+                    <small>Оценка</small>
+                  )}
+                  {value.value === null && value.reason_codes.length > 0 && (
+                    <small>
+                      {reasonCopy(value.reason_codes[0], { surface: "returns" }).message}
+                    </small>
+                  )}
+                </section>
+              ))}
+            </div>
+            <details>
+              <summary>Купоны и дивиденды</summary>
+              {(
+                [
+                  ["Купоны", data.summary.coupons],
+                  ["Дивиденды", data.summary.dividends],
+                ] as const
+              ).map(([label, value]) => (
+                <p key={label}>
+                  {label}
+                  {isPartialResult(value) ? " · известная часть" : ""}: {displayMetric(value, true)}
+                </p>
+              ))}
+            </details>
+            {nonzeroAmount(data.summary.redemption) && (
+              <p>
+                Погашение{isPartialResult(data.summary.redemption) ? " · известная часть" : ""}{" "}
+                включено в стоимость и сделки: {displayMetric(data.summary.redemption, true)}
+              </p>
             )}
+          </section>
+          <div className={styles.facts}>
             {data.summary.quantity.value !== null && (
               <section className={styles.fact} aria-label="Известное количество инструмента">
                 <h3>{quantityStatus?.sold ? "Позиция продана" : "Количество"}</h3>
@@ -164,18 +208,6 @@ export function ReturnsInstrumentCard({
                 )}
               </section>
             )}
-            {nonzeroAmount(data.summary.coupons) && (
-              <section className={styles.fact}>
-                <h3>Полученные купоны</h3>
-                <strong>{displayMetric(data.summary.coupons)}</strong>
-              </section>
-            )}
-            {nonzeroAmount(data.summary.dividends) && (
-              <section className={styles.fact}>
-                <h3>Полученные дивиденды</h3>
-                <strong>{displayMetric(data.summary.dividends)}</strong>
-              </section>
-            )}
           </div>
           {quantityStatus?.partial && (
             <p className={styles.notice}>
@@ -183,25 +215,6 @@ export function ReturnsInstrumentCard({
               что позиция полностью продана.
             </p>
           )}
-          <section className={styles.panel} aria-label="Разложение результата">
-            <h2>Из чего сложился результат</h2>
-            <p>Показаны известные составляющие; комиссии, налоги и НКД не входят в расчёт.</p>
-            {(
-              [
-                ["Цена и сделки", data.summary.valuation_and_trades],
-                ["Купоны", data.summary.coupons],
-                ["Дивиденды", data.summary.dividends],
-                ["Погашение", data.summary.redemption],
-                ["Известный результат", data.summary.pnl],
-              ] as const
-            )
-              .filter(([, value]) => value.value !== null)
-              .map(([label, value]) => (
-                <p key={label}>
-                  {label}: {displayMetric(value, true)}
-                </p>
-              ))}
-          </section>
           {!!data.accounts.length && (
             <section className={styles.panel} aria-label="Позиции и результат по счетам">
               <h2>По счетам</h2>
@@ -226,6 +239,9 @@ export function ReturnsInstrumentCard({
                           <Link to={accountHref(account.scope, account.period)}>
                             {accountLabels[account.scope] ?? account.label}
                           </Link>
+                          {account.ai_account_ref && (
+                            <small>В отчёте AI: {account.ai_account_ref}</small>
+                          )}
                           <ReturnsResultMeta
                             period={account.period}
                             valuationDate={account.valuation_date}
@@ -290,6 +306,11 @@ export function ReturnsInstrumentCard({
                   </tbody>
                 </table>
               </div>
+              {data.accounts.some((account) => account.ai_account_ref) && (
+                <p className={styles.muted}>
+                  Номера счетов в отчёте AI относятся к текущему составу счетов.
+                </p>
+              )}
               {data.accounts.some((account) => account.clean?.modified_dietz.value != null) && (
                 <details className={styles.details}>
                   <summary>Как читать процент</summary>

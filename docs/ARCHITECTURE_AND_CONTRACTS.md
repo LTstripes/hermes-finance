@@ -6825,6 +6825,12 @@ crossings still remain incomplete. Fee- and tax-only sign conflicts remain
 visible as source facts but do not invalidate clean security operands. Income
 drilldowns retain per-source receipts and withhold cross-source instrument
 totals when account identity mappings conflict.
+The instrument card exposes the same producer-owned `payouts` metric beside
+`valuation_and_trades` and the available result. Redemption is already included
+in `valuation_and_trades`, not an additional summand. `ai_account_ref` maps a
+card's source account to the existing file-local AI reference for the same
+current ordered source-account set; it contains no account identity. A changed
+source-account set requires a fresh card and export before comparing them.
 
 The existing account-specific `/api/returns/overview` and
 `/api/returns/instrument` use `returns_source_v2` and

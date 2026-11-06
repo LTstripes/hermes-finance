@@ -787,6 +787,63 @@ def test_card_combines_supported_accounts_keeps_local_gaps_and_no_combined_rate(
     assert value["accounts"][1]["detail"] is None
 
 
+def test_card_ai_reference_counts_sources_without_the_instrument(db, monkeypatch):
+    from hermes_finance.services import clean_instrument_return
+
+    period = {"start": date(2030, 3, 31), "end": date(2030, 4, 30)}
+    metric = {"value": "0", "status": "supported", "reason_codes": (), "assumptions": ()}
+    item = {
+        "isin": ISIN,
+        "name": "synthetic",
+        "closing_date": period["end"],
+        **{
+            name: metric
+            for name in (
+                "known_result",
+                "coupons",
+                "dividends",
+                "payouts",
+                "valuation_and_trades",
+                "redemption",
+                "closing_value",
+            )
+        },
+    }
+    clean = {
+        "contract_version": "clean_returns_overview_v1",
+        "accounts": [
+            {"scope": "source:first", "period": period, "result": {"instruments": [], "gaps": []}},
+            {
+                "scope": "source:second",
+                "period": period,
+                "result": {"instruments": [item], "gaps": []},
+            },
+        ],
+    }
+    card = {
+        "isin": ISIN,
+        "summary": {},
+        "accounts": [
+            {
+                "scope": "source:second",
+                "period": period,
+                "canonical_account_id": None,
+                "detail": {"period": period},
+                "exclusion_reason": None,
+            }
+        ],
+    }
+    monkeypatch.setattr(overall, "read_instrument_card", lambda *a, **k: card)
+    monkeypatch.setattr(clean_instrument_return, "read_clean_overview", lambda *a, **k: clean)
+    monkeypatch.setattr(overall.returns_view, "apply_clean_detail", lambda detail, item: detail)
+    with db.session_factory() as session:
+        selected = overall.read_clean_instrument_card(session, ISIN)
+    exported = clean_instrument_return.clean_export_data(clean)
+    assert selected["accounts"][0]["ai_account_ref"] == "source-account-2"
+    assert exported["accounts"][1]["account_ref"] == "source-account-2"
+    assert exported["accounts"][0]["instruments"] == []
+
+
 def test_card_conflicting_mapping_does_not_fetch_or_sum_ambiguous_accounts(db, monkeypatch):
     source_fixture(monkeypatch)
     identity_mappings(db, shared=True)
@@ -827,6 +884,7 @@ def test_clean_card_keeps_scope_operations_and_does_not_sum_mapping_conflicts(
                 "known_result",
                 "coupons",
                 "dividends",
+                "payouts",
                 "valuation_and_trades",
                 "redemption",
                 "closing_value",

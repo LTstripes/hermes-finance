@@ -77,6 +77,50 @@ def test_clean_principal_net_receipt_and_costs_excluded():
         assert result.modified_dietz.value == Decimal(18700) / Decimal(45650)
 
 
+def test_price_and_actual_payout_breakdown_uses_same_period_and_excludes_costs():
+    result = calculate_clean_return(
+        START,
+        END,
+        100000,
+        95000,
+        (
+            replace(cash("DIVIDEND", 12000), gross_payout_kopecks=None, withheld_tax_kopecks=None),
+            cash("FEE", -1000),
+            cash("TAX", -500),
+        ),
+        trades_complete=True,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=True,
+    )
+    assert result.valuation_and_trades.value == -5000
+    assert result.payouts.value == result.dividends.value == 12000
+    assert result.pnl.value == result.known_result.value == 7000
+
+
+def test_breakdown_counts_purchase_sale_and_redemption_once():
+    result = calculate_clean_return(
+        START,
+        END,
+        100000,
+        95000,
+        (
+            trade("BUY", 10000, 0, basis="excludes_paid_nkd"),
+            trade("SELL", 20000, 0, basis="excludes_paid_nkd"),
+            cash("REDEMPTION", 30000),
+            cash("COUPON", 12000),
+        ),
+        trades_complete=True,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=True,
+    )
+    assert result.valuation_and_trades.value == 35000
+    assert result.redemption.value == 30000
+    assert result.payouts.value == 12000
+    assert result.pnl.value == 47000
+
+
 def test_clean_sale_and_missing_basis_stays_unknown():
     assert clean_trade_amount(trade("SELL", 105000, 5000)) == 100000
     assert clean_trade_amount(trade("SELL", 105000, None)) is None

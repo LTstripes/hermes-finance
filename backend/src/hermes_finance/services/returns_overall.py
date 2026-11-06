@@ -1080,6 +1080,10 @@ def read_clean_instrument_card(session, isin):
     with source_read_snapshot(session):
         card = read_instrument_card(session, isin)
         clean = read_clean_overview(session, isin=isin)
+        ai_refs = {
+            account["scope"]: f"source-account-{index}"
+            for index, account in enumerate(clean["accounts"], 1)
+        }
         by_scope = {
             account["scope"]: (account, item)
             for account in clean["accounts"]
@@ -1092,6 +1096,7 @@ def read_clean_instrument_card(session, isin):
             if account.get("exclusion_reason") == "source_account_identity_mapping_conflict"
         }
         for account in card["accounts"]:
+            account["ai_account_ref"] = ai_refs.get(account["scope"])
             pair = by_scope.get(account["scope"])
             account["clean"] = pair[1] if pair else None
             if pair:
@@ -1158,6 +1163,7 @@ def read_clean_instrument_card(session, isin):
             pnl=total("known_result"),
             coupons=total("coupons"),
             dividends=total("dividends"),
+            payouts=total("payouts"),
             valuation_and_trades=total("valuation_and_trades"),
             redemption=total("redemption"),
             reported_value=total("closing_value"),

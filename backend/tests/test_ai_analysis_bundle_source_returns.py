@@ -277,9 +277,16 @@ def test_v3_clean_returns_match_ordinary_overview_and_card(database, monkeypatch
     expected = item["pnl"] if item["pnl"]["value"] is not None else item["known_result"]
     assert normal["accounts"][0]["pnl"]["value"] == expected["value"]
     assert card["accounts"][0]["clean"]["known_result"]["value"] == item["known_result"]["value"]
+    assert card["accounts"][0]["ai_account_ref"] == clean["accounts"][0]["account_ref"]
+    assert card["summary"]["payouts"]["value"] == item["payouts"]["value"]
     assert json.loads(canonical_json(report))["sections"]["clean_returns"]["data"] == clean
     assert ACCOUNT not in canonical_json(report)
     with TestClient(create_app(database)) as client:
+        card_response = client.get("/api/returns/instrument-card", params={"isin": isin})
+        assert card_response.status_code == 200, card_response.text
+        card_wire = card_response.json()
+        assert card_wire["summary"]["payouts"]["value"] == item["payouts"]["value"]
+        assert card_wire["accounts"][0]["ai_account_ref"] == clean["accounts"][0]["account_ref"]
         response = client.get(
             "/api/export/ai-financial-review/json",
             params={"format_version": "3.0.0", "generated_at": "2030-02-01T00:00:00Z"},

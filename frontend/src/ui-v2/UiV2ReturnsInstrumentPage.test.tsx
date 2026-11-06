@@ -58,6 +58,81 @@ test("selected scope and exact period show only that account's known return", as
   expect(accounts.queryByText("Учебный счёт Б")).toBeNull();
 });
 
+test("selected scope shows producer-owned price, payouts and result with redemption included once", async () => {
+  const card = instrumentCardFixture();
+  const account = card.accounts[0];
+  const clean = account.clean;
+  if (!clean) throw new Error("synthetic clean fixture missing");
+  clean.valuation_and_trades.value = "-5000";
+  clean.payouts.value = clean.dividends.value = "12000";
+  clean.pnl.value = clean.known_result.value = "7000";
+  clean.redemption.value = "10000";
+  account.ai_account_ref = "source-account-2";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(
+    region.getByRole("heading", { name: "Стоимость и сделки" }).closest("section"),
+  ).toHaveTextContent("−50 ₽");
+  expect(
+    region.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
+  ).toHaveTextContent("+120 ₽");
+  expect(
+    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
+  ).toHaveTextContent("+70 ₽");
+  expect(region.getByText(/Погашение включено в стоимость и сделки/)).toBeVisible();
+  expect(screen.getByText("В отчёте AI: source-account-2")).toBeVisible();
+});
+
+test("unknown and genuine zero payout are not confused", async () => {
+  const card = instrumentCardFixture();
+  const clean = card.accounts[0].clean;
+  if (!clean) throw new Error("synthetic clean fixture missing");
+  clean.payouts.value = "0";
+  clean.valuation_and_trades.value = null;
+  clean.valuation_and_trades.status = "unavailable";
+  clean.pnl.value = null;
+  clean.known_result.value = "12000";
+  clean.known_result.status = "partial";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(
+    region.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
+  ).toHaveTextContent("0 ₽");
+  expect(
+    region.getByRole("heading", { name: "Стоимость и сделки" }).closest("section"),
+  ).toHaveTextContent("—");
+  expect(
+    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
+  ).toHaveTextContent("Известная часть");
+});
+
+test("older v2 card without additive payouts field leaves it unknown", async () => {
+  const card = instrumentCardFixture();
+  const oldSummary: Partial<typeof card.summary> = card.summary;
+  delete oldSummary.payouts;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(
+    region.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
+  ).toHaveTextContent("—");
+});
+
 test.each([
   [null, "50", "partial", "+0,50 ₽"],
   ["0", "0", "supported", "0 ₽"],
@@ -305,6 +380,7 @@ test("partial component account sets are labelled known constituents without imp
   value.summary.pnl.value = "1200";
   value.summary.pnl.reason_codes = ["instrument_accounts_missing_or_excluded"];
   value.summary.coupons.value = "4277";
+  value.summary.payouts.value = "4977";
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => response(value)),
@@ -313,7 +389,11 @@ test("partial component account sets are labelled known constituents without imp
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(screen.getByRole("heading", { name: "Из чего сложился результат" })).toBeVisible();
   expect(screen.getByText(/Показаны известные составляющие/)).toBeVisible();
-  expect(screen.getAllByText("42,77 ₽").length).toBeGreaterThan(0);
+  expect(
+    screen.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
+  ).toHaveTextContent("+49,77 ₽");
+  fireEvent.click(screen.getByText("Купоны и дивиденды"));
+  expect(screen.getByText(/Купоны: \+42,77 ₽/)).toBeVisible();
   expect(screen.getAllByText("+12 ₽").length).toBeGreaterThan(0);
 });
 
@@ -336,6 +416,7 @@ test("standalone instrument explains paid income greater than its exact total", 
   detail.pnl.estimate = false;
   card.summary.coupons.value = "1000";
   card.summary.dividends.value = "500";
+  card.summary.payouts.value = "1500";
   card.summary.valuation_and_trades.value = "-1100";
   const clean = card.accounts[0].clean;
   if (!clean) throw new Error("missing clean fixture");
@@ -369,8 +450,11 @@ test("standalone instrument explains paid income greater than its exact total", 
   );
   setup("/v2/returns/instrument/RU000A000002");
   const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  fireEvent.click(region.getByText("Купоны и дивиденды"));
   expect(region.getByText(/Купоны: \+10 ₽/)).toBeVisible();
   expect(region.getByText(/Дивиденды: \+5 ₽/)).toBeVisible();
-  expect(region.getByText(/Известный результат: \+4 ₽/)).toBeVisible();
+  expect(
+    region.getByRole("heading", { name: "Известный результат" }).closest("section"),
+  ).toHaveTextContent("+4 ₽");
   expect(region.queryByText(/^Комиссии:/)).toBeNull();
 });

@@ -257,6 +257,7 @@ class CardSummary(DTO):
     pnl: Metric
     coupons: Metric
     dividends: Metric
+    payouts: Metric | None = None
     valuation_and_trades: Metric
     costs: Metric
     taxes: Metric
@@ -279,6 +280,7 @@ class CardAccount(DTO):
     reason_codes: list[str]
     detail: Detail | None
     clean: CleanInstrument | None = None
+    ai_account_ref: str | None = None
 
 
 class InstrumentCard(DTO):
