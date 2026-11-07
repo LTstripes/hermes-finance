@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
@@ -58,6 +59,62 @@ def _build_revision(session: Session) -> str:
             for row in session.execute(select(*columns).order_by(*model.__table__.primary_key))
         ]
     return digest(state)
+
+
+@dataclass(frozen=True, slots=True)
+class _InstrumentIdentity:
+    id: int
+    name: str
+    isin: str | None
+    instrument_type: str
+    currency: str
+    is_active: bool
+
+
+def _instrument_identity(row: Instrument) -> _InstrumentIdentity:
+    return _InstrumentIdentity(
+        id=row.id,
+        name=row.name,
+        isin=row.isin,
+        instrument_type=row.instrument_type,
+        currency=row.currency,
+        is_active=row.is_active,
+    )
+
+
+def _exact_instruments(session: Session, isin: str) -> tuple[_InstrumentIdentity, ...]:
+    return snapshot_read_result(
+        session,
+        "mybroker_identity_exact_instruments",
+        isin,
+        lambda: tuple(
+            _instrument_identity(row)
+            for row in session.scalars(
+                select(Instrument).where(func.upper(func.trim(Instrument.isin)) == isin)
+            )
+        ),
+    )
+
+
+def _instrument_candidates(
+    session: Session, isin: str, source_name: str
+) -> tuple[_InstrumentIdentity, ...]:
+    return snapshot_read_result(
+        session,
+        "mybroker_identity_instrument_candidates",
+        (isin, source_name),
+        lambda: tuple(
+            _instrument_identity(row)
+            for row in session.scalars(
+                select(Instrument)
+                .where(
+                    (func.upper(func.trim(Instrument.isin)) == isin)
+                    | (Instrument.name == source_name)
+                )
+                .order_by(Instrument.id)
+            )
+        ),
+    )
 
 
 def _prepare(
@@ -140,11 +197,7 @@ def _prepare(
     for observed in evidence["instruments"]:
         row_conflicts = set()
         isin = observed["isin"]
-        matches = list(
-            session.scalars(
-                select(Instrument).where(func.upper(func.trim(Instrument.isin)) == isin)
-            )
-        )
+        matches = _exact_instruments(session, isin)
         history = [
             m for m in registry if m.subject_kind == "instrument" and m.provider_identity == isin
         ]
@@ -236,14 +289,7 @@ def _prepare(
                     else []
                 ),
             }
-            for card in session.scalars(
-                select(Instrument)
-                .where(
-                    (func.upper(func.trim(Instrument.isin)) == isin)
-                    | (Instrument.name == observed["source_name"])
-                )
-                .order_by(Instrument.id)
-            )
+            for card in _instrument_candidates(session, isin, observed["source_name"])
         ]
         conflicts.update(row_conflicts)
         instruments.append(

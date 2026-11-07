@@ -363,7 +363,6 @@ def test_cash_gift_keeps_account_flow_without_blocking_instrument_evidence(datab
 
 
 def test_bonus_source_binding_compares_parser_facts_and_rejects_mismatches(database):
-    from hermes_finance.database import coherent_read_snapshot
     from hermes_finance.services.source_return_evidence import bound_import
 
     _, _, raw, source = existing_statement(database, gift=True)
@@ -372,7 +371,7 @@ def test_bonus_source_binding_compares_parser_facts_and_rejects_mismatches(datab
             session, document=raw, filename=FILENAME, request_id="bonus-binding"
         )
     before = snapshot(database)
-    with database.session_factory() as session, coherent_read_snapshot(session):
+    with database.session_factory() as session:
         view = source_intake.read_intake(session, saved["intake_id"])
         financial_source = bound_import(session, view)
         assert financial_source is not None
@@ -397,40 +396,6 @@ def test_bonus_source_binding_compares_parser_facts_and_rejects_mismatches(datab
         assert bound_import(session, {**view, "covered_to": "2030-02-28"}) is None
         assert bound_import(session, {**view, "document_sha256": "0" * 64}) is None
     assert snapshot(database) == before
-
-
-def test_missing_source_lookup_is_refreshed_after_import(database):
-    from hermes_finance.database import coherent_read_snapshot
-    from hermes_finance.persistence import MyBrokerImport
-    from hermes_finance.services.source_return_evidence import bound_import
-
-    _, _, raw, source = existing_statement(database, gift=True)
-    with database.session_factory() as session:
-        saved = source_intake.save_intake(
-            session, document=raw, filename=FILENAME, request_id="synthetic-lookup"
-        )
-        view = source_intake.read_intake(session, saved["intake_id"])
-    view["document_sha256"] = "0" * 64
-    with database.session_factory() as session, coherent_read_snapshot(session):
-        assert bound_import(session, view) is None
-        assert bound_import(session, view) is None
-    with database.session_factory() as writer:
-        original = writer.get(MyBrokerImport, source["import_id"])
-        writer.add(
-            MyBrokerImport(
-                document_sha256=view["document_sha256"],
-                covered_from=original.covered_from,
-                covered_to=original.covered_to,
-                parser_version=original.parser_version,
-                confirmation_digest=original.confirmation_digest,
-                normalized_json=original.normalized_json,
-                mappings_json=original.mappings_json,
-                accepted_at=original.accepted_at,
-            )
-        )
-        writer.commit()
-    with database.session_factory() as session, coherent_read_snapshot(session):
-        assert bound_import(session, view) is not None
 
 
 @pytest.mark.parametrize("confirmed,stale", [(False, False), (True, False), (True, True)])

@@ -10,26 +10,15 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from hermes_finance.database import snapshot_read_result
 from hermes_finance.persistence import MyBrokerImport
 from hermes_finance.services.mybroker_money_candidates import _original_equal
 from hermes_finance.statement_import.mybroker import digest
 
 
 def bound_import(session, view):
-    # Cache only the unique lookup, including absence. Revalidate the supplied
-    # view on every call: two callers may hold different document projections.
-    source_id = snapshot_read_result(
-        session,
-        "source_return_bound_import_id",
-        view["document_sha256"],
-        lambda: session.scalar(
-            select(MyBrokerImport.id).where(
-                MyBrokerImport.document_sha256 == view["document_sha256"]
-            )
-        ),
+    source = session.scalar(
+        select(MyBrokerImport).where(MyBrokerImport.document_sha256 == view["document_sha256"])
     )
-    source = session.get(MyBrokerImport, source_id) if source_id is not None else None
     if source is None:
         return None
     document = view["document"]
