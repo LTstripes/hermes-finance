@@ -1132,6 +1132,9 @@ def read_clean_instrument_card(session, isin):
                     else [],
                 )
 
+        whole = _accounts_have_full_result(card["accounts"], identity_conflicts)
+        notes = _account_result_notes(card["accounts"])
+
         def total(field):
             if any(
                 account["clean"] and account["scope"] in identity_conflicts
@@ -1154,11 +1157,12 @@ def read_clean_instrument_card(session, isin):
                 return _unknown("source_account_identity_mapping_conflict")
             rows = [account["clean"][field] for account in card["accounts"] if account["clean"]]
             values = [int(row["value"]) for row in rows if row["value"] is not None]
+            complete = whole and len(values) == len(rows)
             return returns_view.metric(
                 sum(values) if values else None,
-                reasons=("clean_partial_result",),
+                reasons=notes if complete else ("clean_partial_result", *notes),
                 method="known_clean_instruments",
-                estimate=True,
+                estimate=not complete or bool(notes),
             )
 
         card["summary"].update(
@@ -1173,8 +1177,53 @@ def read_clean_instrument_card(session, isin):
             taxes=_unknown("costs_excluded_from_returns"),
             rate=_unknown("combined_rate_periods_and_flows_not_proven", rate=True),
         )
+        if whole:
+            quantities = [
+                account["detail"]["closing_quantity"] if account["detail"] else None
+                for account in card["accounts"]
+            ]
+            if None not in quantities:
+                card["summary"]["quantity"] = {
+                    "value": format(sum(Decimal(q) for q in quantities), "f"),
+                    "partial": False,
+                    "reason_codes": [],
+                }
+            card["summary"].update(partial=False, reason_codes=notes)
+            card["reason_codes"] = notes
+            if len(card["accounts"]) == 1:
+                rate = card["accounts"][0]["clean"]["modified_dietz"]
+                card["summary"]["rate"] = returns_view.metric(
+                    rate["value"],
+                    reasons=notes,
+                    method="modified_dietz",
+                    unit="fraction",
+                    estimate=True,
+                )
         card["contract_version"] = "returns_instrument_card_v2"
         return card
+
+
+def _accounts_have_full_result(accounts, identity_conflicts):
+    """Every account has its own result without a partial or unknown status."""
+    return bool(accounts) and all(
+        account["clean"]
+        and account["clean"].get("pnl", {}).get("value") is not None
+        and account["clean"]["pnl"].get("status") in {"supported", "provisional"}
+        and account["scope"] not in identity_conflicts
+        for account in accounts
+    )
+
+
+def _account_result_notes(accounts):
+    """Keep every disclosed assumption of the accounts in the combined result."""
+    return sorted(
+        {
+            note
+            for account in accounts
+            if account["clean"]
+            for note in account["clean"].get("pnl", {}).get("assumptions", ())
+        }
+    )
 
 
 def read_clean_income(session, *, kind):

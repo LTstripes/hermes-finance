@@ -246,7 +246,7 @@ class Income(DTO):
 
 class Quantity(DTO):
     value: str | None
-    partial: Literal[True]
+    partial: bool
     reason_codes: list[str]
 
 
@@ -263,7 +263,7 @@ class CardSummary(DTO):
     taxes: Metric
     redemption: Metric
     rate: Metric
-    partial: Literal[True]
+    partial: bool
     reason_codes: list[str]
 
 

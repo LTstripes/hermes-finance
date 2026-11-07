@@ -486,10 +486,8 @@ def test_clean_projection_on_overlapping_originals_keeps_known_operands(db, acce
     before = snapshot(db)
     analysis = by_isin(read(db))[BOND].analysis
     clean = project_clean_analysis(analysis, BOND)
-    assert clean.buys.value == 100_000
+    assert clean.buys.value == 102_000
     assert clean.payouts.value == 6_000
-    # Existing bond endpoints do not establish the accrued interest to remove.
-    assert clean.pnl.value is None
     assert snapshot(db) == before
 
 

@@ -48,7 +48,7 @@ export type InstrumentCard = {
   name: string;
   kind: string | null;
   summary: {
-    quantity: { value: string | null; partial: true; reason_codes: string[] };
+    quantity: { value: string | null; partial: boolean; reason_codes: string[] };
     reported_value: Metric;
     valuation_dates: string[];
     pnl: Metric;
@@ -60,7 +60,7 @@ export type InstrumentCard = {
     costs: Metric;
     taxes: Metric;
     rate: Metric;
-    partial: true;
+    partial: boolean;
     reason_codes: string[];
   };
   accounts: {

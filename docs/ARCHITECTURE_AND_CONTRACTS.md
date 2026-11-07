@@ -6927,6 +6927,33 @@ quantities cannot produce a total from valuation and partial trades; known
 purchase and sale components remain visible. Explicit `basis=legacy` preserves the prior Returns projections for
 consumers that still need their original semantics.
 
+Owner decision 2026-11-07: an instrument's return compares one money basis. Bond
+purchases and sales keep the statement trade total including NKD, the position
+value is the statement value, and coupons are counted in full; commissions and
+taxes stay excluded. Separating NKD would count NKD returned by a coupon as income.
+An instrument is proved by its own trades reconciling to statement quantities.
+Then account rows of other issues, unattributed money and unsupported statement
+sections do not withhold its result: an unattributed row adds the single note
+`account_money_unattributed`, which also marks FIFO rows and stays on the combined
+card result, including a partial one. An instrument's own payout conflict does not
+add this note. Unmatched money of the instrument itself is
+accepted only as an NKD row of one of its trades with no linked NKD: the row is
+worded as NKD and has the same issue, settlement date and exact amount, the only
+proof the statement gives. Any other such row withholds the full result and FIFO,
+since a hidden buy and sale can net to zero quantity. An instrument's own payout
+conflict and differing statement totals with NKD also withhold it: no source wins
+by reading order. A trade collision, on any of its dates, withholds only the issues
+it names. A coupon with no identity match may be attributed in the clean projection
+only when its issuer matches exactly one catalogue bond held in that account by the
+payment date, whether bought or incoming, an opening position counting from the day
+before its statement, and every such issue is catalogued; an
+ambiguous link is never overridden. For an empty opening position the rate treats
+the money of the first trade day as capital held for the whole holding interval; an
+earlier payout stays in the result but not in the rate. A comparison of 13 statement
+bond values with trades within four days matched price plus NKD 12 times, so the
+statement value is treated as including NKD; no format document states this.
+Saved decisions and receipts are not changed.
+
 The recommended AI financial review requests version `3.1.0` and includes the
 same source-scoped clean operands under `sections.clean_returns` with file-local
 account references. Each account retains its own period and metric coverage.

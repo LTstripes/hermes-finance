@@ -745,8 +745,7 @@ def test_reviewed_bond_file_reaches_ordinary_api_and_returns_then_revokes(
         assert not overview.json()["instruments"][0]["conditional"]
         assert not detail.json()["conditional"]
         assert overview.json()["instruments"][0]["pnl"] == detail.json()["pnl"]
-        if not accepted:
-            assert detail.json()["clean"]["closing_value"]["value"] is None
+        assert detail.json()["clean"]["closing_value"]["value"] == "101000"
         legacy = selection | {"basis": "legacy"}
         old_overview = client.get("/api/returns/overview", params=legacy)
         old_detail = client.get("/api/returns/instrument", params=legacy | {"isin": BOND})
@@ -1690,8 +1689,9 @@ def test_unclassified_money_preserves_independent_purchase_facts(db):
     assert instrument["sells"]["value"] == "18000"
     rows = instrument["purchases"]
     assert rows and rows[0]["cost_kopecks"] == "10000"
-    assert rows[0]["price_result_kopecks"] is None and rows[0]["status"] == "partial"
-    assert rows[0]["sale_proceeds_kopecks"] is None and rows[0]["remaining_quantity"] is None
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["status"] == "partial"
+    assert rows[0]["reason_codes"] == ["account_money_unattributed"]
+    assert rows[0]["sale_proceeds_kopecks"] == "18000" and rows[0]["remaining_quantity"] == "0"
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
@@ -1705,9 +1705,7 @@ def test_unclassified_money_preserves_independent_purchase_facts(db):
     )
     card_rows, ai_rows = account["purchases"], exported["instruments"][0]["purchases"]
     assert card_rows[0]["cost_kopecks"] == ai_rows[0]["cost_kopecks"] == "10000"
-    assert (
-        card_rows[0]["price_result_kopecks"] is None and ai_rows[0]["price_result_kopecks"] is None
-    )
+    assert card_rows[0]["price_result_kopecks"] == ai_rows[0]["price_result_kopecks"] == "8000"
     assert snapshot(db) == before
 
 
@@ -1744,8 +1742,7 @@ def test_purchase_facts_keep_execution_before_period_when_settled_inside(db, ins
     rows = result["instruments"][0]["purchases"]
     if inside:
         assert rows and rows[0]["date"] == date(2030, 3, 31)
-        assert rows[0]["cost_kopecks"] == "10000" and rows[0]["status"] == "partial"
-        assert rows[0]["remaining_quantity"] is None and rows[0]["price_result_kopecks"] is None
+        assert rows[0]["cost_kopecks"] == "10000" and rows[0]["remaining_quantity"] == "1"
     else:
         assert rows is None
     before = snapshot(db)
@@ -1763,10 +1760,7 @@ def test_purchase_facts_keep_execution_before_period_when_settled_inside(db, ins
     if inside:
         assert ui_rows[0]["date"] == ai_rows[0]["date"] == "2030-03-31"
         assert ui_rows[0]["cost_kopecks"] == ai_rows[0]["cost_kopecks"] == "10000"
-        assert (
-            ui_rows[0]["price_result_kopecks"] is None
-            and ai_rows[0]["price_result_kopecks"] is None
-        )
+        assert ui_rows[0]["price_result_kopecks"] == ai_rows[0]["price_result_kopecks"] == "0"
     else:
         assert ui_rows is None and ai_rows is None
     assert snapshot(db) == before
@@ -2691,7 +2685,7 @@ def test_clean_missing_fee_checks_linked_principal_and_posting_date(db, principa
         assert clean.pnl.value == 10000
         with localcontext() as context:
             context.prec = 60
-            assert clean.modified_dietz.value == Decimal(10000) / (Decimal(100000) * 24 / 30)
+            assert clean.modified_dietz.value == Decimal("0.1")
 
 
 @pytest.mark.parametrize(
@@ -2906,18 +2900,14 @@ def test_bond_purchase_reports_face_value_assumption_in_card_and_ai(db, missing_
         )
         create_reporting_month(session, year=2030, month=4, snapshot_date=date(2030, 4, 30))
     item = result["instruments"][0]
-    assert item["valuation_and_trades"]["status"] == (
-        "supported" if missing_face == "none" else "provisional"
-    )
-    assert ("trade_face_value_missing" in item["valuation_and_trades"]["assumptions"]) == (
-        missing_face != "none"
-    )
+    assert item["valuation_and_trades"]["status"] == "supported"
+    assert "trade_face_value_missing" not in item["valuation_and_trades"]["assumptions"]
     rows = item["purchases"]
     assert (
-        rows and rows[0]["cost_kopecks"] == "100000" and rows[0]["price_result_kopecks"] == "1000"
+        rows and rows[0]["cost_kopecks"] == "102000" and rows[0]["price_result_kopecks"] == "1000"
     )
-    assert rows[0]["status"] == ("supported" if missing_face == "none" else "partial")
-    assert ("trade_face_value_missing" in rows[0]["reason_codes"]) == (missing_face != "none")
+    assert rows[0]["status"] == "supported"
+    assert "trade_face_value_missing" not in rows[0]["reason_codes"]
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": BOND})
@@ -3348,8 +3338,8 @@ def test_clean_bond_price_uses_dated_trade_nominal_without_nkd(db, face_present,
             include_purchases=True,
         )["instruments"][0]
     if face_present:
-        assert result["buys"]["value"] == "100000"
-        assert result["sells"]["value"] == "101000"
+        assert result["buys"]["value"] == "102000"
+        assert result["sells"]["value"] == "103000"
         assert result["valuation_and_trades"]["value"] == result["pnl"]["value"] == "1000"
         assert result["purchases"][0]["price_result_kopecks"] == "1000"
     else:
@@ -3359,7 +3349,7 @@ def test_clean_bond_price_uses_dated_trade_nominal_without_nkd(db, face_present,
 
 
 @pytest.mark.parametrize(
-    "buy_amount,expected", [("900", None), ("900.001", None), ("999.98", None), ("999.99", "1000")]
+    "buy_amount,expected", [("900", None), ("900.001", None), ("999.98", None), ("999.99", "3001")]
 )
 def test_clean_bond_rejects_source_total_below_price_principal(db, buy_amount, expected):
     from hermes_finance.services.clean_instrument_return import read_clean_account
@@ -3796,17 +3786,20 @@ def test_clean_combined_sources_reach_overview_card_income_and_ai(db, cost_diffe
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
     ai_row = next(row for row in exported["instruments"] if row["isin"] == BOND)
     assert account["period"] == exported["period"] == summary["accounts"][0]["period"]
-    assert account["clean"]["pnl"]["value"] == ai_row["pnl"]["value"] == "4000"
-    assert summary["accounts"][0]["pnl"]["value"] == "4000"
+    # Two statement totals with NKD leave the trade money undefined.
+    expected_pnl = None if cost_difference == "nkd" else "4000"
+    assert account["clean"]["pnl"]["value"] == ai_row["pnl"]["value"] == expected_pnl
+    assert summary["accounts"][0]["pnl"]["value"] == (expected_pnl or "3000")
     assert account["clean"]["coupons"]["value"] == ai_row["coupons"]["value"] == "3000"
     assert [row["amount"]["value"] for row in income.json()["events"] if row["isin"] == BOND] == [
         "3000"
     ]
-    assert (
-        account["purchases"][0]["price_result_kopecks"]
-        == ai_row["purchases"][0]["price_result_kopecks"]
-        == "1000"
-    )
+    if cost_difference != "nkd":
+        assert (
+            account["purchases"][0]["price_result_kopecks"]
+            == ai_row["purchases"][0]["price_result_kopecks"]
+            == "1000"
+        )
     assert snapshot(db) == before
 
 
@@ -3967,9 +3960,9 @@ def test_clean_bond_overlap_uses_same_proved_principal_despite_costs(db, differe
                 isin=BOND,
                 include_purchases=True,
             )["instruments"][0]
-            if difference in {"nkd", "dirty_total", "missing_nkd"}:
-                assert row["buys"]["value"] == "100000"
-                assert row["sells"]["value"] == "101000"
+            if difference in {"nkd", "missing_nkd"}:
+                # Both statements prove one total with NKD; only its split differs.
+                assert row["buys"]["value"] == "102000"
                 assert row["pnl"]["value"] == "1000"
                 assert row["purchases"][0]["price_result_kopecks"] == "1000"
             else:

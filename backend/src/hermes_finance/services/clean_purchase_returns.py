@@ -7,10 +7,10 @@ from datetime import datetime
 from decimal import ROUND_FLOOR, Decimal, localcontext
 
 from hermes_finance.domain.clean_instrument_return import (
-    clean_trade_amount,
     clean_trade_assumptions,
     clean_trade_date,
     cost_only_trade,
+    trade_amount_with_nkd,
 )
 
 
@@ -104,7 +104,7 @@ def _observed_purchase_facts(analysis, isin, *, instrument_type):
         day, _ = _execution(event)
         settlement = clean_trade_date(event)
         quantity = event.quantity_delta
-        amount = clean_trade_amount(event)
+        amount = trade_amount_with_nkd(event)
         if (
             day is None
             or settlement is None
@@ -198,9 +198,25 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                         "trade_nkd_basis_conflict",
                     }
                 )
+    from hermes_finance.services.clean_instrument_return import (
+        _clean_quantity_reconciled,
+        has_unidentified_trade_money,
+        instrument_scoped_reasons,
+    )
+
+    scoped_events = [event for event in analysis.events if event.isin == isin]
+    reconciled = _clean_quantity_reconciled(
+        analysis, scoped_events, isin
+    ) and not instrument_scoped_reasons(
+        analysis,
+        isin,
+        (set(coverage["events"].reason_codes) | set(coverage["quantity"].reason_codes))
+        - permitted_event_reasons,
+    )
     event_coverage = coverage["events"]
-    if (not event_coverage.complete and not event_coverage.reason_codes) or (
-        set(event_coverage.reason_codes) - permitted_event_reasons
+    if not reconciled and (
+        (not event_coverage.complete and not event_coverage.reason_codes)
+        or set(event_coverage.reason_codes) - permitted_event_reasons
     ):
         return None
     quantity_coverage = coverage["quantity"]
@@ -209,14 +225,9 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         "quantity_reconciliation_mismatch",
         "cross_boundary_settlement",
     }
-    if "negative_observed_holding" in quantity_coverage.reason_codes:
-        from hermes_finance.services.clean_instrument_return import _clean_quantity_reconciled
-
-        scoped_events = [event for event in analysis.events if event.isin == isin]
-        if _clean_quantity_reconciled(analysis, scoped_events, isin):
-            permitted_quantity_reasons.add("negative_observed_holding")
-    if (not quantity_coverage.complete and not quantity_coverage.reason_codes) or (
-        set(quantity_coverage.reason_codes) - permitted_quantity_reasons
+    if not reconciled and (
+        (not quantity_coverage.complete and not quantity_coverage.reason_codes)
+        or set(quantity_coverage.reason_codes) - permitted_quantity_reasons
     ):
         return None
     trades = []
@@ -224,6 +235,8 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         if event.kind in {"FEE", "TAX", "COUPON", "DIVIDEND"}:
             continue
         if event.isin not in {isin, None}:
+            continue
+        if reconciled and (event.isin is None or event.kind == "UNRESOLVED"):
             continue
         if (
             event.isin != isin
@@ -248,7 +261,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         ):
             event = replace(event, native_total_basis="excludes_paid_nkd")
         settlement = clean_trade_date(event)
-        amount = clean_trade_amount(event) if event.counted or cost_only_trade(event) else None
+        amount = trade_amount_with_nkd(event) if event.counted or cost_only_trade(event) else None
         day, instant = _execution(event)
         q = event.quantity_delta
         if (
@@ -476,4 +489,8 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             != clean.valuation_and_trades.value
         ):
             return None
+        if has_unidentified_trade_money(analysis):
+            for row in results:
+                row["status"] = "partial"
+                row["reason_codes"] = sorted({*row["reason_codes"], "account_money_unattributed"})
         return results

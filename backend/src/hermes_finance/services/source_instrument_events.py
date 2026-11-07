@@ -53,6 +53,14 @@ def _date(value):
     return date.fromisoformat(value) if value else None
 
 
+def _trade_total_with_nkd(trade, nkd_is_separate):
+    from hermes_finance.services.source_instrument_returns import _minor
+
+    amount = _minor(trade["core"].get("trade_amount"))
+    nkd = _minor(trade.get("accrued_interest")) if nkd_is_separate else 0
+    return None if amount is None or nkd is None else amount + nkd
+
+
 def _fingerprint(value):
     return digest(json.dumps(value, sort_keys=True, default=str))
 
@@ -646,7 +654,9 @@ def read_events(
         isin = core["isin"]
         # A native-ID collision across issues cannot silently choose the first
         # original's scope and leave the other issue with an apparently clean result.
-        event_isin = isin if len({t["core"]["isin"] for _, t in observations}) == 1 else None
+        observed_isins = tuple(sorted({t["core"]["isin"] for _, t in observations}))
+        event_isin = isin if len(observed_isins) == 1 else None
+        collision_isins = observed_isins if event_isin is None else ()
         kinds = identities[isin]["types"]
         kind = next(iter(kinds)) if len(kinds) == 1 else None
         refs = tuple(f"trade:{v['id']}:{t['section']}:{t['ordinal']}" for v, t in observations)
@@ -745,6 +755,12 @@ def read_events(
         reasons.update(flags - assumptions)
         if basis is None:
             reasons.add("trade_nkd_basis_unknown")
+        # Different NKD splits of one total are harmless. Different totals leave
+        # the trade money undefined, so no statement may win by reading order.
+        if "overlap_trade_nkd_only" in reasons and (
+            len({_trade_total_with_nkd(t, basis == "excludes_paid_nkd") for _, t in selected}) > 1
+        ):
+            reasons.discard("overlap_trade_nkd_only")
         total = (
             None
             if None in (amount, nkd, fee, qty)
@@ -836,6 +852,7 @@ def read_events(
                 provider=PROVIDER,
                 native_source_account=native_account,
                 isin=event_isin,
+                collision_isins=collision_isins,
                 effective_isin=event_isin,
                 kind="BUY" if qty is not None and qty > 0 else "SELL",
                 source_references=refs,
@@ -897,6 +914,7 @@ def read_events(
                         provider=PROVIDER,
                         native_source_account=native_account,
                         isin=event_isin,
+                        collision_isins=collision_isins,
                         kind="UNRESOLVED",
                         source_references=refs,
                         event_date=observed_date,
@@ -983,6 +1001,7 @@ def read_events(
                 classification_origin=saved["origin"],
                 classification_status=flow.status,
                 persisted_link_status=saved.get("instrument_link_status"),
+                nkd_money=_is_nkd(text),
                 attribution_basis=(
                     "account_only"
                     if account_only

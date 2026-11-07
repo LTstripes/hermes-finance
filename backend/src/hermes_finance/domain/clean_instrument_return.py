@@ -83,6 +83,22 @@ def clean_trade_amount(event: InstrumentEvent) -> int | None:
     return _priced_bond_principal(event)
 
 
+def trade_amount_with_nkd(event: InstrumentEvent) -> int | None:
+    """Return the trade money including NKD, excluding commission.
+
+    Purchases, valuations and coupons are compared on one basis: a coupon
+    returns NKD paid at purchase, and a statement position value carries NKD.
+    """
+    principal = clean_trade_amount(event)
+    if principal is None:
+        return None
+    if event.native_total_basis == "excludes_paid_nkd":
+        nkd = event.accrued_interest_kopecks
+        # An unknown or invalid NKD never blocks the trade the statement proves.
+        return principal + nkd if nkd is not None and nkd >= 0 else principal
+    return event.native_trade_amount_kopecks
+
+
 def _missing_fee_principal_consistent(event: InstrumentEvent) -> bool:
     principal = [leg for leg in event.cash_legs if leg.role == "principal"]
     nkd_legs = [leg for leg in event.cash_legs if leg.role == "nkd"]
@@ -262,8 +278,10 @@ def _priced_bond_without_costs(event: InstrumentEvent) -> bool:
 
 def clean_trade_assumptions(event: InstrumentEvent) -> tuple[str, ...]:
     """Disclose contradictory NKD while retaining independently proved principal."""
+    # The trade total comes from the statement; only a recalculation needs face.
+    assumptions = tuple(a for a in event.assumptions if a != "trade_face_value_missing")
     if not _priced_bond_without_costs(event):
-        return event.assumptions
+        return assumptions
     price = _priced_bond_principal(event)
     total = event.native_trade_amount_kopecks
     nkd = event.accrued_interest_kopecks
@@ -279,8 +297,8 @@ def clean_trade_assumptions(event: InstrumentEvent) -> tuple[str, ...]:
         expected = nkd if nkd is not None and nkd >= 0 else total - price
         conflict |= abs(sum(leg.account_cash_kopecks for leg in legs) - sign * expected) > 1
     if not conflict:
-        return event.assumptions
-    return tuple(sorted(set(event.assumptions) | {"source_nkd_conflict"}))
+        return assumptions
+    return tuple(sorted(set(assumptions) | {"source_nkd_conflict"}))
 
 
 def _fee_only_overlap(event: InstrumentEvent) -> bool:
@@ -348,6 +366,7 @@ def calculate_clean_return(
     payouts_complete: bool,
     redemptions_complete: bool,
     valuation_complete: bool,
+    result_assumptions: tuple[str, ...] = (),
 ) -> CleanInstrumentReturn:
     """Calculate from attributable current observations, preserving partial facts.
 
@@ -359,7 +378,10 @@ def calculate_clean_return(
         raise ValueError("opening_date must precede closing_date")
     values = {kind: [] for kind in ("BUY", "SELL", "COUPON", "DIVIDEND", "REDEMPTION")}
     assumptions = {kind: set() for kind in values}
+    assumptions["COUPON"].update(result_assumptions)
+    assumptions["DIVIDEND"].update(result_assumptions)
     dated_flows = []
+    trade_days = []
     seen_events = set()
     seen_legs = set()
     trade_gap = not trades_complete
@@ -400,7 +422,7 @@ def calculate_clean_return(
                 payout_gap = True
             continue
         if event.kind in {"BUY", "SELL"}:
-            value = clean_trade_amount(event)
+            value = trade_amount_with_nkd(event)
             if value is None:
                 trade_gap = True
                 continue
@@ -428,6 +450,7 @@ def calculate_clean_return(
         values[kind].append(value)
         assumptions[kind].update(clean_trade_assumptions(event))
         dated_flows.append((day, flow, "confirmed"))
+        trade_days.append(day)
 
     def available_status(used):
         if "source_nkd_conflict" in used:
@@ -519,6 +542,16 @@ def calculate_clean_return(
     row = calculate_interval_return(
         (opening_date, opening_clean), (closing_date, closing_clean), dated_flows
     )
+    # An empty position has no capital before its first trade, so the money of
+    # that day is the capital held for the whole holding interval. An earlier
+    # payout stays in the result but is not a return on this capital.
+    rate_row = row
+    first_trade = min(trade_days, default=None)
+    if opening_clean == 0 and first_trade and opening_date < first_trade < closing_date:
+        capital = sum(flow[1] for flow in dated_flows if flow[0] == first_trade)
+        rate_row = calculate_interval_return(
+            (first_trade, capital), (closing_date, closing_clean), dated_flows
+        )
     used = tuple(sorted(set().union(*assumptions.values())))
     result_status = available_status(used)
     pnl = Metric(
@@ -528,9 +561,9 @@ def calculate_clean_return(
         used,
     )
     rate = Metric(
-        row.modified_dietz_return if complete else None,
-        result_status if complete and row.modified_dietz_return is not None else "unavailable",
-        tuple(sorted(set(reasons + row.reason_codes))),
+        rate_row.modified_dietz_return if complete else None,
+        result_status if complete and rate_row.modified_dietz_return is not None else "unavailable",
+        tuple(sorted(set(reasons + rate_row.reason_codes))),
         used,
     )
     # A valuation cannot be combined with an incomplete trade/redemption set:

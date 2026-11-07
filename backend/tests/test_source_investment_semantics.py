@@ -45,8 +45,8 @@ SEMANTIC_MODULES = (
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v11",
-    "98f86070d018a0f2a9183bf64f68a685a559dea7161f81b5686a3619a4984f72",
+    "source_investment_semantics_v12",
+    "c023531163f02f939f34797e376f28324e9b9e6d233e454f1a5e8cb737abfaf2",
 )
 
 

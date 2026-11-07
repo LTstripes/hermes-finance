@@ -270,7 +270,7 @@ test("unclassified account activity leaves observed purchase cost visible as par
   expect(region.queryByText("80,00 ₽")).toBeNull();
 });
 
-test("bond purchase keeps provisional result and identifies the missing face value", async () => {
+test("bond purchase keeps a provisional result without a face value warning", async () => {
   const card = instrumentCardFixture();
   card.accounts[0].purchases = [
     {
@@ -299,8 +299,45 @@ test("bond purchase keeps provisional result and identifies the missing face val
     await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
   );
   expect(region.getByText("10,00 ₽")).toBeVisible();
-  expect(region.getByText("Номинал не подтверждён")).toBeVisible();
+  expect(region.queryByText("Номинал не подтверждён")).not.toBeInTheDocument();
   expect(region.getByText("Данные неполные")).toBeVisible();
+});
+
+test("account-level note does not mark each purchase incomplete", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "bond-buy",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "100000",
+      sale_proceeds_kopecks: "101000",
+      value_kopecks: "0",
+      price_result_kopecks: "1000",
+      return_fraction: "0.01",
+      status: "partial",
+      reason_codes: ["account_money_unattributed"],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("10,00 ₽")).toBeVisible();
+  expect(region.queryByText("Данные неполные")).not.toBeInTheDocument();
+  expect(
+    region.getByText(
+      "На счёте есть операции без привязки к бумаге: результат по ней может быть неполным.",
+    ),
+  ).toBeVisible();
 });
 
 test("shows known purchase result and explains conflicting NKD", async () => {
@@ -713,13 +750,38 @@ test("partial component account sets are labelled known constituents without imp
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(screen.getByRole("heading", { name: "Из чего сложился результат" })).toBeVisible();
-  expect(screen.getByText("Комиссии, налоги и НКД не входят в расчёт.")).toBeVisible();
+  expect(
+    screen.getByText(
+      "Комиссии и налоги не входят в расчёт. НКД учтён в сделках, стоимости и купонах.",
+    ),
+  ).toBeVisible();
   expect(
     screen.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
   ).toHaveTextContent("+49,77 ₽");
   fireEvent.click(screen.getByText("Купоны и дивиденды"));
   expect(screen.getByText(/Купоны: \+42,77 ₽/)).toBeVisible();
   expect(screen.getAllByText("+12 ₽").length).toBeGreaterThan(0);
+});
+
+test("whole result keeps the note about unattributed account money", async () => {
+  const value = instrumentCardFixture();
+  value.summary.pnl.value = "1200";
+  value.summary.pnl.reason_codes = [
+    "clean_partial_result",
+    "account_money_unattributed",
+    "income_assumed",
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(value)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
+  expect(
+    screen.getByText(
+      /На счёте есть операции без привязки к бумаге: результат по ней может быть неполным\./,
+    ),
+  ).toBeVisible();
 });
 
 test("standalone instrument explains paid income greater than its exact total", async () => {

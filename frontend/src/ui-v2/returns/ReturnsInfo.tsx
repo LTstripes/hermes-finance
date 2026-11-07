@@ -63,6 +63,18 @@ export function Explanation({ codes, context }: { codes: string[]; context?: Rea
     </>
   );
 }
+const partialResultCodes = ["clean_partial_result", "selected_components_incomplete"];
+/** Keep every caveat of a shown result beside it, once per message. */
+export function ResultNote({ metric }: { metric: Metric }) {
+  const messages = [
+    ...new Set(
+      visibleReturnReasons(metric.reason_codes)
+        .filter((code) => !partialResultCodes.includes(code))
+        .map((code) => reasonCopy(code, { surface: "returns" }).message),
+    ),
+  ];
+  return metric.value !== null && messages.length ? <p role="note">{messages.join(" ")}</p> : null;
+}
 /** Explain only missing operands, once per message, next to the displayed metrics. */
 export function MissingMetricNote({ metrics }: { metrics: readonly Metric[] }) {
   const messages = [
