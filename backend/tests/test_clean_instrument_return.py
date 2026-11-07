@@ -907,7 +907,7 @@ class FakeResolver:
         }
 
 
-def issuer_view(*isins, settled="2030-01-05", quantity="1"):
+def issuer_view(*isins, settled="2030-01-05", quantity="1", positions=()):
     trades = [
         {
             "state": "settled",
@@ -916,7 +916,12 @@ def issuer_view(*isins, settled="2030-01-05", quantity="1"):
         }
         for isin in isins
     ]
-    return (None, {"document": {"trades": trades}}, None)
+    view = {
+        "covered_from": "2030-01-01",
+        "covered_to": "2030-12-31",
+        "document": {"trades": trades, "positions": list(positions)},
+    }
+    return (None, view, None)
 
 
 @pytest.mark.parametrize(
@@ -962,6 +967,23 @@ def test_issuer_never_overrides_a_conflicting_coupon_identity(status):
     assert not _issuer_bond_in_account(resolver, security, status, selected, "a", "2030-02-01")
 
 
+def test_incoming_position_of_another_issue_keeps_the_coupon_unattributed():
+    from hermes_finance.services.source_return_evidence import _issuer_bond_in_account
+
+    security = SimpleNamespace(issuer_name='ООО "Agro"')
+    resolver = FakeResolver(("Agro 001P-01", "ZZ0000000011"), ("Agro 001P-02", "ZZ0000000029"))
+    incoming = {
+        "isin": "ZZ0000000029",
+        "source_account": "a",
+        "beginning_actual_quantity": "5",
+        "actual_quantity": "5",
+    }
+    selected = [issuer_view("ZZ0000000011", positions=(incoming,))]
+    assert not _issuer_bond_in_account(
+        resolver, security, "unresolved_no_match", selected, "a", "2030-02-01"
+    )
+
+
 def test_a_sale_alone_does_not_make_the_issuer_bond_held():
     from hermes_finance.services.source_return_evidence import _issuer_bond_in_account
 
@@ -973,7 +995,7 @@ def test_a_sale_alone_does_not_make_the_issuer_bond_held():
     )
 
 
-def own_money(index, amount):
+def own_money(index, amount, *, nkd_money=True):
     return replace(
         cash("FEE", amount),
         kind="UNRESOLVED",
@@ -984,7 +1006,53 @@ def own_money(index, amount):
             CashLeg("trade_settlement", DAY, amount, -amount, ("money",), "trade_settlement"),
         ),
         reason_codes=("unmatched_trade_money",),
+        nkd_money=nkd_money,
     )
+
+
+def test_money_without_nkd_wording_is_not_trade_nkd():
+    analysis = scoped_case(other=(own_money(0, -2000, nkd_money=False),))
+    analysis.coverage["events"] = Coverage(False, ("unmatched_trade_money",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value is None
+
+
+def test_nkd_already_linked_to_the_trade_cannot_prove_a_second_row():
+    analysis = scoped_case(other=(own_money(0, -2000),))
+    buy = analysis.events[0]
+    leg = CashLeg("nkd", DAY, -2000, 2000, ("linked",), "money:linked")
+    analysis.events = (replace(buy, cash_legs=(*buy.cash_legs, leg)), *analysis.events[1:])
+    analysis.coverage["events"] = Coverage(False, ("unmatched_trade_money",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value is None
+
+
+def test_derived_nkd_leg_does_not_stop_the_nkd_row_proof():
+    analysis = scoped_case(other=(own_money(0, -2000),))
+    buy = analysis.events[0]
+    leg = CashLeg("nkd", DAY, -2000, 2000, ("trade",), "trade:BUY:nkd")
+    analysis.events = (replace(buy, cash_legs=(*buy.cash_legs, leg)), *analysis.events[1:])
+    analysis.coverage["events"] = Coverage(False, ("unmatched_trade_money",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value == -3000
+
+
+def account_money(reason="unmatched_trade_money"):
+    return replace(own_money(9, -2500), isin=None, reason_codes=(reason,), nkd_money=False)
+
+
+def test_unidentified_trade_money_stays_visible_with_a_note():
+    analysis = scoped_case(payout_reasons=(), other=(account_money(),))
+    analysis.coverage["events"] = Coverage(False, ("unmatched_trade_money",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value == -3000
+    assert result.pnl.assumptions == ("account_money_unattributed",)
+    rows = clean_purchase_price_contributions(
+        analysis, result, "ZZ0000000011", instrument_type="bond"
+    )
+    assert rows[0]["price_result_kopecks"] == "-3000"
+    assert rows[0]["status"] == "partial"
+    assert rows[0]["reason_codes"] == ["account_money_unattributed"]
 
 
 @pytest.mark.parametrize(
@@ -1033,6 +1101,33 @@ def test_trade_collision_blocks_only_the_issues_it_concerns(isins, visible):
     assert (purchases is not None and purchases[0]["remaining_quantity"] == "1") == visible
 
 
+def test_alternate_date_of_a_collision_still_blocks_its_issue():
+    alternate = replace(collision("ZZ0000000011", "ZZ0000000029"), kind="UNRESOLVED")
+    analysis = scoped_case(other=(alternate,))
+    analysis.coverage["events"] = Coverage(False, ("overlapping_trade_conflict",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value is None
+
+
+def test_foreign_collision_does_not_undo_a_commission_only_conflict():
+    analysis = scoped_case(other=(collision("ZZ0000000029", "ZZ0000000037"),))
+    buy = analysis.events[0]
+    analysis.events = (
+        replace(buy, reason_codes=("overlapping_trade_conflict", "overlap_trade_commission_only")),
+        *analysis.events[1:],
+    )
+    analysis.coverage["events"] = Coverage(False, ("overlapping_trade_conflict",))
+    import hermes_finance.services.clean_instrument_return as service
+
+    original = service.cost_only_trade
+    service.cost_only_trade = lambda event: event.isin == "ZZ0000000011" or original(event)
+    try:
+        result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    finally:
+        service.cost_only_trade = original
+    assert result.valuation_and_trades.value == -3000
+
+
 def rate_case(day):
     buy = replace(trade("BUY", 10000, 0), event_date=day, cash_settlement_date=day)
     return calculate_clean_return(
@@ -1052,6 +1147,29 @@ def test_rate_counts_the_first_trade_as_capital_for_the_whole_holding():
     result = rate_case(END - timedelta(days=1))
     assert result.pnl.value == 1000
     assert result.modified_dietz.value == Decimal("0.1")
+
+
+def test_payout_before_the_first_trade_stays_in_the_result_but_not_the_rate():
+    buy = replace(trade("BUY", 10000, 0), event_date=date(2030, 1, 10))
+    buy = replace(buy, cash_settlement_date=date(2030, 1, 10))
+    coupon = replace(
+        cash("COUPON", 500),
+        event_date=date(2030, 1, 3),
+        cash_legs=(CashLeg("COUPON", date(2030, 1, 3), 500, -500, ("c",), "c"),),
+    )
+    result = calculate_clean_return(
+        START,
+        END,
+        0,
+        12000,
+        (buy, coupon),
+        trades_complete=True,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=True,
+    )
+    assert result.pnl.value == 2500
+    assert result.modified_dietz.value == Decimal("0.2")
 
 
 def test_rate_stays_unknown_for_a_trade_on_the_closing_day():
@@ -1085,3 +1203,6 @@ def test_card_keeps_the_note_of_every_account():
         clean_account("supported"),
     ]
     assert _account_result_notes(accounts) == ["account_money_unattributed"]
+    assert _account_result_notes([*accounts, {"scope": "x", "clean": None}]) == [
+        "account_money_unattributed"
+    ]

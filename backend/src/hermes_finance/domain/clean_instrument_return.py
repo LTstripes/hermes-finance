@@ -5,7 +5,7 @@ Account cash balances and the historical cash-economic calculation are separate.
 """
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from hermes_finance.domain.instrument_return import InstrumentEvent, Metric
@@ -381,6 +381,7 @@ def calculate_clean_return(
     assumptions["COUPON"].update(result_assumptions)
     assumptions["DIVIDEND"].update(result_assumptions)
     dated_flows = []
+    trade_days = []
     seen_events = set()
     seen_legs = set()
     trade_gap = not trades_complete
@@ -449,6 +450,7 @@ def calculate_clean_return(
         values[kind].append(value)
         assumptions[kind].update(clean_trade_assumptions(event))
         dated_flows.append((day, flow, "confirmed"))
+        trade_days.append(day)
 
     def available_status(used):
         if "source_nkd_conflict" in used:
@@ -537,19 +539,19 @@ def calculate_clean_return(
         )
         if missing
     )
-    # An empty position has no capital before its first trade, so the money of
-    # that first day is the capital held for the whole interval.
-    interval_start, interval_capital = opening_date, opening_clean
-    first_day = min((row[0] for row in dated_flows), default=None)
-    if opening_clean == 0 and first_day is not None:
-        if opening_date < first_day < closing_date:
-            interval_start = first_day
-            interval_capital = sum(row[1] for row in dated_flows if row[0] == first_day)
-        else:
-            interval_start = max(opening_date, first_day - timedelta(days=1))
     row = calculate_interval_return(
-        (interval_start, interval_capital), (closing_date, closing_clean), dated_flows
+        (opening_date, opening_clean), (closing_date, closing_clean), dated_flows
     )
+    # An empty position has no capital before its first trade, so the money of
+    # that day is the capital held for the whole holding interval. An earlier
+    # payout stays in the result but is not a return on this capital.
+    rate_row = row
+    first_trade = min(trade_days, default=None)
+    if opening_clean == 0 and first_trade and opening_date < first_trade < closing_date:
+        capital = sum(flow[1] for flow in dated_flows if flow[0] == first_trade)
+        rate_row = calculate_interval_return(
+            (first_trade, capital), (closing_date, closing_clean), dated_flows
+        )
     used = tuple(sorted(set().union(*assumptions.values())))
     result_status = available_status(used)
     pnl = Metric(
@@ -559,9 +561,9 @@ def calculate_clean_return(
         used,
     )
     rate = Metric(
-        row.modified_dietz_return if complete else None,
-        result_status if complete and row.modified_dietz_return is not None else "unavailable",
-        tuple(sorted(set(reasons + row.reason_codes))),
+        rate_row.modified_dietz_return if complete else None,
+        result_status if complete and rate_row.modified_dietz_return is not None else "unavailable",
+        tuple(sorted(set(reasons + rate_row.reason_codes))),
         used,
     )
     # A valuation cannot be combined with an incomplete trade/redemption set:

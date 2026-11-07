@@ -200,6 +200,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                 )
     from hermes_finance.services.clean_instrument_return import (
         _clean_quantity_reconciled,
+        has_unidentified_trade_money,
         instrument_scoped_reasons,
     )
 
@@ -488,4 +489,8 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             != clean.valuation_and_trades.value
         ):
             return None
+        if has_unidentified_trade_money(analysis):
+            for row in results:
+                row["status"] = "partial"
+                row["reason_codes"] = sorted({*row["reason_codes"], "account_money_unattributed"})
         return results

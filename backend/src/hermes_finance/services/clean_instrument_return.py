@@ -34,12 +34,28 @@ _ACCOUNT_SOURCE_GAPS = frozenset(
 
 
 def _own_money_is_trade_nkd(events):
-    """Accept unmatched own money only as the NKD of one identified own trade."""
-    trades = [event for event in events if event.kind in {"BUY", "SELL"}]
+    """Accept unmatched own money only as the unlinked NKD row of one own trade.
+
+    The statement's NKD row names the issue but no trade number, so its wording,
+    issue, settlement date and exact amount are the available proof.
+    """
+    # A leg owned by the trade itself is derived; only a money row is linked NKD.
+    trades = [
+        event
+        for event in events
+        if event.kind in {"BUY", "SELL"}
+        and not any(
+            leg.role == "nkd" and not leg.ownership.startswith("trade:") for leg in event.cash_legs
+        )
+    ]
     for row in events:
         if "unmatched_trade_money" not in row.reason_codes:
             continue
-        if row.reason_codes != ("unmatched_trade_money",) or len(row.cash_legs) != 1:
+        if (
+            not row.nkd_money
+            or row.reason_codes != ("unmatched_trade_money",)
+            or len(row.cash_legs) != 1
+        ):
             return False
         paid = row.cash_legs[0].account_cash_kopecks
         match = next(
@@ -47,7 +63,7 @@ def _own_money_is_trade_nkd(events):
                 trade
                 for trade in trades
                 if trade.accrued_interest_kopecks == (-paid if trade.kind == "BUY" else paid)
-                and row.event_date in {trade.execution_date, trade.cash_settlement_date}
+                and row.event_date == trade.cash_settlement_date
             ),
             None,
         )
@@ -55,6 +71,16 @@ def _own_money_is_trade_nkd(events):
             return False
         trades.remove(match)
     return True
+
+
+def has_unidentified_trade_money(analysis):
+    """Money of an unknown issue may be a trade, so the result carries a note."""
+    return any(
+        event.isin is None
+        and event.attribution_basis != "explicit_tax_unclassified"
+        and {"unmatched_trade_money", "unrecognized_money"} & set(event.reason_codes)
+        for event in analysis.events
+    )
 
 
 def instrument_scoped_reasons(analysis, isin, reasons):
@@ -157,12 +183,8 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
             event = replace(event, native_total_basis="excludes_paid_nkd")
         events.append(event)
     quantity_reconciled = _clean_quantity_reconciled(analysis, events, isin)
-    conflicts = [
-        event for event in analysis.events if "trade_money_cash_conflict" in event.reason_codes
-    ]
-    fee_conflicts_only = bool(conflicts) and all(
-        event.isin == isin and cost_only_trade(event) for event in conflicts
-    )
+    conflicts = [event for event in events if "trade_money_cash_conflict" in event.reason_codes]
+    fee_conflicts_only = bool(conflicts) and all(cost_only_trade(event) for event in conflicts)
     recoverable_trade_reasons = {
         "trade_components_missing",
         "trade_nkd_basis_unknown",
@@ -189,10 +211,9 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
             reasons = instrument_scoped_reasons(analysis, isin, reasons)
             if name == "events":
                 for reason in recoverable_trade_reasons:
-                    affected = [event for event in analysis.events if reason in event.reason_codes]
-                    if affected and all(
-                        event.isin == isin and cost_only_trade(event) for event in affected
-                    ):
+                    # Reasons are already scoped, so only own trades decide.
+                    affected = [event for event in events if reason in event.reason_codes]
+                    if affected and all(cost_only_trade(event) for event in affected):
                         reasons.discard(reason)
                 if fee_conflicts_only:
                     reasons.discard("trade_money_cash_conflict")
@@ -223,7 +244,9 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         ),
         redemptions_complete=clean_complete("quantity"),
         valuation_complete=opening is not None and closing is not None,
-        result_assumptions=() if payouts_known else ("account_money_unattributed",),
+        result_assumptions=()
+        if payouts_known and not has_unidentified_trade_money(analysis)
+        else ("account_money_unattributed",),
     )
     if "source_sections_not_financially_accepted" in getattr(analysis, "reason_codes", ()):
         reason = "source_sections_not_financially_accepted"
@@ -278,8 +301,10 @@ def _clean_quantity_reconciled(analysis, events, isin):
 
     if any(
         event.isin is None
-        and event.kind in {"BUY", "SELL", "REDEMPTION"}
-        and (not event.collision_isins or isin in event.collision_isins)
+        and (
+            isin in event.collision_isins
+            or (not event.collision_isins and event.kind in {"BUY", "SELL", "REDEMPTION"})
+        )
         for event in analysis.events
     ):
         return False

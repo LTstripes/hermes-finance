@@ -1133,7 +1133,7 @@ def read_clean_instrument_card(session, isin):
                 )
 
         whole = _accounts_have_full_result(card["accounts"], identity_conflicts)
-        notes = _account_result_notes(card["accounts"]) if whole else []
+        notes = _account_result_notes(card["accounts"])
 
         def total(field):
             if any(
@@ -1160,7 +1160,7 @@ def read_clean_instrument_card(session, isin):
             complete = whole and len(values) == len(rows)
             return returns_view.metric(
                 sum(values) if values else None,
-                reasons=notes if complete else ("clean_partial_result",),
+                reasons=notes if complete else ("clean_partial_result", *notes),
                 method="known_clean_instruments",
                 estimate=not complete or bool(notes),
             )
@@ -1217,7 +1217,12 @@ def _accounts_have_full_result(accounts, identity_conflicts):
 def _account_result_notes(accounts):
     """Keep every disclosed assumption of the accounts in the combined result."""
     return sorted(
-        {note for account in accounts for note in account["clean"]["pnl"].get("assumptions", ())}
+        {
+            note
+            for account in accounts
+            if account["clean"]
+            for note in account["clean"].get("pnl", {}).get("assumptions", ())
+        }
     )
 
 

@@ -1689,7 +1689,8 @@ def test_unclassified_money_preserves_independent_purchase_facts(db):
     assert instrument["sells"]["value"] == "18000"
     rows = instrument["purchases"]
     assert rows and rows[0]["cost_kopecks"] == "10000"
-    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["status"] == "supported"
+    assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["status"] == "partial"
+    assert rows[0]["reason_codes"] == ["account_money_unattributed"]
     assert rows[0]["sale_proceeds_kopecks"] == "18000" and rows[0]["remaining_quantity"] == "0"
     before = snapshot(db)
     with TestClient(create_app(db)) as client:

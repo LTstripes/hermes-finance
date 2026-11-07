@@ -62,15 +62,28 @@ def payout_source_unambiguous(views, view, event_date):
     return len(covered) == 1 and covered[0]["id"] == view["id"]
 
 
-def _bought(trade):
+def _positive(value):
     try:
-        return Decimal(trade["core"].get("quantity")) > 0
+        return Decimal(value) > 0
     except (ArithmeticError, TypeError, ValueError):
         return False
 
 
+def _issues_held_from_positions(view, account, day):
+    """Issues a statement proves were held by the payment, bought there or not."""
+    return {
+        row.get("isin")
+        for row in view["document"].get("positions", [])
+        if row.get("source_account") == account
+        and (
+            (view["covered_from"] <= day and _positive(row.get("beginning_actual_quantity")))
+            or (view["covered_to"] <= day and _positive(row.get("actual_quantity")))
+        )
+    }
+
+
 def _issuer_bond_in_account(resolver, security, status, selected, account, day):
-    """Find the single catalogue bond of this issuer bought in the account by the payment.
+    """Find the single catalogue bond of this issuer held in the account by the payment.
 
     Only a coupon with no identity match qualifies: an ambiguous link is a
     conflict. An issue missing from the catalogue may be another bond of the issuer.
@@ -87,8 +100,11 @@ def _issuer_bond_in_account(resolver, security, status, selected, account, day):
         if trade.get("state") == "settled"
         and trade["core"].get("source_account") == account
         and str(trade.get("settlement_date") or "9") <= day
-        and _bought(trade)
+        and _positive(trade["core"].get("quantity"))
     }
+    for _, view, error in selected:
+        if view is not None and not error:
+            held |= _issues_held_from_positions(view, account, day)
     if held - {instrument.isin for instrument in resolver.instruments.values()}:
         return None
     matches = [

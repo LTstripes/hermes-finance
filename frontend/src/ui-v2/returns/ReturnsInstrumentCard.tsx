@@ -322,7 +322,10 @@ export function ReturnsInstrumentCard({
                             </td>
                             <td>
                               {money(purchase.price_result_kopecks)}
-                              {purchase.status === "partial" && <small>Данные неполные</small>}
+                              {purchase.status === "partial" &&
+                                purchase.reason_codes.join() !== "account_money_unattributed" && (
+                                  <small>Данные неполные</small>
+                                )}
                               {purchase.reason_codes.includes("source_nkd_conflict") && (
                                 <small>Расхождение по НКД</small>
                               )}

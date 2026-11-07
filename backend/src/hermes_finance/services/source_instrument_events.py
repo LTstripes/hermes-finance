@@ -1001,6 +1001,7 @@ def read_events(
                 classification_origin=saved["origin"],
                 classification_status=flow.status,
                 persisted_link_status=saved.get("instrument_link_status"),
+                nkd_money=_is_nkd(text),
                 attribution_basis=(
                     "account_only"
                     if account_only

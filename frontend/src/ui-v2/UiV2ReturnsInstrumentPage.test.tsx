@@ -303,6 +303,38 @@ test("bond purchase keeps a provisional result without a face value warning", as
   expect(region.getByText("Данные неполные")).toBeVisible();
 });
 
+test("account-level note does not mark each purchase incomplete", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = [
+    {
+      id: "bond-buy",
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "1",
+      remaining_quantity: "0",
+      cost_kopecks: "100000",
+      sale_proceeds_kopecks: "101000",
+      value_kopecks: "0",
+      price_result_kopecks: "1000",
+      return_fraction: "0.01",
+      status: "partial",
+      reason_codes: ["account_money_unattributed"],
+    },
+  ];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  const region = within(
+    await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
+  );
+  expect(region.getByText("10,00 ₽")).toBeVisible();
+  expect(region.queryByText("Данные неполные")).not.toBeInTheDocument();
+});
+
 test("shows known purchase result and explains conflicting NKD", async () => {
   const card = instrumentCardFixture();
   card.accounts[0].purchases = [
@@ -729,7 +761,11 @@ test("partial component account sets are labelled known constituents without imp
 test("whole result keeps the note about unattributed account money", async () => {
   const value = instrumentCardFixture();
   value.summary.pnl.value = "1200";
-  value.summary.pnl.reason_codes = ["account_money_unattributed"];
+  value.summary.pnl.reason_codes = [
+    "clean_partial_result",
+    "account_money_unattributed",
+    "income_assumed",
+  ];
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => response(value)),
@@ -738,7 +774,7 @@ test("whole result keeps the note about unattributed account money", async () =>
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(
     screen.getByText(
-      "На счёте есть операции без привязки к бумаге: выплаты по ней могут быть учтены не все.",
+      /На счёте есть операции без привязки к бумаге: результат по ней может быть неполным\./,
     ),
   ).toBeVisible();
 });
