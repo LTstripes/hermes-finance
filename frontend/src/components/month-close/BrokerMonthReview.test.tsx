@@ -687,7 +687,7 @@ it("mapping invalidation immediately drops both whole-account and alias consent"
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 
-it("upload before initial account list completes still reaches automatic ordinary Preview", async () => {
+it("workspace can check a selected original while the initial account list is pending", async () => {
   known();
   const initial = deferred<Awaited<ReturnType<typeof listAccounts>>>();
   const available = [
@@ -696,8 +696,9 @@ it("upload before initial account list completes still reaches automatic ordinar
   vi.mocked(listAccounts).mockReturnValueOnce(initial.promise).mockResolvedValue(available);
   const plan = deferred<Awaited<ReturnType<typeof previewOriginalContext>>>();
   vi.mocked(previewOriginalContext).mockReturnValueOnce(plan.promise);
-  const { user } = mounted();
-  await user.upload(screen.getByLabelText("Оригинальный XML MyBroker"), original());
+  const { user, query, file } = showWorkspace();
+  await waitFor(() => expect(brokerOriginalSession(query).snapshot().file).toBe(file));
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
   await act(async () => {
     initial.resolve(available);
   });
@@ -705,7 +706,7 @@ it("upload before initial account list completes still reaches automatic ordinar
     plan.resolve({ coveredFrom: "2030-01-01", coveredTo: "2030-01-31", accountId: 7 });
   });
   await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   expect(previewBrokerMonth).toHaveBeenCalledTimes(1);
 });
