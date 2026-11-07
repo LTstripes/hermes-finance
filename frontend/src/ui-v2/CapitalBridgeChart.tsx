@@ -1,6 +1,7 @@
 import type { MoneyValue } from "../api/types";
 import styles from "./CapitalBridgeChart.module.css";
-import { moneyDeltaText, moneyText, moneyTone } from "./valueFormat";
+import { moneyDeltaText as exactDelta, moneyText as exactText, moneyTone } from "./valueFormat";
+import { wholeMoneyDeltaText as moneyDeltaText, wholeMoneyText as moneyText } from "./wholeMoney";
 
 export type BridgeStep = {
   label: string;
@@ -54,7 +55,11 @@ export function CapitalBridgeChart({ steps }: { steps: BridgeStep[] }) {
         const tone = level ? "level" : moneyTone(step.amount);
         const last = index === placed.length - 1;
         return (
-          <li data-testid={step.testId} key={step.label}>
+          <li
+            data-testid={step.testId}
+            key={step.label}
+            title={level ? exactText(step.amount) : exactDelta(step.amount)}
+          >
             <span aria-hidden="true" className={styles.plot}>
               {index > 0 ? (
                 <span className={styles.connector} style={{ bottom: percent(from) }} />

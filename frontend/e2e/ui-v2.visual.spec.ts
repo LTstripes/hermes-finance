@@ -1157,7 +1157,8 @@ test("ui-v2 Capital desktop long values: allocation filters stay operable", asyn
   evidence.state.comparison.current.liquid_capital_net.amount = "9876543210123.45";
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/capital");
-  await expect(page.getByTestId("capital-net")).toContainText("9 876 543 210 123,45 ₽");
+  await expect(page.getByTestId("capital-net")).toContainText("9 876 543 210 123 ₽");
+  await expect(page.getByTestId("capital-net")).toHaveAttribute("title", /123,45/);
   const stocks = page.getByTestId("capital-class-stock").getByRole("button");
   await stocks.focus();
   await page.keyboard.press("Enter");

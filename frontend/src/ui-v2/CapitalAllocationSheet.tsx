@@ -7,7 +7,7 @@ import type {
   RiskMoneyValue,
 } from "../api/riskAllocation";
 import { HelpTip } from "../components/ui";
-import { formatMoney, formatPercent } from "../lib/format";
+import { formatPercent } from "../lib/format";
 import {
   ASSET_CLASS_LABELS,
   sourceKindLabel,
@@ -18,6 +18,7 @@ import styles from "./CapitalAllocationSheet.module.css";
 import { UNASSIGNED_CASH_KEY } from "./capitalHoldings";
 import sheet from "./ReportSheet.module.css";
 import { UiV2WidgetState } from "./UiV2StateBlocks";
+import { wholeMoneyText } from "./wholeMoney";
 
 /** Risk-allocation classes keep the --c-* colours of the capital classes (#1079). */
 const RISK_CLASS_COLORS: Record<string, string> = {
@@ -31,9 +32,10 @@ const RISK_CLASS_COLORS: Record<string, string> = {
   other: "#b9b2a4",
 };
 
+/** Overview sums in whole rubles (P 12.2); exact amounts stay in Capital holdings. */
 function money(value: RiskMoneyValue | null | undefined): string {
   if (!value?.amount || !value.currency) return "—";
-  return formatMoney(value.amount, { currency: value.currency === "RUB" ? "₽" : value.currency });
+  return wholeMoneyText(value, "—");
 }
 
 function percent(value: string | null | undefined): string {

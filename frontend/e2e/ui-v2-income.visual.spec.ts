@@ -429,7 +429,7 @@ test("ui-v2 deposit period forecast and table @viewport-owned", async ({ page },
     ],
   };
   await page.goto("/v2/income");
-  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 734,56 ₽");
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 735 ₽");
   const deposits = page.getByRole("region", { name: "Ожидаемые проценты по вкладам" });
   await expect(deposits.getByRole("row")).toHaveCount(3);
   await expect(deposits).toContainText("дата выплаты неизвестна");
@@ -437,7 +437,7 @@ test("ui-v2 deposit period forecast and table @viewport-owned", async ({ page },
   await page.getByRole("button", { name: "14 дней" }).click();
   await expect(page.getByTestId("income-window-14")).toBeVisible();
   await expect(deposits).toContainText("30 дней");
-  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 734,56 ₽");
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 735 ₽");
   await assertBounded(page);
   await capture(page, testInfo, "deposit-period-forecast");
   expect(evidence.errors).toEqual([]);

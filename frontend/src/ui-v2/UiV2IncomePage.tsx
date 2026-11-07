@@ -41,6 +41,7 @@ import {
   PRINCIPAL_REPAYMENT_LABEL,
 } from "./uiV2Copy";
 import { moneyText as money } from "./valueFormat";
+import { wholeMoneyText as whole } from "./wholeMoney";
 
 type FactSelection = {
   month: ReportingMonth | null;
@@ -162,8 +163,12 @@ function Headlines({
     <section aria-label="Главные показатели дохода" className={sheet.figures}>
       {selected ? (
         <div className={sheet.figure}>
-          <span className={sheet.figureValue} data-testid="income-selected-actual">
-            {money(selected.passive_income_actual)}
+          <span
+            className={sheet.figureValue}
+            data-testid="income-selected-actual"
+            title={money(selected.passive_income_actual)}
+          >
+            {whole(selected.passive_income_actual)}
           </span>
           <span className={sheet.figureLabel}>{formatMonth(selected.year, selected.month)}</span>
         </div>
@@ -171,8 +176,12 @@ function Headlines({
       <div className={sheet.figure}>
         {historyReady && history ? (
           <>
-            <span className={sheet.figureValue} data-testid="income-average">
-              {averageMeasured ? money(history.average.average) : "Недоступно"}
+            <span
+              className={sheet.figureValue}
+              data-testid="income-average"
+              title={averageMeasured ? money(history.average.average) : undefined}
+            >
+              {averageMeasured ? whole(history.average.average) : "Недоступно"}
             </span>
             <span className={sheet.figureLabel}>
               {history.average.count_months === 0 ? "Пока нет данных · " : null}
@@ -190,8 +199,12 @@ function Headlines({
       <div className={sheet.figure} data-kind="forecast">
         {ladderReady && upcoming ? (
           <>
-            <span className={sheet.figureValue} data-testid="income-upcoming-passive">
-              {money(upcoming.forecast_passive_income ?? upcoming.passive_income)}
+            <span
+              className={sheet.figureValue}
+              data-testid="income-upcoming-passive"
+              title={money(upcoming.forecast_passive_income ?? upcoming.passive_income)}
+            >
+              {whole(upcoming.forecast_passive_income ?? upcoming.passive_income)}
             </span>
             <span className={sheet.figureLabel}>ожидается за 30 дней</span>
             <span className={sheet.figureDetail}>
@@ -381,7 +394,7 @@ function PassiveSection({
   );
 }
 
-function EventRow({ event }: { event: CashFlowLadderEvent }) {
+function EventRow({ event, showSource }: { event: CashFlowLadderEvent; showSource: boolean }) {
   const principal = event.component === "redemption_principal";
   const date = shortDate(event.expected_date);
   return (
@@ -405,7 +418,10 @@ function EventRow({ event }: { event: CashFlowLadderEvent }) {
       </span>
       <span className={incomeStyles.eventWhat}>
         <strong>{event.instrument_name ?? "Без инструмента"}</strong>
-        <small className={incomeStyles.eventAccount}>{event.account_name}</small>
+        <small className={incomeStyles.eventAccount}>
+          {event.account_name}
+          {showSource ? ` · ${ownerSourceLabel(event.source_kind)}` : ""}
+        </small>
       </span>
       <strong className={incomeStyles.eventAmount} data-principal={principal || undefined}>
         {event.is_approximate ? (
@@ -421,14 +437,23 @@ function EventRow({ event }: { event: CashFlowLadderEvent }) {
 }
 
 /** Where the dated events come from and whether any is an estimate, said once. */
+function sourceLabels(events: CashFlowLadderEvent[]): string[] {
+  return Array.from(new Set(events.map((event) => ownerSourceLabel(event.source_kind))));
+}
+
+/**
+ * One source for the whole list is named once below it; with mixed sources
+ * each row names its own and only the estimate mark stays here.
+ */
 function EventSources({ events }: { events: CashFlowLadderEvent[] }) {
   if (events.length === 0) return null;
-  const sources = Array.from(new Set(events.map((event) => ownerSourceLabel(event.source_kind))));
+  const sources = sourceLabels(events);
   const approximate = events.some((event) => event.is_approximate);
+  if (sources.length > 1 && !approximate) return null;
   return (
     <p className={sheet.gapNote}>
-      Источник: {sources.join(", ")}
-      {approximate ? " · ≈ — оценка" : ""}
+      {sources.length > 1 ? "≈ — оценка" : `Источник: ${sources[0]}`}
+      {sources.length === 1 && approximate ? " · ≈ — оценка" : ""}
     </p>
   );
 }
@@ -437,11 +462,13 @@ function EventList({ events }: { events: CashFlowLadderEvent[] }) {
   if (events.length === 0) {
     return <p className={sheet.muted}>Нет известных событий в этом окне.</p>;
   }
+  const mixedSources = sourceLabels(events).length > 1;
   return (
     <ul className={incomeStyles.timeline}>
       {events.map((event) => (
         <EventRow
           event={event}
+          showSource={mixedSources}
           key={`${event.source_kind}-${event.source_id}-${event.expected_date}`}
         />
       ))}

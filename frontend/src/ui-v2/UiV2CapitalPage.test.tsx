@@ -332,6 +332,61 @@ it("keeps the known capital and marks partial source support", async () => {
   expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
 });
 
+it("marks a change against an incomplete previous report once, in plain words", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  state.comparison.current.portfolio_source_coverage = {
+    status: "complete",
+    reason_codes: [],
+    missing_account_ids: [],
+  };
+  // The backend combines both reports: the previous one is missing an account snapshot.
+  state.comparison.liquid_capital_net_delta_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  mount();
+  const note = await screen.findByTestId("capital-delta-partial");
+  expect(note.textContent?.replaceAll(" ", " ")).toBe(
+    "Изменение посчитано по известным записям: в отчёте за Май 2031 не хватает данных.",
+  );
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+  expect(screen.getByText("+42 600 ₽", { exact: false })).toBeVisible();
+  expect(screen.queryByTestId("portfolio-coverage-note")).toBeNull();
+});
+
+it("explains a partial current report once and does not repeat it for the change", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  const partial = {
+    status: "partial" as const,
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  state.comparison.current.portfolio_source_coverage = partial;
+  state.comparison.liquid_capital_net_delta_coverage = partial;
+  mount();
+  expect(await screen.findByText("Частично: нет снимка счёта")).toBeVisible();
+  expect(screen.queryByTestId("capital-delta-partial")).toBeNull();
+});
+
+it("shows overview sums in whole rubles and keeps kopecks in holdings and on hover", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  state.comparison.current.liquid_capital_net.amount = "2803900.45";
+  state.comparison.current.liquid_assets_total.amount = "3203900.50";
+  state.risk.allocation_by_asset_class.items[0].amount.amount = "803900.60";
+  state.cash[0].amount.amount = "803900.60";
+  mount();
+  const net = await screen.findByTestId("capital-net");
+  expect(net).toHaveTextContent("2 803 900 ₽");
+  expect(net.getAttribute("title")?.replaceAll(" ", " ")).toBe("2 803 900,45 ₽");
+  expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 901 ₽");
+  expect(await screen.findByTestId("capital-class-cash")).toHaveTextContent("803 901 ₽");
+  expect(await screen.findByTestId("capital-holding-cash-701")).toHaveTextContent("803 900,60 ₽");
+});
+
 it("keeps the closed snapshot while a newer draft exists and never duplicates the Home CTA", async () => {
   const { mount } = setup();
   mount();
@@ -816,7 +871,9 @@ it("shows the unexplained residual separately from other capital changes", async
   mount();
   const residual = await screen.findByTestId("capital-unexplained");
   expect(residual).toHaveTextContent("Необъяснённый остаток");
-  expect(residual).toHaveTextContent("7,01");
+  // The waterfall reads in whole rubles; the exact residual stays on hover.
+  expect(residual).toHaveTextContent("+7 ₽");
+  expect(residual.getAttribute("title")?.replaceAll(" ", " ")).toBe("+7,01 ₽");
   expect(residual).not.toHaveTextContent("Прочие изменения");
   expect(screen.getByText("Внешние внесения и изъятия")).toBeVisible();
 });

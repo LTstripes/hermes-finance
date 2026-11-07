@@ -325,7 +325,11 @@ describe("UI v2 Income and plans", () => {
       ],
     };
     mount();
-    expect(await screen.findByTestId("income-upcoming-passive")).toHaveTextContent("9 734,56 ₽");
+    // Overview figures read in whole rubles (P 12.2); the exact sum stays on hover.
+    expect(await screen.findByTestId("income-upcoming-passive")).toHaveTextContent("9 735 ₽");
+    expect(
+      screen.getByTestId("income-upcoming-passive").getAttribute("title")?.replaceAll(" ", " "),
+    ).toBe("9 734,56 ₽");
     const table = await screen.findByRole("region", { name: "Ожидаемые проценты по вкладам" });
     expect(table).toHaveTextContent("Синтетический вклад · Банк");
     expect(table).toHaveTextContent("1 234,56 ₽");
@@ -333,7 +337,7 @@ describe("UI v2 Income and plans", () => {
     expect(table.querySelector("time")).toBeNull();
     expect(screen.getByTestId("income-window-30")).toHaveTextContent("8 500 ₽ пассивно");
     fireEvent.click(screen.getByRole("button", { name: "14 дней" }));
-    expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("9 734,56 ₽");
+    expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("9 735 ₽");
     expect(table).toHaveTextContent("30 дней");
     expect(screen.getByTestId("income-coverage")).toHaveTextContent("По прогнозу");
     expect(screen.getByTestId("income-coverage")).toHaveTextContent("прогнозный остаток");
@@ -379,6 +383,25 @@ describe("UI v2 Income and plans", () => {
     const principal = within(selectedWindow).getByTestId("income-event-provider-702");
     expect(within(principal).getByTitle("Возврат основной суммы")).toHaveTextContent("Погашение");
     expect(principal.children[2]).toHaveTextContent("100 000 ₽ · не доход");
+  });
+
+  it("names the source in each row when manual and external payouts share a window", async () => {
+    const { mount, state } = setup();
+    const window = state.ladder.upcoming_30_days;
+    window.items = window.items.map((event) =>
+      event.component === "coupon" ? event : { ...event, source_kind: "manual", source_id: 703 },
+    );
+    mount();
+
+    const selectedWindow = await screen.findByTestId("income-window-30");
+    const external = within(selectedWindow).getByTestId("income-event-provider-701");
+    const manual = within(selectedWindow).getByTestId("income-event-manual-703");
+    expect(external.children[1]).toHaveTextContent(
+      "Синтетический брокерский счёт · внешний источник",
+    );
+    expect(manual.children[1]).toHaveTextContent("Синтетический брокерский счёт · введено вручную");
+    // No shared "Источник: …" line that would name both without saying which row is which.
+    expect(within(selectedWindow).queryByText(/^Источник:/)).toBeNull();
   });
 
   it("keeps planning context on latest CLOSED while history selection changes the factual breakdown", async () => {

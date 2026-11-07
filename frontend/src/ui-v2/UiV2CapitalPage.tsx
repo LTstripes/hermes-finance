@@ -48,7 +48,8 @@ import sheet from "./ReportSheet.module.css";
 import capitalStyles from "./UiV2Capital.module.css";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
-import { moneyDeltaText as moneyDelta, moneyText as money, moneyTone } from "./valueFormat";
+import { moneyText as money, moneyTone } from "./valueFormat";
+import { wholeMoneyDeltaText as wholeDelta, wholeMoneyText as whole } from "./wholeMoney";
 
 type HistoryWindow = 3 | 12 | "all";
 
@@ -144,6 +145,18 @@ function Hero({
     !unavailable &&
     comparison.liquid_capital_net_delta_coverage?.status !== "unavailable";
   const tone = moneyTone(delta);
+  // The change also depends on the previous report: say once when only it is incomplete.
+  const deltaCoverage = comparison?.liquid_capital_net_delta_coverage;
+  const currentCoverage = current?.portfolio_source_coverage;
+  const currentExplained =
+    currentCoverage != null &&
+    (currentCoverage.status !== "complete" ||
+      currentCoverage.source_account_financial_coverage?.status === "partial");
+  const deltaPartial =
+    deltaKnown &&
+    !currentExplained &&
+    (deltaCoverage?.status === "partial" ||
+      deltaCoverage?.source_account_financial_coverage?.status === "partial");
   return (
     <section aria-label="Главные показатели капитала" className={capitalStyles.hero}>
       <p className={sheet.eyebrow}>
@@ -161,18 +174,28 @@ function Hero({
         )
       ) : (
         <>
-          <p className={sheet.hero} data-testid="capital-net">
-            {unavailable ? "—" : money(current.liquid_capital_net)}
+          <p
+            className={sheet.hero}
+            data-testid="capital-net"
+            title={unavailable ? undefined : money(current.liquid_capital_net)}
+          >
+            {unavailable ? "—" : whole(current.liquid_capital_net)}
           </p>
           {deltaKnown && comparison?.previous ? (
             <p className={capitalStyles.deltaRow}>
               <span className={sheet.delta} data-tone={tone}>
                 {tone === "positive" ? "▲ " : tone === "negative" ? "▼ " : ""}
-                {moneyDelta(delta)}
+                {wholeDelta(delta)}
               </span>
               <span className={sheet.muted}>
                 к {toMonthText(comparison.previous.year, comparison.previous.month)}
               </span>
+            </p>
+          ) : null}
+          {deltaPartial && comparison?.previous ? (
+            <p className={sheet.gapNote} data-testid="capital-delta-partial">
+              Изменение посчитано по известным записям: в отчёте за{" "}
+              {formatMonth(comparison.previous.year, comparison.previous.month)} не хватает данных.
             </p>
           ) : null}
           <PortfolioCoverageNote coverage={current.portfolio_source_coverage} month={current} />
@@ -180,13 +203,13 @@ function Hero({
             <div>
               <dt>Ликвидные активы</dt>
               <dd className={sheet.amount} data-testid="capital-assets">
-                {money(current.liquid_assets_total)}
+                {whole(current.liquid_assets_total)}
               </dd>
             </div>
             <div>
               <dt>Включённые обязательства</dt>
               <dd className={sheet.amount} data-testid="capital-debts">
-                − {money(current.included_debts)}
+                − {whole(current.included_debts)}
               </dd>
             </div>
           </dl>
@@ -371,7 +394,7 @@ function PropertyBlock({
                 <li key={property.id}>
                   <div className={capitalStyles.propertyHead}>
                     <span>{property.name}</span>
-                    <strong className={sheet.amount}>{money(property.estimated_value)}</strong>
+                    <strong className={sheet.amount}>{whole(property.estimated_value)}</strong>
                   </div>
                   {value > 0 ? (
                     <span aria-hidden="true" className={capitalStyles.propertyBar}>
@@ -380,10 +403,10 @@ function PropertyBlock({
                   ) : null}
                   <span className={capitalStyles.propertyKey}>
                     <span>
-                      <i data-part="debt" /> ипотека {money(property.mortgage_balance)}
+                      <i data-part="debt" /> ипотека {whole(property.mortgage_balance)}
                     </span>
                     <span>
-                      <i data-part="value" /> оценка {money(property.estimated_value)}
+                      <i data-part="value" /> оценка {whole(property.estimated_value)}
                     </span>
                   </span>
                 </li>
@@ -394,7 +417,7 @@ function PropertyBlock({
             <dl className={capitalStyles.facts}>
               <div>
                 <dt>Остаток ипотеки по отчёту</dt>
-                <dd className={sheet.amount}>{money(mortgage.mortgage_balance)}</dd>
+                <dd className={sheet.amount}>{whole(mortgage.mortgage_balance)}</dd>
               </div>
               <div>
                 <dt>Покрытие ипотеки капиталом</dt>
@@ -408,7 +431,7 @@ function PropertyBlock({
                 <div>
                   <dt>Разница: капитал − ипотека</dt>
                   <dd className={sheet.amount} data-tone={moneyTone(mortgage.gap)}>
-                    {moneyDelta(mortgage.gap)}
+                    {wholeDelta(mortgage.gap)}
                   </dd>
                 </div>
               )}
