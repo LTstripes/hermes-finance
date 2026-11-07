@@ -9,25 +9,21 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
-- [v1.10.7](https://github.com/LTstripes/hermes-finance/releases/tag/v1.10.7)
-  is published at `d15b848292905adf96c0b19bdf317a337294baa3` with
-  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42299407474)
-  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42301024582)
-  successful. [#1105](https://github.com/LTstripes/hermes-finance/pull/1105)
-  completed historical clean stock and bond returns;
-  [#1106](https://github.com/LTstripes/hermes-finance/pull/1106) prepared the release.
-- 1.10.7 is installed on the Owner computer: the Owner reported the update, and
-  the running Stable health response, checkout tag and prepared runtime identity
-  all match the release. This readback does not verify data continuity or a
-  pre-update backup; neither is recorded here.
-- The five-real-security private UAT was **NOT PERFORMED**: the Owner waived it
-  as a gate for this version in [#1016](https://github.com/LTstripes/hermes-finance/issues/1016).
-  No five-security validation or Owner UX PASS is claimed.
-- An isolated instrument-UAT snapshot was refused by preflight; the cause remains
-  unknown. UAT was not completed. Do not bypass or blindly retry the refusal.
-  [#1094](https://github.com/LTstripes/hermes-finance/pull/1094), released in
-  1.10.7, adds fixed refusal categories. It does not diagnose the original
-  refusal or permit a retry.
+- [v1.11.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.11.0)
+  is published at `afd51ce9ca489d571ec4cc8ed0391eb05d45b43e` with
+  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42372946792)
+  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42373803152)
+  successful. It ships [#1110](https://github.com/LTstripes/hermes-finance/pull/1110),
+  [#1113](https://github.com/LTstripes/hermes-finance/pull/1113) and redesign stages 1–2;
+  [#1115](https://github.com/LTstripes/hermes-finance/pull/1115) prepared the release.
+- 1.11.0 is installed on the Owner computer by backup-first OPS02 on 2026-11-07: the
+  Stable checkout tag and the running health version read back as 1.11.0, and a
+  pre-update SQLite backup exists in the update backup directory. The Owner reports
+  that the app works and the interface looks right after a first use; a detailed
+  numeric UAT of returns is not recorded and is not claimed.
+- Redesign stages 3 and 4 ([#1117](https://github.com/LTstripes/hermes-finance/pull/1117),
+  [#1116](https://github.com/LTstripes/hermes-finance/pull/1116)) are on main after
+  1.11.0 and are not released; stage 5 is in review.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
