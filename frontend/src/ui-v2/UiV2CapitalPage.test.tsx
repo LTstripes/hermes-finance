@@ -356,7 +356,37 @@ it("marks a change against an incomplete previous report once, in plain words", 
   expect(screen.queryByTestId("portfolio-coverage-note")).toBeNull();
 });
 
-it("explains a partial current report once and does not repeat it for the change", async () => {
+it("names both reports once when the current and the previous are incomplete", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current || !state.comparison.previous)
+    throw new Error("Missing comparison fixture");
+  // Different accounts lack snapshots in the two months.
+  state.comparison.current.portfolio_source_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  state.comparison.previous.portfolio_source_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [1],
+  };
+  state.comparison.liquid_capital_net_delta_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [1, 2],
+  };
+  mount();
+  const note = await screen.findByTestId("capital-delta-partial");
+  expect(note.textContent?.replaceAll(" ", " ")).toBe(
+    "Изменение посчитано по известным записям: не хватает данных в отчётах за Июль 2031 и Май 2031.",
+  );
+  expect(screen.getAllByTestId("capital-delta-partial")).toHaveLength(1);
+  expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+});
+
+it("explains a partial current report once when the previous report is complete", async () => {
   const { mount, state } = setup();
   if (!state.comparison.current) throw new Error("Missing current comparison fixture");
   const partial = {
@@ -365,6 +395,12 @@ it("explains a partial current report once and does not repeat it for the change
     missing_account_ids: [2],
   };
   state.comparison.current.portfolio_source_coverage = partial;
+  if (state.comparison.previous)
+    state.comparison.previous.portfolio_source_coverage = {
+      status: "complete",
+      reason_codes: [],
+      missing_account_ids: [],
+    };
   state.comparison.liquid_capital_net_delta_coverage = partial;
   mount();
   expect(await screen.findByText("Частично: нет снимка счёта")).toBeVisible();

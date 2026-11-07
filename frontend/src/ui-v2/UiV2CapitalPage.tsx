@@ -17,6 +17,7 @@ import type {
   ClosedReportComparison,
   DashboardMortgage,
   MoneyValue,
+  PortfolioSourceCoverage,
   PropertySnapshot,
 } from "../api/types";
 import {
@@ -86,6 +87,15 @@ function toMonthText(year: number, month: number): string {
   return name ? `${name} ${year}` : formatMonth(year, month);
 }
 
+/** Backend coverage that is not a complete known total (missing snapshot or pending source). */
+function isIncomplete(coverage: PortfolioSourceCoverage | null | undefined): boolean {
+  return (
+    coverage != null &&
+    (coverage.status !== "complete" ||
+      coverage.source_account_financial_coverage?.status === "partial")
+  );
+}
+
 /** Geometry only: widths never feed a shown amount. */
 function coordinate(value: MoneyValue): number {
   const number = Number(value.amount);
@@ -145,18 +155,13 @@ function Hero({
     !unavailable &&
     comparison.liquid_capital_net_delta_coverage?.status !== "unavailable";
   const tone = moneyTone(delta);
-  // The change also depends on the previous report: say once when only it is incomplete.
-  const deltaCoverage = comparison?.liquid_capital_net_delta_coverage;
-  const currentCoverage = current?.portfolio_source_coverage;
-  const currentExplained =
-    currentCoverage != null &&
-    (currentCoverage.status !== "complete" ||
-      currentCoverage.source_account_financial_coverage?.status === "partial");
-  const deltaPartial =
-    deltaKnown &&
-    !currentExplained &&
-    (deltaCoverage?.status === "partial" ||
-      deltaCoverage?.source_account_financial_coverage?.status === "partial");
+  // The change also depends on the previous report. Its incompleteness is said once,
+  // naming both reports when both are incomplete.
+  const currentIncomplete = isIncomplete(current?.portfolio_source_coverage);
+  const previousIncomplete =
+    isIncomplete(comparison?.previous?.portfolio_source_coverage) ||
+    (!currentIncomplete && isIncomplete(comparison?.liquid_capital_net_delta_coverage));
+  const deltaPartial = deltaKnown && previousIncomplete;
   return (
     <section aria-label="Главные показатели капитала" className={capitalStyles.hero}>
       <p className={sheet.eyebrow}>
@@ -194,8 +199,9 @@ function Hero({
           ) : null}
           {deltaPartial && comparison?.previous ? (
             <p className={sheet.gapNote} data-testid="capital-delta-partial">
-              Изменение посчитано по известным записям: в отчёте за{" "}
-              {formatMonth(comparison.previous.year, comparison.previous.month)} не хватает данных.
+              {current && currentIncomplete
+                ? `Изменение посчитано по известным записям: не хватает данных в отчётах за ${formatMonth(current.year, current.month)} и ${formatMonth(comparison.previous.year, comparison.previous.month)}.`
+                : `Изменение посчитано по известным записям: в отчёте за ${formatMonth(comparison.previous.year, comparison.previous.month)} не хватает данных.`}
             </p>
           ) : null}
           <PortfolioCoverageNote coverage={current.portfolio_source_coverage} month={current} />
