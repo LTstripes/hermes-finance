@@ -1,0 +1,82 @@
+/*
+ * Design tokens of the "Clear sheet" direction (#1079, P 12.1).
+ * One palette for the whole app, loaded before every other stylesheet.
+ * All fonts are installed with Windows, so nothing is fetched at runtime.
+ */
+:root {
+  --f-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --f-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --f-num: "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", Arial, system-ui, sans-serif;
+  --f-code: ui-monospace, Consolas, monospace;
+
+  /* Type scale: seven sizes and three weights. */
+  --t-xs: 12px;
+  --t-sm: 13px;
+  --t-md: 15px;
+  --t-lg: 18px;
+  --t-xl: 24px;
+  --t-2xl: 34px;
+  --t-hero: 52px;
+  --w-regular: 400;
+  --w-medium: 500;
+  --w-semibold: 600;
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
+
+  --bg: #f5f4ef;
+  --surface: #ffffff;
+  --surface-2: #faf9f6;
+  --ink: #152131;
+  --ink-2: #3b4757;
+  /* Muted text keeps 4.5:1 on --bg, --faint is for marks and rules only. */
+  --muted: #5f6a78;
+  --faint: #a3abb5;
+  --line: #e7e4dc;
+  --line-2: #efede7;
+
+  --accent: #1f4e8c;
+  --accent-hover: #193f72;
+  --accent-soft: #e8eef7;
+  --accent-ring: rgb(31 78 140 / 18%);
+  --focus: #2b74c4;
+
+  /* Green and red carry the sign of a value only (P 12.1). */
+  --pos: #1f7a50;
+  --pos-soft: #e6f2ec;
+  --neg: #b23b32;
+  --neg-soft: #f8e9e7;
+
+  /* Forecast: --fc for marks, --fc-ink for text that must stay readable. */
+  --fc: #b7791f;
+  --fc-ink: #8f5f14;
+  --fc-soft: #f8efdf;
+
+  /* Each asset class keeps its colour in every chart. */
+  --c-bond: #3d6fb6;
+  --c-dep: #8a6bbe;
+  --c-stock: #d0843a;
+  --c-gold: #c8a227;
+  --c-cash: #9aa3ae;
+
+  --side-bg: #132033;
+  --side-raised: #1b2c43;
+  --side-active: #22385a;
+  --side-line: #26405f;
+  --side-text: #b9c6d4;
+  --side-muted: #8ea0b4;
+  --side-marker: #c9e2ff;
+  --side-done: #9fd3b6;
+  --side-progress: #e6bc73;
+
+  --shadow-soft: 0 1px 2px rgb(20 30 45 / 5%), 0 8px 24px -12px rgb(20 30 45 / 12%);
+}
+
+/* Columns of sums stay aligned in the main font, without a monospace face. */
+.num,
+.money,
+.tabular {
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+}

@@ -71,6 +71,12 @@ export type ReportingMonth = {
   source: ReportingMonthSource;
 };
 
+export type MonthWorkingStatus = {
+  month: ReportingMonth | null;
+  completed_steps: number;
+  total_steps: number;
+};
+
 export type ReportingMonthCreate = {
   year: number;
   month: number;

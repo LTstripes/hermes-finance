@@ -1,46 +1,23 @@
 :root {
-  /* Hybrid Balanced Fintech — dark forest sidebar + light content */
-  --font: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Stable aliases of tokens.css for shared legacy classes. */
+  --font: var(--f-ui);
+  --mono: var(--f-code);
 
-  --sidebar: #111814;
-  --sidebar-elev: #1c2a21;
-  --sidebar-hover: #1d2a22;
-  --sidebar-text: #9aa69f;
-  --sidebar-text-active: #f7faf7;
-  --sidebar-border: #29372e;
-  --sidebar-icon: #7f9387;
-  --sidebar-icon-active: #9dc9ae;
-  --sidebar-muted: #91a098;
-  --sidebar-mark-border: #466151;
-  --sidebar-mark-bg: #1c2a21;
-  --sidebar-mark-fg: #d9eadf;
-  --sidebar-w: 248px;
+  --surface-soft: var(--surface-2);
+  --line-soft: var(--line-2);
+  --soft: var(--surface-2);
 
-  --bg: #f3f4ef;
-  --surface: #ffffff;
-  --surface-soft: #fafbf8;
-  --ink: #172019;
-  --muted: #5b655b;
-  --line: #dfe3dc;
-  --line-soft: #e9ece5;
+  --green: var(--pos);
+  --green-soft: var(--pos-soft);
+  --amber: var(--fc-ink);
+  --amber-soft: var(--fc-soft);
+  --red: var(--neg);
+  --red-soft: var(--neg-soft);
 
-  --accent: #27734c;
-  --accent-hover: #1f5f3e;
-  --accent-soft: #e5f1e9;
-  --accent-ring: rgb(39 115 76 / 18%);
-
-  --green: #27734c;
-  --green-soft: #e5f1e9;
-  --amber: #9a6a1d;
-  --amber-soft: #f7efd9;
-  --red: #9b4039;
-  --red-soft: #f7e8e6;
-
-  --radius-sm: 8px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  --radius-sm: var(--r-sm);
+  --radius: var(--r);
+  --radius-lg: var(--r);
+  --radius-xl: var(--r-lg);
   --radius-pill: 999px;
 
   --space-1: 4px;
@@ -54,18 +31,17 @@
   --space-10: 42px;
   --space-12: 48px;
 
-  --shadow: 0 12px 32px rgb(35 47 39 / 5%), 0 1px 2px rgb(35 47 39 / 4%);
-  --shadow-soft: rgb(50 50 93 / 8%) 0 18px 36px -18px, rgb(0 0 0 / 4%) 0 8px 16px -8px;
+  --shadow: var(--shadow-soft);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
-  --text-xs: 0.72rem;
-  --text-sm: 0.8rem;
-  --text-md: 0.88rem;
-  --text-base: 0.95rem;
-  --text-lg: 1.05rem;
-  --text-xl: 1.35rem;
-  --text-2xl: clamp(1.9rem, 3.5vw, 2.6rem);
+  --text-xs: var(--t-xs);
+  --text-sm: var(--t-sm);
+  --text-md: var(--t-sm);
+  --text-base: var(--t-md);
+  --text-lg: var(--t-lg);
+  --text-xl: var(--t-xl);
+  --text-2xl: var(--t-2xl);
 
   font-family: var(--font);
   color: var(--ink);
@@ -250,7 +226,7 @@ a {
   border-color: var(--accent);
   color: #fff;
   background: var(--accent);
-  box-shadow: 0 8px 20px rgb(39 115 76 / 18%);
+  box-shadow: 0 8px 20px rgb(31 78 140 / 18%);
 }
 
 .btn--primary:hover:not(:disabled) {
@@ -343,7 +319,7 @@ a.btn {
 }
 
 .inline-alert--ok {
-  border: 1px solid rgb(39 115 76 / 25%);
+  border: 1px solid rgb(31 78 140 / 25%);
   color: var(--green);
   background: var(--green-soft);
 }
@@ -567,7 +543,7 @@ a.btn {
 }
 
 .input--money {
-  font-family: var(--mono);
+  font-family: var(--f-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -619,7 +595,7 @@ a.btn {
 
 .totals-bar strong {
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--f-num);
   font-weight: 500;
 }
 
@@ -913,7 +889,7 @@ a.btn {
 
 .kpi__value {
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--f-num);
   font-size: var(--text-xl);
   font-weight: 500;
   letter-spacing: -0.02em;
@@ -1137,7 +1113,7 @@ a.btn {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  font-family: var(--mono);
+  font-family: var(--f-num);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1182,7 +1158,7 @@ a.btn {
 }
 
 .num {
-  font-family: var(--mono);
+  font-family: var(--f-num);
   font-size: 0.84rem;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -1836,7 +1812,7 @@ th.num {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 999px;
-  font-family: var(--mono);
+  font-family: var(--f-num);
   font-size: 12px;
   white-space: nowrap;
 }

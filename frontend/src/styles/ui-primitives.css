@@ -35,7 +35,7 @@
 
 .btn--ghost:hover:not(:disabled) {
   border-color: transparent;
-  background: rgb(39 115 76 / 7%);
+  background: rgb(31 78 140 / 7%);
 }
 
 .btn--danger {
@@ -75,7 +75,7 @@
 
 .help-tip__trigger:hover,
 .help-tip__trigger[aria-expanded="true"] {
-  border-color: rgb(39 115 76 / 35%);
+  border-color: rgb(31 78 140 / 35%);
   color: var(--accent);
   background: var(--accent-soft);
 }

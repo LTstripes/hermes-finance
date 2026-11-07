@@ -12,21 +12,27 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event, update
 
-from hermes_finance.database import create_database
+from hermes_finance.database import Database, create_database
 from hermes_finance.main import create_app
-from hermes_finance.persistence import Base
+from hermes_finance.persistence import Base, IncomeEntry
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> Generator[TestClient, None, None]:
+def database(tmp_path: Path) -> Generator[Database, None, None]:
     database = create_database(tmp_path / "months_api.db")
     Base.metadata.create_all(database.engine)
     try:
-        with TestClient(create_app(database)) as test_client:
-            yield test_client
+        yield database
     finally:
         database.engine.dispose()
+
+
+@pytest.fixture
+def client(database: Database) -> Generator[TestClient, None, None]:
+    with TestClient(create_app(database)) as test_client:
+        yield test_client
 
 
 def _assert_month_body(
@@ -234,3 +240,96 @@ def test_listing_orders_by_year_then_month(client: TestClient) -> None:
     assert listing.status_code == 200
     months = listing.json()
     assert [(month["year"], month["month"]) for month in months] == [(2031, 1), (2031, 2)]
+
+
+def _working_status(client: TestClient) -> dict:
+    response = client.get("/api/months/working-status")
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == {"month", "completed_steps", "total_steps"}
+    assert body["total_steps"] == 10
+    return body
+
+
+def _close(client: TestClient, month_id: int) -> None:
+    assert client.post(f"/api/months/{month_id}/close").status_code == 200
+
+
+def _add_income(client: TestClient, month_id: int) -> None:
+    zero = {"amount": "0.00", "currency": "RUB"}
+    response = client.post(
+        "/api/incomes",
+        json={
+            "reporting_month_id": month_id,
+            "income_type": "other",
+            "name": "Synthetic income",
+            "gross_amount": zero,
+            "tax_amount": zero,
+            "net_amount": zero,
+        },
+    )
+    assert response.status_code == 201
+
+
+def test_working_status_without_months(client: TestClient) -> None:
+    assert _working_status(client) == {"month": None, "completed_steps": 0, "total_steps": 10}
+
+
+def test_working_status_follows_the_close_page_month(client: TestClient) -> None:
+    older_draft = _create(client, 2031, 1, "2031-01-31")
+    assert _working_status(client)["month"]["id"] == older_draft["id"]
+
+    closed = _create(client, 2031, 2, "2031-02-28")
+    _close(client, closed["id"])
+    body = _working_status(client)
+    assert body["month"]["id"] == closed["id"]
+    assert body["month"]["status"] == "closed"
+
+    newer_draft = _create(client, 2031, 3, "2031-03-31")
+    body = _working_status(client)
+    assert body["month"]["id"] == newer_draft["id"]
+    assert body["month"]["status"] == "draft"
+    _assert_month_body(body["month"], year=2031, month=3, snapshot_date="2031-03-31")
+
+
+def test_working_status_counts_saved_sections(client: TestClient, database: Database) -> None:
+    month_id = _create(client, 2031, 1, "2031-01-31")["id"]
+    assert _working_status(client)["completed_steps"] == 1
+
+    comment = {"reporting_month_id": month_id, "text": "Synthetic note"}
+    assert client.post("/api/comments", json=comment).status_code == 201
+    assert _working_status(client)["completed_steps"] == 2
+
+    _add_income(client, month_id)
+    assert _working_status(client)["completed_steps"] == 3
+
+    # A row without saved-actual provenance, as after a clone, proves nothing.
+    with database.session_factory() as session:
+        session.execute(update(IncomeEntry).values(actual_fact_origin=None))
+        session.commit()
+    assert _working_status(client)["completed_steps"] == 2
+
+    _close(client, month_id)
+    assert _working_status(client)["completed_steps"] == 3
+
+
+def test_working_status_stays_one_month_query_and_one_facts_query(
+    client: TestClient, database: Database
+) -> None:
+    month_id = _create(client, 2031, 1, "2031-01-31")["id"]
+    _add_income(client, month_id)
+    statements: list[str] = []
+
+    def record(_conn, _cursor, statement, *_args) -> None:
+        statements.append(statement)
+
+    event.listen(database.engine, "before_cursor_execute", record)
+    try:
+        assert _working_status(client)["completed_steps"] == 2
+    finally:
+        event.remove(database.engine, "before_cursor_execute", record)
+
+    selects = [item for item in statements if item.lstrip().upper().startswith("SELECT")]
+    assert len(selects) == 2
+    assert "FROM reporting_months" in selects[0]
+    assert "EXISTS" in selects[1]

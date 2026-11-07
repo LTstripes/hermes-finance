@@ -27,7 +27,7 @@
   gap: 16px;
   padding: 24px;
   background: white;
-  border: 1px solid #e1e6eb;
+  border: 1px solid var(--line);
   border-radius: 12px;
 }
 .rate {
@@ -42,7 +42,7 @@
 .result td {
   text-align: left;
   padding: 12px 8px;
-  border-bottom: 1px solid #e1e6eb;
+  border-bottom: 1px solid var(--line);
 }
 .result caption {
   text-align: left;

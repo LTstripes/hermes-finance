@@ -10,6 +10,7 @@ import type {
   SavingAllocation,
 } from "../src/api/types";
 import { makeUiV2Goals, makeUiV2PassiveHistory, uiV2Months } from "../src/test/uiV2Fixtures";
+import { fulfillMonthPlate } from "./visual-fixtures";
 
 type IncomeScene = "normal" | "no-closed" | "first-closed" | "zero" | "partial";
 
@@ -176,6 +177,7 @@ async function installIncomeApi(page: Page, scene: IncomeScene = "normal") {
     }
   });
   await page.route("**/api/**", async (route) => {
+    if (await fulfillMonthPlate(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {

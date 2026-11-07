@@ -4,6 +4,7 @@ import type {
   HealthResponse,
   IntentionalEmptyCloseCommand,
   IntentionalEmptyCloseReceipt,
+  MonthWorkingStatus,
   ReportingMonth,
   ReportingMonthClone,
   ReportingMonthCreate,
@@ -12,6 +13,10 @@ import type {
 
 export function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return apiRequest<HealthResponse>("/api/health", { method: "GET", signal });
+}
+
+export function getMonthWorkingStatus(signal?: AbortSignal): Promise<MonthWorkingStatus> {
+  return apiRequest<MonthWorkingStatus>("/api/months/working-status", { method: "GET", signal });
 }
 
 export function listMonths(signal?: AbortSignal): Promise<ReportingMonth[]> {
