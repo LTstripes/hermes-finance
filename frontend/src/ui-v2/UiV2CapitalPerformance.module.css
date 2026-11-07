@@ -45,7 +45,7 @@
   padding: 12px 14px;
   border: 1px solid #e8ecf0;
   border-radius: 10px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .metricValue {
@@ -88,7 +88,7 @@
   padding: 10px 12px;
   border: 1px solid #e8ecf0;
   border-radius: 9px;
-  background: #fbfcfd;
+  background: var(--surface-2);
   font-size: 12px;
 }
 
@@ -193,7 +193,7 @@
   padding: 10px 12px;
   border: 1px solid #e8ecf0;
   border-radius: 9px;
-  background: #fbfcfd;
+  background: var(--surface-2);
   font-size: 12px;
 }
 
@@ -324,7 +324,7 @@
 
 .classExplanation {
   padding: 8px;
-  background: #fbfcfd;
+  background: var(--surface-2);
   overflow-wrap: anywhere;
 }
 

@@ -57,7 +57,7 @@
 
 .monthSelect:focus-visible,
 .toolbarButton:focus-visible {
-  outline: 3px solid #2b74c4;
+  outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
 
@@ -121,7 +121,7 @@
   padding: 15px;
   border: 1px solid #e5e9ed;
   border-radius: 10px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .metric dt {
@@ -179,9 +179,9 @@
 .accountCard {
   min-width: 0;
   padding: 17px;
-  border: 1px solid #e1e6eb;
+  border: 1px solid var(--line);
   border-radius: 11px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .accountHeader {

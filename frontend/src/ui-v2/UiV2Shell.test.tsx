@@ -1,10 +1,16 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { UiV2Shell } from "./UiV2Shell";
+import type { MonthWorkingStatus } from "../api/types";
+import { createQueryClient, queryKeys } from "../queryClient";
 import { UiV2DataSubnav } from "./UiV2DataShell";
+import { UiV2Shell } from "./UiV2Shell";
+
+vi.unmock("./UiV2MonthPlate");
 
 function LocationProbe() {
   const location = useLocation();
@@ -13,16 +19,60 @@ function LocationProbe() {
   );
 }
 
-function renderShell() {
+const draftStatus: MonthWorkingStatus = {
+  month: {
+    id: 7,
+    year: 2031,
+    month: 11,
+    status: "draft",
+    snapshot_date: "2031-11-30",
+    source: "manual",
+  },
+  completed_steps: 4,
+  total_steps: 10,
+};
+
+function closedStatus(): MonthWorkingStatus {
+  if (!draftStatus.month) throw new Error("synthetic month is missing");
+  return { ...draftStatus, month: { ...draftStatus.month, status: "closed" } };
+}
+
+function respondWith(body: unknown, status = 200) {
+  const fetchMock = vi.fn(
+    async () =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+function withClient(children: ReactNode, client = new QueryClient()) {
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+function renderShell(path = "/v2") {
   return render(
-    <MemoryRouter initialEntries={["/v2"]}>
-      <UiV2Shell active="home" header={<h1>Мои финансы</h1>}>
-        <p>Контент</p>
-      </UiV2Shell>
-      <LocationProbe />
-    </MemoryRouter>,
+    withClient(
+      <MemoryRouter initialEntries={[path]}>
+        <UiV2Shell active="home" header={<h1>Мои финансы</h1>}>
+          <p>Контент</p>
+        </UiV2Shell>
+        <LocationProbe />
+      </MemoryRouter>,
+    ),
   );
 }
+
+beforeEach(() => {
+  respondWith({ month: null, completed_steps: 0, total_steps: 10 });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("UiV2Shell native navigation", () => {
   it.each([
@@ -31,9 +81,11 @@ describe("UiV2Shell native navigation", () => {
     "/v2/returns/instrument/RU000A000001",
   ])("marks the Returns parent current at %s", (path) => {
     render(
-      <MemoryRouter initialEntries={[path]}>
-        <UiV2Shell header={<h1>Синтетическая страница</h1>}>Контент</UiV2Shell>
-      </MemoryRouter>,
+      withClient(
+        <MemoryRouter initialEntries={[path]}>
+          <UiV2Shell header={<h1>Синтетическая страница</h1>}>Контент</UiV2Shell>
+        </MemoryRouter>,
+      ),
     );
     const navigation = screen.getByRole("navigation", { name: "Основная навигация" });
     expect(within(navigation).getByRole("link", { name: "Доходность" })).toHaveAttribute(
@@ -46,7 +98,8 @@ describe("UiV2Shell native navigation", () => {
   it("keeps Close keyboard-operable and every shell link in v2", async () => {
     const user = userEvent.setup();
     renderShell();
-    expect(screen.getByText("Основной интерфейс")).toBeVisible();
+    expect(screen.queryByText("Основной интерфейс")).not.toBeInTheDocument();
+    expect(screen.queryByText("Рабочие разделы")).not.toBeInTheDocument();
     const close = screen.getByRole("link", { name: "Месяц" });
     expect(close).toHaveAttribute("href", "/v2/close");
     close.focus();
@@ -69,11 +122,13 @@ describe("UiV2Shell native navigation", () => {
 
   it("groups data tools under one Settings navigation entry while preserving their native deep links", () => {
     render(
-      <MemoryRouter>
-        <UiV2Shell active="data" header={<h1>Настройки</h1>}>
-          <UiV2DataSubnav active="app" />
-        </UiV2Shell>
-      </MemoryRouter>,
+      withClient(
+        <MemoryRouter>
+          <UiV2Shell active="data" header={<h1>Настройки</h1>}>
+            <UiV2DataSubnav active="app" />
+          </UiV2Shell>
+        </MemoryRouter>,
+      ),
     );
     const primary = screen.getByRole("navigation", { name: "Основная навигация" });
     expect(within(primary).getByRole("link", { name: "Настройки" })).toHaveAttribute(
@@ -92,5 +147,59 @@ describe("UiV2Shell native navigation", () => {
           name,
         }),
       ).toHaveAttribute("href", href);
+  });
+});
+
+describe("UiV2MonthPlate", () => {
+  it("shows the draft month with its step progress and opens that month", async () => {
+    respondWith(draftStatus);
+    renderShell();
+    const plate = await screen.findByRole("link", { name: /Рабочий месяц/ });
+    expect(plate).toHaveAccessibleName(/^Рабочий месяц: Ноябрь.2031, 4 из 10 шагов$/);
+    expect(plate).toHaveTextContent("4 из 10 шагов");
+    expect(plate).toHaveAttribute("href", "/v2/close?month=7");
+  });
+
+  it("shows a closed month with its snapshot date, not as progress", async () => {
+    respondWith(closedStatus());
+    renderShell();
+    const plate = await screen.findByRole("link", { name: /Рабочий месяц/ });
+    expect(plate).toHaveTextContent("Закрыт · снимок 30.11.2031");
+    expect(plate).not.toHaveTextContent("из 10");
+  });
+
+  it("marks the month workspace as the current page", async () => {
+    respondWith(draftStatus);
+    renderShell("/v2/close?month=7");
+    expect(await screen.findByRole("link", { name: /Рабочий месяц/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("stays a plain month link when the status read fails", async () => {
+    const fetchMock = respondWith({ error: { code: "synthetic", message: "x", details: [] } }, 500);
+    renderShell();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.getByRole("link", { name: "Месяц" })).toHaveAttribute("href", "/v2/close");
+  });
+
+  it("reads only the narrow status endpoint, never the close workflow", async () => {
+    const fetchMock = respondWith(draftStatus);
+    renderShell();
+    await screen.findByRole("link", { name: /Рабочий месяц/ });
+    const urls = fetchMock.mock.calls.map(([url]: unknown[]) => String(url));
+    expect(urls).toEqual([expect.stringContaining("/api/months/working-status")]);
+  });
+
+  it("is refreshed by month invalidation and by any saved mutation", async () => {
+    const client = createQueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await client
+      .getMutationCache()
+      .build(client, { mutationFn: async () => "saved" })
+      .execute(undefined);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.monthWorkingStatus });
+    expect(queryKeys.monthWorkingStatus.slice(0, 1)).toEqual([...queryKeys.months]);
   });
 });

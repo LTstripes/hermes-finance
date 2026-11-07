@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
+import { fulfillMonthPlate } from "./visual-fixtures";
 
 const account = {
   id: 7,
@@ -31,6 +32,7 @@ for (const viewport of [{ width: 1366, height: 768 }]) {
     await page.route(
       (url) => url.pathname.startsWith("/api/"),
       async (route) => {
+        if (await fulfillMonthPlate(route)) return;
         const request = route.request();
         const url = new URL(request.url());
         let body: unknown = null;

@@ -279,7 +279,7 @@
   gap: 6px 14px;
   border: 1px solid #e8ecf0;
   border-radius: 9px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .holdingMain {

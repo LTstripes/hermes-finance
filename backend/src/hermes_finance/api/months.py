@@ -16,12 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.services.intentional_empty_close import (
     IntentionalEmptyCloseCommand,
     close_intentionally_empty_month,
     read_intentional_empty_close,
 )
 from hermes_finance.services.month_clone import clone_reporting_month
+from hermes_finance.services.month_working_status import build_month_working_status
 from hermes_finance.services.reporting_months import (
     close_reporting_month,
     create_reporting_month,
@@ -63,12 +65,37 @@ class ReportingMonthResponse(BaseModel):
     source: str
 
 
+class MonthWorkingStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    month: ReportingMonthResponse | None
+    completed_steps: int
+    total_steps: int
+
+
 @router.get("", response_model=list[ReportingMonthResponse])
 def list_months(
     session: Session = Depends(session_for_request),
 ) -> list[ReportingMonthResponse]:
     months = list_reporting_months(session)
     return [ReportingMonthResponse.model_validate(m) for m in months]
+
+
+# Declared before ``/{month_id}`` so the literal path is not read as a month ID.
+@router.get("/working-status", response_model=MonthWorkingStatusResponse)
+def get_month_working_status(
+    session: Session = Depends(session_for_request),
+) -> MonthWorkingStatusResponse:
+    with coherent_read_snapshot(session):
+        working = build_month_working_status(session)
+        month = (
+            None if working.month is None else ReportingMonthResponse.model_validate(working.month)
+        )
+    return MonthWorkingStatusResponse(
+        month=month,
+        completed_steps=working.completed_steps,
+        total_steps=working.total_steps,
+    )
 
 
 @router.post("", response_model=ReportingMonthResponse, status_code=status.HTTP_201_CREATED)

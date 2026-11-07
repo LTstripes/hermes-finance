@@ -39,6 +39,7 @@ EXACT_DOCS = frozenset(
     {
         "AGENTS.md",
         "CHANGELOG.md",
+        "CLAUDE.md",
         "README.md",
         "docs/336-financial-context-contract.md",
         "docs/AGENT_ORCHESTRATION.md",

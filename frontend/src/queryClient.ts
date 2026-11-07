@@ -1,7 +1,9 @@
-import { QueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryClient } from "@tanstack/react-query";
 
 export const queryKeys = {
   months: ["months"] as const,
+  // Nested under months: every month lifecycle invalidation refreshes the plate.
+  monthWorkingStatus: ["months", "working-status"] as const,
   backups: ["backups"] as const,
   accounts: ["accounts"] as const,
   instruments: ["instruments"] as const,
@@ -44,7 +46,11 @@ export const queryKeys = {
 };
 
 export function createQueryClient(): QueryClient {
-  return new QueryClient({
+  const client: QueryClient = new QueryClient({
+    // A saved month section can change the sidebar plate of any page.
+    mutationCache: new MutationCache({
+      onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.monthWorkingStatus }),
+    }),
     defaultOptions: {
       mutations: {
         retry: false,
@@ -60,4 +66,5 @@ export function createQueryClient(): QueryClient {
       },
     },
   });
+  return client;
 }

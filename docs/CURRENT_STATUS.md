@@ -25,8 +25,9 @@ retains its original dated history and sources; it is not current installation e
   No five-security validation or Owner UX PASS is claimed.
 - An isolated instrument-UAT snapshot was refused by preflight; the cause remains
   unknown. UAT was not completed. Do not bypass or blindly retry the refusal.
-  [#1094](https://github.com/LTstripes/hermes-finance/pull/1094) proposes
-  bounded diagnostics; it is not a released capability.
+  [#1094](https://github.com/LTstripes/hermes-finance/pull/1094), released in
+  1.10.7, adds fixed refusal categories. It does not diagnose the original
+  refusal or permit a retry.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations

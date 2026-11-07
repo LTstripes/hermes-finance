@@ -1,3 +1,5 @@
+import type { Route } from "@playwright/test";
+
 import { makeUiV2ProviderCapabilities } from "../src/test/uiV2DataFixtures";
 import { makeUiV2Comparison, makeUiV2PassiveHistory } from "../src/test/uiV2Fixtures";
 
@@ -562,6 +564,15 @@ const backups = [
 
 export type AuditState = "content" | "empty" | "error";
 
+const syntheticMonthPlate = { month: syntheticMonths[0], completed_steps: 6, total_steps: 10 };
+
+/** Answers the shell month plate, so page specs keep their exact request lists. */
+export async function fulfillMonthPlate(route: Route): Promise<boolean> {
+  if (new URL(route.request().url()).pathname !== "/api/months/working-status") return false;
+  await route.fulfill({ json: syntheticMonthPlate });
+  return true;
+}
+
 export function syntheticApiResponse(
   url: URL,
   method: string,
@@ -583,6 +594,15 @@ export function syntheticApiResponse(
     };
   }
 
+  if (path === "/api/months/working-status" && method === "GET") {
+    return {
+      json: {
+        month: state === "empty" ? null : syntheticMonths[0],
+        completed_steps: state === "empty" ? 0 : 6,
+        total_steps: 10,
+      },
+    };
+  }
   if (path === "/api/months" && method === "GET") {
     return { json: state === "empty" ? [] : syntheticMonths };
   }

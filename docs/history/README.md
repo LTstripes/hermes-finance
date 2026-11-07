@@ -7,6 +7,7 @@ Current operation comes from [AGENTS.md](../../AGENTS.md), the five books, and t
 Retained records:
 
 - [CI/test optimization closeout — 2026-10-04](CI_TEST_OPTIMIZATION_CLOSEOUT_2026-10-04.md) — supported CI topology history; do not reopen optimization without a concrete correctness, flakiness or bottleneck reason.
+- [Reference projects review — 2026-10-24](REFERENCE_PROJECTS_REVIEW_2026-10-24.md) — dated comparison with similar projects; D3 keeps the reuse rule.
 - [Post-move / returns checkpoint — 2026-10-16](POST_MOVE_RETURNS_CHECKPOINT_2026-10-16.md) — dated move/source-status receipt; CURRENT_STATUS owns current truth.
 - [CI test optimization pointer — 2026-09-16](CI_TEST_OPTIMIZATION_2026-09-16.md) — condensed pointer to the closed pass and archived closeout.
 - [Post-v0.8.2 closeout — 2026-09-16](POST_V082_CLOSEOUT_2026-09-16.md) — condensed dated receipt; not an acceptance template.

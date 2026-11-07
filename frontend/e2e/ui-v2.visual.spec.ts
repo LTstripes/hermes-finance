@@ -30,6 +30,7 @@ import {
   uiV2LongHistoryFirstMonthId,
   uiV2Months,
 } from "../src/test/uiV2Fixtures";
+import { fulfillMonthPlate } from "./visual-fixtures";
 
 type Scene = "normal" | "no-closed" | "first-closed" | "zero" | "passive-error" | "coverage";
 
@@ -66,6 +67,7 @@ async function installApi(page: Page, scene: Scene = "normal") {
       unexpected.push(`external: ${url.origin}`);
   });
   await page.route("**/api/**", async (route) => {
+    if (await fulfillMonthPlate(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -449,6 +451,7 @@ async function installCloseApi(page: Page) {
     if (!["127.0.0.1", "localhost"].includes(url.hostname)) unexpected.push(url.origin);
   });
   await page.route("**/api/**", async (route) => {
+    if (await fulfillMonthPlate(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -772,6 +775,7 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
       unexpected.push(`external: ${url.origin}`);
   });
   await page.route("**/api/**", async (route) => {
+    if (await fulfillMonthPlate(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -1299,6 +1303,7 @@ async function installReportsApi(page: Page, scene: ReportsScene = "archive") {
       unexpected.push(`external: ${url.origin}`);
   });
   await page.route("**/api/**", async (route) => {
+    if (await fulfillMonthPlate(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {

@@ -100,7 +100,7 @@
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .cardRecommended {
@@ -215,7 +215,7 @@
 .dangerButton:focus-visible,
 .monthSelect:focus-visible,
 .technicalDisclosure summary:focus-visible {
-  outline: 3px solid #2b74c4;
+  outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
 
@@ -274,7 +274,7 @@
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .technicalCard h3 {
@@ -334,7 +334,7 @@
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .backupName {
