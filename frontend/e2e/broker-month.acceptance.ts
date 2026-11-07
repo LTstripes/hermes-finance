@@ -1171,7 +1171,8 @@ test("exceptions-first known account needs only original plus explicit source-DR
         json: { error: { code: "not_found", message: "Synthetic delayed GET", details: [] } },
       });
     if (attempts === 3) {
-      const response = await route.fetch();
+      // Only this GET is replayed after a transport reset. Never retry Apply.
+      const response = await route.fetch({ maxRetries: 1 });
       const wrong = await response.json();
       wrong.accepted.cash_id++;
       return route.fulfill({ response, json: wrong });
@@ -1958,7 +1959,9 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
     previewHeld = resolve;
   });
   await page.route("**/api/broker-months/preview", async (route) => {
-    const result = await route.fetch();
+    // Preview is read-only even though its file transport uses POST. A reset
+    // must not strand the held-response gate; mutations below stay single-shot.
+    const result = await route.fetch({ maxRetries: 1 });
     previewHeld();
     await release;
     await route.fulfill({ response: result }).catch(() => {

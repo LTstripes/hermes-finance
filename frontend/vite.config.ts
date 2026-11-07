@@ -9,10 +9,16 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
+    // Trace resources include HTML. Writing evidence must not reload an active
+    // browser journey (the visual harness writes inside the frontend root).
+    watch: { ignored: ["**/.visual-audit/**", "**/test-results/**"] },
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: false,
+        // Mocked visual runs have no backend. A request escaping their explicit
+        // fixtures must fail locally, never reach an unrelated runtime on 8000.
+        bypass: process.env.HERMES_VISUAL_AUDIT === "true" ? () => false : undefined,
       },
     },
   },

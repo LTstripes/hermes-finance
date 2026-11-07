@@ -178,7 +178,10 @@ for (const route of routes) {
     const unhandled = await installSyntheticApi(page);
     await page.goto(route.path);
     await expect(page.locator("h1").first()).toBeVisible();
-    await page.waitForTimeout(150);
+    // The shell heading precedes the data. Inspect settled content rather than
+    // whichever loading frame happens to exist after a fixed delay.
+    await expect(page.getByRole("status").filter({ hasText: /Загружа|Проверяем/ })).toHaveCount(0);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await assertAuditState(page, unhandled, pageErrors);
 
     const screenshotDir = path.resolve(".visual-audit", testInfo.project.name);
