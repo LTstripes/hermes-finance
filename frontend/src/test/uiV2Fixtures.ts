@@ -1,4 +1,9 @@
-import type { GuidedCloseStep, MonthCloseWorkflow } from "../api/monthCloseWorkflow";
+import type {
+  GuidedCloseStep,
+  MonthChecklist,
+  MonthChecklistStep,
+  MonthCloseWorkflow,
+} from "../api/monthCloseWorkflow";
 import type { GoalSummary } from "../api/goals";
 import type { RiskAllocationResponse } from "../api/riskAllocation";
 import type {
@@ -1226,6 +1231,76 @@ export function makeUiV2Performance({
       availability: notComputable ? "not_computable" : "available",
       quality: notComputable ? "unavailable" : "exact",
       reason_codes: notComputable ? ["valuation_boundary_unavailable"] : [],
+    },
+  };
+}
+
+/** Synthetic Month checklist (#1079 stage 2); amounts are invented. */
+export function makeUiV2Checklist({
+  closed = false,
+  attention = false,
+}: {
+  closed?: boolean;
+  attention?: boolean;
+} = {}): MonthChecklist {
+  const step = (
+    id: MonthChecklistStep["id"],
+    group: MonthChecklistStep["group"],
+    filled: boolean,
+    figure: MonthChecklistStep["figure"],
+    secondary: number | null = null,
+  ): MonthChecklistStep => ({
+    id,
+    group,
+    required: id !== "note",
+    has_saved_facts: filled,
+    state: filled ? "done" : id === "note" ? "optional" : "empty",
+    attention_count: 0,
+    figure: filled ? figure : null,
+    secondary_count: filled ? secondary : null,
+  });
+  const count = (value: number) => ({
+    kind: "count" as const,
+    amount: null,
+    day: null,
+    count: value,
+  });
+  const rub = (value: string) => ({
+    kind: "money" as const,
+    amount: money(value),
+    day: null,
+    count: null,
+  });
+  const steps: MonthChecklistStep[] = [
+    step("general", "data", true, { kind: "date", amount: null, day: "2031-08-30", count: null }),
+    step("income", "data", closed, rub("180000.00")),
+    step("assets", "data", true, rub("1250400.00")),
+    step("liabilities", "data", true, rub("400000.00")),
+    step("budget", "data", closed, rub("61200.00"), 3),
+    step("brokers", "sources", true, count(2)),
+    step("positions", "sources", closed, rub("1650000.00"), 7),
+    step("payouts", "sources", true, count(3), 4),
+    step("note", "plan", closed, count(1)),
+    step("close", "close", closed, null),
+  ];
+  if (attention) {
+    const brokers = steps.find((item) => item.id === "brokers");
+    if (brokers) Object.assign(brokers, { state: "attention", attention_count: 1 });
+  }
+  const completed = steps.filter((item) => item.has_saved_facts).length;
+  return {
+    completed_count: completed,
+    total_count: steps.length,
+    attention_count: attention ? 1 : 0,
+    steps,
+    expenses: {
+      mandatory_total: money("61200.00"),
+      other_total: money(closed ? "0.00" : "4300.00"),
+      mandatory_items: [
+        { category: "Аренда", amount: money("45000.00") },
+        { category: "Коммунальные услуги", amount: money("9700.00") },
+        { category: "Связь", amount: money("6500.00") },
+      ],
     },
   };
 }

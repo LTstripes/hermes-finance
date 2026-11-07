@@ -11,6 +11,9 @@ export const queryKeys = {
   dashboardBasic: (monthId: number | null) =>
     ["dashboard", monthId, "without-explanation"] as const,
   monthCloseWorkflow: (monthId: number | null) => ["month-close-workflow", monthId] as const,
+  /** The Month page read with its checklist; base-key invalidation still covers it. */
+  monthCloseWorkflowWithChecklist: (monthId: number | null) =>
+    ["month-close-workflow", monthId, "checklist"] as const,
   closedReportComparison: ["closed-report-comparison"] as const,
   closedReportComparisonBasic: ["closed-report-comparison", "without-explanation"] as const,
   capitalComposition: ["capital-composition"] as const,

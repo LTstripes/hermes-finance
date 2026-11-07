@@ -110,14 +110,27 @@ def select_working_month(months: Iterable[ReportingMonth]) -> ReportingMonth | N
     return newest_draft or latest_closed
 
 
-def _completed_steps(session: Session, month: ReportingMonth) -> int:
+def saved_section_facts(session: Session, month: ReportingMonth) -> dict[str, bool]:
+    """Which of the ten month workspace sections hold saved facts.
+
+    The sidebar plate and the Month checklist share this rule, so their
+    "N of M" counts agree. ``general`` is the snapshot date, ``close`` the
+    explicit Close decision; the rest are row presence in one statement.
+    """
+
     conditions = _section_conditions(month.id)
     facts = session.execute(
         select(*(condition.label(name) for name, condition in conditions.items()))
     ).one()
-    identity_completed = month.snapshot_date is not None
-    close_completed = month.status == ReportingMonthStatus.CLOSED.value
-    return sum(bool(value) for value in (*facts, identity_completed, close_completed))
+    return {
+        "general": month.snapshot_date is not None,
+        **{name: bool(value) for name, value in zip(conditions, facts, strict=True)},
+        "close": month.status == ReportingMonthStatus.CLOSED.value,
+    }
+
+
+def _completed_steps(session: Session, month: ReportingMonth) -> int:
+    return sum(saved_section_facts(session, month).values())
 
 
 def build_month_working_status(session: Session) -> MonthWorkingStatus:

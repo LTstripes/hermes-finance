@@ -221,6 +221,48 @@ export type GuidedCloseStep = {
   diagnostics: Record<string, unknown>;
 };
 
+export type MonthChecklistStepId =
+  | "general"
+  | "income"
+  | "assets"
+  | "liabilities"
+  | "positions"
+  | "brokers"
+  | "payouts"
+  | "budget"
+  | "note"
+  | "close";
+
+/** One Month page section: saved facts, close-readiness findings and a key figure. */
+export type MonthChecklistStep = {
+  id: MonthChecklistStepId;
+  group: "data" | "sources" | "plan" | "close";
+  required: boolean;
+  has_saved_facts: boolean;
+  state: "done" | "attention" | "empty" | "optional";
+  attention_count: number;
+  figure: {
+    kind: "money" | "date" | "count";
+    amount: MoneyValue | null;
+    day: string | null;
+    count: number | null;
+  } | null;
+  secondary_count: number | null;
+};
+
+/** Presentation of the month sections (#1079); never a close decision. */
+export type MonthChecklist = {
+  completed_count: number;
+  total_count: number;
+  attention_count: number;
+  steps: MonthChecklistStep[];
+  expenses: {
+    mandatory_total: MoneyValue;
+    other_total: MoneyValue;
+    mandatory_items: Array<{ category: string; amount: MoneyValue }>;
+  };
+};
+
 export type MonthCloseWorkflow = {
   contract_version: "monthly_close_workflow_v1";
   generated_at: string;
@@ -250,24 +292,37 @@ export type MonthCloseWorkflow = {
   };
   final_review: FinalMonthReview | FinalMonthReviewUnavailable;
   outlook: NextMonthOutlook | null;
+  /** Absent in responses from builds before #1079 stage 2. */
+  checklist?: MonthChecklist;
   links: { month: string; close_readiness: string; freshness: string };
 };
 
 export function getMonthCloseWorkflow(
   monthId: number,
   signal?: AbortSignal,
+  { includeChecklist = false }: { includeChecklist?: boolean } = {},
 ): Promise<MonthCloseWorkflow> {
-  return apiRequest<MonthCloseWorkflow>(`/api/months/${monthId}/close-workflow`, {
+  const query = includeChecklist ? "?include_checklist=true" : "";
+  return apiRequest<MonthCloseWorkflow>(`/api/months/${monthId}/close-workflow${query}`, {
     method: "GET",
     signal,
   });
 }
 
-export function useMonthCloseWorkflow(monthId: number | null) {
+/**
+ * Only the Month page asks for the checklist; other readers, such as the Home
+ * draft action, keep the lighter read and their own cache entry.
+ */
+export function useMonthCloseWorkflow(
+  monthId: number | null,
+  { includeChecklist = false }: { includeChecklist?: boolean } = {},
+) {
   return useQuery({
     enabled: monthId !== null,
-    queryKey: queryKeys.monthCloseWorkflow(monthId),
-    queryFn: ({ signal }) => getMonthCloseWorkflow(monthId as number, signal),
+    queryKey: includeChecklist
+      ? queryKeys.monthCloseWorkflowWithChecklist(monthId)
+      : queryKeys.monthCloseWorkflow(monthId),
+    queryFn: ({ signal }) => getMonthCloseWorkflow(monthId as number, signal, { includeChecklist }),
     refetchOnWindowFocus: true,
   });
 }

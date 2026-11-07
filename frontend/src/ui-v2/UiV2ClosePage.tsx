@@ -33,6 +33,8 @@ import {
   sortReportingMonths,
 } from "./monthSelection";
 import UiV2MonthEditorPage, { type EditorSection } from "./UiV2MonthEditorPage";
+import { MONTH_STEP_COPY, MonthOverview, MonthStepStrip } from "./UiV2MonthOverview";
+import overviewStyles from "./UiV2MonthOverview.module.css";
 import { UiV2MonthSources } from "./UiV2MonthSources";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
 import styles from "./UiV2Page.module.css";
@@ -40,15 +42,65 @@ import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 
 const MANUAL_SECTIONS = [
-  ["general", "Снимок и общие данные", "Дата, источник, настройки месяца"],
-  ["income", "Зарплата и другие доходы", "Ручные поступления"],
-  ["assets", "Депозиты, накопления и деньги", "Остатки и проценты"],
-  ["positions", "Счета и позиции", "Количество и оценка"],
-  ["payouts", "Выплаты", "Прогнозы T-Invest · полученные выплаты"],
-  ["budget", "Расходы и план", "Обязательные расходы и откладывание"],
-  ["liabilities", "Долги, кредитка и недвижимость", "Долг, ипотека и платежи"],
-  ["note", "Комментарии", "Пояснения к месяцу"],
+  "general",
+  "income",
+  "assets",
+  "positions",
+  "payouts",
+  "budget",
+  "liabilities",
+  "note",
 ] as const;
+
+function MonthStatusChip({
+  month,
+}: {
+  month: { status: ReportingMonth["status"]; snapshot_date: string | null };
+}) {
+  const closed = month.status === "closed";
+  return (
+    <span className={overviewStyles.chip} data-state={closed ? "closed" : "draft"}>
+      <span>{closed ? "Месяц закрыт" : "Черновик"}</span>
+      <span>· снимок {month.snapshot_date ? formatDate(month.snapshot_date) : "не указан"}</span>
+    </span>
+  );
+}
+
+/** Older and newer reporting months, in the order of the months list. */
+function MonthStepper({
+  months,
+  current,
+  search,
+}: {
+  months: ReportingMonth[];
+  current: number;
+  search: string;
+}) {
+  const index = months.findIndex((month) => month.id === current);
+  if (index < 0) return null;
+  const older = months[index + 1];
+  const newer = index > 0 ? months[index - 1] : undefined;
+  // Keep only the panel: a step or section belongs to the month being left.
+  const panel = new URLSearchParams(search).get("panel");
+  const query = panel ? `panel=${encodeURIComponent(panel)}` : "";
+  const link = (month: ReportingMonth | undefined, symbol: string, label: string) =>
+    month ? (
+      <Link
+        aria-label={`${label}: ${formatMonth(month.year, month.month)}`}
+        to={monthWorkspacePath(month.id, undefined, query)}
+      >
+        {symbol}
+      </Link>
+    ) : (
+      <span aria-hidden="true">{symbol}</span>
+    );
+  return (
+    <nav aria-label="Соседние месяцы" className={overviewStyles.stepper}>
+      {link(older, "‹", "Предыдущий месяц")}
+      {link(newer, "›", "Следующий месяц")}
+    </nav>
+  );
+}
 
 export default function UiV2ClosePage() {
   const [params] = useSearchParams();
@@ -127,7 +179,7 @@ export default function UiV2ClosePage() {
       (workflow.outlook.source_month.id === monthId &&
         workflow.outlook.source_month.year === workflow.month.year &&
         workflow.outlook.source_month.month === workflow.month.month));
-  const panels = [...MANUAL_SECTIONS.map(([id]) => id), "brokers", "close"];
+  const panels: string[] = [...MANUAL_SECTIONS, "brokers", "close"];
   const panelValues = params.getAll("panel");
   const legacySection = params.getAll("section");
   const panel = panelValues.length
@@ -221,33 +273,15 @@ export default function UiV2ClosePage() {
       </UiV2Notice>
     );
   else {
-    const tiles = [
-      ...MANUAL_SECTIONS.filter(([id]) =>
-        ["general", "income", "assets", "budget", "liabilities"].includes(id),
-      ),
-      ["brokers", "Брокерские выписки", "Загрузка и разбор источников"],
-      ...MANUAL_SECTIONS.filter(([id]) => ["positions", "payouts", "note"].includes(id)),
-      ["close", "Закрыть месяц", "Итоговая проверка"],
-    ];
-    content = (
+    const panelLabel =
+      panel && panel in MONTH_STEP_COPY
+        ? MONTH_STEP_COPY[panel as keyof typeof MONTH_STEP_COPY].label
+        : undefined;
+    content = !panel ? (
+      <MonthOverview pathFor={panelPath} workflow={workflow} />
+    ) : (
       <div className={styles.closeWorkspace} data-testid="v2-close-workspace">
-        <div className={styles.closeContext}>
-          <span className={closed ? styles.closedBadge : styles.draftBadge}>
-            {closed ? "Месяц закрыт" : "Черновик"}
-          </span>
-          <span>
-            Снимок{" "}
-            {workflow.month.snapshot_date ? formatDate(workflow.month.snapshot_date) : "не указан"}
-          </span>
-        </div>
-        <nav className={monthStyles.manual} aria-label="Разделы месяца">
-          {tiles.map(([id, label, hint]) => (
-            <Link key={id} to={panelPath(id)} aria-current={panel === id ? "page" : undefined}>
-              {label}
-              <span>{hint}</span>
-            </Link>
-          ))}
-        </nav>
+        <MonthStepStrip checklist={workflow.checklist} current={panel} pathFor={panelPath} />
         {panel === "invalid" ? (
           <UiV2Notice title="Неизвестный раздел">
             <Link to={panelPath(null)}>← К месяцу</Link>
@@ -255,11 +289,11 @@ export default function UiV2ClosePage() {
         ) : panel ? (
           <section
             className={monthStyles.workArea}
-            aria-label={`Рабочая область: ${tiles.find(([id]) => id === panel)?.[1]}`}
+            aria-label={`Рабочая область: ${panelLabel}`}
             id="month-work-area"
           >
             <header className={monthStyles.workHeader}>
-              <h2>{tiles.find(([id]) => id === panel)?.[1]}</h2>
+              <h2>{panelLabel}</h2>
               <Link to={panelPath(null)}>← К месяцу</Link>
             </header>
             {panel === "payouts" ? (
@@ -289,7 +323,7 @@ export default function UiV2ClosePage() {
                 onDirtyChange={setJournalDirty}
               />
             ) : null}
-            {MANUAL_SECTIONS.some(([id]) => id === panel) ? (
+            {(MANUAL_SECTIONS as readonly string[]).includes(panel) ? (
               <UiV2MonthEditorPage
                 key={`editor:${workflow.month.id}:${panel}:${discardVersion}`}
                 embeddedMonthId={workflow.month.id}
@@ -419,15 +453,25 @@ export default function UiV2ClosePage() {
       header={
         <>
           <p className={styles.eyebrow}>Месяц</p>
-          <h1>
-            {selectedPeriod
-              ? `Месяц · ${formatMonth(selectedPeriod.year, selectedPeriod.month)}`
-              : "Месяц"}
-          </h1>
+          <div className={overviewStyles.titleRow}>
+            {selectedPeriod ? (
+              <MonthStepper months={months} current={selectedPeriod.id} search={location.search} />
+            ) : null}
+            <h1>
+              {selectedPeriod ? formatMonth(selectedPeriod.year, selectedPeriod.month) : "Месяц"}
+            </h1>
+            {workflowIdentityMatches ? (
+              <MonthStatusChip month={workflow.month} />
+            ) : selectedMonth && selectionIdentityMatches ? (
+              <MonthStatusChip month={selectedMonth} />
+            ) : null}
+            <Link className={overviewStyles.allMonths} to="/v2/data/months">
+              Отчётные месяцы →
+            </Link>
+          </div>
         </>
       }
     >
-      <Link to="/v2/data/months">Отчётные месяцы →</Link>
       {lifecycleError ? <p role="alert">{lifecycleError}</p> : null}
       {lifecycleRecovery && !lifecycleBusy ? (
         <p role="status">

@@ -284,12 +284,12 @@ describe("native Monthly Close work mode", () => {
       expect(state.writes).toEqual(["close"]);
     },
   );
-  it("enters on tiles only and keeps every section in the exact-month workspace", async () => {
+  it("enters on the checklist only and keeps every section in the exact-month workspace", async () => {
     const { mount, state } = setup();
     mount();
     const nav = await screen.findByRole("navigation", { name: "Разделы месяца" });
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Месяц · Август 2031");
-    expect(screen.getByText(/Снимок 30.08.2031/)).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Август 2031");
+    expect(screen.getByText(/снимок 30.08.2031/)).toBeVisible();
     expect(within(nav).getAllByRole("link")).toHaveLength(10);
     const panels = within(nav)
       .getAllByRole("link")
@@ -313,7 +313,10 @@ describe("native Monthly Close work mode", () => {
       await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" }),
     ).toBeVisible();
     expect(document.querySelectorAll("#month-work-area")).toHaveLength(1);
-    expect(within(nav).getByRole("link", { name: /Закрыть месяц/ })).toHaveAttribute(
+    // An open section keeps a compact strip of all sections above it.
+    const strip = screen.getByRole("navigation", { name: "Разделы месяца" });
+    expect(within(strip).getAllByRole("link")).toHaveLength(10);
+    expect(within(strip).getByRole("link", { name: /Закрыть месяц/ })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -420,7 +423,8 @@ describe("native Monthly Close work mode", () => {
     expect(state.writes).toEqual(["close"]);
     const workflowGets = fetchMock.mock.calls.filter(
       ([input, init]) =>
-        String(input).endsWith("/close-workflow") && (init?.method ?? "GET") === "GET",
+        String(input).endsWith("/close-workflow?include_checklist=true") &&
+        (init?.method ?? "GET") === "GET",
     );
     expect(workflowGets).toHaveLength(3);
   });
@@ -590,7 +594,7 @@ describe("native Monthly Close work mode", () => {
     const confirm = await screen.findByRole("button", { name: "Закрыть" });
     const foreign = structuredClone(state.workflow);
     if (foreign.final_review.available) foreign.final_review.month_header.id = 91;
-    act(() => client.setQueryData(queryKeys.monthCloseWorkflow(12), foreign));
+    act(() => client.setQueryData(queryKeys.monthCloseWorkflowWithChecklist(12), foreign));
     fireEvent.click(confirm);
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(state.writes).toEqual([]);
@@ -599,7 +603,7 @@ describe("native Monthly Close work mode", () => {
   it("pins the original period when both months and workflow refresh to a reused ID", async () => {
     const { client, mount, state } = setup("/v2/close?month=12&step=final_review_close");
     state.workflow = readyForClose();
-    const originalHeading = `Месяц · Август ${state.workflow.month.year}`;
+    const originalHeading = `Август ${state.workflow.month.year}`;
     const view = mount();
     fireEvent.click(await screen.findByRole("button", { name: "Закрыть месяц" }));
     await screen.findByRole("alertdialog");

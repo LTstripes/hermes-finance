@@ -1837,8 +1837,8 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
       financialPosts.push(path);
   });
   await page.goto(`/v2/close?month=${month.id}`);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Месяц.*Май\s2034/);
-  await expect(page.getByText(/Снимок 01.06.2034/)).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Май\s2034$/);
+  await expect(page.getByText(/снимок 01.06.2034/i)).toBeVisible();
   await monthPanel(page, "brokers");
   const sourcePanel = page.getByRole("region", { name: "Брокерские выписки", exact: true });
   await openDisclosure(page, "Подробности");
@@ -1936,7 +1936,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await page.getByRole("button", { name: "Сохранить общие данные", exact: true }).click();
   await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
   await monthPanel(page, "brokers");
-  await expect(page.getByText(/Снимок 31.05.2034/)).toBeVisible();
+  await expect(page.getByText(/снимок 31.05.2034/i)).toBeVisible();
   const sourceA = (await currentIntakes()).find(
     (row: { document: { filename_account: string } }) =>
       row.document.filename_account === "7452034",
@@ -2233,7 +2233,7 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
   await page.goBack();
   const [workflowAfterBackReload] = await Promise.all([
     page.waitForResponse(
-      (response) => response.url().endsWith(`/api/months/${month.id}/close-workflow`),
+      (response) => new URL(response.url()).pathname === `/api/months/${month.id}/close-workflow`,
       { timeout: 30000 },
     ),
     page.reload(),
@@ -2344,7 +2344,7 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
   );
   const [workflowAfterReload] = await Promise.all([
     page.waitForResponse(
-      (response) => response.url().endsWith(`/api/months/${month.id}/close-workflow`),
+      (response) => new URL(response.url()).pathname === `/api/months/${month.id}/close-workflow`,
       { timeout: 30000 },
     ),
     page.reload(),
@@ -2420,7 +2420,9 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
       currency: "RUB",
     });
     const [workflowResponse] = await Promise.all([
-      page.waitForResponse((r) => r.url().endsWith(`/api/months/${monthId}/close-workflow`)),
+      page.waitForResponse(
+        (r) => new URL(r.url()).pathname === `/api/months/${monthId}/close-workflow`,
+      ),
       page.goto(`/v2/close?month=${monthId}&step=future_payouts`),
     ]);
     expect(workflowResponse.status()).toBe(200);
@@ -2438,9 +2440,7 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
     });
     expect(denied.status()).toBe(409);
     expect((await (await request.get(`/api/months/${monthId}`)).json()).status).toBe("closed");
-    await expect(
-      page.getByRole("heading", { name: "Месяц · Декабрь 2037", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Декабрь 2037", exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Открыть месяц заново", exact: true }),
     ).toBeVisible();

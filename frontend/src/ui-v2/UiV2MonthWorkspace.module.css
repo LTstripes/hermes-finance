@@ -8,32 +8,6 @@
   flex-wrap: wrap;
   gap: 12px 24px;
 }
-.manual {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-.manual a {
-  display: block;
-  border: 1px solid #dce3ea;
-  border-radius: 10px;
-  padding: 14px;
-  text-decoration: none;
-}
-.manual a:hover {
-  background: #f0f6fa;
-}
-.manual a[aria-current="page"] {
-  border-color: var(--accent);
-  background: #edf4fb;
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-.manual {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-.manual a {
-  min-width: 0;
-}
 .workArea {
   min-width: 0;
   border: 1px solid var(--line);
@@ -95,12 +69,6 @@
 .completion strong {
   font-size: 13px;
   color: var(--muted);
-}
-.manual span {
-  display: block;
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 6px;
 }
 .field {
   display: grid;
