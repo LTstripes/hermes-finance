@@ -595,6 +595,8 @@ backend-style directories only to make the trees look symmetrical.
 <a id="d4-test_suite_guide-1-useful-targeted-commands"></a>
 #### Useful targeted commands
 
+Owner-local returns coverage can be checked with the backend environment: `python backend/scripts/returns_snapshot_check.py --database <existing-sqlite> --out <private-folder-outside-repository>`; use a fresh output folder for each run and `--compare <previous-summary.json>` to print only coverage differences. The source is opened read-only and backed up with SQLite into that folder; only the copy is queried, then deleted unless `--keep-copy` is supplied, and the reviewed bond valuation setting is honoured. Keep summaries and copies private and outside Git; CI runs only the synthetic tests, never this command against Owner data.
+
 From `backend/`, use a marker for the semantic implementation loop. The full
 command below is available when a local full gate is needed under
 D4; it is not mandatory in addition to complete relevant CI.
