@@ -815,6 +815,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.
 `-ControlCheckout` remains an optional parameter pointing to a separately verified trusted Control/Main. The updater's optional-path code defaults to its **Process environment selector or `Stable/data/finance.db`**, not to the contents of `Stable/.env`. Therefore, for the installed HONOR layout, **explicit `-DatabasePath` matching the accepted existing physical production database is mandatory in the actual operation**; choose a separate verified `-BackupDirectory` as shown. The updater proves current Stable and target annotated publication, makes and verifies a SQLite backup before Git/ref mutation, fetches only the tag, pins the exact peeled commit, runs target Prepare/Validate and stops. Do not run a new OPS02 against already installed Stable solely to confirm this documentation.
 
 It never selects latest, follows main, updates Test, starts Hermes, runs DB migration, publishes a tag/release or automatically rolls back/downgrades. Publication, local update and Start remain separate Owner actions.
+Owner convenience entry point, from clean trusted canonical Main on branch `main`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable-guided.ps1 -TargetVersion X.Y.Z
+```
+
+Use `-DryRun` for local resolution and the explicit OPS02 command only; it makes no changes or network requests. `-StableCheckout` is optional and defaults to `stable` beside Main. The guide requires canonical origin and no local-only commits, asks for `PULL` before `git pull --ff-only origin main`, extracts only `HERMES_FINANCE_DATABASE_PATH` from Stable's `.env`, and proposes a new `Backups/stable-X.Y.Z-update` directory beside Main. The selector must be a single literal absolute existing local file path (no interpolation; use forward slashes in double quotes). Other dotenv keys are neither loaded into the environment nor printed. Verify the displayed path is the accepted production database, then type `X.Y.Z` to authorize the displayed command with explicit `-DatabasePath` and `-BackupDirectory`; OPS02 guards/defaults are unchanged. Existing backup destinations and occupied port 8000 refuse. After successful OPS02 only, typing `START` separately authorizes Stable's `start-local.ps1`; the guide reads back `/api/health` and requires the requested version. A Start/readback failure does not trigger rollback or another update; inspect the runtime before retrying.
 
 <a id="o3-owner_runtime_operations-124"></a>
 ### Release sequence and bounded failures
