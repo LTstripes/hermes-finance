@@ -4,6 +4,7 @@ import type { InstrumentAnalysis } from "../../api/sourceReturns";
 import { formatMoney, formatMoneyDelta } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { formatSourceReturnRate } from "../../lib/sourceReturnFormat";
+import { wholeMoneyDeltaText, wholeMoneyText } from "../wholeMoney";
 import type { ReturnBreakdown } from "./breakdown";
 import type { CleanInstrument } from "./cards";
 
@@ -160,6 +161,26 @@ export function displayMetric(m: Metric, signed = false) {
   if (m.unit !== "kopecks") return formatSourceReturnRate(m.value, m.unit === "fraction");
   if (!/^-?\d+$/.test(m.value)) return "—";
   return (signed ? formatMoneyDelta : formatMoney)(fromKopecks(BigInt(m.value)));
+}
+/** Overview figures in whole rubles (P 12.2); the exact amount stays in details and titles. */
+export function displayWhole(m: Metric, signed = false) {
+  if (m.unit !== "kopecks" || m.value == null || !/^-?\d+$/.test(m.value))
+    return displayMetric(m, signed);
+  const value = { amount: fromKopecks(BigInt(m.value)), currency: "RUB" };
+  return signed ? wholeMoneyDeltaText(value, "—") : wholeMoneyText(value, "—");
+}
+/** A rate with an explicit plus sign, for a signed chip next to a result. */
+export function displaySignedRate(m: Metric) {
+  const text = displayMetric(m);
+  return text === "—" || text.startsWith("−") || compareDecimal(m.value ?? "0", "0") === 0
+    ? text
+    : `+${text}`;
+}
+/** Sign of a known value for colour only (P 12.1). */
+export function tone(m: Metric): "positive" | "negative" | undefined {
+  if (m.value == null) return undefined;
+  const sign = compareDecimal(m.value, "0");
+  return sign > 0 ? "positive" : sign < 0 ? "negative" : undefined;
 }
 export function isPartialResult(metric: Metric) {
   return (

@@ -399,7 +399,7 @@ test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport
   for (const width of [1440, 1100]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/v2/returns");
-    const leaders = page.getByRole("region", { name: "Лидеры и отстающие" });
+    const leaders = page.getByRole("region", { name: "Вклад инструментов" });
     await expect(leaders.locator("ol")).toHaveCount(2);
     await expect(leaders.locator("li")).toHaveCount(6);
     const groups = leaders.locator("h3");
@@ -447,7 +447,7 @@ test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport
   body.instruments = body.instruments.slice(0, 3);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/v2/returns");
-  const single = page.getByRole("region", { name: "Лидеры и отстающие" });
+  const single = page.getByRole("region", { name: "Вклад инструментов" });
   await expect(single.locator("ol")).toHaveCount(1);
   await expect(single.locator("li")).toHaveCount(3);
   await expect(single.getByText("Наибольший убыток", { exact: true })).toHaveCount(0);

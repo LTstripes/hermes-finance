@@ -758,7 +758,6 @@ test("partial component account sets are labelled known constituents without imp
   expect(
     screen.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
   ).toHaveTextContent("+49,77 ₽");
-  fireEvent.click(screen.getByText("Купоны и дивиденды"));
   expect(screen.getByText(/Купоны: \+42,77 ₽/)).toBeVisible();
   expect(screen.getAllByText("+12 ₽").length).toBeGreaterThan(0);
 });
@@ -837,9 +836,7 @@ test("standalone instrument explains paid income greater than its exact total", 
   );
   setup("/v2/returns/instrument/RU000A000002");
   const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
-  fireEvent.click(region.getByText("Купоны и дивиденды"));
-  expect(region.getByText(/Купоны: \+10 ₽/)).toBeVisible();
-  expect(region.getByText(/Дивиденды: \+5 ₽/)).toBeVisible();
+  expect(region.getByText(/Купоны: \+10 ₽ · Дивиденды: \+5 ₽/)).toBeVisible();
   expect(
     region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
   ).toHaveTextContent("+4 ₽");
@@ -874,3 +871,65 @@ test.each([true, false])(
     expect(within(section).getAllByText("—")).toHaveLength(3);
   },
 );
+
+test("bridge draws equality only when the shown parts add up to the total", async () => {
+  // Fixture summary: −34 ₽ + 49,77 ₽ against a 12 ₽ total from another account set.
+  const partial = instrumentCardFixture();
+  partial.summary.payouts.value = "4977";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(partial)),
+  );
+  const { unmount } = setup("/v2/returns/instrument/RU000A000002");
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(region.queryByText("Итог")).toBeNull();
+  expect(region.queryByText("=")).toBeNull();
+  expect(
+    region.getByText(
+      "Части и итог посчитаны по разным наборам данных, поэтому их сумма не равна итогу.",
+    ),
+  ).toBeVisible();
+  unmount();
+
+  const whole = instrumentCardFixture();
+  whole.summary.valuation_and_trades.value = "-3400";
+  whole.summary.payouts.value = "4600";
+  whole.summary.pnl.value = "1200";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(whole)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const exact = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(exact.getByText("Итог")).toBeVisible();
+  expect(exact.getByText("=")).toBeInTheDocument();
+  expect(exact.queryByText(/по разным наборам данных/)).toBeNull();
+});
+
+test("matching partial numbers never draw a complete equality", async () => {
+  // Account A knows valuation and trades (100 ₽) but not payouts; account B knows
+  // payouts (0 ₽) but not valuation. The available total is 100 ₽ and stays partial.
+  const card = instrumentCardFixture();
+  const partial = (value: string) => ({
+    value,
+    unit: "kopecks" as const,
+    method: "known_clean_instruments",
+    estimate: true,
+    reason_codes: ["clean_partial_result"],
+  });
+  card.summary.valuation_and_trades = partial("10000");
+  card.summary.payouts = partial("0");
+  card.summary.pnl = partial("10000");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(region.queryByText("Итог")).toBeNull();
+  expect(region.queryByText("=")).toBeNull();
+  expect(region.queryByText("+")).toBeNull();
+  expect(region.getByText("по доступным данным")).toBeVisible();
+  expect(region.getAllByText(/Это не полный итог/)).toHaveLength(1);
+  expect(region.queryByText(/по разным наборам данных/)).toBeNull();
+});

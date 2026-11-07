@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { getIncome, type IncomeKind } from "./cards";
-import { dateLabel, displayMetric } from "./model";
+import layout from "./Dashboard.module.css";
 import { readDisplayNames } from "./dashboard";
+import { dateLabel, displayMetric, displayWhole, isPartialResult } from "./model";
 import type { CouponIncome } from "./overall";
 import styles from "./Returns.module.css";
-import layout from "./Dashboard.module.css";
 
 const titles = { coupon: "Полученные купоны", dividend: "Полученные дивиденды" };
 function Breakdown({
@@ -64,7 +64,11 @@ function Breakdown({
               {rows.map((row) => (
                 <tr key={`${row.isin}:${row.account.scope}`}>
                   <th>
-                    <button type="button" onClick={() => openInstrument?.(row.isin)}>
+                    <button
+                      type="button"
+                      className={layout.linkButton}
+                      onClick={() => openInstrument?.(row.isin)}
+                    >
                       {row.name}
                     </button>
                     <small>
@@ -134,16 +138,19 @@ export function ReturnsCouponIncome({
   const [open, setOpen] = useState(false);
   return (
     <section
-      className={compact ? styles.card : styles.panel}
-      style={compact && open ? { gridColumn: "1 / -1" } : undefined}
+      className={compact ? `${layout.figure} ${open ? layout.figureOpen : ""}` : styles.panel}
       aria-label={titles[kind]}
     >
       <h2>{titles[kind]}</h2>
-      <div className={layout.value}>{displayMetric(value.known_total)}</div>
-      {value.included_accounts < value.selected_accounts && (
-        <p className={layout.note}>
-          Известная часть: {value.included_accounts} из {value.selected_accounts} счетов.
-        </p>
+      <strong title={displayMetric(value.known_total)}>
+        {compact ? displayWhole(value.known_total) : displayMetric(value.known_total)}
+      </strong>
+      {value.included_accounts < value.selected_accounts ? (
+        <small>
+          Учтены {value.included_accounts} из {value.selected_accounts} счетов, не полный итог
+        </small>
+      ) : (
+        isPartialResult(value.known_total) && <small>По известным выплатам, не полный итог</small>
       )}
       <details className={layout.income} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary>По инструментам</summary>
