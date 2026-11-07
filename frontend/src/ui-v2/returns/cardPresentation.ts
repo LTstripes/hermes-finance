@@ -32,23 +32,26 @@ const quantityMetadata = new Set([
 ]);
 /** An eligible detail is not evidence of a known closing quantity. */
 export function cardQuantityStatus(card: InstrumentCard) {
+  const provenByBackend =
+    !card.summary.quantity.partial && knownQuantity(card.summary.quantity.value);
   const partial =
-    card.accounts.length === 0 ||
-    !knownQuantity(card.summary.quantity.value) ||
-    card.summary.quantity.reason_codes.some((code) => !quantityMetadata.has(code)) ||
-    card.accounts.some(
-      (account) =>
-        !account.included ||
-        account.proof_status !== "current" ||
-        !account.detail ||
-        !knownQuantity(account.detail.closing_quantity) ||
-        !knownQuantity(account.detail.analysis.closing.quantity) ||
-        !account.detail.analysis.coverage.quantity.complete ||
-        compareDecimal(
-          account.detail.closing_quantity ?? "",
-          account.detail.analysis.closing.quantity ?? "",
-        ) !== 0,
-    );
+    !provenByBackend &&
+    (card.accounts.length === 0 ||
+      !knownQuantity(card.summary.quantity.value) ||
+      card.summary.quantity.reason_codes.some((code) => !quantityMetadata.has(code)) ||
+      card.accounts.some(
+        (account) =>
+          !account.included ||
+          account.proof_status !== "current" ||
+          !account.detail ||
+          !knownQuantity(account.detail.closing_quantity) ||
+          !knownQuantity(account.detail.analysis.closing.quantity) ||
+          !account.detail.analysis.coverage.quantity.complete ||
+          compareDecimal(
+            account.detail.closing_quantity ?? "",
+            account.detail.analysis.closing.quantity ?? "",
+          ) !== 0,
+      ));
   const sold =
     !partial &&
     zeroQuantity(card.summary.quantity.value) &&

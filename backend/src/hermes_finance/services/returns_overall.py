@@ -1135,7 +1135,7 @@ def read_clean_instrument_card(session, isin):
         # Every account of this instrument has a full result of its own.
         whole = bool(card["accounts"]) and all(
             account["clean"]
-            and account["clean"]["pnl"]["value"] is not None
+            and account["clean"].get("pnl", {}).get("value") is not None
             and account["scope"] not in identity_conflicts
             for account in card["accounts"]
         )
