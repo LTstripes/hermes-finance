@@ -33,7 +33,7 @@ $db = Join-Path $root 'Synthetic Data.db'
 [IO.File]::WriteAllText($db, 'synthetic database placeholder')
 $envFile = Join-Path $stable '.env'
 function Write-Selector([string]$Text) { [IO.File]::WriteAllText($envFile, $Text, (New-Object Text.UTF8Encoding($true))) }
-$valid = "UNRELATED=synthetic-secret`nTOKEN=synthetic-secret-token`nHERMES_FINANCE_DATABASE_PATH='$db' # path only`nOTHER=synthetic-secret-other"
+$valid = "UNRELATED=synthetic-secret`nOTHER_KEY=synthetic-secret-other-key`nHERMES_FINANCE_DATABASE_PATH='$db' # path only`nOTHER=synthetic-secret-other"
 Write-Selector $valid
 $realMain = ${function:Assert-HermesGuidedMain}
 $realPort = ${function:Assert-HermesGuidedPortFree}
@@ -82,7 +82,7 @@ try {
     Reject { & $realMain $main } '*local or divergent*'
     $script:ahead = $false
     Check ((Get-HermesGuidedDatabase $stable) -ceq $db) 'only DB selector resolved, BOM supported'
-    foreach ($text in @('TOKEN=synthetic-secret', 'HERMES_FINANCE_DATABASE_PATH=relative.db', 'HERMES_FINANCE_DATABASE_PATH=\rooted.db', 'HERMES_FINANCE_DATABASE_PATH=C:relative.db', 'HERMES_FINANCE_DATABASE_PATH=${TOKEN}', "HERMES_FINANCE_DATABASE_PATH='$db'`nHERMES_FINANCE_DATABASE_PATH='$db'", 'HERMES_FINANCE_DATABASE_PATH="synthetic-secret')) {
+    foreach ($text in @('OTHER_KEY=synthetic-secret', 'HERMES_FINANCE_DATABASE_PATH=relative.db', 'HERMES_FINANCE_DATABASE_PATH=\rooted.db', 'HERMES_FINANCE_DATABASE_PATH=C:relative.db', 'HERMES_FINANCE_DATABASE_PATH=${OTHER_KEY}', "HERMES_FINANCE_DATABASE_PATH='$db'`nHERMES_FINANCE_DATABASE_PATH='$db'", 'HERMES_FINANCE_DATABASE_PATH="synthetic-secret')) {
         Write-Selector $text
         Reject { Get-HermesGuidedDatabase $stable } '*selector*'
     }
@@ -102,7 +102,7 @@ try {
     $script:gitCalls = @()
     $output = Invoke-HermesGuidedOperation $main '' '1.2.3' -DryRun 6>&1 | Out-String -Width 10000
     Check ($output.Contains('-DatabasePath') -and $output.Contains($db) -and $output.Contains('-BackupDirectory')) 'DryRun shows explicit command'
-    Check (-not $output.Contains('synthetic-secret') -and -not $output.Contains('UNRELATED') -and -not $output.Contains('TOKEN=')) 'no other dotenv keys or values printed'
+    Check (-not $output.Contains('synthetic-secret') -and -not $output.Contains('UNRELATED') -and -not $output.Contains('OTHER_KEY=')) 'no other dotenv keys or values printed'
     Check ($script:prompts -eq 0 -and $script:updates -eq 0 -and $script:starts -eq 0) 'DryRun has no prompts/update/start'
     Check (@($script:gitCalls | Where-Object { $_ -match 'pull|fetch' }).Count -eq 0) 'DryRun no network/ref mutation'
     Check ($before -ceq (@(Get-ChildItem $root -Recurse -Force | ForEach-Object { $_.FullName }) -join "`n")) 'DryRun creates no files'
