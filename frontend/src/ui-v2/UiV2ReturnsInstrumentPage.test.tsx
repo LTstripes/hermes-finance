@@ -758,7 +758,6 @@ test("partial component account sets are labelled known constituents without imp
   expect(
     screen.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
   ).toHaveTextContent("+49,77 ₽");
-  fireEvent.click(screen.getByText("Купоны и дивиденды"));
   expect(screen.getByText(/Купоны: \+42,77 ₽/)).toBeVisible();
   expect(screen.getAllByText("+12 ₽").length).toBeGreaterThan(0);
 });
@@ -837,9 +836,7 @@ test("standalone instrument explains paid income greater than its exact total", 
   );
   setup("/v2/returns/instrument/RU000A000002");
   const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
-  fireEvent.click(region.getByText("Купоны и дивиденды"));
-  expect(region.getByText(/Купоны: \+10 ₽/)).toBeVisible();
-  expect(region.getByText(/Дивиденды: \+5 ₽/)).toBeVisible();
+  expect(region.getByText(/Купоны: \+10 ₽ · Дивиденды: \+5 ₽/)).toBeVisible();
   expect(
     region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
   ).toHaveTextContent("+4 ₽");

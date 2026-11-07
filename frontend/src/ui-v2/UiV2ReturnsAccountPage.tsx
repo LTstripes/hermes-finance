@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, lazy, Suspense, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import sheet from "./ReportSheet.module.css";
+import layout from "./returns/Dashboard.module.css";
 import { readDisplayNames } from "./returns/dashboard";
 import resultStyles from "./returns/InstrumentResult.module.css";
 import {
@@ -8,8 +10,8 @@ import {
   displayMetric,
   getContext,
   getOverview,
-  isPartialResult,
   type Instrument,
+  isPartialResult,
   type Period,
   periodKey,
   periodLabel,
@@ -207,7 +209,9 @@ function Instruments({
         </div>
         <div className={styles.tops}>
           {mode === "pnl" && rows.some((row) => isPartialResult(row.pnl)) && (
-            <p>Порядок основан на показанных суммах; часть результатов неполна.</p>
+            <p>
+              Порядок основан на показанных суммах; * — известная часть результата, не полный итог.
+            </p>
           )}
           {[true, false].map((positive) => {
             const top = ranked(rows, period, mode, positive);
@@ -228,8 +232,10 @@ function Instruments({
                           {r.name !== r.isin && <small>{r.isin}</small>}
                         </span>
                         <strong className={positive ? styles.positive : styles.negative}>
-                          {mode === "pnl" && isPartialResult(r.pnl) ? "Известная часть: " : ""}
                           {displayMetric(r[mode], true)}
+                          {mode === "pnl" && isPartialResult(r.pnl) && (
+                            <sup aria-hidden="true">*</sup>
+                          )}
                         </strong>
                       </li>
                     ))}
@@ -330,20 +336,18 @@ export default function UiV2ReturnsAccountPage() {
         active="returns"
         busy={busy}
         header={
-          <div className={styles.titleRow}>
-            <div>
-              <p className={styles.eyebrow}>Инвестиции</p>
-              <h1>Доходность</h1>
-            </div>
-            <button type="button" onClick={refresh} disabled={busy}>
-              Обновить
-            </button>
+          <div className={sheet.titleRow}>
+            <h1>Доходность</h1>
+            <span className={layout.chip}>По счёту и периоду</span>
+            <span className={sheet.titleLinks}>
+              <Link to="/v2/returns">В целом — вся доступная история</Link>
+              <button type="button" className={layout.quiet} onClick={refresh} disabled={busy}>
+                Обновить
+              </button>
+            </span>
           </div>
         }
       >
-        <p>
-          <Link to="/v2/returns">В целом — вся доступная история</Link>
-        </p>
         <div className={styles.controls}>
           <label>
             Счёт
@@ -497,7 +501,7 @@ export default function UiV2ReturnsAccountPage() {
         ) : null}
         {data && (
           <>
-            <h2>
+            <h2 className={styles.accountTitle}>
               Подробности по счёту:{" "}
               {displayNames[scope] || context.data?.accounts.find((a) => a.id === scope)?.label}
             </h2>

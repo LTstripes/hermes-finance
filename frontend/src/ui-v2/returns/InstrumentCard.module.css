@@ -1,204 +1,473 @@
+/*
+ * Instrument card in the "Clear sheet" direction (#1079 stage 5): the total, its percent
+ * and decomposition first, FIFO purchases next, details below. No cards, thin rules only.
+ */
 .page {
+  display: grid;
   min-width: 0;
-  color: #1e2e40;
+  color: var(--ink);
 }
+
 .back {
-  margin-bottom: 20px;
+  justify-self: start;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-sm);
 }
+
+.back:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .header {
-  margin: 12px 0 24px;
+  display: grid;
+  gap: 4px;
+  margin: 14px 0 22px;
 }
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
 .header h1,
 .header h2 {
-  margin: 4px 0 8px;
-  font-size: clamp(25px, 2.5vw, 36px);
+  margin: 0;
+  font-family: var(--f-display);
+  font-size: var(--t-2xl);
+  font-weight: var(--w-semibold);
+  line-height: 1.15;
 }
-.muted {
-  color: #667687;
-  font-size: 13px;
-}
-.facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-  margin: 18px 0 24px;
-}
-.fact {
-  background: white;
-  border: 1px solid #dce4eb;
-  border-radius: 14px;
-  padding: 20px;
-}
-.fact h3 {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #667687;
-}
-.fact strong {
-  display: block;
-  font-size: 27px;
-  letter-spacing: -0.02em;
-}
-.fact small {
-  display: block;
-  margin-top: 10px;
-  color: #667687;
-}
-.primary {
-  background: #edf5f4;
-  border-color: #c8ddda;
-}
-.positive {
-  color: #177b64;
-}
-.negative {
-  color: #bb4150;
-}
-.panel {
-  background: white;
-  border: 1px solid #dce4eb;
-  border-radius: 14px;
-  padding: 24px;
-  margin: 18px 0;
-}
-.panel h2,
-.panel h3 {
-  margin: 0 0 18px;
-  font-size: 19px;
-}
-.bridge {
-  display: grid;
-  gap: 15px;
-}
-.barRow {
-  display: grid;
-  grid-template-columns: 170px minmax(40px, 1fr) 155px;
-  align-items: center;
-  gap: 16px;
-}
-.barTrack {
-  height: 13px;
-  background: #f0f3f6;
-  border-radius: 6px;
-  overflow: hidden;
-}
-.bar {
-  height: 100%;
-  background: #3c9b85;
-  border-radius: inherit;
-  min-width: 2px;
-}
-.barLoss {
-  background: #cb6b76;
-}
-.amount {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+
+.periodChip {
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
   white-space: nowrap;
 }
+
+.muted {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+/* Total, percent and decomposition. */
+.summary {
+  display: grid;
+  gap: 22px;
+  padding-bottom: 30px;
+}
+
+.lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px 48px;
+}
+
+.total {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.total h2 {
+  margin: 0;
+  font-size: var(--t-xs);
+}
+
+.totalMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.totalMeta:empty {
+  display: none;
+}
+
+.estimate {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--line-2);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+}
+
+/* A material caveat, said once in plain words. */
+.caveat,
+.caveatGroup p {
+  max-width: 72ch;
+  margin: 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--fc);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+}
+
+.caveatGroup {
+  display: grid;
+  gap: 6px;
+}
+
+.caveatGroup:empty {
+  display: none;
+}
+
+.position {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 40px;
+  margin: 4px 0 0;
+}
+
+.position section {
+  display: grid;
+  gap: 2px;
+}
+
+.position h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: var(--w-regular);
+}
+
+.position strong {
+  font-family: var(--f-num);
+  font-size: var(--t-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+}
+
+.position small {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.bridge {
+  display: grid;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-2);
+}
+
+.bridgeTitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.equation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 22px;
+}
+
+.term {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.term h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: var(--w-regular);
+}
+
+.term strong {
+  font-family: var(--f-num);
+  font-size: var(--t-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+}
+
+.termLabel {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.term small {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.operator {
+  align-self: center;
+  padding-top: 18px;
+  color: var(--faint);
+  font-family: var(--f-num);
+  font-size: var(--t-xl);
+}
+
+[data-tone="positive"] {
+  color: var(--pos);
+}
+
+[data-tone="negative"] {
+  color: var(--neg);
+}
+
+.knownTrades {
+  display: grid;
+  gap: 6px;
+}
+
+.knownTrades h3 {
+  margin: 0;
+  font-size: var(--t-md);
+}
+
+.knownTrades p {
+  margin: 0;
+}
+
+.amount {
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sections below the summary. */
+.section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 28px 0;
+  border-top: 1px solid var(--line);
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+
+.sectionHead h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-size: var(--t-lg);
+  font-weight: var(--w-semibold);
+}
+
+.tableTitle {
+  margin: 10px 0 4px;
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
 .scroll {
+  min-width: 0;
   overflow-x: auto;
 }
+
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--t-sm);
 }
+
 .table th,
 .table td {
-  border-bottom: 1px solid #e6ebef;
-  padding: 13px 10px;
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--line-2);
   text-align: left;
   vertical-align: top;
 }
-.table th {
-  font-weight: 500;
-  color: #667687;
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: 0;
 }
+
+.table thead th {
+  border-bottom-color: var(--line);
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
+}
+
 .table td:last-child {
   white-space: nowrap;
 }
+
 .table small {
   display: block;
-  color: #667687;
-  margin-top: 5px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--t-xs);
 }
+
+/* Money columns of purchases and operations line up on the right. */
+.lots td:nth-child(n + 2),
+.lots th:nth-child(n + 2),
+.operations td:last-child,
+.operations th:last-child {
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lots th:nth-child(n + 2),
+.operations th:last-child {
+  font-family: var(--f-ui);
+}
+
+.lots td:nth-child(5),
+.lots td:nth-child(6) {
+  font-weight: var(--w-semibold);
+}
+
+.lots td small {
+  font-family: var(--f-ui);
+  font-weight: var(--w-regular);
+}
+
 .notice {
-  background: #fff6e6;
-  border-radius: 10px;
-  padding: 12px 16px;
-  line-height: 1.55;
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--fc-soft);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.5;
 }
-.details {
-  margin-top: 18px;
-}
-.details summary {
+
+.details > summary {
+  color: var(--ink);
   cursor: pointer;
-  font-weight: 500;
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
 }
+
 .details p {
-  color: #536475;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
   line-height: 1.55;
 }
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin: 0 0 16px;
+
+.parts {
+  margin-top: 6px;
+  font-size: var(--t-sm);
 }
-.filters button[aria-pressed="true"] {
-  background: #e4efed;
-  color: #145e4d;
+
+.parts summary {
+  color: var(--accent);
+  cursor: pointer;
 }
+
+.parts p {
+  margin: 4px 0;
+}
+
+.more {
+  justify-self: start;
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-sm);
+}
+
+/* Gold history editor keeps its own form layout. */
 .gold {
   max-width: 100%;
 }
+
 .goldFacts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 18px;
-  padding: 0;
   margin: 14px 0;
+  padding: 0;
 }
+
 .goldFacts dt {
-  color: #667687;
-  font-size: 13px;
   margin-bottom: 7px;
+  color: var(--muted);
+  font-size: var(--t-sm);
 }
+
 .goldFacts dd {
-  font-size: 22px;
   margin: 0;
-  font-weight: 600;
+  font-family: var(--f-num);
+  font-size: var(--t-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
 }
+
 .goldForm {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
-  border: 1px solid #dce4eb;
-  border-radius: 10px;
   padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
 }
+
 .goldForm label {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
+
 .goldForm label:has(input[type="checkbox"]) {
   flex-direction: row;
   align-items: flex-start;
 }
+
 .goldOperation {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   grid-column: 1 / -1;
   gap: 12px;
-  border: 1px solid #dce4eb;
   padding: 16px;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
 }
+
 .goldForm p,
 .goldForm > details {
   grid-column: 1 / -1;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.filters button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
 }

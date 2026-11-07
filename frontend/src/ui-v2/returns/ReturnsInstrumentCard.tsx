@@ -1,20 +1,85 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
 import { reasonCopy } from "../../lib/reasonCopy";
+import sheet from "../ReportSheet.module.css";
 import { money, rate } from "../SourceInstrumentDetail";
 import { cardOperations, cardQuantityStatus, nonzeroAmount } from "./cardPresentation";
-import { cleanMetric, getInstrumentCard, selectCardScope } from "./cards";
+import { cleanMetric, getInstrumentCard, type InstrumentCard, selectCardScope } from "./cards";
 import styles from "./InstrumentCard.module.css";
 import resultStyles from "./InstrumentResult.module.css";
-import { dateLabel, displayMetric, isPartialResult } from "./model";
+import {
+  compareDecimal,
+  dateLabel,
+  displayMetric,
+  displaySignedRate,
+  isPartialResult,
+  type Metric,
+  tone,
+} from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
-import { Explanation, MissingMetricNote, ResultNote, visibleReturnReasons } from "./ReturnsInfo";
+import {
+  Explanation,
+  Info,
+  MissingMetricNote,
+  ResultNote,
+  visibleReturnReasons,
+} from "./ReturnsInfo";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
+
+const kindLabel = (kind: string | null) =>
+  kind === "bond"
+    ? "Облигация"
+    : kind === "stock"
+      ? "Акция"
+      : kind === "gold"
+        ? "Золото"
+        : "Ценная бумага";
+
+/** Sign colour for an exact kopeck string; geometry and arithmetic stay elsewhere. */
+const amountTone = (value: string | null) =>
+  value === null || !/^-?\d+$/.test(value)
+    ? undefined
+    : compareDecimal(value, "0") > 0
+      ? "positive"
+      : compareDecimal(value, "0") < 0
+        ? "negative"
+        : undefined;
+
+/** One period chip for the whole card when every account shares it. */
+function periodText(card: InstrumentCard, selected: boolean) {
+  const first = card.accounts[0]?.period;
+  if (selected && first)
+    return `Выбранный счёт · ${dateLabel(first.start)} – ${dateLabel(first.end)}`;
+  const periods = new Set(
+    card.accounts.map((a) => (a.period ? `${a.period.start}/${a.period.end}` : "")),
+  );
+  return periods.size === 1 && first
+    ? `Вся доступная история · ${dateLabel(first.start)} – ${dateLabel(first.end)}`
+    : "Вся доступная история по сохранённым выпискам";
+}
+
+function Figure({
+  label,
+  metric,
+  children,
+}: {
+  label: string;
+  metric: Metric;
+  children?: ReactNode;
+}) {
+  return (
+    <section className={styles.term}>
+      <h3>{label}</h3>
+      <strong data-tone={tone(metric)}>{displayMetric(metric, true)}</strong>
+      {children}
+    </section>
+  );
+}
 
 export function ReturnsInstrumentCard({
   isin,
@@ -97,10 +162,26 @@ export function ReturnsInstrumentCard({
           .map((event) => ({ account: account.label, scope: account.scope, event })),
       )
       .sort((a, b) => (b.event.event_date ?? "").localeCompare(a.event.event_date ?? "")) ?? [];
+  // Caveats of the shown total are explained once beside it; rows below do not repeat them.
+  const shownCaveats = new Set(data?.summary.pnl.reason_codes ?? []);
+  const partialTotal = data
+    ? [data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl].some(
+        isPartialResult,
+      )
+    : false;
+  const summaryMetrics = data
+    ? [data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl]
+    : [];
+  const unattributedPurchases = !!data?.accounts.some((account) =>
+    account.purchases?.some((purchase) =>
+      purchase.reason_codes.includes("account_money_unattributed"),
+    ),
+  );
   const Heading = standalone ? "h1" : "h2";
   return (
     <section className={styles.page} aria-label={`Карточка инструмента ${isin}`}>
       <button className={styles.back} type="button" onClick={close}>
+        <span aria-hidden="true">← </span>
         {backLabel}
       </button>
       {query.isError ? (
@@ -123,24 +204,15 @@ export function ReturnsInstrumentCard({
       {data && (
         <>
           <header className={styles.header}>
-            <Heading>
-              {data.name} <MissingName name={data.name} isin={data.isin} />
-            </Heading>
-            <span className={styles.muted}>
-              {data.kind === "bond"
-                ? "Облигация"
-                : data.kind === "stock"
-                  ? "Акция"
-                  : data.kind === "gold"
-                    ? "Золото"
-                    : "Ценная бумага"}{" "}
-              · {data.isin}
-            </span>
-            <p className={styles.muted}>
-              {selectedScope && data.accounts[0]?.period
-                ? `Выбранный счёт · ${dateLabel(data.accounts[0].period.start)} – ${dateLabel(data.accounts[0].period.end)}`
-                : "По сохранённым выпискам, за доступную историю."}
+            <p className={sheet.eyebrow}>
+              {kindLabel(data.kind)} · {data.isin}
             </p>
+            <div className={styles.titleRow}>
+              <Heading>
+                {data.name} <MissingName name={data.name} isin={data.isin} />
+              </Heading>
+              <span className={styles.periodChip}>{periodText(data, !!selectedScope)}</span>
+            </div>
           </header>
           {capitalRequested && matches.length !== 1 && (
             <p className={styles.notice}>
@@ -148,45 +220,142 @@ export function ReturnsInstrumentCard({
               бумаги по всем счетам.
             </p>
           )}
-          <section className={styles.panel} aria-label="Разложение результата">
-            <h2>Из чего сложился результат</h2>
-            <p>Комиссии и налоги не входят в расчёт. НКД учтён в сделках, стоимости и купонах.</p>
-            {[data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl].some(
-              isPartialResult,
-            ) && <p>В сумму входят только рассчитанные составляющие.</p>}
-            <div className={styles.facts}>
-              {(
-                [
-                  ["Стоимость и сделки", data.summary.valuation_and_trades],
-                  ["Полученные выплаты", data.summary.payouts],
-                  ["Сумма по данным", data.summary.pnl],
-                ] as const
-              ).map(([label, value]) => (
-                <section
-                  className={`${styles.fact} ${label === "Сумма по данным" ? styles.primary : ""}`}
-                  key={label}
-                >
-                  <h3>{label}</h3>
-                  <strong>{displayMetric(value, true)}</strong>
-                  {value.value !== null && value.estimate && !isPartialResult(value) && (
-                    <small>Оценка</small>
+          <section className={styles.summary} aria-label="Разложение результата">
+            <div className={styles.lead}>
+              <section className={styles.total}>
+                <h2 className={sheet.eyebrow}>Сумма по данным</h2>
+                <strong className={sheet.hero}>{displayMetric(data.summary.pnl, true)}</strong>
+                <div className={styles.totalMeta}>
+                  {partialTotal && data.summary.pnl.value !== null && (
+                    <span className={styles.estimate}>по доступным данным</span>
                   )}
-                </section>
-              ))}
+                  {data.summary.pnl.value !== null &&
+                    data.summary.pnl.estimate &&
+                    !isPartialResult(data.summary.pnl) &&
+                    !visibleReturnReasons(data.summary.pnl.reason_codes).length && (
+                      <span className={styles.estimate}>Оценка</span>
+                    )}
+                  {data.summary.rate.value !== null && (
+                    <span className={sheet.delta} data-tone={tone(data.summary.rate)}>
+                      {displaySignedRate(data.summary.rate)}
+                    </span>
+                  )}
+                  {data.summary.rate.value !== null ? (
+                    <span className={sheet.muted}>
+                      за период, не годовая{" "}
+                      <Info label="Процент">
+                        <p>
+                          Modified Dietz учитывает суммы и даты покупок и продаж за указанный
+                          период. Это не годовая ставка и не прибыль, делённая на сумму покупок.
+                        </p>
+                      </Info>
+                    </span>
+                  ) : (
+                    data.accounts.length > 1 &&
+                    data.accounts.some((a) => a.clean?.modified_dietz.value != null) && (
+                      <span className={sheet.muted}>Процент — по каждому счёту ниже</span>
+                    )
+                  )}
+                </div>
+                {partialTotal && (
+                  <p className={styles.caveat}>
+                    В сумму входят только рассчитанные составляющие. Это не полный итог.
+                  </p>
+                )}
+                <div className={styles.caveatGroup}>
+                  <MissingMetricNote metrics={summaryMetrics} />
+                  <ResultNote metric={data.summary.pnl} />
+                </div>
+              </section>
+              <dl className={styles.position}>
+                {data.summary.quantity.value !== null && (
+                  <section aria-label="Известное количество инструмента">
+                    <h3>{quantityStatus?.sold ? "Позиция продана" : "Количество"}</h3>
+                    <strong>{formatQuantity(data.summary.quantity.value)}</strong>
+                    {!!data.summary.valuation_dates.length && (
+                      <small>На {data.summary.valuation_dates.map(dateLabel).join(", ")}</small>
+                    )}
+                  </section>
+                )}
+                {nonzeroAmount(data.summary.reported_value) && (
+                  <section>
+                    <h3>Стоимость позиции</h3>
+                    <strong>{displayMetric(data.summary.reported_value)}</strong>
+                    {!!data.summary.valuation_dates.length && (
+                      <small>
+                        Оценки на {data.summary.valuation_dates.map(dateLabel).join(", ")}
+                      </small>
+                    )}
+                  </section>
+                )}
+              </dl>
             </div>
-            <MissingMetricNote
-              metrics={[data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl]}
-            />
-            <ResultNote metric={data.summary.pnl} />
+            {quantityStatus?.partial && (
+              <p className={styles.caveat}>
+                Не по всем счетам подтверждён остаток. Показанное известное количество не означает,
+                что позиция полностью продана.
+              </p>
+            )}
+            <div className={styles.bridge}>
+              <h3 className={styles.bridgeTitle}>Из чего сложился результат</h3>
+              <div className={styles.equation}>
+                <Figure label="Стоимость и сделки" metric={data.summary.valuation_and_trades}>
+                  <small>
+                    {nonzeroAmount(data.summary.redemption)
+                      ? `Погашение включено в стоимость и сделки: ${displayMetric(data.summary.redemption, true)}`
+                      : "покупки, продажи и стоимость сейчас"}
+                  </small>
+                </Figure>
+                <span className={styles.operator} aria-hidden="true">
+                  +
+                </span>
+                <Figure label="Полученные выплаты" metric={data.summary.payouts}>
+                  {[
+                    ["купоны", data.summary.coupons],
+                    ["дивиденды", data.summary.dividends],
+                  ].some(([, value]) => nonzeroAmount(value as Metric)) && (
+                    <small>
+                      {(
+                        [
+                          ["Купоны", data.summary.coupons],
+                          ["Дивиденды", data.summary.dividends],
+                        ] as const
+                      )
+                        .filter(([, value]) => nonzeroAmount(value))
+                        .map(([label, value]) => `${label}: ${displayMetric(value, true)}`)
+                        .join(" · ")}
+                    </small>
+                  )}
+                </Figure>
+                {data.summary.pnl.value !== null && (
+                  <>
+                    <span className={styles.operator} aria-hidden="true">
+                      =
+                    </span>
+                    <div className={styles.term} aria-hidden="true">
+                      <span className={styles.termLabel}>
+                        {partialTotal ? "По доступным данным" : "Итог"}
+                      </span>
+                      <strong data-tone={tone(data.summary.pnl)}>
+                        {displayMetric(data.summary.pnl, true)}
+                      </strong>
+                    </div>
+                  </>
+                )}
+              </div>
+              <p className={sheet.muted}>
+                Комиссии и налоги не входят в расчёт. НКД учтён в сделках, стоимости и купонах.
+              </p>
+            </div>
             {accountsWithKnownTrades.length > 0 && (
-              <section aria-label="Известные суммы сделок">
+              <section className={styles.knownTrades} aria-label="Известные суммы сделок">
                 <h3>Известные суммы сделок</h3>
-                <p>Эти суммы сами по себе не являются доходностью.</p>
+                <p className={sheet.muted}>Эти суммы сами по себе не являются доходностью.</p>
                 {accountsWithKnownTrades.some(
                   (account) =>
                     account.clean?.buys.status === "partial" ||
                     account.clean?.sells.status === "partial",
-                ) && <p>Включены не все операции.</p>}
+                ) && <p className={sheet.muted}>Включены не все операции.</p>}
                 {accountsWithKnownTrades.map((account) => {
                   const clean = account.clean;
                   if (!clean || (clean.buys.value === null && clean.sells.value === null))
@@ -197,7 +366,7 @@ export function ReturnsInstrumentCard({
                         <strong>{accountLabels[account.scope] ?? account.label}</strong>
                       )}
                       {account.period && (
-                        <p>
+                        <p className={sheet.muted}>
                           {dateLabel(account.period.start)} – {dateLabel(account.period.end)}
                         </p>
                       )}
@@ -208,102 +377,75 @@ export function ReturnsInstrumentCard({
                         ] as const
                       )
                         .filter(([, value]) => value.value !== null)
-                        .map(([label, value]) => (
-                          <p key={label}>
-                            {label}
-                            {value.status === "provisional" ? " · оценка" : ""}:{" "}
-                            {displayMetric(cleanMetric(value))}
-                            {value.assumptions.length > 0 && (
-                              <small>
-                                {" "}
-                                · {reasonCopy(value.assumptions[0], { surface: "returns" }).message}
-                              </small>
-                            )}
-                          </p>
-                        ))}
+                        .map(([label, value]) => {
+                          const assumption = value.assumptions.find(
+                            (code) => !shownCaveats.has(code),
+                          );
+                          return (
+                            <p key={label}>
+                              {label}
+                              {value.status === "provisional" ? " · оценка" : ""}:{" "}
+                              <span className={styles.amount}>
+                                {displayMetric(cleanMetric(value))}
+                              </span>
+                              {assumption && (
+                                <small>
+                                  {" "}
+                                  · {reasonCopy(assumption, { surface: "returns" }).message}
+                                </small>
+                              )}
+                            </p>
+                          );
+                        })}
                     </div>
                   );
                 })}
               </section>
             )}
-            <details>
-              <summary>Купоны и дивиденды</summary>
-              {(
-                [
-                  ["Купоны", data.summary.coupons],
-                  ["Дивиденды", data.summary.dividends],
-                ] as const
-              ).map(([label, value]) => (
-                <p key={label}>
-                  {label}: {displayMetric(value, true)}
-                </p>
-              ))}
-            </details>
-            {nonzeroAmount(data.summary.redemption) && (
-              <p>
-                Погашение включено в стоимость и сделки:{" "}
-                {displayMetric(data.summary.redemption, true)}
-              </p>
-            )}
           </section>
-          <div className={styles.facts}>
-            {data.summary.quantity.value !== null && (
-              <section className={styles.fact} aria-label="Известное количество инструмента">
-                <h3>{quantityStatus?.sold ? "Позиция продана" : "Количество"}</h3>
-                <strong>{formatQuantity(data.summary.quantity.value)}</strong>
-                {!!data.summary.valuation_dates.length && (
-                  <small>На {data.summary.valuation_dates.map(dateLabel).join(", ")}</small>
-                )}
-              </section>
-            )}
-            {nonzeroAmount(data.summary.reported_value) && (
-              <section className={styles.fact}>
-                <h3>Стоимость позиции</h3>
-                <strong>{displayMetric(data.summary.reported_value)}</strong>
-                {!!data.summary.valuation_dates.length && (
-                  <small>Оценки на {data.summary.valuation_dates.map(dateLabel).join(", ")}</small>
-                )}
-              </section>
-            )}
-          </div>
-          {quantityStatus?.partial && (
-            <p className={styles.notice}>
-              Не по всем счетам подтверждён остаток. Показанное известное количество не означает,
-              что позиция полностью продана.
-            </p>
-          )}
           {data.accounts.some(
             (account) =>
               account.purchases != null ||
               (account.clean?.buys.value != null && account.clean.buys.value !== "0"),
           ) && (
-            <section className={styles.panel} aria-label="Результат сохранённых покупок">
-              <h2>Результат покупок</h2>
-              <p>
-                Показан результат стоимости и продаж с НКД, без выплат, комиссий и налогов. При
-                продаже первыми считаются проданными самые ранние покупки (FIFO). Это аналитика
-                Hermes, не налоговый учёт брокера. Процент от первоначальной стоимости покупки, без
-                годового пересчёта. Выплаты показаны выше по инструменту.
+            <section className={styles.section} aria-label="Результат сохранённых покупок">
+              <div className={styles.sectionHead}>
+                <div>
+                  <p className={sheet.eyebrow}>Без выплат · FIFO</p>
+                  <h2>
+                    Результат покупок{" "}
+                    <Info label="Результат покупок">
+                      <p>
+                        Это аналитика Hermes, не налоговый учёт брокера. Процент от первоначальной
+                        стоимости покупки, без годового пересчёта. Выплаты показаны выше по
+                        инструменту.
+                      </p>
+                    </Info>
+                  </h2>
+                </div>
+              </div>
+              <p className={sheet.muted}>
+                Стоимость и продажи с НКД, без выплат, комиссий и налогов. При продаже первыми
+                считаются проданными самые ранние покупки (FIFO).
               </p>
-              {data.accounts.some((account) =>
-                account.purchases?.some((purchase) =>
-                  purchase.reason_codes.includes("account_money_unattributed"),
-                ),
-              ) && (
-                <p role="note">
+              {unattributedPurchases && (
+                <p role="note" className={styles.caveat}>
                   {reasonCopy("account_money_unattributed", { surface: "returns" }).message}
                 </p>
               )}
               {data.accounts.map((account) =>
                 account.purchases ? (
                   <div className={styles.scroll} key={account.scope}>
-                    <h3>{accountLabels[account.scope] ?? account.label}</h3>
-                    {account.period && (
-                      <p>
-                        {dateLabel(account.period.start)} – {dateLabel(account.period.end)}
-                      </p>
-                    )}
-                    <table className={styles.table}>
+                    <h3 className={styles.tableTitle}>
+                      <span>{accountLabels[account.scope] ?? account.label}</span>
+                      {account.period && (
+                        <span className={sheet.muted}>
+                          {" "}
+                          · {dateLabel(account.period.start)} – {dateLabel(account.period.end)}
+                        </span>
+                      )}
+                    </h3>
+                    <table className={`${styles.table} ${styles.lots}`}>
                       <thead>
                         <tr>
                           <th>Дата покупки</th>
@@ -329,7 +471,7 @@ export function ReturnsInstrumentCard({
                               {money(purchase.sale_proceeds_kopecks)} /{" "}
                               {money(purchase.value_kopecks)}
                             </td>
-                            <td>
+                            <td data-tone={amountTone(purchase.price_result_kopecks)}>
                               {money(purchase.price_result_kopecks)}
                               {purchase.status === "partial" &&
                                 purchase.reason_codes.join() !== "account_money_unattributed" && (
@@ -339,7 +481,7 @@ export function ReturnsInstrumentCard({
                                 <small>Расхождение по НКД</small>
                               )}
                             </td>
-                            <td>
+                            <td data-tone={amountTone(purchase.price_result_kopecks)}>
                               {purchase.return_fraction === null ? (
                                 <span>
                                   —{" "}
@@ -361,7 +503,7 @@ export function ReturnsInstrumentCard({
                 ) : null,
               )}
               {data.accounts.some((account) => account.clean && account.purchases == null) && (
-                <p>
+                <p className={sheet.muted}>
                   Если история, порядок сделок или остаток не подтверждены, отдельный результат пока
                   недоступен.
                 </p>
@@ -369,8 +511,13 @@ export function ReturnsInstrumentCard({
             </section>
           )}
           {!!data.accounts.length && (
-            <section className={styles.panel} aria-label="Позиции и результат по счетам">
-              <h2>По счетам</h2>
+            <section className={styles.section} aria-label="Позиции и результат по счетам">
+              <div className={styles.sectionHead}>
+                <div>
+                  <p className={sheet.eyebrow}>Подробности</p>
+                  <h2>По счетам</h2>
+                </div>
+              </div>
               <div className={styles.scroll}>
                 <table className={`${styles.table} ${resultStyles.list}`}>
                   <thead>
@@ -422,9 +569,11 @@ export function ReturnsInstrumentCard({
                                   ),
                                   rate: cleanMetric(account.clean.modified_dietz, true),
                                 }}
-                                reasonCodes={account.reason_codes}
+                                reasonCodes={account.reason_codes.filter(
+                                  (code) => !shownCaveats.has(code),
+                                )}
                               />
-                              <details>
+                              <details className={styles.parts}>
                                 <summary>Составляющие результата</summary>
                                 {[
                                   account.clean.buys,
@@ -467,7 +616,7 @@ export function ReturnsInstrumentCard({
                 </table>
               </div>
               {data.accounts.some((account) => account.ai_account_ref) && (
-                <p className={styles.muted}>
+                <p className={sheet.muted}>
                   Номера счетов в отчёте AI относятся к текущему составу счетов.
                 </p>
               )}
@@ -485,32 +634,34 @@ export function ReturnsInstrumentCard({
             </section>
           )}
           {operations.length > 0 && (
-            <section className={styles.panel} aria-label="Покупки и продажи">
-              <h2>Покупки и продажи</h2>
-              <div className={styles.filters}>
-                {(
-                  [
-                    ["all", "Все"],
-                    ["BUY", "Покупки"],
-                    ["SELL", "Продажи"],
-                  ] as const
-                ).map(([kind, label]) => (
-                  <button
-                    type="button"
-                    key={kind}
-                    aria-pressed={operationFilter === kind}
-                    onClick={() => {
-                      setOperationFilter(kind);
-                      setVisibleOperations(20);
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
+            <section className={styles.section} aria-label="Покупки и продажи">
+              <div className={styles.sectionHead}>
+                <h2>Покупки и продажи</h2>
+                <fieldset className={sheet.segmented} aria-label="Какие операции показать">
+                  {(
+                    [
+                      ["all", "Все"],
+                      ["BUY", "Покупки"],
+                      ["SELL", "Продажи"],
+                    ] as const
+                  ).map(([kind, label]) => (
+                    <button
+                      type="button"
+                      key={kind}
+                      aria-pressed={operationFilter === kind}
+                      onClick={() => {
+                        setOperationFilter(kind);
+                        setVisibleOperations(20);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </fieldset>
               </div>
               {filtered.length > 0 ? (
                 <div className={styles.scroll}>
-                  <table className={styles.table}>
+                  <table className={`${styles.table} ${styles.operations}`}>
                     <thead>
                       <tr>
                         <th>Дата</th>
@@ -536,20 +687,24 @@ export function ReturnsInstrumentCard({
                   </table>
                 </div>
               ) : (
-                <p>Таких операций нет в доступной истории.</p>
+                <p className={sheet.muted}>Таких операций нет в доступной истории.</p>
               )}
               {filtered.length > visibleOperations && (
-                <button type="button" onClick={() => setVisibleOperations((n) => n + 20)}>
+                <button
+                  className={styles.more}
+                  type="button"
+                  onClick={() => setVisibleOperations((n) => n + 20)}
+                >
                   Ещё операции
                 </button>
               )}
             </section>
           )}
           {payouts.length > 0 && (
-            <details className={`${styles.panel} ${styles.details}`}>
+            <details className={`${styles.section} ${styles.details}`}>
               <summary>Выплаты · {payouts.length}</summary>
               <div className={styles.scroll}>
-                <table className={styles.table}>
+                <table className={`${styles.table} ${styles.operations}`}>
                   <thead>
                     <tr>
                       <th>Дата</th>
@@ -574,7 +729,7 @@ export function ReturnsInstrumentCard({
           )}
           {limitedAccounts.length > 0 && (
             <details
-              className={`${styles.panel} ${styles.details}`}
+              className={`${styles.section} ${styles.details}`}
               open={!!selectedScope || undefined}
             >
               <summary>Что ограничивает расчёт</summary>

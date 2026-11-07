@@ -15,7 +15,7 @@
   max-width: 100%;
 }
 .metrics dt {
-  color: #526378;
+  color: var(--muted);
   font-size: 11px;
 }
 .metrics dd {
@@ -30,7 +30,7 @@
 .notice,
 .notes {
   margin: 8px 0 0;
-  color: #526378;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -44,7 +44,7 @@
   }
   .list > tbody > tr {
     display: block;
-    border-bottom: 1px solid #dfe6ed;
+    border-bottom: 1px solid var(--line);
   }
   .list > tbody > tr > th,
   .list > tbody > tr > td {

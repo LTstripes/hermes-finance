@@ -187,12 +187,11 @@ test("comparison shows partial amounts without ranking them as full returns", as
   const zeroRow = within(table).getByRole("row", { name: /Проданная облигация/ });
   expect(zeroRow.querySelector("summary")).toHaveTextContent("0 ₽");
   expect(zeroRow.querySelector("summary")).not.toHaveTextContent("Учебный счёт А");
-  expect(screen.getByRole("region", { name: "Вклад инструментов" })).toHaveTextContent("+12 ₽");
+  // Partial amounts stay in the table; the leaders chart ranks full results only.
+  expect(screen.queryByRole("region", { name: "Вклад инструментов" })).toBeNull();
   expect(
     screen.queryByText("Показаны известные составляющие; часть истории может отсутствовать."),
   ).toBeNull();
-  const leaders = screen.queryByRole("region", { name: "Лидеры и отстающие" });
-  if (leaders) expect(leaders).not.toHaveTextContent("Учебная акция");
 });
 
 test("shows the five largest confirmed losses without ranking partial or missing amounts", async () => {
@@ -217,7 +216,7 @@ test("shows the five largest confirmed losses without ranking partial or missing
   );
   install(data);
   setup("/v2/returns?accounts=source%3ASYNTH-A");
-  const leaders = await screen.findByRole("region", { name: "Лидеры и отстающие" });
+  const leaders = await screen.findByRole("region", { name: "Вклад инструментов" });
   const losses = within(leaders).getByRole("heading", { name: "Наибольший убыток" }).parentElement;
   if (!losses) throw new Error("missing losses section");
   expect(within(losses).getAllByRole("listitem")).toHaveLength(5);

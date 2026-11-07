@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
+import sheet from "./ReportSheet.module.css";
 import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
@@ -17,8 +18,10 @@ import {
   compareDecimal,
   dateLabel,
   displayMetric,
+  displayWhole,
   isPartialResult,
   periodLabel,
+  tone,
 } from "./returns/model";
 import { capitalGoldTarget, goldTargets } from "./returns/navigation";
 import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
@@ -135,18 +138,22 @@ export default function UiV2ReturnsPage() {
       setNextHref(href);
     }
   };
-  const chartRows = rows
-    .flatMap((r) =>
-      r.pnl.value !== null && r.pnl.value !== "0" ? [{ ...r, cash: BigInt(r.pnl.value) }] : [],
-    )
-    .sort(
-      (a, b) =>
-        compareDecimal(
-          (a.cash < 0n ? -a.cash : a.cash).toString(),
-          (b.cash < 0n ? -b.cash : b.cash).toString(),
-        ) * -1,
-    )
-    .slice(0, 6);
+  // Leaders and laggards share one chart: only full results are ranked, partial ones stay in the table.
+  const ranked = rows.filter(
+    (r) => !isPartialResult(r.pnl) && r.pnl.value !== null && r.pnl.value !== "0",
+  );
+  const leaders = [true, false]
+    .map((positive) => ({
+      positive,
+      items: ranked
+        .filter((r) => compareDecimal(r.pnl.value ?? "0", "0") === (positive ? 1 : -1))
+        .sort(
+          (a, b) => compareDecimal(a.pnl.value ?? "0", b.pnl.value ?? "0") * (positive ? -1 : 1),
+        )
+        .slice(0, 5),
+    }))
+    .filter((group) => group.items.length > 0);
+  const unranked = rows.filter((r) => isPartialResult(r.pnl)).length;
   const resultPeriods = new Set(
     rows
       .filter((row) => row.pnl.value !== null)
@@ -156,29 +163,37 @@ export default function UiV2ReturnsPage() {
           .map((account) => `${account.period?.start}/${account.period?.end}`),
       ),
   );
-  const maximum = chartRows.reduce((m, r) => {
-    const v = r.cash;
-    const abs = v < 0n ? -v : v;
-    return abs > m ? abs : m;
-  }, 1n);
+  const maximum = leaders
+    .flatMap((group) => group.items)
+    .reduce((m, r) => {
+      const v = BigInt(r.pnl.value ?? "0");
+      const abs = v < 0n ? -v : v;
+      return abs > m ? abs : m;
+    }, 1n);
+  const accountPeriods = new Set(
+    accounts.filter((a) => a.period).map((a) => `${a.period?.start}/${a.period?.end}`),
+  );
+  const singlePeriod =
+    accountPeriods.size === 1 && accounts[0]?.period ? periodLabel(accounts[0].period) : null;
   return (
     <div className={styles.page}>
       <UiV2Shell
         active="returns"
         busy={query.isFetching}
         header={
-          <div className={styles.titleRow}>
-            <div>
-              <p className={styles.eyebrow}>Инвестиции</p>
-              <h1>Доходность</h1>
-            </div>
-            <button
-              type="button"
-              disabled={query.isFetching}
-              onClick={() => void queryClient.invalidateQueries({ queryKey: ["returns"] })}
-            >
-              Обновить
-            </button>
+          <div className={sheet.titleRow}>
+            <h1>Доходность</h1>
+            <span className={layout.chip}>Вся доступная история · проданные бумаги включены</span>
+            <span className={sheet.titleLinks}>
+              <button
+                type="button"
+                className={layout.quiet}
+                disabled={query.isFetching}
+                onClick={() => void queryClient.invalidateQueries({ queryKey: ["returns"] })}
+              >
+                Обновить
+              </button>
+            </span>
           </div>
         }
       >
@@ -195,7 +210,7 @@ export default function UiV2ReturnsPage() {
         {data && (
           <>
             <div className={layout.toolbar}>
-              <label>
+              <label className={sheet.select}>
                 Счета
                 <select
                   aria-label="Счета"
@@ -212,159 +227,194 @@ export default function UiV2ReturnsPage() {
                   ))}
                 </select>
               </label>
-              <span className={layout.note}>Вся доступная история · проданные бумаги включены</span>
+              <details className={layout.names}>
+                <summary>Названия счетов</summary>
+                <div className={layout.namesPanel}>
+                  <p className={sheet.muted}>Только для отображения в этом браузере.</p>
+                  {data.source_accounts.map((a) => (
+                    <label key={a.scope}>
+                      {a.label}
+                      <input
+                        aria-label={`Название: ${a.label}`}
+                        maxLength={80}
+                        value={names[a.scope] ?? ""}
+                        placeholder={a.label}
+                        onChange={(e) => {
+                          const next = { ...names, [a.scope]: e.target.value };
+                          setNames(next);
+                          saveDisplayNames(next);
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </details>
             </div>
-            <details className={layout.names}>
-              <summary>Названия счетов</summary>
-              <p className={layout.note}>Только для отображения в этом браузере.</p>
-              {data.source_accounts.map((a) => (
-                <label key={a.scope}>
-                  {a.label}
-                  <input
-                    aria-label={`Название: ${a.label}`}
-                    maxLength={80}
-                    value={names[a.scope] ?? ""}
-                    placeholder={a.label}
-                    onChange={(e) => {
-                      const next = { ...names, [a.scope]: e.target.value };
-                      setNames(next);
-                      saveDisplayNames(next);
-                    }}
-                  />
-                </label>
-              ))}
-            </details>
             {accounts.length === 0 ? (
               <p role="alert">Выбранный счёт недоступен. Выберите другой счёт.</p>
             ) : (
               <>
-                <div
-                  className={styles.cards}
-                  style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
-                >
-                  {result && result.amount.value !== null && (
-                    <section
-                      className={`${styles.card} ${styles.primaryCard}`}
-                      aria-label="Результат"
-                    >
-                      <h2>Сумма по бумагам за доступную историю</h2>
-                      <div className={layout.value}>{displayMetric(result.amount, true)}</div>
-                      <small>По выбранным счетам за совпадающий период</small>
-                      {result.partial && <small>Учтены не все составляющие результата</small>}
-                    </section>
-                  )}
-                  {(["coupon", "dividend"] as const).map((incomeKind) => {
-                    const income = selectedIncome(data, scope, incomeKind);
-                    return income.known_total.value !== null && income.known_total.value !== "0" ? (
-                      <ReturnsCouponIncome
-                        key={incomeKind}
-                        compact
-                        value={income}
-                        kind={incomeKind}
-                        revision={query.dataUpdatedAt}
-                        scopes={accounts.map((a) => a.scope)}
-                        openInstrument={openInstrument}
-                      />
-                    ) : null;
-                  })}
-                  {accounts.length === 1 &&
-                    accounts[0].result &&
-                    accounts[0].result.rate.value !== null && (
-                      <section className={styles.card} aria-label="Доходность периода">
-                        <h2>Modified Dietz за период</h2>
-                        <div className={layout.value}>{displayMetric(accounts[0].result.rate)}</div>
-                        <small>
-                          {accounts[0].period && periodLabel(accounts[0].period)} · не годовая
+                <div className={layout.lead}>
+                  <div className={layout.leadMain}>
+                    {result && result.amount.value !== null && (
+                      <section className={layout.total} aria-label="Результат">
+                        <h2 className={sheet.eyebrow}>Сумма по бумагам за доступную историю</h2>
+                        <strong className={sheet.hero} title={displayMetric(result.amount, true)}>
+                          {displayWhole(result.amount, true)}
+                        </strong>
+                        <small className={sheet.muted}>
+                          {accounts.length > 1 ? "По выбранным счетам" : "По счёту"}
+                          {singlePeriod ? ` · ${singlePeriod}` : " за совпадающий период"}
                         </small>
+                        {result.partial && (
+                          <p className={layout.caveat}>Учтены не все составляющие результата</p>
+                        )}
                       </section>
                     )}
-                </div>
-                <div className={layout.accounts}>
-                  {accounts.map((a) => (
-                    <div className={layout.account} key={a.scope}>
-                      <Link
-                        to={
-                          accounts.length > 1
-                            ? summaryAccountHref(a.scope)
-                            : accountHref(a.scope, a.period)
-                        }
-                        onClick={(e) =>
-                          guardLink(
-                            e,
+                    <div className={layout.figures}>
+                      {accounts.length === 1 &&
+                        accounts[0].result &&
+                        accounts[0].result.rate.value !== null && (
+                          <section className={layout.figure} aria-label="Доходность периода">
+                            <h2>Modified Dietz за период</h2>
+                            <strong data-tone={tone(accounts[0].result.rate)}>
+                              {displayMetric(accounts[0].result.rate)}
+                            </strong>
+                            <small>
+                              {accounts[0].period && periodLabel(accounts[0].period)} · не годовая
+                            </small>
+                          </section>
+                        )}
+                      {(["coupon", "dividend"] as const).map((incomeKind) => {
+                        const income = selectedIncome(data, scope, incomeKind);
+                        return income.known_total.value !== null &&
+                          income.known_total.value !== "0" ? (
+                          <ReturnsCouponIncome
+                            key={incomeKind}
+                            compact
+                            value={income}
+                            kind={incomeKind}
+                            revision={query.dataUpdatedAt}
+                            scopes={accounts.map((a) => a.scope)}
+                            openInstrument={openInstrument}
+                          />
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                  <ul className={layout.accounts} aria-label="Счета">
+                    {accounts.map((a) => (
+                      <li className={layout.account} key={a.scope}>
+                        <Link
+                          to={
                             accounts.length > 1
                               ? summaryAccountHref(a.scope)
-                              : accountHref(a.scope, a.period),
-                          )
-                        }
-                      >
-                        {accounts.length > 1 ? label(a.scope, a.label) : "Результаты по месяцам"}
-                      </Link>
-                      {accounts.length > 1 && a.result && a.result.pnl.value !== null ? (
-                        <strong>{displayMetric(a.result.pnl, true)}</strong>
-                      ) : !a.result || a.result.pnl.value === null ? (
-                        <p>Пока нет результата по сохранённым данным</p>
-                      ) : null}
-                      <ReturnsResultMeta
-                        period={a.period}
-                        valuationDate={a.valuation_date}
-                        accountLink={a.account_link}
-                      />
-                      {accounts.length > 1 && a.result && a.result.rate.value !== null && (
-                        <small>Modified Dietz {displayMetric(a.result.rate)} за этот период</small>
-                      )}
-                    </div>
-                  ))}
+                              : accountHref(a.scope, a.period)
+                          }
+                          onClick={(e) =>
+                            guardLink(
+                              e,
+                              accounts.length > 1
+                                ? summaryAccountHref(a.scope)
+                                : accountHref(a.scope, a.period),
+                            )
+                          }
+                        >
+                          {accounts.length > 1 ? label(a.scope, a.label) : "Результаты по месяцам"}
+                        </Link>
+                        {accounts.length > 1 && a.result && a.result.pnl.value !== null ? (
+                          <strong
+                            title={displayMetric(a.result.pnl, true)}
+                            data-tone={tone(a.result.pnl)}
+                          >
+                            {displayWhole(a.result.pnl, true)}
+                          </strong>
+                        ) : !a.result || a.result.pnl.value === null ? (
+                          <p>Пока нет результата по сохранённым данным</p>
+                        ) : null}
+                        {accounts.length > 1 && a.result && a.result.rate.value !== null && (
+                          <small className={layout.accountRate}>
+                            Modified Dietz {displayMetric(a.result.rate)} за этот период
+                          </small>
+                        )}
+                        <ReturnsResultMeta
+                          period={a.period}
+                          valuationDate={a.valuation_date}
+                          accountLink={a.account_link}
+                        />
+                      </li>
+                    ))}
+                  </ul>
                 </div>
                 <p className={layout.note}>
-                  Результат бумаг рассчитан без комиссий, налогов и НКД; полученные выплаты уже
-                  включены.
+                  Комиссии и налоги не входят в результат бумаг, НКД учтён в сделках облигаций,
+                  полученные выплаты уже включены.
                   {accounts.length > 1 &&
                     " Общий процент для разных периодов счетов не складывается."}
                 </p>
-                {chartRows.length > 0 && resultPeriods.size === 1 && (
-                  <section className={styles.panel} aria-label="Вклад инструментов">
-                    <div className={layout.heading}>
-                      <h2>Суммы по инструментам</h2>
-                      <span className={layout.note}>Результат в рублях за доступную историю</span>
+                {leaders.length > 0 && resultPeriods.size === 1 && (
+                  <section className={layout.section} aria-label="Вклад инструментов">
+                    <div className={sheet.sectionHead}>
+                      <div>
+                        <p className={sheet.eyebrow}>Лидеры и отстающие</p>
+                        <h2>Вклад бумаг в результат</h2>
+                      </div>
+                      <span className={sheet.muted}>В рублях за доступную историю</span>
                     </div>
-                    <div className={layout.plot}>
-                      {chartRows.map((r) => {
-                        const v = r.cash;
-                        return (
-                          <div className={layout.barRow} key={r.isin}>
-                            <Link
-                              to={instrumentHref(r.isin)}
-                              onClick={(e) => guardLink(e, instrumentHref(r.isin))}
-                            >
-                              {r.name}
-                            </Link>
-                            <div className={layout.barTrack} aria-hidden="true">
-                              <div
-                                className={`${layout.bar} ${v < 0n ? layout.negative : ""}`}
-                                style={{
-                                  width: `${Number(((v < 0n ? -v : v) * 10000n) / maximum) / 100}%`,
-                                }}
-                              />
-                            </div>
-                            <strong>
-                              {displayMetric(r.pnl, true)}
-                              {isPartialResult(r.pnl) && <sup aria-hidden="true">*</sup>}
-                            </strong>
-                          </div>
-                        );
-                      })}
+                    <div className={layout.leaders}>
+                      {leaders.map(({ positive, items }) => (
+                        <div className={layout.leaderGroup} key={String(positive)}>
+                          <h3>{positive ? "Наибольший доход" : "Наибольший убыток"}</h3>
+                          <ol className={layout.leaderList}>
+                            {items.map((r, index) => {
+                              const v = BigInt(r.pnl.value ?? "0");
+                              return (
+                                <li className={layout.leaderRow} key={r.isin}>
+                                  <span className={layout.leaderRank} aria-hidden="true">
+                                    {index + 1}
+                                  </span>
+                                  <Link
+                                    to={instrumentHref(r.isin)}
+                                    onClick={(e) => guardLink(e, instrumentHref(r.isin))}
+                                  >
+                                    {r.name}
+                                  </Link>
+                                  <span className={layout.barTrack} aria-hidden="true">
+                                    <span
+                                      className={layout.bar}
+                                      data-tone={positive ? "positive" : "negative"}
+                                      style={{
+                                        width: `${Number(((v < 0n ? -v : v) * 10000n) / maximum) / 100}%`,
+                                      }}
+                                    />
+                                  </span>
+                                  <strong
+                                    className={layout.leaderAmount}
+                                    title={displayMetric(r.pnl, true)}
+                                  >
+                                    {displayWhole(r.pnl, true)}
+                                  </strong>
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        </div>
+                      ))}
                     </div>
-                    {chartRows.some((r) => isPartialResult(r.pnl)) && (
-                      <p className={layout.note}>* Учтены не все составляющие результата.</p>
+                    {unranked > 0 && (
+                      <p className={layout.note}>
+                        Бумаги с неполным итогом ({unranked}) не ранжируются, они есть в таблице
+                        ниже.
+                      </p>
                     )}
                   </section>
                 )}
-                <section className={styles.panel} aria-labelledby="returns-instruments">
-                  <div className={layout.heading}>
+                <section className={layout.section} aria-labelledby="returns-instruments">
+                  <div className={sheet.sectionHead}>
                     <h2 id="returns-instruments">Доходность по инструментам ({rows.length})</h2>
                   </div>
-                  <div className={styles.filters}>
-                    <label>
+                  <div className={layout.filters}>
+                    <label className={layout.search}>
                       Поиск
                       <input
                         type="search"
@@ -445,13 +495,18 @@ export default function UiV2ReturnsPage() {
                                         )}
                                         {a.resultAvailable ? (
                                           <>
-                                            <strong>
-                                              {displayMetric(a.pnl, true)}
+                                            <strong
+                                              title={displayMetric(a.pnl, true)}
+                                              data-tone={tone(a.pnl)}
+                                            >
+                                              {displayWhole(a.pnl, true)}
                                               {isPartialResult(a.pnl) && (
                                                 <sup aria-hidden="true">*</sup>
                                               )}
                                             </strong>{" "}
-                                            · {displayMetric(a.rate)}
+                                            <span className={layout.rate}>
+                                              · {displayMetric(a.rate)}
+                                            </span>
                                           </>
                                         ) : (
                                           "Нет доступного результата"
@@ -485,10 +540,20 @@ export default function UiV2ReturnsPage() {
                               </td>
                               <td>
                                 {r.coupons.value !== null && r.coupons.value !== "0" && (
-                                  <div>Купоны {displayMetric(r.coupons)}</div>
+                                  <div>
+                                    Купоны{" "}
+                                    <span title={displayMetric(r.coupons)}>
+                                      {displayWhole(r.coupons)}
+                                    </span>
+                                  </div>
                                 )}
                                 {r.dividends.value !== null && r.dividends.value !== "0" && (
-                                  <div>Дивиденды {displayMetric(r.dividends)}</div>
+                                  <div>
+                                    Дивиденды{" "}
+                                    <span title={displayMetric(r.dividends)}>
+                                      {displayWhole(r.dividends)}
+                                    </span>
+                                  </div>
                                 )}
                               </td>
                             </tr>
@@ -503,71 +568,25 @@ export default function UiV2ReturnsPage() {
                     <p>Бумаги не найдены.</p>
                   )}
                   {rows.length > 5 && (
-                    <button type="button" onClick={() => setShowAllInstruments((shown) => !shown)}>
+                    <button
+                      type="button"
+                      className={layout.more}
+                      onClick={() => setShowAllInstruments((shown) => !shown)}
+                    >
                       {showAllInstruments ? "Свернуть" : "Показать все"}
                     </button>
                   )}
                 </section>
-                {resultPeriods.size === 1 &&
-                  rows.some(
-                    (r) => !isPartialResult(r.pnl) && r.pnl.value !== null && r.pnl.value !== "0",
-                  ) && (
-                    <section className={styles.panel} aria-label="Лидеры и отстающие">
-                      <h2>Лидеры и отстающие</h2>
-                      <div className={layout.leaders}>
-                        {([true, false] as const)
-                          .filter((positive) =>
-                            rows.some(
-                              (r) =>
-                                !isPartialResult(r.pnl) &&
-                                r.pnl.value !== null &&
-                                compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
-                            ),
-                          )
-                          .map((positive) => (
-                            <div className={layout.leaderGroup} key={String(positive)}>
-                              <h3>{positive ? "Наибольший доход" : "Наибольший убыток"}</h3>
-                              <ol className={layout.leaderList}>
-                                {rows
-                                  .filter(
-                                    (r) =>
-                                      !isPartialResult(r.pnl) &&
-                                      r.pnl.value !== null &&
-                                      compareDecimal(r.pnl.value, "0") === (positive ? 1 : -1),
-                                  )
-                                  .sort(
-                                    (a, b) =>
-                                      compareDecimal(a.pnl.value ?? "0", b.pnl.value ?? "0") *
-                                      (positive ? -1 : 1),
-                                  )
-                                  .slice(0, 5)
-                                  .map((r, index) => (
-                                    <li className={layout.leaderRow} key={r.isin}>
-                                      <span className={layout.leaderRank} aria-hidden="true">
-                                        {index + 1}.
-                                      </span>
-                                      <Link
-                                        to={instrumentHref(r.isin)}
-                                        onClick={(e) => guardLink(e, instrumentHref(r.isin))}
-                                      >
-                                        {r.name}
-                                      </Link>
-                                      <strong className={layout.leaderAmount}>
-                                        {displayMetric(r.pnl, true)}
-                                      </strong>
-                                    </li>
-                                  ))}
-                              </ol>
-                            </div>
-                          ))}
-                      </div>
-                    </section>
-                  )}
               </>
             )}
             {goldTargets(data).length > 0 && (
-              <section className={styles.panel} id="returns-gold" aria-label="Золото">
-                <h2>Золото</h2>
+              <section className={layout.section} id="returns-gold" aria-label="Золото">
+                <div className={sheet.sectionHead}>
+                  <div>
+                    <p className={sheet.eyebrow}>Отдельно от бумаг</p>
+                    <h2>Золото</h2>
+                  </div>
+                </div>
                 {goldTargets(data).map((item) => {
                   const snapshot = data.gold.snapshots.find(
                     (s) =>
@@ -634,6 +653,7 @@ export default function UiV2ReturnsPage() {
                       )}
                       <button
                         type="button"
+                        className={layout.more}
                         disabled={goldNavigation.pending}
                         onClick={() =>
                           change({
@@ -651,7 +671,7 @@ export default function UiV2ReturnsPage() {
             )}
           </>
         )}
-        <details className={styles.diagnostics}>
+        <details className={layout.footer}>
           <summary>Подробнее о данных</summary>
           <Link to={RETURNS_DATA_HREF} onClick={(event) => guardLink(event, RETURNS_DATA_HREF)}>
             Проверить данные расчёта

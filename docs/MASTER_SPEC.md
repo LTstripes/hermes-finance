@@ -399,6 +399,16 @@ composition chart; the monthly bridge is a waterfall of the same backend
 amounts. The page title carries the closed-report chip instead of a separate
 context row.
 
+Returns lead with the brokerage total in whole rubles, received coupons and
+dividends and the selected accounts beside them. Leaders and laggards share one
+bar chart from zero that ranks only full results; partial amounts stay in the
+instrument table with one footnote. The instrument page leads with the total,
+its percent and the bridge «стоимость и сделки + выплаты»; FIFO purchases follow
+and per-account details, trades and payouts come last. A material caveat of the
+total, such as unattributed account money, is stated once beside it and once
+above the purchases, never on each row. Exact kopecks stay on the instrument
+page and in titles.
+
 Performance separates capability from data readiness and separates portfolio, account, class and instrument scopes. XIRR is annualized; TWRR is period return; statement S3 and WHAT-IF use nonannualized `rate_fraction`. Readiness explains each metric independently with its required evidence and supported next action. PERF04 is a money bridge, not a percentage return or automatic profit/loss. The instrument readers show known net payouts, comparable EOD observations and executions with partial coverage; they do not promise a complete stock/bond economic result.
 
 Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.
