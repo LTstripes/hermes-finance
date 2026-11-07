@@ -1281,6 +1281,55 @@ def test_overlapping_account_cost_gap_stays_with_account(db, description, accoun
     assert snapshot(db) == before
 
 
+def test_repo_after_each_purchase_keeps_the_proved_intraday_order(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def interleaved(root):
+        rows = root.findall(".//m:Details[@trade_no]", NS)
+        plan = [
+            (None, None, None, "09:00", "10.04.2030"),
+            ("B90001", "B90002", "репо ч.1", "10:00", "10.04.2030"),
+            ("B90002", "B90001", "репо ч.2", "10:00", "11.04.2030"),
+            (None, None, None, "11:00", "10.04.2030"),
+            ("B90003", "B90004", "репо ч.1", "12:00", "10.04.2030"),
+            ("B90004", "B90003", "репо ч.2", "12:00", "11.04.2030"),
+        ]
+        for row, (number, partner, comment, time, delivery) in zip(rows, plan, strict=True):
+            stamp = f"10.04.2030 {time}:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", delivery)
+            row.set("save_depo_settlement_date", delivery)
+            if number:
+                row.set("trade_no", number)
+                row.set("repo_no", partner)
+                row.set("comment", comment)
+
+    save(
+        db,
+        stock=("0", "10", "0", "1300"),
+        bond=None,
+        trades=(
+            (ISIN, "5", "500", "0", "0"),
+            (ISIN, "-5", "500", "0", "0"),
+            (ISIN, "5", "500", "0", "0"),
+            (ISIN, "5", "600", "0", "0"),
+            (ISIN, "-5", "600", "0", "0"),
+            (ISIN, "5", "600", "0", "0"),
+        ),
+        mutate=interleaved,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    assert result["instruments"][0]["pnl"]["value"] == "20000"
+
+
 @pytest.mark.parametrize("lent, visible", [("10", True), ("11", False)])
 def test_rolling_repo_chain_and_same_second_fills_keep_the_result(db, lent, visible):
     from hermes_finance.services.clean_instrument_return import read_clean_account

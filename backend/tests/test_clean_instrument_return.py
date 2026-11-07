@@ -1385,6 +1385,12 @@ def test_blank_nkd_keeps_the_statement_total():
         {"quantity_delta": Decimal("-1")},
         {"native_trade_amount_kopecks": None},
         {"cash_legs": (CashLeg("principal", DAY, -90000, 90000, ("m",), "m"),)},
+        {
+            "cash_legs": (
+                CashLeg("principal", DAY, -102050, 102050, ("m",), "m"),
+                CashLeg("nkd", DAY, -500, 500, ("n",), "n"),
+            )
+        },
     ],
 )
 def test_blank_nkd_rule_is_narrow(changes):

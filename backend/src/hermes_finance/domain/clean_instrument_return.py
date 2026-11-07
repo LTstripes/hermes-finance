@@ -115,9 +115,10 @@ def _bond_total_with_blank_nkd(event: InstrumentEvent) -> bool:
             context.prec = 200
             if amount < price * face * abs(quantity) - 1:
                 return False
-    principal = [leg for leg in event.cash_legs if leg.role == "principal"]
+    # Linked principal and NKD money together must equal the statement total.
+    paid = [leg for leg in event.cash_legs if leg.role in {"principal", "nkd"}]
     sign = -1 if event.kind == "BUY" else 1
-    return not principal or sum(leg.account_cash_kopecks for leg in principal) == sign * amount
+    return not paid or sum(leg.account_cash_kopecks for leg in paid) == sign * amount
 
 
 def trade_amount_with_nkd(event: InstrumentEvent) -> int | None:

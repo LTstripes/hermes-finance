@@ -215,15 +215,11 @@ def without_proven_closed_repo(analysis, views, isin):
         context.prec = 200
         held = analysis.opening.quantity
         for day in sorted(by_delivery):
-            changes = by_delivery[day]
-            outgoing = [(at, q) for at, q in changes if q < 0]
-            first_out = min((at for at, _ in outgoing), default=None)
-            earlier = sum(
-                (q for at, q in changes if q > 0 and first_out and at < first_out), Decimal(0)
-            )
-            if held + earlier + sum((q for _, q in outgoing), Decimal(0)) < 0:
-                return analysis
-            held += sum((q for _, q in changes), Decimal(0))
+            # Within a day follow execution times; at one instant, outgoing first.
+            for _, quantity in sorted(by_delivery[day], key=lambda row: (row[0], row[1] > 0)):
+                held += quantity
+                if held < 0:
+                    return analysis
         if held != analysis.closing.quantity:
             return analysis
 
