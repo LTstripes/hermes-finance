@@ -73,10 +73,23 @@ def _own_money_is_trade_nkd(events):
     return True
 
 
+# Money rows the source could not read or classify; they belong to no issue yet.
+_UNIDENTIFIED_MONEY_GAPS = frozenset(
+    {
+        "classification_missing_legacy_intake",
+        "currency_unsupported",
+        "invalid_assumption_choice",
+        "invalid_external_flow",
+        "invalid_money_row",
+        "overlap_flow_choice_conflict",
+    }
+)
+
+
 def has_unidentified_trade_money(analysis):
     """Money of an unknown issue may be a trade, so the result carries a note."""
     if any(
-        "classification_missing_legacy_intake" in analysis.coverage[name].reason_codes
+        _UNIDENTIFIED_MONEY_GAPS & set(analysis.coverage[name].reason_codes)
         for name in ("events", "payouts")
         if name in analysis.coverage
     ):
@@ -87,6 +100,15 @@ def has_unidentified_trade_money(analysis):
         and {"unmatched_trade_money", "unrecognized_money"} & set(event.reason_codes)
         for event in analysis.events
     )
+
+
+def _has_unattributed_payout_gap(analysis, reasons):
+    """A set-aside reason counts unless every row with it names an issue."""
+    identified = set()
+    unattributed = set()
+    for event in analysis.events:
+        (unattributed if event.isin is None else identified).update(event.reason_codes)
+    return any(reason in unattributed or reason not in identified for reason in reasons)
 
 
 def instrument_scoped_reasons(analysis, isin, reasons):
@@ -245,7 +267,8 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         redemptions_complete=clean_complete("quantity"),
         valuation_complete=opening is not None and closing is not None,
         result_assumptions=("account_money_unattributed",)
-        if payout_reasons - own_payout_reasons or has_unidentified_trade_money(analysis)
+        if _has_unattributed_payout_gap(analysis, payout_reasons - own_payout_reasons)
+        or has_unidentified_trade_money(analysis)
         else (),
     )
     if "source_sections_not_financially_accepted" in getattr(analysis, "reason_codes", ()):

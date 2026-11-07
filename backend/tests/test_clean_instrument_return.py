@@ -1130,15 +1130,58 @@ def test_alternate_date_of_a_collision_still_blocks_its_issue():
     assert result.pnl.value is None
 
 
-def test_missing_money_classification_marks_purchases():
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "classification_missing_legacy_intake",
+        "currency_unsupported",
+        "invalid_assumption_choice",
+        "invalid_external_flow",
+        "invalid_money_row",
+        "overlap_flow_choice_conflict",
+    ],
+)
+def test_every_unidentified_money_gap_marks_purchases(reason):
     analysis = scoped_case()
     analysis.events = analysis.events[:1]
-    analysis.coverage["payouts"] = Coverage(False, ("classification_missing_legacy_intake",))
+    analysis.coverage["payouts"] = Coverage(False, (reason,))
     result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
     rows = clean_purchase_price_contributions(
         analysis, result, "ZZ0000000011", instrument_type="bond"
     )
     assert rows[0]["reason_codes"] == ["account_money_unattributed"]
+
+
+def test_proved_own_nkd_row_is_not_reported_as_unattributed_money():
+    analysis = scoped_case()
+    analysis.events = (analysis.events[0], own_money(0, -2000))
+    analysis.coverage["payouts"] = Coverage(False, ("unmatched_trade_money",))
+    analysis.coverage["events"] = Coverage(False, ("unmatched_trade_money",))
+    analysis.coverage["quantity"] = Coverage(True)
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value == -3000
+    assert result.pnl.assumptions == ()
+
+
+def test_money_row_of_another_issue_is_not_reported_as_unattributed_money():
+    analysis = scoped_case()
+    other = replace(own_money(0, -700), isin="ZZ0000000029", nkd_money=False)
+    analysis.events = (analysis.events[0], other)
+    analysis.coverage["payouts"] = Coverage(False, ("unmatched_trade_money",))
+    analysis.coverage["events"] = Coverage(False, ("unmatched_trade_money",))
+    analysis.coverage["quantity"] = Coverage(True)
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value == -3000
+    assert result.pnl.assumptions == ()
+
+
+def test_account_gap_without_a_row_keeps_the_note():
+    analysis = scoped_case(payout_reasons=("unparsed_source_rows",))
+    analysis.events = analysis.events[:1]
+    analysis.coverage["events"] = Coverage(True)
+    analysis.coverage["quantity"] = Coverage(True)
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.assumptions == ("account_money_unattributed",)
 
 
 def test_own_payout_conflict_is_not_reported_as_unattributed_money():
