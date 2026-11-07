@@ -57,10 +57,11 @@ def portfolio_source_coverage_for_months(
             )
         else:
             result[month_id] = PortfolioSourceCoverage("complete")
-    from hermes_finance.services.source_intake import scoped_status
+    from hermes_finance.services.source_intake import scoped_status_for_months
 
+    source_coverage_by_month = scoped_status_for_months(session, month_ids)
     for month_id in month_ids:
-        source_coverage = scoped_status(session, month_id)
+        source_coverage = source_coverage_by_month[month_id]
         if source_coverage["intake_count"]:
             result[month_id] = replace(
                 result[month_id], source_account_financial_coverage=source_coverage

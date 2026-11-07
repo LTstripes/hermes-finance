@@ -15,7 +15,11 @@ from typing import Literal, Mapping
 
 from sqlalchemy import select
 
-from hermes_finance.database import coherent_read_operation, coherent_read_snapshot
+from hermes_finance.database import (
+    coherent_read_operation,
+    coherent_read_snapshot,
+    snapshot_read_result,
+)
 from hermes_finance.domain.broker_statement_provisional import ProvisionalAssumptions
 from hermes_finance.domain.monthly_return_chain import (
     MonthlyReturnRow,
@@ -354,15 +358,45 @@ def _saved_totals(document):
     return (None, None, reasons) if reasons else (*totals, reasons)
 
 
-def _money(session, view, choices, gaps, *, selected_accounts=None, payout_groups=None):
-    persisted = {
-        row.source_reference: row
-        for row in session.scalars(
-            select(SourceMoneyClassification).where(
-                SourceMoneyClassification.intake_id == view["id"]
+@dataclass(frozen=True, slots=True)
+class _MoneyChoice:
+    source_reference: str
+    classification: str
+    origin: str
+    status: str
+    operation: str
+    narrative: str
+    amount_kopecks: int | None
+    currency: str
+    date: date
+
+
+def _money_choices(session, intake_id):
+    def read():
+        return {
+            row.source_reference: _MoneyChoice(
+                source_reference=row.source_reference,
+                classification=row.classification,
+                origin=row.origin,
+                status=row.status,
+                operation=row.operation,
+                narrative=row.narrative,
+                amount_kopecks=row.amount_kopecks,
+                currency=row.currency,
+                date=row.date,
             )
-        )
-    }
+            for row in session.scalars(
+                select(SourceMoneyClassification).where(
+                    SourceMoneyClassification.intake_id == intake_id
+                )
+            )
+        }
+
+    return snapshot_read_result(session, "source_money_choices", intake_id, read)
+
+
+def _money(session, view, choices, gaps, *, selected_accounts=None, payout_groups=None):
+    persisted = _money_choices(session, view["id"])
     counts = defaultdict(int)
     result = []
     financial_source = bound_import(session, view)

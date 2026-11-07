@@ -12,7 +12,7 @@ import re
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from hermes_finance.database import coherent_read_snapshot
+from hermes_finance.database import coherent_read_snapshot, snapshot_read_result
 from hermes_finance.persistence import (
     Account,
     BrokerIdentityMapping,
@@ -30,6 +30,14 @@ from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, di
 
 
 def _revision(session: Session) -> str:
+    # Every source in the same committed read snapshot depends on the same
+    # catalogue and journals. Writers and later snapshots still recompute it.
+    return snapshot_read_result(
+        session, "mybroker_identity_revision", (), lambda: _build_revision(session)
+    )
+
+
+def _build_revision(session: Session) -> str:
     # Include the existing monotonic change journal: A -> B -> A is stale too.
     # Full mapped catalogue fields are dependencies, including inactive identity.
     state = {}

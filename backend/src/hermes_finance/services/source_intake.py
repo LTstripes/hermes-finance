@@ -1115,7 +1115,26 @@ def close_integrity_guards(session, month_id):
 
 def scoped_status(session, month_id, account_id=None):
     """One resolver used by Close, completeness and actual-return consumers."""
-    ids = _scoped_ids(session, month_id, account_id)
+    return _scoped_status_for_ids(session, _scoped_ids(session, month_id, account_id))
+
+
+def scoped_status_for_months(session, month_ids):
+    """Resolve the same per-month status after one batched scope lookup."""
+    ids_by_month = {month_id: set() for month_id in month_ids}
+    if not ids_by_month:
+        return {}
+    for month_id, original_id in session.execute(
+        select(SourceIntakeRevision.reporting_month_id, SourceIntakeRevision.original_id).where(
+            SourceIntakeRevision.reporting_month_id.in_(ids_by_month)
+        )
+    ):
+        ids_by_month[month_id].add(original_id)
+    return {
+        month_id: _scoped_status_for_ids(session, ids) for month_id, ids in ids_by_month.items()
+    }
+
+
+def _scoped_status_for_ids(session, ids):
     reasons, accounts, heads = set(), set(), []
     for intake_id in sorted(ids):
         try:

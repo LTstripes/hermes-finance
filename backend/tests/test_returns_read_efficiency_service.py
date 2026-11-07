@@ -1686,3 +1686,63 @@ def test_month_journal_keeps_only_bound_or_calendar_overlapping_unbound_sources(
             april,
             may,
         }
+
+
+def test_identity_revision_is_shared_only_within_one_committed_snapshot(db, monkeypatch):
+    from unittest.mock import Mock
+
+    from hermes_finance.database import coherent_read_snapshot
+    from hermes_finance.persistence import Account
+    from hermes_finance.services import mybroker_identity
+
+    build = Mock(wraps=mybroker_identity._build_revision)
+    monkeypatch.setattr(mybroker_identity, "_build_revision", build)
+    with db.session_factory() as session:
+        with coherent_read_snapshot(session):
+            first = mybroker_identity._revision(session)
+            assert mybroker_identity._revision(session) == first
+            assert build.call_count == 1
+        with db.session_factory() as writer:
+            writer.add(Account(name="Synthetic added account", account_type="brokerage"))
+            writer.commit()
+        with coherent_read_snapshot(session):
+            assert mybroker_identity._revision(session) != first
+            assert build.call_count == 2
+
+
+def test_money_choices_are_owned_and_refreshed_after_a_write(db):
+    from sqlalchemy import event
+
+    from hermes_finance.database import coherent_read_snapshot
+    from hermes_finance.services.source_monthly_returns import _money_choices
+
+    intake_id = save(db, extra=(("Synthetic operation", "Synthetic narrative", "10"),))
+    reads = []
+
+    def count(_conn, _cursor, statement, _params, _context, _many):
+        if "FROM source_intake_money_classifications" in statement:
+            reads.append(statement)
+
+    event.listen(db.engine, "before_cursor_execute", count)
+    try:
+        with db.session_factory() as session, coherent_read_snapshot(session):
+            first = _money_choices(session, intake_id)
+            assert first
+            reference = next(iter(first))
+            previous = first[reference].classification
+            first.clear()
+            assert _money_choices(session, intake_id)[reference].classification == previous
+            assert len(reads) == 1
+        with db.session_factory() as writer:
+            choice = writer.scalar(
+                select(SourceMoneyClassification).where(
+                    SourceMoneyClassification.intake_id == intake_id,
+                    SourceMoneyClassification.source_reference == reference,
+                )
+            )
+            choice.classification = "fee" if previous != "fee" else "unknown"
+            writer.commit()
+        with db.session_factory() as session, coherent_read_snapshot(session):
+            assert _money_choices(session, intake_id)[reference].classification != previous
+    finally:
+        event.remove(db.engine, "before_cursor_execute", count)

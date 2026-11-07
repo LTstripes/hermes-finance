@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import insert, select, update
 from sqlalchemy.orm import Session
 
-from hermes_finance.database import coherent_read_snapshot
+from hermes_finance.database import coherent_read_snapshot, snapshot_read_result
 from hermes_finance.domain.payout_reconciliation import PayoutIntent
 from hermes_finance.persistence import (
     Account,
@@ -963,6 +963,15 @@ def _closed_future_states(session, month):
 
 def future_states(session, calendar_month_id):
     """Eligible future only; actual amounts continue to come solely from ICF."""
+    return snapshot_read_result(
+        session,
+        "actual_payout_future_states",
+        calendar_month_id,
+        lambda: _future_states(session, calendar_month_id),
+    )
+
+
+def _future_states(session, calendar_month_id):
     month = session.get(ReportingMonth, calendar_month_id)
     result = {}
     if month is None or month.snapshot_date is None:
