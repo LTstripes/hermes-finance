@@ -1,3 +1,4 @@
+from _version_helpers import current_release_version
 from fastapi.testclient import TestClient
 
 from hermes_finance.main import app
@@ -8,4 +9,4 @@ def test_health_returns_status_and_version() -> None:
         response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "1.11.0"}
+    assert response.json() == {"status": "ok", "version": current_release_version()}

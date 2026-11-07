@@ -155,3 +155,81 @@ function Assert-HermesReleaseIdentity {
         ReleaseNotes   = $notesPath
     }
 }
+function Submit-HermesReleaseRequest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [switch]$DryRun,
+        [scriptblock]$CommandRunner = (New-HermesDefaultCommandRunner),
+        [scriptblock]$CommandResolver = (New-HermesDefaultCommandResolver),
+        [ValidateRange(1, 120)][int]$PollAttempts = 30,
+        [scriptblock]$PollWait = { Start-Sleep -Seconds 2 }
+    )
+
+    # Validate grammar before resolving tools or making any network request.
+    $null = Get-HermesReleaseRequest -RequestBody ("/release" + "`nversion=$Version`nexpected_main_sha=" + ("0" * 40))
+    $context = [pscustomobject]@{
+        GitPath = Resolve-HermesToolPath -Name "git" -CommandResolver $CommandResolver -InstallHint "Install git."
+        GhPath = Resolve-HermesToolPath -Name "gh" -CommandResolver $CommandResolver -InstallHint "Install gh."
+        RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
+        CommandRunner = $CommandRunner
+    }
+    $origin = Invoke-HermesTool -Context $context -Name git -ArgumentList @("-C", $context.RepoRoot, "remote", "get-url", "--all", "origin")
+    $urls = Convert-HermesMultilineUrls -Stdout $origin.Stdout
+    if (@($urls.Urls).Count -ne 1) { throw "Expected one canonical origin URL." }
+    $null = Test-HermesExpectedGitHubRemote -Url $urls.Urls[0]
+    $main = Invoke-HermesTool -Context $context -Name git -ArgumentList @("-C", $context.RepoRoot, "ls-remote", "origin", "refs/heads/main")
+    $sha = Get-HermesLsRemoteSha -Stdout $main.Stdout
+    $sha = Get-HermesNormalizedCommitSha -Sha $sha
+    Assert-HermesExactMainCiSuccess -Context $context -ExpectedSha $sha
+    $notes = Invoke-HermesTool -Context $context -Name gh -ArgumentList @("api", "repos/$script:HermesReleaseControlRepository/contents/docs/release-notes-$Version.md?ref=$sha")
+    $file = $notes.Stdout | ConvertFrom-Json
+    if ($file.type -ne "file" -or [long]$file.size -le 0) { throw "Canonical release notes must be a nonempty file on main." }
+    $body = "/release`nversion=$Version`nexpected_main_sha=$sha"
+    Write-Host "Checks passed: canonical origin/main $sha; completed successful ci.yml push; notes on exact main."
+    if ($DryRun) {
+        Write-Output $body
+        return
+    }
+    $user = Invoke-HermesTool -Context $context -Name gh -ArgumentList @("api", "user", "--jq", ".login")
+    if ($user.Stdout.Trim() -ine $script:HermesReleaseControlOwner) { throw "Release request must be posted by the repository owner." }
+
+    $runArgs = @("api", "repos/$script:HermesReleaseControlRepository/actions/workflows/release.yml/runs?event=issue_comment&per_page=100")
+    $before = Invoke-HermesTool -Context $context -Name gh -ArgumentList $runArgs
+    $known = @(($before.Stdout | ConvertFrom-Json).workflow_runs | ForEach-Object { [string]$_.id })
+    $started = [DateTimeOffset]::UtcNow
+    $temp = [IO.Path]::GetTempFileName()
+    try {
+        [IO.File]::WriteAllText($temp, $body, (New-Object Text.UTF8Encoding $false))
+        # No body text is ever passed as a shell argument. Never retry this mutation.
+        $posted = Invoke-HermesTool -Context $context -Name gh -ArgumentList @("issue", "comment", "124", "--repo", $script:HermesReleaseControlRepository, "--body-file", $temp)
+        $url = $posted.Stdout.Trim()
+        Write-Host "Comment: $url"
+    }
+    finally {
+        Remove-Item -LiteralPath $temp -Force
+    }
+    for ($attempt = 0; $attempt -lt $PollAttempts; $attempt++) {
+        $after = Invoke-HermesTool -Context $context -Name gh -ArgumentList $runArgs
+        $runs = @(($after.Stdout | ConvertFrom-Json).workflow_runs | Where-Object {
+            [string]$_.id -notin $known -and $_.event -eq "issue_comment" -and
+            $_.head_sha -eq $sha -and $_.actor.login -ieq $script:HermesReleaseControlOwner -and
+            [DateTimeOffset]$_.created_at -ge $started.AddSeconds(-2)
+        })
+        if ($runs.Count -gt 1) { throw "Comment posted at $url; multiple new release runs observed; inspect them before proceeding. Do not repost." }
+        if ($runs.Count -eq 1) {
+            $jobsResult = Invoke-HermesTool -Context $context -Name gh -ArgumentList @("api", "repos/$script:HermesReleaseControlRepository/actions/runs/$($runs[0].id)/jobs")
+            $jobs = @(($jobsResult.Stdout | ConvertFrom-Json).jobs | Where-Object { $_.name -eq "Guarded release" })
+            if ($jobs.Count -eq 1) {
+                if ($jobs[0].conclusion -eq "skipped") {
+                    throw "Comment posted at $url; Guarded release job was skipped: $($runs[0].html_url). Inspect before proceeding; do not repost."
+                }
+                Write-Host "Guarded Release: $($runs[0].html_url)"
+                return
+            }
+        }
+        if ($attempt + 1 -lt $PollAttempts) { & $PollWait }
+    }
+    throw "Comment posted at $url; Guarded Release run not observed within the wait window. Inspect Actions; do not repost."
+}
