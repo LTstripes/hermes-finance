@@ -16,6 +16,7 @@ from _release_helpers import (
     position_fingerprint,
     run_isolated_startup_script,
 )
+from _version_helpers import current_release_version
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 from sqlalchemy import func, select
@@ -193,11 +194,11 @@ def test_pre_05_schema_upgrades_without_rewriting_owner_rows(tmp_path: Path) -> 
 def test_health_version_is_current_release() -> None:
     from hermes_finance.main import app
 
-    assert __version__ == "1.11.0"
+    assert __version__ == current_release_version()
     with TestClient(app) as client:
         response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "1.11.0"}
+    assert response.json() == {"status": "ok", "version": current_release_version()}
 
 
 def test_startup_and_page_reads_stay_offline(tmp_path: Path) -> None:
@@ -325,7 +326,7 @@ def test_preview_is_first_network_and_reads_stay_local_after_apply(tmp_path: Pat
                 params={"month_id": month_id, "forecast_version": "v1"},
             )
             assert health.status_code == 200
-            assert health.json()["version"] == "1.11.0"
+            assert health.json()["version"] == current_release_version()
             assert months.status_code == 200
             assert dashboard.status_code == 200
             assert calendar.status_code == 200
