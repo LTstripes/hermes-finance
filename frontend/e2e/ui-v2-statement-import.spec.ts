@@ -384,7 +384,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
       const api = await installStatementApi(page);
       await page.goto("/v2/close?month=12&panel=brokers");
 
-      await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Август 2031" })).toBeVisible();
       // No file or provider action happens on mount.
       expect(api.posts).toEqual([]);
       await openMonthPdf(page);
@@ -477,7 +477,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
 
     // Switching the explicit month retires the prepared document.
     await page.goto("/v2/close?month=91&panel=brokers");
-    await expect(page.getByRole("heading", { level: 1, name: /Месяц/ })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Июль 2031" })).toBeVisible();
     await expect(page.getByText("Новая строка")).toHaveCount(0);
     expect(api.posts.filter((call) => call === "POST /api/statement-import/apply")).toHaveLength(0);
     expect(api.errors).toEqual([]);
