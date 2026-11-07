@@ -1,0 +1,191 @@
+/* Passive income bars (#1079 stage 4). Fact solid, average solid line, goal dashed. */
+
+.chart {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.plot {
+  position: relative;
+  height: 220px;
+  margin: 18px 0 0 52px;
+}
+
+.grid span {
+  position: absolute;
+  right: 0;
+  left: 0;
+  border-top: 1px solid var(--line-2);
+}
+
+.grid small {
+  position: absolute;
+  top: -8px;
+  right: calc(100% + 10px);
+  color: var(--muted);
+  font-family: var(--f-num);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.bars {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  gap: clamp(4px, 1.2vw, 14px);
+}
+
+.bar {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.bar:hover {
+  background: rgb(31 78 140 / 4%);
+}
+
+.fill {
+  position: absolute;
+  right: 0;
+  left: 0;
+  min-height: 2px;
+  border-radius: 5px 5px 0 0;
+  background: #b9c9de;
+}
+
+.fill[data-negative] {
+  border-radius: 0 0 5px 5px;
+}
+
+.bar[data-outside="true"] .fill {
+  background: repeating-linear-gradient(135deg, #c9d4e2 0 4px, #e5ebf2 4px 8px);
+}
+
+.bar:hover .fill {
+  background: #9fb5d1;
+}
+
+.bar[data-selected="true"] .fill {
+  background: var(--accent);
+}
+
+.value {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--ink);
+  font-family: var(--f-num);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+  white-space: nowrap;
+}
+
+.average,
+.goal {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.average {
+  border-top: 2px solid var(--ink);
+  opacity: 0.75;
+}
+
+.goal {
+  border-top: 1.5px dashed var(--faint);
+}
+
+.goal small {
+  position: absolute;
+  right: 0;
+  bottom: 3px;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+}
+
+.labels {
+  display: grid;
+  gap: clamp(4px, 1.2vw, 14px);
+  margin-left: 52px;
+}
+
+.labels span {
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.labels span[data-selected="true"] {
+  color: var(--ink);
+  font-weight: var(--w-semibold);
+}
+
+.labels small {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 6px 0 0 52px;
+  padding: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  list-style: none;
+}
+
+.key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key i {
+  display: inline-block;
+}
+
+.keyFact {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.keyAverage {
+  width: 16px;
+  border-top: 2px solid var(--ink);
+}
+
+.keyGoal {
+  width: 16px;
+  border-top: 1.5px dashed var(--faint);
+}
+
+.keyOutside {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(135deg, #c9d4e2 0 3px, #e5ebf2 3px 6px);
+}

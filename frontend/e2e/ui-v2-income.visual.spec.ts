@@ -259,16 +259,15 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
-test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary planning stay bounded", async ({
+test("ui-v2 Income and plans desktop: passive figures, bars, ladder and planning stay bounded", async ({
   page,
 }, testInfo) => {
   const evidence = await installIncomeApi(page);
   await page.goto("/v2/income");
   expect(evidence.errors, evidence.errors.join(" | ")).toEqual([]);
   await expect(page.getByRole("heading", { level: 1, name: "Доход и планы" })).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "Главные показатели дохода" }).getByRole("article"),
-  ).toHaveCount(2);
+  const figures = page.getByRole("region", { name: "Главные показатели дохода" });
+  await expect(figures.getByTestId("income-selected-actual")).toHaveText("17 500 ₽");
   await expect(page.getByTestId("income-average")).toHaveText("15 300 ₽");
   await expect(page.getByTestId("income-forecast")).toHaveCount(0);
   await expect(page.getByTestId("income-upcoming-passive")).toHaveText("8 500 ₽");
@@ -276,12 +275,15 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
     page.getByText("Возврат основной суммы: 100 000 ₽", { exact: false }).first(),
   ).toBeVisible();
   await expect(page.getByTestId("income-history-panel")).toContainText("Купоны");
-  await expect(page.locator('button[data-testid^="income-history-"]')).toHaveText([
-    /Июль\s+2031/,
-    /Май\s+2031/,
-    /Апрель\s+2031/,
-    /Февраль\s+2031/,
-  ]);
+  const bars = page.locator('button[data-testid^="income-history-"]');
+  await expect(bars).toHaveCount(4);
+  for (const [index, name] of [
+    /^Февраль\s2031:/,
+    /^Апрель\s2031:/,
+    /^Май\s2031:/,
+    /^Июль\s2031:/,
+  ].entries())
+    await expect(bars.nth(index)).toHaveAccessibleName(name);
   await expect(page.getByRole("option", { name: /Август/ })).toHaveCount(0);
   const reportSelect = page.getByRole("combobox", {
     name: "Отчёт для разбивки фактического дохода",
@@ -293,22 +295,24 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
   await expect
     .poll(() => reportSelect.evaluate((element) => getComputedStyle(element).outlineStyle))
     .not.toBe("none");
-  await page.keyboard.press("Tab");
   const newestHistory = page.getByTestId("income-history-91");
+  await newestHistory.focus();
   await expect(newestHistory).toBeFocused();
   await expect
     .poll(() => newestHistory.evaluate((element) => getComputedStyle(element).outlineStyle))
     .not.toBe("none");
   await expect(page.getByTestId("income-goals-panel")).toHaveCount(0);
   const plan = page.getByTestId("income-plan-panel");
-  await expect(plan).toContainText("План 50 000 ₽ · факт 48 000 ₽");
-  await expect(plan).toContainText("Факт 3 000 ₽");
-  await expect(plan).toContainText("План 0 ₽ · факта нет");
+  const planRow = (category: string) =>
+    plan.getByRole("row").filter({ has: page.getByRole("rowheader", { name: category }) });
+  await expect(planRow("Жильё").getByRole("cell")).toHaveText(["48 000 ₽", "50 000 ₽"]);
+  await expect(planRow("Связь").getByRole("cell")).toHaveText(["3 000 ₽", "—"]);
+  await expect(planRow("Подарки").getByRole("cell")).toHaveText(["—", "0 ₽"]);
   await expect(plan).not.toContainText("Не задано");
-  const planOverlaps = await plan.locator("li").evaluateAll((rows) => {
+  const planOverlaps = await plan.locator("tr, li").evaluateAll((rows) => {
     const boxes = rows.map((row) => {
       const rect = row.getBoundingClientRect();
-      const amount = row.querySelector("strong")?.getBoundingClientRect();
+      const amount = row.querySelector("strong, td:last-child")?.getBoundingClientRect();
       return {
         top: rect.top,
         bottom: rect.bottom,
@@ -324,7 +328,7 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
       if (box.amountRight > box.right + 1 || box.amountBottom > box.bottom + 1) {
         problems.push(`overflow:${box.text}`);
       }
-      // Desktop places expenses and savings in separate columns. Only actual
+      // Plan rows and savings rows must not cross each other. Only actual
       // two-dimensional intersections are overlaps, regardless of DOM order.
       for (const previous of boxes.slice(0, index)) {
         if (
@@ -356,8 +360,8 @@ test("ui-v2 Income and plans desktop: canonical headlines, ladder and secondary 
       .evaluateAll((panels) => panels.map((panel) => panel.getAttribute("data-testid"))),
   ).toEqual([
     "income-history-panel",
-    "income-plan-panel",
     "income-ladder-panel",
+    "income-plan-panel",
     "income-handoffs-panel",
   ]);
   await assertBounded(page);
@@ -425,7 +429,7 @@ test("ui-v2 deposit period forecast and table @viewport-owned", async ({ page },
     ],
   };
   await page.goto("/v2/income");
-  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 734,56 ₽");
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 735 ₽");
   const deposits = page.getByRole("region", { name: "Ожидаемые проценты по вкладам" });
   await expect(deposits.getByRole("row")).toHaveCount(3);
   await expect(deposits).toContainText("дата выплаты неизвестна");
@@ -433,7 +437,7 @@ test("ui-v2 deposit period forecast and table @viewport-owned", async ({ page },
   await page.getByRole("button", { name: "14 дней" }).click();
   await expect(page.getByTestId("income-window-14")).toBeVisible();
   await expect(deposits).toContainText("30 дней");
-  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 734,56 ₽");
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 735 ₽");
   await assertBounded(page);
   await capture(page, testInfo, "deposit-period-forecast");
   expect(evidence.errors).toEqual([]);

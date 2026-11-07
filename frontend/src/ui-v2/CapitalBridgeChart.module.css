@@ -1,0 +1,88 @@
+/* Capital bridge waterfall (#1079 stage 4). */
+
+.bridge {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bridge li {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plot {
+  position: relative;
+  display: block;
+  height: 190px;
+  margin-top: 22px;
+}
+
+.connector {
+  position: absolute;
+  left: -32%;
+  width: 46%;
+  border-top: 1px dashed var(--faint);
+}
+
+.bar {
+  position: absolute;
+  right: 14%;
+  left: 14%;
+  min-height: 2px;
+  border-radius: 4px;
+}
+
+.bar[data-tone="level"] {
+  background: #c5cfdb;
+}
+
+.bar[data-tone="level"][data-last] {
+  background: var(--accent);
+}
+
+.bar[data-tone="positive"] {
+  background: var(--pos);
+}
+
+.bar[data-tone="negative"] {
+  background: var(--neg);
+}
+
+.bar[data-tone="neutral"] {
+  background: var(--faint);
+}
+
+.value {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--ink-2);
+  font-family: var(--f-num);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+  white-space: nowrap;
+}
+
+.label {
+  color: var(--muted);
+  hyphens: auto;
+  overflow-wrap: anywhere;
+  font-size: var(--t-xs);
+  line-height: 1.3;
+  text-align: center;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

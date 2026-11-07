@@ -1,318 +1,233 @@
-/* Capital page blocks. The shared shell, panel and metric styles live in
-   UiV2Page.module.css and are reused unchanged. */
+/* Capital as a clear sheet (#1079 stage 4, direction A). */
 
-.controls {
+section.top {
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.6fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.hero {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hero > p:first-child {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.deltaRow {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
 }
 
-.draftNote {
-  margin-bottom: 15px !important;
-  padding: 10px 14px;
-  border: 1px solid #d8e2ee;
-  border-radius: 10px;
-  background: #f4f7fb;
+.facts {
+  display: grid;
+  margin: 14px 0 0;
+}
+
+.facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-2);
+  font-size: var(--t-sm);
+}
+
+.facts dt {
   color: var(--muted);
-  font-size: 12px;
 }
 
-.backLink {
-  margin-top: 10px !important;
-  font-size: 12px;
+.facts dd {
+  margin: 0;
+  white-space: nowrap;
 }
 
-.backLink a {
-  text-decoration: none;
-}
-
-.classList,
-.positionList,
-.holdingList,
-.bucketList,
-.pairList,
-.performanceList {
-  list-style: none;
-  padding: 0;
-}
-
-.classList,
-.bucketList,
-.pairList,
-.performanceList {
+.composition {
   display: grid;
   gap: 8px;
-  margin-top: 14px;
-}
-
-.classButton,
-.bucketButton {
-  width: 100%;
-  min-height: 42px;
-  padding: 9px 11px;
-  display: grid;
-  grid-template-columns: 9px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: white;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-}
-
-.bucketButton {
-  grid-template-columns: minmax(0, 1fr) auto auto;
-}
-
-.classButton:hover,
-.bucketButton:hover {
-  background: var(--soft);
-}
-
-.classButton[aria-pressed="true"],
-.bucketButton[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: #eef4fb;
-}
-
-.classDot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-}
-
-.className {
   min-width: 0;
-  overflow-wrap: anywhere;
 }
 
-.classShare {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.classButton strong,
-.bucketButton strong,
-.positionList strong,
-.holdingAmount {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.subBlock {
-  margin-top: 18px;
-}
-
-.subBlock h3 {
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.muted {
-  margin-top: 9px !important;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.positionList {
-  margin-top: 11px;
-}
-
-.positionList li {
-  padding: 8px 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 12px;
-  border-bottom: 1px solid #edf0f3;
-  font-size: 12px;
-}
-
-.positionList li:last-child {
-  border-bottom: 0;
-}
-
-.filterBar {
-  margin-top: 12px;
-  padding: 8px 12px;
+.compositionHead {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 8px 16px;
+}
+
+/* Property: mortgage share of the estimate as one bar. */
+.property {
+  display: grid;
+  gap: 18px;
+}
+
+.propertyList {
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.propertyList li {
+  display: grid;
   gap: 8px;
-  border: 1px solid #d8e2ee;
-  border-radius: 9px;
-  background: #f4f7fb;
-  font-size: 12px;
+}
+
+.propertyHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-weight: var(--w-medium);
+}
+
+.propertyBar {
+  display: block;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px #cfdbeb;
+}
+
+.propertyBar span {
+  display: block;
+  height: 100%;
+  background: #8e99a8;
+}
+
+.propertyKey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.propertyKey i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+.propertyKey i[data-part="debt"] {
+  background: #8e99a8;
+}
+
+.propertyKey i[data-part="value"] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px #cfdbeb;
+}
+
+.property .facts {
+  margin: 0;
+}
+
+/* Holdings */
+.filterBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  font-size: var(--t-sm);
 }
 
 .filterBar button {
-  min-height: 32px;
-  padding: 5px 11px;
-  border: 1px solid #bdcadd;
-  border-radius: 7px;
-  background: white;
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
+}
+
+.holdingGroups {
+  display: grid;
+  gap: 22px;
+}
+
+.holdingGroup {
+  display: grid;
+  gap: 4px;
+}
+
+.holdingGroup h3 {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .holdingList {
   display: grid;
-  gap: 6px;
-  margin-top: 11px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .holdingRow {
-  min-width: 0;
-  padding: 10px 12px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 6px 14px;
-  border: 1px solid #e8ecf0;
-  border-radius: 9px;
-  background: var(--surface-2);
+  gap: 16px;
+  min-height: 52px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.holdingRow:last-child {
+  border-bottom: 0;
+}
+
+.holdingRow[data-included="false"] {
+  color: var(--muted);
 }
 
 .holdingMain {
-  min-width: 0;
   display: grid;
-  gap: 2px;
+  min-width: 0;
 }
 
 .holdingName {
   overflow-wrap: anywhere;
-  font-size: 13px;
 }
 
 .holdingMeta {
   color: var(--muted);
-  font-size: 11px;
-  overflow-wrap: anywhere;
+  font-size: var(--t-xs);
 }
 
 .holdingAmount {
-  font-size: 13px;
-  text-align: right;
+  min-width: 120px;
 }
 
 .excludedBadge {
-  grid-column: 1 / -1;
-  justify-self: start;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: #f1f3f6;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--line-2);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--t-xs);
+  white-space: nowrap;
 }
 
-.pairCard {
-  min-width: 0;
-  padding: 13px 15px;
-  border: 1px solid #e8ecf0;
-  border-radius: 10px;
-  background: var(--surface-2);
-}
-
-.pairNames {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.pairValues {
-  margin-top: 11px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.pairValues dt {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.pairValues dd {
-  margin-top: 3px !important;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-
-.performanceList {
-  margin-top: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.performanceList article {
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid #e8ecf0;
-  border-radius: 10px;
-  background: var(--surface-2);
-}
-
-.performanceValue {
-  margin-top: 9px !important;
-  font-size: 1.35rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 680;
-  letter-spacing: -0.03em;
-  overflow-wrap: anywhere;
-}
-
-.collapsible {
-  margin-top: 12px;
-}
-
-.collapsible summary {
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--soft);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.collapsible[open] summary {
-  margin-bottom: 6px;
-}
-
-@media (max-width: 1050px) {
-  .performanceList {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 800px) {
-  .controls {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .pairValues {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 550px) {
-  .holdingRow {
-    grid-template-columns: 1fr;
-  }
-
-  .holdingAmount {
-    text-align: left;
+@media (max-width: 1180px) {
+  section.top {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

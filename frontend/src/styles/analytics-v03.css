@@ -2,6 +2,17 @@
   min-width: 0;
 }
 
+.capital-composition-chart .recharts-cartesian-axis-tick-value {
+  fill: var(--muted);
+  font-family: var(--f-num);
+  font-size: 12px;
+}
+
+.capital-composition-chart__legend {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
 .capital-composition-chart__summary {
   display: flex;
   flex-wrap: wrap;

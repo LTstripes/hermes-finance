@@ -389,6 +389,16 @@ zero and negative observations with unchanged exact tooltips. Income and plans
 omits the embedded 12-month forecast and goals-progress blocks; their models and
 dedicated destinations are not deleted.
 
+Income and plans leads with closed-month passive income as bars: the selected
+month in accent, the backend average as a line and the passive-income goal as a
+reference line; the selected month's sources follow. Dated payouts form a
+timeline that names their source once; plan and fact keep mandatory rows apart
+from the rest and show an absent plan or fact as a dash. Capital leads with
+liquid capital, its backend change against the previous closed report and the
+composition chart; the monthly bridge is a waterfall of the same backend
+amounts. The page title carries the closed-report chip instead of a separate
+context row.
+
 Performance separates capability from data readiness and separates portfolio, account, class and instrument scopes. XIRR is annualized; TWRR is period return; statement S3 and WHAT-IF use nonannualized `rate_fraction`. Readiness explains each metric independently with its required evidence and supported next action. PERF04 is a money bridge, not a percentage return or automatic profit/loss. The instrument readers show known net payouts, comparable EOD observations and executions with partial coverage; they do not promise a complete stock/bond economic result.
 
 Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.

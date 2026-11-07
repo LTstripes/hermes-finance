@@ -248,23 +248,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("shows the three capital headlines in the frozen order and reads only GET", async () => {
+it("shows the capital hero and its two subtotals in the frozen order and reads only GET", async () => {
   const { mount, reads } = setup();
   mount();
 
   expect(await screen.findByRole("heading", { level: 1, name: "Капитал" })).toBeVisible();
   await screen.findByTestId("capital-net");
   const headlines = screen.getByRole("region", { name: "Главные показатели капитала" });
-  const cards = within(headlines).getAllByRole("article");
-  expect(cards).toHaveLength(3);
-  expect(within(cards[0]).getByText("Ликвидный капитал")).toBeVisible();
-  expect(within(cards[1]).getByText("Ликвидные активы")).toBeVisible();
-  expect(within(cards[2]).getByText("Включённые обязательства")).toBeVisible();
+  expect(within(headlines).getByText("Ликвидный капитал")).toBeVisible();
+  expect(within(headlines).getByText("Ликвидные активы")).toBeVisible();
+  expect(within(headlines).getByText("Включённые обязательства")).toBeVisible();
+  const [net, assets, debts] = ["capital-net", "capital-assets", "capital-debts"].map((id) =>
+    within(headlines).getByTestId(id),
+  );
+  expect(net.compareDocumentPosition(assets) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(assets.compareDocumentPosition(debts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // The change against the previous closed report comes from the backend delta.
+  expect(within(headlines).getByText("+42 600 ₽", { exact: false })).toBeVisible();
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 900 ₽");
   expect(screen.getByTestId("capital-debts")).toHaveTextContent("− 400 000 ₽");
   expect(screen.queryByRole("tooltip")).toBeNull();
-  fireEvent.click(within(cards[0]).getByRole("button", { name: "Как считается капитал" }));
+  fireEvent.click(within(headlines).getByRole("button", { name: "Как считается капитал" }));
   expect(screen.getByRole("tooltip")).toHaveTextContent(
     "Ликвидные активы минус включённые обязательства = ликвидный капитал",
   );
@@ -275,28 +280,37 @@ it("shows the three capital headlines in the frozen order and reads only GET", a
   expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
 });
 
-it("places existing allocation after the chart, property before holdings and removes duplicate panels and reads", async () => {
+it("places the structure after the chart, property before holdings and removes duplicate panels and reads", async () => {
   const { mount, reads } = setup();
   mount();
-  await screen.findByRole("heading", { name: "Распределение и концентрация" });
+  await screen.findByTestId("capital-class-cash");
   await screen.findByRole("heading", { name: "Недвижимость" });
+  const section = (name: string) => {
+    const found = screen.getByRole("heading", { name }).closest("section");
+    if (!found) throw new Error(`missing Capital section ${name}`);
+    return found;
+  };
   const chart = screen.getByTestId("capital-composition").closest("section");
-  const allocation = screen
-    .getByRole("heading", { name: "Распределение и концентрация" })
-    .closest("section");
-  const property = screen.getByRole("heading", { name: "Недвижимость" }).closest("section");
-  const holdings = screen.getByRole("heading", { name: "Где лежит капитал" }).closest("section");
-  if (!chart || !allocation || !property || !holdings) throw new Error("missing Capital sections");
-  expect(chart.compareDocumentPosition(allocation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  if (!chart) throw new Error("missing Capital chart");
+  const order = [
+    chart,
+    section("По классам активов"),
+    section("По счетам"),
+    section("Крупнейшие позиции"),
+    section("Недвижимость"),
+    section("Где лежит капитал"),
+  ];
+  for (const [index, current] of order.slice(1).entries())
+    expect(
+      order[index].compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  expect(within(section("По классам активов")).getByTestId("capital-class-cash")).toBeVisible();
+  expect(within(section("По счетам")).getByTestId("capital-bucket-account:1")).toBeVisible();
   expect(
-    allocation.compareDocumentPosition(property) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    property.compareDocumentPosition(holdings) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(within(allocation).getByRole("table", { name: "По классам активов" })).toBeVisible();
-  expect(within(allocation).getByRole("table", { name: "По счетам" })).toBeVisible();
-  expect(within(allocation).getByRole("table", { name: "Крупнейшие позиции" })).toBeVisible();
+    within(section("Крупнейшие позиции")).getByRole("table", { name: "Крупнейшие позиции" }),
+  ).toBeVisible();
+  // Accounts are listed once, not again above the holdings.
+  expect(screen.getAllByTestId("capital-bucket-account:1")).toHaveLength(1);
   for (const name of ["Доходность портфеля", "Связанные пары", "Где изменились суммы", "Сейчас"])
     expect(screen.queryByRole("heading", { name })).toBeNull();
   expect(
@@ -316,6 +330,97 @@ it("keeps the known capital and marks partial source support", async () => {
   mount();
   expect(await screen.findByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+});
+
+it("marks a change against an incomplete previous report once, in plain words", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  state.comparison.current.portfolio_source_coverage = {
+    status: "complete",
+    reason_codes: [],
+    missing_account_ids: [],
+  };
+  // The backend combines both reports: the previous one is missing an account snapshot.
+  state.comparison.liquid_capital_net_delta_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  mount();
+  const note = await screen.findByTestId("capital-delta-partial");
+  expect(note.textContent?.replaceAll(" ", " ")).toBe(
+    "Изменение посчитано по известным записям: в отчёте за Май 2031 не хватает данных.",
+  );
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+  expect(screen.getByText("+42 600 ₽", { exact: false })).toBeVisible();
+  expect(screen.queryByTestId("portfolio-coverage-note")).toBeNull();
+});
+
+it("names both reports once when the current and the previous are incomplete", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current || !state.comparison.previous)
+    throw new Error("Missing comparison fixture");
+  // Different accounts lack snapshots in the two months.
+  state.comparison.current.portfolio_source_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  state.comparison.previous.portfolio_source_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [1],
+  };
+  state.comparison.liquid_capital_net_delta_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [1, 2],
+  };
+  mount();
+  const note = await screen.findByTestId("capital-delta-partial");
+  expect(note.textContent?.replaceAll(" ", " ")).toBe(
+    "Изменение посчитано по известным записям: не хватает данных в отчётах за Июль 2031 и Май 2031.",
+  );
+  expect(screen.getAllByTestId("capital-delta-partial")).toHaveLength(1);
+  expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+  expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
+});
+
+it("explains a partial current report once when the previous report is complete", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  const partial = {
+    status: "partial" as const,
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
+  state.comparison.current.portfolio_source_coverage = partial;
+  if (state.comparison.previous)
+    state.comparison.previous.portfolio_source_coverage = {
+      status: "complete",
+      reason_codes: [],
+      missing_account_ids: [],
+    };
+  state.comparison.liquid_capital_net_delta_coverage = partial;
+  mount();
+  expect(await screen.findByText("Частично: нет снимка счёта")).toBeVisible();
+  expect(screen.queryByTestId("capital-delta-partial")).toBeNull();
+});
+
+it("shows overview sums in whole rubles and keeps kopecks in holdings and on hover", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  state.comparison.current.liquid_capital_net.amount = "2803900.45";
+  state.comparison.current.liquid_assets_total.amount = "3203900.50";
+  state.risk.allocation_by_asset_class.items[0].amount.amount = "803900.60";
+  state.cash[0].amount.amount = "803900.60";
+  mount();
+  const net = await screen.findByTestId("capital-net");
+  expect(net).toHaveTextContent("2 803 900 ₽");
+  expect(net.getAttribute("title")?.replaceAll(" ", " ")).toBe("2 803 900,45 ₽");
+  expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 901 ₽");
+  expect(await screen.findByTestId("capital-class-cash")).toHaveTextContent("803 901 ₽");
+  expect(await screen.findByTestId("capital-holding-cash-701")).toHaveTextContent("803 900,60 ₽");
 });
 
 it("keeps the closed snapshot while a newer draft exists and never duplicates the Home CTA", async () => {
@@ -422,7 +527,7 @@ it("switches the composition window and mode over closed reports with visible ga
 
   expect(await screen.findByTestId("capital-composition")).toHaveAttribute("data-point-count", "4");
   expect(screen.getByText(/Пропуски означают неизвестную историю/i)).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "3 месяца" }));
+  fireEvent.click(screen.getByRole("button", { name: "3 мес" }));
   expect(screen.getByTestId("capital-composition")).toHaveAttribute("data-point-count", "3");
   fireEvent.click(screen.getByRole("button", { name: "Доли" }));
   expect(screen.getByRole("button", { name: "Доли" })).toHaveAttribute("aria-pressed", "true");
@@ -485,10 +590,10 @@ it("does not blank unrelated widgets when a single widget fails", async () => {
   state.riskError = true;
   mount();
 
-  const nowPanel = (
-    await screen.findByRole("heading", { name: "Распределение и концентрация" })
-  ).closest("section");
-  if (!nowPanel) throw new Error("Capital «Сейчас» panel is missing");
+  const nowPanel = (await screen.findByRole("heading", { name: "По классам активов" })).closest(
+    "section",
+  );
+  if (!nowPanel) throw new Error("Capital class panel is missing");
   await waitFor(() =>
     expect(within(nowPanel).getByText("Данные временно недоступны")).toBeVisible(),
   );
@@ -503,10 +608,8 @@ it("fails the concentration closed when the risk read model is unsupported", asy
   mount();
 
   expect(await screen.findByText(/оценка позиции непригодна для расчёта/i)).toBeVisible();
-  const nowPanel = screen
-    .getByRole("heading", { name: "Распределение и концентрация" })
-    .closest("section");
-  if (!nowPanel) throw new Error("Capital «Сейчас» panel is missing");
+  const nowPanel = screen.getByRole("heading", { name: "Крупнейшие позиции" }).closest("section");
+  if (!nowPanel) throw new Error("Capital top positions panel is missing");
   expect(within(nowPanel).queryByTestId("capital-top-positions")).toBeNull();
 });
 
@@ -568,7 +671,7 @@ it("keeps current capital facts without a legacy escape for month and step conte
   expect(
     screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
   ).not.toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /← Мои финансы/ })).toHaveAttribute("href", "/v2");
+  expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
   expect(screen.getByRole("link", { name: "Капитал" })).toHaveAttribute("aria-current", "page");
 });
 
@@ -804,7 +907,9 @@ it("shows the unexplained residual separately from other capital changes", async
   mount();
   const residual = await screen.findByTestId("capital-unexplained");
   expect(residual).toHaveTextContent("Необъяснённый остаток");
-  expect(residual).toHaveTextContent("7,01");
+  // The waterfall reads in whole rubles; the exact residual stays on hover.
+  expect(residual).toHaveTextContent("+7 ₽");
+  expect(residual.getAttribute("title")?.replaceAll(" ", " ")).toBe("+7,01 ₽");
   expect(residual).not.toHaveTextContent("Прочие изменения");
   expect(screen.getByText("Внешние внесения и изъятия")).toBeVisible();
 });
@@ -832,7 +937,7 @@ it("shows loading rather than a false error while the capital comparison is pend
     release = resolve;
   });
   mount();
-  expect(await screen.findAllByText("Загружаем показатели…")).toHaveLength(3);
+  expect(await screen.findAllByText("Загружаем показатели…")).toHaveLength(1);
   const headline = screen.getByRole("region", { name: "Главные показатели капитала" });
   expect(within(headline).queryByText("Данные временно недоступны")).toBeNull();
   release();

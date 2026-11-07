@@ -15,6 +15,7 @@ import {
 
 import type { CapitalCompositionPoint } from "../../api/types";
 import { PortfolioCoverageNote } from "../PortfolioCoverageNote";
+import { axisMoney } from "../../lib/chartData";
 import { formatMoney, formatPercent } from "../../lib/format";
 import {
   buildCapitalCompositionSeries,
@@ -31,6 +32,24 @@ const CLASS_META: Record<string, { label: string; color: string }> = {
   bonds: { label: "Облигации", color: "#9a6a1d" },
   gold_other: { label: "Золото и прочее", color: "#172019" },
 };
+
+/** --ink of styles/tokens.css; SVG attributes need a literal colour. */
+const INK = "#152131";
+
+const SHORT_MONTHS = [
+  "янв",
+  "фев",
+  "мар",
+  "апр",
+  "май",
+  "июн",
+  "июл",
+  "авг",
+  "сен",
+  "окт",
+  "ноя",
+  "дек",
+];
 
 const FALLBACK_COLORS = ["#496f5a", "#8a9c8d", "#b27d35", "#4f5a52", "#a7b8a9"];
 
@@ -118,8 +137,10 @@ export function CapitalCompositionChart({
   highlightMonthId,
   mode,
   points,
+  height = 360,
 }: {
   assetClasses: string[];
+  height?: number;
   /** Optional presentation-only palette override; v1 keeps its own colours. */
   classColors?: Record<string, string>;
   /**
@@ -168,7 +189,13 @@ export function CapitalCompositionChart({
           : Number(datum.netShare),
   }));
   const hasGap = series.some((datum) => datum.isGap);
-  const labelByKey = new Map(series.map((datum) => [datum.key, datum.shortLabel]));
+  // One month format with the Home chart: "апр 2031" (#1079).
+  const labelByKey = new Map(
+    series.map((datum) => [
+      datum.key,
+      datum.isGap ? "" : `${SHORT_MONTHS[datum.month - 1] ?? ""} ${datum.year}`.trim(),
+    ]),
+  );
   const highlightKey =
     highlightMonthId == null
       ? null
@@ -180,7 +207,7 @@ export function CapitalCompositionChart({
       className="capital-composition-chart"
       data-highlight-key={highlightKey ?? undefined}
     >
-      <ResponsiveContainer height={360} width="100%">
+      <ResponsiveContainer height={height} width="100%">
         <AreaChart
           accessibilityLayer
           data={chartData}
@@ -197,13 +224,9 @@ export function CapitalCompositionChart({
           <YAxis
             axisLine={false}
             domain={mode === "share" ? [0, "auto"] : ["auto", "auto"]}
-            tickFormatter={
-              mode === "amount"
-                ? (value: number) => formatMoney(String(Math.round(value)))
-                : axisPercent
-            }
+            tickFormatter={mode === "amount" ? axisMoney : axisPercent}
             tickLine={false}
-            width={92}
+            width={mode === "amount" ? 64 : 52}
           />
           <Tooltip
             content={(props) => (
@@ -215,16 +238,18 @@ export function CapitalCompositionChart({
                 points={points}
               />
             )}
-            cursor={{ stroke: "#b9c4b9" }}
+            cursor={{ stroke: "#a3abb5" }}
           />
           <Legend
-            formatter={(value) =>
-              value === "total"
-                ? "Всего активов"
-                : value === "net"
-                  ? "Капитал нетто"
-                  : metaFor(value, assetClasses.indexOf(value), classColors).label
-            }
+            formatter={(value) => (
+              <span className="capital-composition-chart__legend">
+                {value === "total"
+                  ? "Всего активов"
+                  : value === "net"
+                    ? "Капитал нетто"
+                    : metaFor(value, assetClasses.indexOf(value), classColors).label}
+              </span>
+            )}
           />
           {assetClasses.map((assetClass, index) => (
             <Area
@@ -245,7 +270,7 @@ export function CapitalCompositionChart({
             dot={false}
             isAnimationActive={false}
             name="Всего активов"
-            stroke="#172019"
+            stroke={INK}
             strokeDasharray="5 4"
             strokeWidth={2}
             type="linear"
@@ -253,10 +278,10 @@ export function CapitalCompositionChart({
           <Line
             connectNulls={false}
             dataKey="net"
-            dot={{ fill: "#fff", r: 3, stroke: "#172019", strokeWidth: 2 }}
+            dot={{ fill: "#fff", r: 3, stroke: INK, strokeWidth: 2 }}
             isAnimationActive={false}
             name="Капитал нетто"
-            stroke="#172019"
+            stroke={INK}
             strokeWidth={2}
             type="linear"
           />

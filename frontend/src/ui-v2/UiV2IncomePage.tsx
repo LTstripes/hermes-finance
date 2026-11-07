@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { getPassiveIncomeHistory } from "../api/analytics";
@@ -14,27 +14,26 @@ import type {
   CashFlowLadderMonth,
   IncomePlanCoverage,
   IncomePlanSummary,
+  MoneyValue,
   PassiveIncomeAverage,
   PassiveIncomeHistory,
+  PassiveIncomeSelectedReport,
   PlanVsActualRow,
   ReportingMonth,
   SavingAllocation,
+  UpcomingEventsWindow,
 } from "../api/types";
 import { HelpTip } from "../components/ui";
 import { formatDate, formatMonth, formatPercent } from "../lib/format";
 import { queryKeys } from "../queryClient";
+import { ClosedReportTitle } from "./ClosedReportTitle";
+import { IncomeFactBars } from "./IncomeFactBars";
 import { sortReportingMonths } from "./monthSelection";
+import sheet from "./ReportSheet.module.css";
 import { uiV2TaxIisPath } from "./taxIisRoute";
 import incomeStyles from "./UiV2Income.module.css";
-import sharedStyles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
-import {
-  isQueryReady,
-  UiV2Loading,
-  UiV2Notice,
-  UiV2ReportContext,
-  UiV2WidgetState,
-} from "./UiV2StateBlocks";
+import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
 import {
   accountingStartLabel,
   eventLabel as ownerEventLabel,
@@ -42,6 +41,7 @@ import {
   PRINCIPAL_REPAYMENT_LABEL,
 } from "./uiV2Copy";
 import { moneyText as money } from "./valueFormat";
+import { wholeMoneyText as whole } from "./wholeMoney";
 
 type FactSelection = {
   month: ReportingMonth | null;
@@ -50,12 +50,18 @@ type FactSelection = {
 
 type LadderWindow = 14 | 30 | 12;
 
+/** Passive sources in display order, each with its asset-class colour. */
 const PASSIVE_SOURCE_META = [
-  ["deposit_interest", "Проценты по депозитам"],
-  ["bond_coupons", "Купоны"],
-  ["dividends", "Дивиденды"],
-  ["other_capital_income", "Прочий доход от капитала"],
+  ["deposit_interest", "Проценты по депозитам", "var(--c-dep)"],
+  ["bond_coupons", "Купоны", "var(--c-bond)"],
+  ["dividends", "Дивиденды", "var(--c-stock)"],
+  ["other_capital_income", "Прочий доход от капитала", "var(--c-cash)"],
 ] as const;
+
+const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+
+/** Chart window in closed reports; older reports stay one click away. */
+const CHART_WINDOW = 12;
 
 function reportIndex(month: Pick<ReportingMonth, "year" | "month">): number {
   return month.year * 12 + month.month;
@@ -72,90 +78,62 @@ function resolveFactSelection(values: string[], closedMonths: ReportingMonth[]):
   return { month, valid: month !== null };
 }
 
+/** Geometry only: widths never feed a shown amount. */
+function coordinate(value: MoneyValue | null | undefined): number | null {
+  if (!value) return null;
+  const number = Number(value.amount);
+  return Number.isFinite(number) ? number : null;
+}
+
+function isZeroMoney(value: MoneyValue | null | undefined): boolean {
+  return value != null && /^-?0(?:\.0+)?$/.test(value.amount.trim());
+}
+
 function averageDetail(average: PassiveIncomeAverage): ReactNode {
   const boundary = accountingStartLabel(average.configured_start_month);
   return (
-    <>
-      {average.count_months === 0 ? "Пока нет данных" : null}{" "}
-      <HelpTip label="Период среднего дохода">
-        {average.count_months} из {average.target_window_months} закрытых отчётов
-        {boundary ? ` · учёт ${boundary}` : " · вся доступная история"}
-      </HelpTip>
-    </>
+    <HelpTip label="Период среднего дохода">
+      {average.count_months} из {average.target_window_months} закрытых отчётов
+      {boundary ? ` · учёт ${boundary}` : " · вся доступная история"}
+    </HelpTip>
   );
 }
 
-/** Closed-month display order only. The API history payload stays oldest-first. */
-function historyNewestFirst(
-  points: PassiveIncomeHistory["points"],
-): PassiveIncomeHistory["points"] {
-  return [...points].sort(
-    (left, right) =>
-      right.year - left.year ||
-      right.month - left.month ||
-      right.reporting_month_id - left.reporting_month_id,
-  );
+function shortDate(value: string): { day: string; weekday: string } {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return { day: formatDate(value), weekday: "" };
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return { day: `${match[3]}.${match[2]}`, weekday: WEEKDAYS[date.getUTCDay()] };
 }
 
-function planFactCopy(row: PlanVsActualRow): string | null {
-  const planned = row.planned;
-  const actual = row.actual;
-  if (planned === null && actual !== null) return `Факт ${money(actual)}`;
-  if (planned !== null && actual !== null) {
-    return `План ${money(planned)} · факт ${money(actual)}`;
-  }
-  if (planned !== null && actual === null) return `План ${money(planned)} · факта нет`;
-  return null;
-}
-
-function useNarrowViewport(maxWidthPx = 800): boolean {
-  const query = `(max-width: ${maxWidthPx}px)`;
-  const [narrow, setNarrow] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia(query).matches,
-  );
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const list = window.matchMedia(query);
-    const handle = (event: MediaQueryListEvent) => setNarrow(event.matches);
-    setNarrow(list.matches);
-    list.addEventListener("change", handle);
-    return () => list.removeEventListener("change", handle);
-  }, [query]);
-  return narrow;
-}
-
-function Panel({
+function Section({
   children,
-  id,
-  title,
   eyebrow,
-  action,
-  wide = false,
+  title,
+  titleId,
+  actions,
   testId,
+  help,
 }: {
   children: ReactNode;
-  id: string;
-  title: string;
   eyebrow: string;
-  action?: ReactNode;
-  wide?: boolean;
+  title: string;
+  titleId: string;
+  actions?: ReactNode;
   testId: string;
+  help?: ReactNode;
 }) {
   return (
-    <section
-      aria-labelledby={id}
-      className={`${sharedStyles.panel} ${wide ? sharedStyles.widePanel : ""} ${incomeStyles.panel}`}
-      data-testid={testId}
-    >
-      <div className={sharedStyles.panelHeader}>
+    <section aria-labelledby={titleId} className={sheet.section} data-testid={testId}>
+      <div className={sheet.sectionHead}>
         <div>
-          <p className={sharedStyles.eyebrow}>{eyebrow}</p>
-          <h2 id={id}>{title}</h2>
+          <p className={sheet.eyebrow}>{eyebrow}</p>
+          <h2 id={titleId}>
+            {title}
+            {help}
+          </h2>
         </div>
-        {action}
+        {actions ? <div className={sheet.sectionActions}>{actions}</div> : null}
       </div>
       {children}
     </section>
@@ -167,6 +145,7 @@ function Headlines({
   historyReady,
   ladder,
   ladderReady,
+  selected,
   retryHistory,
   retryLadder,
 }: {
@@ -174,241 +153,450 @@ function Headlines({
   historyReady: boolean;
   ladder: CashFlowLadder | undefined;
   ladderReady: boolean;
+  selected: PassiveIncomeSelectedReport | null;
   retryHistory: () => void;
   retryLadder: () => void;
 }) {
   const averageMeasured = historyReady && history !== undefined && history.average.count_months > 0;
   const upcoming = ladderReady ? ladder?.upcoming_30_days : undefined;
   return (
-    <section aria-label="Главные показатели дохода" className={incomeStyles.metrics}>
-      <article className={`${incomeStyles.metric} ${incomeStyles.metricPrimary}`}>
-        <p className={sharedStyles.eyebrow}>
-          Среднее за {history?.average.target_window_months ?? 12} мес
-        </p>
+    <section aria-label="Главные показатели дохода" className={sheet.figures}>
+      {selected ? (
+        <div className={sheet.figure}>
+          <span
+            className={sheet.figureValue}
+            data-testid="income-selected-actual"
+            title={money(selected.passive_income_actual)}
+          >
+            {whole(selected.passive_income_actual)}
+          </span>
+          <span className={sheet.figureLabel}>{formatMonth(selected.year, selected.month)}</span>
+        </div>
+      ) : null}
+      <div className={sheet.figure}>
         {historyReady && history ? (
           <>
-            <p className={incomeStyles.metricValue} data-testid="income-average">
-              {averageMeasured ? money(history.average.average) : "Недоступно"}
-            </p>
-            <p className={incomeStyles.metricDetail}>{averageDetail(history.average)}</p>
+            <span
+              className={sheet.figureValue}
+              data-testid="income-average"
+              title={averageMeasured ? money(history.average.average) : undefined}
+            >
+              {averageMeasured ? whole(history.average.average) : "Недоступно"}
+            </span>
+            <span className={sheet.figureLabel}>
+              {history.average.count_months === 0 ? "Пока нет данных · " : null}
+              среднее за {history.average.target_window_months} мес
+              {averageDetail(history.average)}
+            </span>
           </>
         ) : (
-          <UiV2WidgetState retry={retryHistory} />
+          <>
+            <span className={sheet.figureLabel}>Среднее за 12 мес</span>
+            <UiV2WidgetState retry={retryHistory} />
+          </>
         )}
-      </article>
-
-      <article className={incomeStyles.metric}>
-        <p className={sharedStyles.eyebrow}>Впереди 30 дней</p>
+      </div>
+      <div className={sheet.figure} data-kind="forecast">
         {ladderReady && upcoming ? (
           <>
-            <p className={incomeStyles.metricValue} data-testid="income-upcoming-passive">
-              {money(upcoming.forecast_passive_income ?? upcoming.passive_income)}
-            </p>
-            <p className={incomeStyles.metricDetail}>
-              <strong>
-                {PRINCIPAL_REPAYMENT_LABEL}: {money(upcoming.redemption_principal)}
-              </strong>{" "}
-              · не доход
-              <br />
-              Всего поступлений:{" "}
-              {money(upcoming.forecast_total_cash_flow ?? upcoming.total_cash_flow)}
+            <span
+              className={sheet.figureValue}
+              data-testid="income-upcoming-passive"
+              title={money(upcoming.forecast_passive_income ?? upcoming.passive_income)}
+            >
+              {whole(upcoming.forecast_passive_income ?? upcoming.passive_income)}
+            </span>
+            <span className={sheet.figureLabel}>ожидается за 30 дней</span>
+            <span className={sheet.figureDetail}>
+              {PRINCIPAL_REPAYMENT_LABEL}: {money(upcoming.redemption_principal)} · не доход
               {Boolean(upcoming.deposit_estimates?.some((row) => row.included_in_forecast)) && (
                 <>
                   <br />
                   Включая расчётные проценты по вкладам: {money(upcoming.deposit_interest_estimate)}
                 </>
               )}
-            </p>
+            </span>
           </>
         ) : (
-          <UiV2WidgetState retry={retryLadder} />
+          <>
+            <span className={sheet.figureLabel}>Ожидается за 30 дней</span>
+            <UiV2WidgetState retry={retryLadder} />
+          </>
         )}
-      </article>
+      </div>
     </section>
   );
 }
 
-function FactHistoryBlock({
+function SourceBreakdown({ report }: { report: PassiveIncomeSelectedReport }) {
+  const parts = PASSIVE_SOURCE_META.map(([key, label, color]) => ({
+    key,
+    label,
+    color,
+    amount: report.breakdown[key],
+    value: coordinate(report.breakdown[key]),
+  }));
+  const total = parts.reduce((sum, part) => sum + (part.value ?? 0), 0);
+  // The strip only shows a split of a positive whole; otherwise the legend alone is honest.
+  const drawStrip = total > 0 && parts.every((part) => part.value !== null && part.value >= 0);
+  return (
+    <div className={incomeStyles.breakdown}>
+      <p className={incomeStyles.breakdownTitle}>
+        <span>Источники · {formatMonth(report.year, report.month)}</span>
+        <HelpTip label="Что входит в пассивный доход">
+          Только фактический доход от капитала. Зарплата, бонусы, вознаграждения за покупки и
+          возврат основной суммы сюда не входят.
+        </HelpTip>
+      </p>
+      {drawStrip ? (
+        <div aria-hidden="true" className={sheet.strip}>
+          {parts
+            .filter((part) => (part.value ?? 0) > 0)
+            .map((part) => (
+              <span
+                key={part.key}
+                style={{ background: part.color, flexGrow: part.value ?? 0, flexBasis: 0 }}
+              />
+            ))}
+        </div>
+      ) : null}
+      <ul className={incomeStyles.sourceList}>
+        {parts.map((part) => (
+          <li data-zero={isZeroMoney(part.amount) || undefined} key={part.key}>
+            <i aria-hidden="true" className={sheet.dot} style={{ background: part.color }} />
+            <span>{part.label}</span>
+            <strong className={sheet.amount}>{money(part.amount)}</strong>
+          </li>
+        ))}
+        <li className={incomeStyles.sourceTotal}>
+          <i aria-hidden="true" />
+          <span>Всего чистого пассивного дохода</span>
+          <strong className={sheet.amount}>{money(report.passive_income_actual)}</strong>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+function PassiveSection({
   history,
-  ready,
+  historyReady,
+  factHistory,
+  factReady,
+  ladder,
+  ladderReady,
+  goal,
   selectedMonth,
   closedMonths,
   selectionValid,
   onSelect,
-  retry,
+  retryHistory,
+  retryFact,
+  retryLadder,
 }: {
   history: PassiveIncomeHistory | undefined;
-  ready: boolean;
+  historyReady: boolean;
+  factHistory: PassiveIncomeHistory | undefined;
+  factReady: boolean;
+  ladder: CashFlowLadder | undefined;
+  ladderReady: boolean;
+  goal: MoneyValue | null;
   selectedMonth: ReportingMonth | null;
   closedMonths: ReportingMonth[];
   selectionValid: boolean;
   onSelect: (monthId: number) => void;
-  retry: () => void;
+  retryHistory: () => void;
+  retryFact: () => void;
+  retryLadder: () => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  const points = history?.points ?? [];
+  const selectedIndex = points.findIndex((point) => point.reporting_month_id === selectedMonth?.id);
+  // A selected month older than the window keeps the whole history in view.
+  const selectedOlder = selectedIndex !== -1 && selectedIndex < points.length - CHART_WINDOW;
+  const windowed = points.length > CHART_WINDOW && !showAll && !selectedOlder;
+  const visible = windowed ? points.slice(-CHART_WINDOW) : points;
+  const selected = factReady ? (factHistory?.selected_report ?? null) : null;
+  const averageMeasured = historyReady && history !== undefined && history.average.count_months > 0;
   return (
-    <Panel
-      action={
-        <label className={incomeStyles.reportSelect}>
-          <span>Отчёт для разбивки</span>
-          <select
-            aria-label="Отчёт для разбивки фактического дохода"
-            onChange={(event) => onSelect(Number(event.target.value))}
-            value={selectedMonth ? String(selectedMonth.id) : ""}
-          >
-            {!selectionValid ? <option value="">Выберите закрытый отчёт</option> : null}
-            {closedMonths.map((month) => (
-              <option key={month.id} value={month.id}>
-                {formatMonth(month.year, month.month)}
-              </option>
-            ))}
-          </select>
-        </label>
+    <Section
+      actions={
+        <>
+          {points.length > CHART_WINDOW ? (
+            <fieldset aria-label="Период графика" className={sheet.segmented}>
+              <button
+                aria-pressed={windowed}
+                disabled={selectedOlder}
+                onClick={() => setShowAll(false)}
+                type="button"
+              >
+                12 мес
+              </button>
+              <button aria-pressed={!windowed} onClick={() => setShowAll(true)} type="button">
+                Всё
+              </button>
+            </fieldset>
+          ) : null}
+          <label className={sheet.select}>
+            <span>Месяц</span>
+            <select
+              aria-label="Отчёт для разбивки фактического дохода"
+              onChange={(event) => onSelect(Number(event.target.value))}
+              value={selectedMonth ? String(selectedMonth.id) : ""}
+            >
+              {!selectionValid ? <option value="">Выберите закрытый отчёт</option> : null}
+              {closedMonths.map((month) => (
+                <option key={month.id} value={month.id}>
+                  {formatMonth(month.year, month.month)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
       }
-      eyebrow="История закрытых отчётов"
-      id="income-history-title"
+      eyebrow="Получено · факт закрытых отчётов"
       testId="income-history-panel"
-      title="Получено фактически"
-      wide
+      title="Пассивный доход"
+      titleId="income-history-title"
     >
-      {!selectionValid ? (
-        <UiV2WidgetState title="Выберите только закрытый отчёт для фактической разбивки" />
-      ) : !ready ? (
-        <UiV2WidgetState retry={retry} />
-      ) : !history?.selected_report ? (
+      <Headlines
+        history={history}
+        historyReady={historyReady}
+        ladder={ladder}
+        ladderReady={ladderReady}
+        retryHistory={retryHistory}
+        retryLadder={retryLadder}
+        selected={selected}
+      />
+      {!historyReady ? null : points.length === 0 ? (
         <UiV2WidgetState title="История появится после закрытия первого отчёта" />
       ) : (
         <div className={incomeStyles.factLayout}>
-          <div>
-            <section
-              aria-label="История фактического пассивного дохода"
-              className={incomeStyles.historyList}
-            >
-              {historyNewestFirst(history.points).map((point) => {
-                const selected =
-                  point.reporting_month_id === history.selected_report?.reporting_month_id;
-                return (
-                  <button
-                    aria-pressed={selected}
-                    className={incomeStyles.historyItem}
-                    data-selected={selected}
-                    data-testid={`income-history-${point.reporting_month_id}`}
-                    key={point.reporting_month_id}
-                    onClick={() => onSelect(point.reporting_month_id)}
-                    type="button"
-                  >
-                    <span>
-                      <strong>{formatMonth(point.year, point.month)}</strong>
-                      <small>{formatDate(point.snapshot_date)}</small>
-                    </span>
-                    <strong>{money(point.passive_income_actual)}</strong>
-                    <small>
-                      {point.included_in_average_window
-                        ? "входит в среднее"
-                        : "не входит в окно среднего"}
-                    </small>
-                  </button>
-                );
-              })}
-            </section>
-          </div>
-          <div className={incomeStyles.breakdown}>
-            <p className={sharedStyles.eyebrow}>
-              Источники · {formatMonth(history.selected_report.year, history.selected_report.month)}
-            </p>
-            <ul className={incomeStyles.valueList}>
-              {PASSIVE_SOURCE_META.map(([key, label]) => (
-                <li key={key}>
-                  <span>{label}</span>
-                  <strong>{money(history.selected_report?.breakdown[key])}</strong>
-                </li>
-              ))}
-              <li className={incomeStyles.totalRow}>
-                <span>Всего чистого пассивного дохода</span>
-                <strong>{money(history.selected_report.passive_income_actual)}</strong>
-              </li>
-            </ul>
-            <HelpTip label="Что входит в пассивный доход">
-              Только фактический доход от капитала. Зарплата, бонусы, вознаграждения за покупки и
-              возврат основной суммы сюда не входят.
-            </HelpTip>
-          </div>
+          <IncomeFactBars
+            average={averageMeasured ? (history?.average.average ?? null) : null}
+            goal={goal}
+            onSelect={onSelect}
+            points={visible}
+            selectedId={selectionValid ? (selectedMonth?.id ?? null) : null}
+          />
+          {!selectionValid ? (
+            <UiV2WidgetState title="Выберите только закрытый отчёт для фактической разбивки" />
+          ) : !factReady ? (
+            <UiV2WidgetState retry={retryFact} />
+          ) : selected ? (
+            <SourceBreakdown report={selected} />
+          ) : (
+            <UiV2WidgetState title="История появится после закрытия первого отчёта" />
+          )}
         </div>
       )}
-    </Panel>
+    </Section>
   );
 }
 
-function eventLabel(event: CashFlowLadderEvent): string {
-  return ownerEventLabel(event.component);
+function EventRow({ event, showSource }: { event: CashFlowLadderEvent; showSource: boolean }) {
+  const principal = event.component === "redemption_principal";
+  const date = shortDate(event.expected_date);
+  return (
+    <li
+      className={incomeStyles.event}
+      data-component={event.component}
+      data-testid={`income-event-${event.source_kind}-${event.source_id}`}
+    >
+      <span className={incomeStyles.eventWhen}>
+        <time dateTime={event.expected_date}>
+          {date.day}
+          <small>{date.weekday}</small>
+        </time>
+        <span className={incomeStyles.tag} data-component={event.component}>
+          {principal ? (
+            <abbr title={PRINCIPAL_REPAYMENT_LABEL}>Погашение</abbr>
+          ) : (
+            ownerEventLabel(event.component)
+          )}
+        </span>
+      </span>
+      <span className={incomeStyles.eventWhat}>
+        <strong>{event.instrument_name ?? "Без инструмента"}</strong>
+        <small className={incomeStyles.eventAccount}>
+          {event.account_name}
+          {showSource ? ` · ${ownerSourceLabel(event.source_kind)}` : ""}
+        </small>
+      </span>
+      <strong className={incomeStyles.eventAmount} data-principal={principal || undefined}>
+        {event.is_approximate ? (
+          <abbr className={incomeStyles.approx} title="оценка">
+            ≈{" "}
+          </abbr>
+        ) : null}
+        {money(event.expected_net_amount)}
+        {principal ? " · не доход" : ""}
+      </strong>
+    </li>
+  );
 }
 
-function eventSourceLabel(event: CashFlowLadderEvent): string {
-  return ownerSourceLabel(event.source_kind);
+/** Where the dated events come from and whether any is an estimate, said once. */
+function sourceLabels(events: CashFlowLadderEvent[]): string[] {
+  return Array.from(new Set(events.map((event) => ownerSourceLabel(event.source_kind))));
+}
+
+/**
+ * One source for the whole list is named once below it; with mixed sources
+ * each row names its own and only the estimate mark stays here.
+ */
+function EventSources({ events }: { events: CashFlowLadderEvent[] }) {
+  if (events.length === 0) return null;
+  const sources = sourceLabels(events);
+  const approximate = events.some((event) => event.is_approximate);
+  if (sources.length > 1 && !approximate) return null;
+  return (
+    <p className={sheet.gapNote}>
+      {sources.length > 1 ? "≈ — оценка" : `Источник: ${sources[0]}`}
+      {sources.length === 1 && approximate ? " · ≈ — оценка" : ""}
+    </p>
+  );
 }
 
 function EventList({ events }: { events: CashFlowLadderEvent[] }) {
   if (events.length === 0) {
-    return <p className={incomeStyles.emptyEvents}>Нет известных событий в этом окне.</p>;
+    return <p className={sheet.muted}>Нет известных событий в этом окне.</p>;
   }
+  const mixedSources = sourceLabels(events).length > 1;
   return (
-    <ul className={incomeStyles.eventList}>
+    <ul className={incomeStyles.timeline}>
       {events.map((event) => (
-        <li
-          data-testid={`income-event-${event.source_kind}-${event.source_id}`}
+        <EventRow
+          event={event}
+          showSource={mixedSources}
           key={`${event.source_kind}-${event.source_id}-${event.expected_date}`}
-        >
-          <span className={incomeStyles.eventTitle}>
-            <time dateTime={event.expected_date}>{formatDate(event.expected_date)}</time>
-            <strong>{eventLabel(event)}</strong>
-          </span>
-          <span className={incomeStyles.eventContext}>
-            <span>{event.instrument_name ?? "Без инструмента"}</span>
-            <small>
-              {event.account_name} · {eventSourceLabel(event)}
-              {event.is_approximate ? " · оценка" : ""}
-            </small>
-          </span>
-          <strong className={incomeStyles.eventAmount}>
-            {money(event.expected_net_amount)}
-            {event.component === "redemption_principal" ? " · не доход" : ""}
-          </strong>
-        </li>
+        />
       ))}
     </ul>
   );
 }
 
-function LadderMonth({ month }: { month: CashFlowLadderMonth }) {
+function WindowSummary({ window: selected }: { window: UpcomingEventsWindow }) {
   return (
-    <details className={incomeStyles.ladderMonth}>
-      <summary>
-        <span>{formatMonth(month.year, month.month)}</span>
-        <span>{money(month.passive_income)} пассивно</span>
+    <div className={incomeStyles.windowSummary} data-testid={`income-window-${selected.days}`}>
+      <p className={incomeStyles.windowTotals}>
         <span>
-          {PRINCIPAL_REPAYMENT_LABEL} {money(month.redemption_principal)}
+          <strong className={sheet.amount}>{money(selected.passive_income)}</strong> пассивно
         </span>
-        <span>{month.is_approximate ? "оценка" : ""}</span>
-      </summary>
-      <dl className={incomeStyles.ladderFacts}>
-        <div>
-          <dt>Пассивный доход</dt>
-          <dd>{money(month.passive_income)}</dd>
-        </div>
-        <div>
-          <dt>{PRINCIPAL_REPAYMENT_LABEL} · не доход</dt>
-          <dd>{money(month.redemption_principal)}</dd>
-        </div>
-        <div>
-          <dt>Всего поступлений</dt>
-          <dd>{money(month.total_cash_flow)}</dd>
-        </div>
-      </dl>
-      <EventList events={month.items} />
-    </details>
+        {isZeroMoney(selected.redemption_principal) ? null : (
+          <span>
+            {PRINCIPAL_REPAYMENT_LABEL}{" "}
+            <strong className={sheet.amount} data-principal>
+              {money(selected.redemption_principal)}
+            </strong>{" "}
+            · не доход
+          </span>
+        )}
+        <span>
+          Всего поступлений{" "}
+          <strong className={sheet.amount}>{money(selected.total_cash_flow)}</strong>
+        </span>
+        <span className={sheet.muted}>
+          {formatDate(selected.from_date)}–{formatDate(selected.to_date)}
+        </span>
+      </p>
+      <EventList events={selected.items} />
+      <EventSources events={selected.items} />
+    </div>
   );
 }
 
-function LadderBlock({
+function LadderMonth({ month, max }: { month: CashFlowLadderMonth; max: number }) {
+  const value = coordinate(month.passive_income) ?? 0;
+  const width = max > 0 ? `${(Math.max(0, value) / max) * 100}%` : "0%";
+  const row = (
+    <>
+      <span className={incomeStyles.monthName}>{formatMonth(month.year, month.month)}</span>
+      <span aria-hidden="true" className={incomeStyles.monthTrack}>
+        <span style={{ width }} />
+      </span>
+      <strong className={`${sheet.amount} ${incomeStyles.monthAmount}`}>
+        {month.is_approximate ? (
+          <abbr className={incomeStyles.approx} title="оценка">
+            ≈{" "}
+          </abbr>
+        ) : null}
+        {money(month.passive_income)}
+      </strong>
+      <span className={incomeStyles.monthPrincipal}>
+        {isZeroMoney(month.redemption_principal)
+          ? null
+          : `+ ${money(month.redemption_principal)} возврат`}
+      </span>
+    </>
+  );
+  if (month.items.length === 0) {
+    return <li className={incomeStyles.monthRow}>{row}</li>;
+  }
+  return (
+    <li>
+      <details className={incomeStyles.monthDetails}>
+        <summary className={incomeStyles.monthRow}>{row}</summary>
+        <div className={incomeStyles.monthBody}>
+          <p className={sheet.muted}>
+            Всего поступлений {money(month.total_cash_flow)}
+            {isZeroMoney(month.redemption_principal)
+              ? ""
+              : ` · ${PRINCIPAL_REPAYMENT_LABEL.toLowerCase()} ${money(month.redemption_principal)} не доход`}
+          </p>
+          <EventList events={month.items} />
+          <EventSources events={month.items} />
+        </div>
+      </details>
+    </li>
+  );
+}
+
+function DepositEstimates({ upcoming }: { upcoming: UpcomingEventsWindow }) {
+  if (!upcoming.deposit_estimates?.length) return null;
+  return (
+    <section aria-label="Ожидаемые проценты по вкладам" className={incomeStyles.depositForecast}>
+      <h3>
+        Проценты по вкладам · 30 дней
+        <HelpTip label="Как рассчитаны проценты по вкладам">
+          Период до конечной даты, не включая её. Остаток × годовая ставка × дни / число дней в
+          году, при неизменных остатке и ставке, без капитализации и вычета налога. Для счетов с
+          датированными процентами за этот период учитываются только эти выплаты.
+        </HelpTip>
+      </h3>
+      <p className={sheet.muted}>
+        Расчётная сумма за {formatDate(upcoming.from_date)}–{formatDate(upcoming.to_date)}; дата
+        выплаты неизвестна. Включённые оценки уже учтены в общем прогнозе.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Вклад</th>
+            <th scope="col">Оценка процентов</th>
+          </tr>
+        </thead>
+        <tbody>
+          {upcoming.deposit_estimates.map((row) => (
+            <tr key={row.deposit_id}>
+              <td>
+                {row.name} · {row.account_name}
+                {!row.included_in_forecast && (
+                  <small>
+                    {" "}
+                    · В общий прогноз не добавлено: на счёте есть датированные проценты
+                  </small>
+                )}
+              </td>
+              <td className={sheet.amount}>{money(row.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function LadderSection({
   ladder,
   ready,
   retry,
@@ -419,109 +607,53 @@ function LadderBlock({
 }) {
   const [window, setWindow] = useState<LadderWindow>(30);
   const selectedWindow = window === 14 ? ladder?.upcoming_14_days : ladder?.upcoming_30_days;
+  const monthMax = Math.max(
+    0,
+    ...(ladder?.months.map((month) => coordinate(month.passive_income) ?? 0) ?? []),
+  );
   return (
-    <Panel
-      eyebrow="Датированные события"
-      id="income-ladder-title"
+    <Section
+      actions={
+        ready && ladder ? (
+          <fieldset
+            aria-controls="income-ladder-content"
+            aria-label="Окно ожидаемых выплат"
+            className={sheet.segmented}
+          >
+            {([14, 30, 12] as const).map((value) => (
+              <button
+                aria-pressed={window === value}
+                key={value}
+                onClick={() => setWindow(value)}
+                type="button"
+              >
+                {value === 12 ? "12 месяцев" : `${value} дней`}
+              </button>
+            ))}
+          </fieldset>
+        ) : null
+      }
+      eyebrow="Прогноз · датированные события"
       testId="income-ladder-panel"
       title="Ожидаемые выплаты"
-      wide
+      titleId="income-ladder-title"
     >
       {!ready || !ladder ? (
         <UiV2WidgetState retry={retry} />
       ) : (
         <>
-          <div className={incomeStyles.ladderControls}>
-            <span className={incomeStyles.ladderControlsLabel}>Период датированных выплат</span>
-            <fieldset
-              aria-controls="income-ladder-content"
-              aria-label="Окно ожидаемых выплат"
-              className={`${sharedStyles.segmented} ${incomeStyles.ladderWindow}`}
-            >
-              {([14, 30, 12] as const).map((value) => (
-                <button
-                  aria-pressed={window === value}
-                  key={value}
-                  onClick={() => setWindow(value)}
-                  type="button"
-                >
-                  {value === 12 ? "12 месяцев" : `${value} дней`}
-                </button>
-              ))}
-            </fieldset>
-          </div>
           <div id="income-ladder-content">
-            {window !== 12 && <h3>Датированные выплаты за период</h3>}
             {window !== 12 && selectedWindow ? (
-              <div className={incomeStyles.windowSummary} data-testid={`income-window-${window}`}>
-                <div>
-                  <span>
-                    {selectedWindow.days} дней · {formatDate(selectedWindow.from_date)}–
-                    {formatDate(selectedWindow.to_date)}
-                  </span>
-                  <strong>{money(selectedWindow.passive_income)} пассивно</strong>
-                </div>
-                <div>
-                  <span>{PRINCIPAL_REPAYMENT_LABEL}</span>
-                  <strong>{money(selectedWindow.redemption_principal)} · не доход</strong>
-                </div>
-                <div>
-                  <span>Всего поступлений</span>
-                  <strong>{money(selectedWindow.total_cash_flow)}</strong>
-                </div>
-                <EventList events={selectedWindow.items} />
-              </div>
-            ) : null}
-            <p>Оценка по месяцам</p>
-            <section aria-label="Выплаты по месяцам" className={incomeStyles.ladderList}>
-              {ladder.months.map((month) => (
-                <LadderMonth key={`${month.year}-${month.month}`} month={month} />
-              ))}
-            </section>
+              <WindowSummary window={selectedWindow} />
+            ) : (
+              <ul aria-label="Выплаты по месяцам" className={incomeStyles.monthList}>
+                {ladder.months.map((month) => (
+                  <LadderMonth key={`${month.year}-${month.month}`} max={monthMax} month={month} />
+                ))}
+              </ul>
+            )}
           </div>
-          {Boolean(ladder.upcoming_30_days.deposit_estimates?.length) && (
-            <section
-              aria-label="Ожидаемые проценты по вкладам"
-              className={incomeStyles.depositForecast}
-            >
-              <h3>Ожидаемые проценты по вкладам · 30 дней</h3>
-              <p>
-                Расчётная сумма за {formatDate(ladder.upcoming_30_days.from_date)}–
-                {formatDate(ladder.upcoming_30_days.to_date)}; дата выплаты неизвестна. Включённые
-                оценки уже учтены в общем прогнозе.{" "}
-                <HelpTip label="Как рассчитаны проценты по вкладам">
-                  Период до конечной даты, не включая её. Остаток × годовая ставка × дни / число
-                  дней в году, при неизменных остатке и ставке, без капитализации и вычета налога.
-                  Для счетов с датированными процентами за этот период учитываются только эти
-                  выплаты.
-                </HelpTip>
-              </p>
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Вклад</th>
-                    <th scope="col">Оценка процентов</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ladder.upcoming_30_days.deposit_estimates?.map((row) => (
-                    <tr key={row.deposit_id}>
-                      <td>
-                        {row.name} · {row.account_name}
-                        {!row.included_in_forecast && (
-                          <small>
-                            {" "}
-                            · В общий прогноз не добавлено: на счёте есть датированные проценты
-                          </small>
-                        )}
-                      </td>
-                      <td>{money(row.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          )}
+          <DepositEstimates upcoming={ladder.upcoming_30_days} />
           {ladder.warnings.length > 0 ? (
             <ul className={incomeStyles.warningList}>
               {ladder.warnings.map((warning) => (
@@ -531,11 +663,105 @@ function LadderBlock({
           ) : null}
         </>
       )}
-    </Panel>
+    </Section>
   );
 }
 
-function CoveragePlanBlock({
+function Coverage({ coverage }: { coverage: IncomePlanCoverage }) {
+  const pct = coverage.coverage_pct === null ? null : Number(coverage.coverage_pct);
+  const width = pct === null || !Number.isFinite(pct) ? 0 : Math.max(0, Math.min(100, pct));
+  return (
+    <div className={incomeStyles.coverage} data-testid="income-coverage">
+      <span className={incomeStyles.coverageValue}>
+        {formatPercent(coverage.coverage_pct, { digits: 1, empty: "Недоступно" })}
+      </span>
+      <span className={sheet.figureLabel}>
+        По прогнозу пассивный доход покрывает обязательные расходы
+      </span>
+      {pct !== null ? (
+        <span aria-hidden="true" className={incomeStyles.coverageTrack}>
+          <span style={{ width: `${width}%` }} />
+        </span>
+      ) : null}
+      <span className={sheet.figureDetail}>
+        Обязательные расходы {money(coverage.mandatory_expenses)} · прогнозный остаток{" "}
+        {money(coverage.passive_income_minus_mandatory_expenses)}
+      </span>
+      <span className={sheet.figureDetail}>
+        По среднему фактическому доходу:{" "}
+        {formatPercent(coverage.actual_mandatory_expense_coverage_pct, {
+          digits: 1,
+          empty: "Недоступно",
+        })}
+      </span>
+    </div>
+  );
+}
+
+function PlanTable({ rows }: { rows: PlanVsActualRow[] }) {
+  const visible = rows.filter((row) => row.planned !== null || row.actual !== null);
+  const max = Math.max(
+    0,
+    ...visible.flatMap((row) => [coordinate(row.planned) ?? 0, coordinate(row.actual) ?? 0]),
+  );
+  const groups = [
+    { title: "Обязательные", rows: visible.filter((row) => row.expense_type === "mandatory") },
+    { title: "Остальные", rows: visible.filter((row) => row.expense_type !== "mandatory") },
+  ].filter((group) => group.rows.length > 0);
+  const share = (value: MoneyValue | null) => {
+    const number = coordinate(value);
+    return number === null || max <= 0 ? null : `${(Math.max(0, number) / max) * 100}%`;
+  };
+  return (
+    <table className={incomeStyles.planTable}>
+      <caption className={sheet.visuallyHidden}>План и факт расходов</caption>
+      <thead>
+        <tr>
+          <th scope="col">Статья</th>
+          <td />
+          <th scope="col">Факт</th>
+          <th scope="col">План</th>
+        </tr>
+      </thead>
+      {groups.map((group) => (
+        <tbody key={group.title}>
+          {groups.length > 1 ? (
+            <tr className={incomeStyles.planGroup}>
+              <th colSpan={4} scope="colgroup">
+                {group.title}
+              </th>
+            </tr>
+          ) : null}
+          {group.rows.map((row) => {
+            const actual = share(row.actual);
+            const planned = share(row.planned);
+            return (
+              <tr key={`${row.expense_type}-${row.category}`}>
+                <th scope="row">{row.category}</th>
+                <td aria-hidden="true" className={incomeStyles.planBarCell}>
+                  <span className={incomeStyles.planBar}>
+                    {actual ? (
+                      <span className={incomeStyles.planFact} style={{ width: actual }} />
+                    ) : null}
+                    {planned ? (
+                      <span className={incomeStyles.planMark} style={{ left: planned }} />
+                    ) : null}
+                  </span>
+                </td>
+                <td className={sheet.amount}>{row.actual ? money(row.actual) : "—"}</td>
+                <td className={`${sheet.amount} ${incomeStyles.planCell}`}>
+                  {row.planned ? money(row.planned) : "—"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      ))}
+    </table>
+  );
+}
+
+function PlanSection({
   coverage,
   coverageReady,
   budget,
@@ -543,11 +769,9 @@ function CoveragePlanBlock({
   savings,
   savingsReady,
   savingTotal,
-  monthId,
   retryCoverage,
   retryBudget,
   retrySavings,
-  narrow,
 }: {
   coverage: IncomePlanCoverage | undefined;
   coverageReady: boolean;
@@ -556,137 +780,81 @@ function CoveragePlanBlock({
   savings: SavingAllocation[];
   savingsReady: boolean;
   savingTotal: IncomePlanSummary["cash_balance"] | undefined;
-  monthId: number;
   retryCoverage: () => void;
   retryBudget: () => void;
   retrySavings: () => void;
-  narrow: boolean;
 }) {
   return (
-    <Panel
-      action={
-        <Link className={sharedStyles.contextLink} to={`/v2/data/months/${monthId}`}>
-          Открыть месяц →
-        </Link>
-      }
-      eyebrow="Последний закрытый отчёт"
-      id="income-plan-title"
+    <Section
+      eyebrow="План · последний закрытый отчёт"
       testId="income-plan-panel"
-      title="Покрытие расходов и план"
-      wide
+      title="Расходы и накопления"
+      titleId="income-plan-title"
     >
-      <details className={incomeStyles.collapsible} open={!narrow}>
-        <summary>Показать покрытие расходов и план</summary>
-        <div className={incomeStyles.collapsibleBody}>
-          {!coverageReady ? (
-            <UiV2WidgetState retry={retryCoverage} />
-          ) : !coverage ? (
-            <UiV2WidgetState title="Покрытие расходов недоступно" retry={retryCoverage} />
-          ) : (
-            <div className={incomeStyles.coverageGrid}>
-              <div className={incomeStyles.coverageCard} data-testid="income-coverage">
-                <span>По прогнозу / обязательные расходы</span>
-                <strong>
-                  {formatPercent(coverage.coverage_pct, { digits: 1, empty: "Недоступно" })}
+      {!coverageReady ? (
+        <UiV2WidgetState retry={retryCoverage} />
+      ) : !coverage ? (
+        <UiV2WidgetState title="Покрытие расходов недоступно" retry={retryCoverage} />
+      ) : (
+        <Coverage coverage={coverage} />
+      )}
+      <div className={incomeStyles.planBlock}>
+        <h3>План и факт расходов</h3>
+        {!budgetReady ? (
+          <UiV2WidgetState retry={retryBudget} />
+        ) : budget.length === 0 ? (
+          <p className={sheet.muted}>План расходов не задан.</p>
+        ) : (
+          <PlanTable rows={budget} />
+        )}
+      </div>
+      <div className={incomeStyles.planBlock}>
+        <h3>Накопления</h3>
+        {!savingsReady ? (
+          <UiV2WidgetState retry={retrySavings} />
+        ) : savings.length === 0 ? (
+          <p className={sheet.muted}>Накопления не заданы.</p>
+        ) : (
+          <ul className={incomeStyles.savingList}>
+            {savings.map((saving) => (
+              <li key={saving.id}>
+                <span>{saving.destination}</span>
+                <strong className={sheet.amount}>{money(saving.amount)}</strong>
+              </li>
+            ))}
+            {savingTotal?.breakdown.saving_allocations ? (
+              <li className={incomeStyles.savingTotal}>
+                <span>Всего за месяц</span>
+                <strong className={sheet.amount}>
+                  {money(savingTotal.breakdown.saving_allocations)}
                 </strong>
-                <small>
-                  расходы {money(coverage.mandatory_expenses)} · прогнозный остаток{" "}
-                  {money(coverage.passive_income_minus_mandatory_expenses)}
-                </small>
-                <small>
-                  По среднему фактическому доходу:{" "}
-                  {formatPercent(coverage.actual_mandatory_expense_coverage_pct, {
-                    digits: 1,
-                    empty: "Недоступно",
-                  })}
-                </small>
-              </div>
-              <div className={incomeStyles.coverageCard}>
-                <span>Накопления месяца</span>
-                <strong>
-                  {savingTotal?.breakdown.saving_allocations
-                    ? money(savingTotal.breakdown.saving_allocations)
-                    : "Недоступно"}
-                </strong>
-              </div>
-            </div>
-          )}
-          <div className={incomeStyles.planGrid}>
-            <div>
-              <h3>План и факт расходов</h3>
-              {!budgetReady ? (
-                <UiV2WidgetState retry={retryBudget} />
-              ) : budget.length === 0 ? (
-                <p className={incomeStyles.emptyPlan}>План расходов не задан.</p>
-              ) : (
-                <ul className={incomeStyles.valueList}>
-                  {budget.slice(0, 5).map((row) => {
-                    const copy = planFactCopy(row);
-                    if (copy === null) return null;
-                    return (
-                      <li key={`${row.expense_type}-${row.category}`}>
-                        <span>{row.category}</span>
-                        <strong className={incomeStyles.planFact}>{copy}</strong>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-            <div>
-              <h3>Накопления</h3>
-              {!savingsReady ? (
-                <UiV2WidgetState retry={retrySavings} />
-              ) : savings.length === 0 ? (
-                <p className={incomeStyles.emptyPlan}>Накопления не заданы.</p>
-              ) : (
-                <ul className={incomeStyles.valueList}>
-                  {savings.slice(0, 5).map((saving) => (
-                    <li key={saving.id}>
-                      <span>{saving.destination}</span>
-                      <strong>{money(saving.amount)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
-      </details>
-    </Panel>
+              </li>
+            ) : null}
+          </ul>
+        )}
+      </div>
+    </Section>
   );
 }
 
-function Handoffs({ narrow, taxIisPath }: { narrow: boolean; taxIisPath: string }) {
+function Handoffs({ taxIisPath }: { taxIisPath: string }) {
   return (
-    <Panel
-      eyebrow="Дополнительные разделы"
-      id="income-handoffs-title"
-      testId="income-handoffs-panel"
-      title="Налоги, ИИС и сценарии"
+    <nav
+      aria-label="Дополнительные разделы"
+      className={sheet.footerLinks}
+      data-testid="income-handoffs-panel"
     >
-      <details className={incomeStyles.collapsible} open={!narrow}>
-        <summary>Показать разделы</summary>
-        <div className={incomeStyles.collapsibleBody}>
-          <div className={incomeStyles.handoffGrid}>
-            <div>
-              <h3>Налоги и ИИС</h3>
-              <p>НДФЛ и ИИС по выбранному отчётному срезу.</p>
-              <Link to={taxIisPath}>Открыть Налоги и ИИС →</Link>
-            </div>
-            <div>
-              <h3>Сценарии</h3>
-              <Link to="/v2/income/scenario-lab">Открыть сценарии →</Link>
-            </div>
-          </div>
-        </div>
-      </details>
-    </Panel>
+      <span className={sheet.muted}>Ещё по доходу:</span>
+      <span>
+        <Link to={taxIisPath}>Налоги и ИИС →</Link>{" "}
+        <span className={sheet.muted}>НДФЛ и ИИС по выбранному отчётному срезу.</span>
+      </span>
+      <Link to="/v2/income/scenario-lab">Сценарии →</Link>
+    </nav>
   );
 }
 
 export default function UiV2IncomePage() {
-  const narrow = useNarrowViewport();
   const [params, setParams] = useSearchParams();
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
@@ -792,56 +960,46 @@ export default function UiV2IncomePage() {
     );
   } else {
     const summary = summaryReady ? summaryQuery.data : undefined;
+    const goal = summary?.coverage.goal_target ?? null;
     content = (
-      <>
-        <UiV2ReportContext month={latestClosed}>
-          <Link to={`/v2/data/months/${latestClosed.id}`}>Данные отчётного месяца →</Link>
-        </UiV2ReportContext>
-        {newerDraft ? (
-          <p className={incomeStyles.draftNote} data-testid="income-draft-note">
-            {formatMonth(newerDraft.year, newerDraft.month)} ещё не закрыт.
-          </p>
-        ) : null}
-        <Headlines
+      <div className={sheet.sheet}>
+        <PassiveSection
+          closedMonths={closedMonths}
+          factHistory={factHistoryReady ? factHistoryQuery.data : undefined}
+          factReady={factHistoryReady}
+          goal={goal && !isZeroMoney(goal) ? goal : null}
           history={headlineHistoryReady ? headlineHistoryQuery.data : undefined}
           historyReady={headlineHistoryReady}
           ladder={ladderReady ? ladderQuery.data : undefined}
           ladderReady={ladderReady}
+          onSelect={selectFactMonth}
+          retryFact={() => void factHistoryQuery.refetch()}
           retryHistory={() => void headlineHistoryQuery.refetch()}
           retryLadder={() => void ladderQuery.refetch()}
+          selectedMonth={factSelection.month}
+          selectionValid={factSelection.valid}
         />
-        <div className={incomeStyles.layout}>
-          <FactHistoryBlock
-            closedMonths={closedMonths}
-            history={factHistoryReady ? factHistoryQuery.data : undefined}
-            onSelect={selectFactMonth}
-            ready={factHistoryReady}
-            retry={() => void factHistoryQuery.refetch()}
-            selectedMonth={factSelection.month}
-            selectionValid={factSelection.valid}
+        <div className={sheet.columns}>
+          <LadderSection
+            ladder={ladderReady ? ladderQuery.data : undefined}
+            ready={ladderReady}
+            retry={() => void ladderQuery.refetch()}
           />
-          <CoveragePlanBlock
+          <PlanSection
             budget={budgetReady ? (budgetQuery.data ?? []) : []}
             budgetReady={budgetReady}
             coverage={summary?.coverage}
             coverageReady={coverageReady}
-            monthId={latestClosed.id}
             retryBudget={() => void budgetQuery.refetch()}
             retryCoverage={() => void summaryQuery.refetch()}
             retrySavings={() => void savingsQuery.refetch()}
             savingTotal={summary?.cash_balance}
             savings={savingsReady ? (savingsQuery.data ?? []) : []}
             savingsReady={savingsReady}
-            narrow={narrow}
           />
-          <LadderBlock
-            ladder={ladderReady ? ladderQuery.data : undefined}
-            ready={ladderReady}
-            retry={() => void ladderQuery.refetch()}
-          />
-          <Handoffs narrow={narrow} taxIisPath={taxIisPath} />
         </div>
-      </>
+        <Handoffs taxIisPath={taxIisPath} />
+      </div>
     );
   }
 
@@ -851,10 +1009,21 @@ export default function UiV2IncomePage() {
       busy={!monthsReady}
       header={
         <>
-          <h1>Доход и планы</h1>
-          <p className={sharedStyles.subtitle}>
-            Что уже получено, на что рассчитывать и что запланировано.
-          </p>
+          <ClosedReportTitle
+            links={
+              latestClosed ? (
+                <Link to={`/v2/data/months/${latestClosed.id}`}>Данные отчётного месяца →</Link>
+              ) : null
+            }
+            month={latestClosed}
+            title="Доход и планы"
+          />
+          {newerDraft ? (
+            <p className={sheet.draftNote} data-testid="income-draft-note">
+              {formatMonth(newerDraft.year, newerDraft.month)} ещё не закрыт — показан последний
+              закрытый отчёт.
+            </p>
+          ) : null}
         </>
       }
     >

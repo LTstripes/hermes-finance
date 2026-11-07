@@ -280,14 +280,18 @@ afterEach(() => {
 });
 
 describe("UI v2 Income and plans", () => {
-  it("renders the two retained headlines, removes forecast/goals and keeps principal separate", async () => {
+  it("renders the passive income figures, removes forecast/goals and keeps principal separate", async () => {
     const { mount, reads } = setup();
     mount();
 
     expect(await screen.findByRole("heading", { name: "Доход и планы" })).toBeVisible();
     await screen.findByTestId("income-average");
     const headlines = screen.getByRole("region", { name: "Главные показатели дохода" });
-    expect(within(headlines).getAllByRole("article")).toHaveLength(2);
+    expect(within(headlines).getByTestId("income-average")).toBeVisible();
+    expect(within(headlines).getByTestId("income-upcoming-passive")).toBeVisible();
+    expect(await within(headlines).findByTestId("income-selected-actual")).toHaveTextContent(
+      "17 500 ₽",
+    );
     expect(screen.getByTestId("income-average")).toHaveTextContent("15 300 ₽");
     expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("8 500 ₽");
     expect(screen.getByTestId("income-upcoming-passive").parentElement).toHaveTextContent(
@@ -321,7 +325,11 @@ describe("UI v2 Income and plans", () => {
       ],
     };
     mount();
-    expect(await screen.findByTestId("income-upcoming-passive")).toHaveTextContent("9 734,56 ₽");
+    // Overview figures read in whole rubles (P 12.2); the exact sum stays on hover.
+    expect(await screen.findByTestId("income-upcoming-passive")).toHaveTextContent("9 735 ₽");
+    expect(
+      screen.getByTestId("income-upcoming-passive").getAttribute("title")?.replaceAll(" ", " "),
+    ).toBe("9 734,56 ₽");
     const table = await screen.findByRole("region", { name: "Ожидаемые проценты по вкладам" });
     expect(table).toHaveTextContent("Синтетический вклад · Банк");
     expect(table).toHaveTextContent("1 234,56 ₽");
@@ -329,13 +337,13 @@ describe("UI v2 Income and plans", () => {
     expect(table.querySelector("time")).toBeNull();
     expect(screen.getByTestId("income-window-30")).toHaveTextContent("8 500 ₽ пассивно");
     fireEvent.click(screen.getByRole("button", { name: "14 дней" }));
-    expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("9 734,56 ₽");
+    expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("9 735 ₽");
     expect(table).toHaveTextContent("30 дней");
     expect(screen.getByTestId("income-coverage")).toHaveTextContent("По прогнозу");
     expect(screen.getByTestId("income-coverage")).toHaveTextContent("прогнозный остаток");
   });
 
-  it("puts the payout ladder last before handoffs and keeps event columns semantic", async () => {
+  it("puts the payout ladder before the plan, ends with handoffs and keeps event columns semantic", async () => {
     const { mount } = setup();
     mount();
 
@@ -345,14 +353,14 @@ describe("UI v2 Income and plans", () => {
     ).map((panel) => panel.dataset.testid);
     expect(panelOrder).toEqual([
       "income-history-panel",
-      "income-plan-panel",
       "income-ladder-panel",
+      "income-plan-panel",
       "income-handoffs-panel",
     ]);
 
     const handoffs = within(screen.getByTestId("income-handoffs-panel"));
     expect(handoffs.getByText("НДФЛ и ИИС по выбранному отчётному срезу.")).toBeVisible();
-    expect(handoffs.getByRole("link", { name: "Открыть Налоги и ИИС →" })).toHaveAttribute(
+    expect(handoffs.getByRole("link", { name: "Налоги и ИИС →" })).toHaveAttribute(
       "href",
       "/v2/income/tax-iis?month=91",
     );
@@ -366,12 +374,34 @@ describe("UI v2 Income and plans", () => {
     expect(coupon.children).toHaveLength(3);
     expect(coupon.children[0]).toHaveTextContent("Купон");
     expect(coupon.children[1]).toHaveTextContent("Синтетическая облигация");
-    expect(coupon.children[1]).toHaveTextContent("внешний источник");
+    expect(coupon.children[1]).toHaveTextContent("Синтетический брокерский счёт");
     expect(coupon.children[2]).toHaveTextContent("8 500 ₽");
+    // The source is named once for the window, not in every row.
+    expect(coupon).not.toHaveTextContent("внешний источник");
+    expect(within(selectedWindow).getByText("Источник: внешний источник")).toBeVisible();
 
     const principal = within(selectedWindow).getByTestId("income-event-provider-702");
-    expect(principal).toHaveTextContent("Возврат основной суммы");
+    expect(within(principal).getByTitle("Возврат основной суммы")).toHaveTextContent("Погашение");
     expect(principal.children[2]).toHaveTextContent("100 000 ₽ · не доход");
+  });
+
+  it("names the source in each row when manual and external payouts share a window", async () => {
+    const { mount, state } = setup();
+    const window = state.ladder.upcoming_30_days;
+    window.items = window.items.map((event) =>
+      event.component === "coupon" ? event : { ...event, source_kind: "manual", source_id: 703 },
+    );
+    mount();
+
+    const selectedWindow = await screen.findByTestId("income-window-30");
+    const external = within(selectedWindow).getByTestId("income-event-provider-701");
+    const manual = within(selectedWindow).getByTestId("income-event-manual-703");
+    expect(external.children[1]).toHaveTextContent(
+      "Синтетический брокерский счёт · внешний источник",
+    );
+    expect(manual.children[1]).toHaveTextContent("Синтетический брокерский счёт · введено вручную");
+    // No shared "Источник: …" line that would name both without saying which row is which.
+    expect(within(selectedWindow).queryByText(/^Источник:/)).toBeNull();
   });
 
   it("keeps planning context on latest CLOSED while history selection changes the factual breakdown", async () => {
@@ -427,7 +457,7 @@ describe("UI v2 Income and plans", () => {
     mount();
 
     expect(await screen.findByTestId("income-average")).toHaveTextContent("Недоступно");
-    expect(screen.getByText("Пока нет данных")).toBeVisible();
+    expect(screen.getByText(/Пока нет данных/)).toBeVisible();
     expect(screen.queryByRole("tooltip")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Период среднего дохода" }));
     expect(screen.getByRole("tooltip")).toHaveTextContent("0 из 12 закрытых отчётов");
@@ -459,7 +489,7 @@ describe("UI v2 Income and plans", () => {
     ).toBeVisible();
   });
 
-  it("lists closed factual months newest-first and keeps the dropdown on that selection", async () => {
+  it("draws closed factual months oldest-first as bars and keeps the dropdown newest-first", async () => {
     const user = userEvent.setup();
     const { mount, state } = setup();
     mount();
@@ -469,13 +499,14 @@ describe("UI v2 Income and plans", () => {
     });
     const buttons = within(list).getAllByRole("button");
     expect(buttons.map((button) => button.dataset.testid)).toEqual([
-      "income-history-91",
-      "income-history-90",
-      "income-history-89",
       "income-history-88",
+      "income-history-89",
+      "income-history-90",
+      "income-history-91",
     ]);
     expect(state.history.points.map((point) => point.reporting_month_id)).toEqual([88, 89, 90, 91]);
-    expect(buttons[0]).toHaveAttribute("aria-pressed", "true");
+    expect(buttons[3]).toHaveAttribute("aria-pressed", "true");
+    expect(buttons[3]).toHaveAccessibleName(/^Июль\s2031:\s17\s500\s₽$/);
 
     const select = screen.getByRole("combobox", {
       name: "Отчёт для разбивки фактического дохода",
@@ -490,9 +521,7 @@ describe("UI v2 Income and plans", () => {
     expect(options.map((option) => option.getAttribute("value"))).toEqual(["91", "90", "89", "88"]);
     expect(screen.queryByRole("option", { name: /Август/ })).toBeNull();
 
-    select.focus();
-    await user.tab();
-    expect(screen.getByTestId("income-history-91")).toHaveFocus();
+    screen.getByTestId("income-history-89").focus();
     await user.tab();
     expect(screen.getByTestId("income-history-90")).toHaveFocus();
     await user.keyboard("{Enter}");
@@ -537,22 +566,22 @@ describe("UI v2 Income and plans", () => {
     expect(await screen.findByText("Жильё")).toBeVisible();
     expect(screen.queryByText(/Отдельный план показывается/)).toBeNull();
     const plan = screen.getByTestId("income-plan-panel");
-    expect(within(plan).getByText("Жильё").closest("li")).toHaveTextContent(
-      "План 50 000 ₽ · факт 48 000 ₽",
-    );
-    const actualOnly = within(plan).getByText("Связь").closest("li");
-    expect(actualOnly).toHaveTextContent("Факт 3 000 ₽");
-    expect(actualOnly).not.toHaveTextContent("План");
-    expect(actualOnly).not.toHaveTextContent("Не задано");
-    expect(within(plan).getByText("Подарки").closest("li")).toHaveTextContent(
-      "План 1 000 ₽ · факта нет",
-    );
-    expect(within(plan).getByText("Нулевой план").closest("li")).toHaveTextContent(
-      "План 0 ₽ · факт 250 ₽",
-    );
-    expect(within(plan).getByText("Нулевой план без факта").closest("li")).toHaveTextContent(
-      "План 0 ₽ · факта нет",
-    );
+    const table = within(plan).getByRole("table", { name: "План и факт расходов" });
+    expect(within(table).getByRole("columnheader", { name: "Факт" })).toBeVisible();
+    expect(within(table).getByRole("columnheader", { name: "План" })).toBeVisible();
+    const cells = (category: string) =>
+      within(within(table).getByRole("rowheader", { name: category }).closest("tr") as HTMLElement)
+        .getAllByRole("cell")
+        .map((cell) => cell.textContent?.replaceAll(" ", " "));
+    // Fact then plan; an absent value is a dash, never "not set" or zero.
+    expect(cells("Жильё")).toEqual(["48 000 ₽", "50 000 ₽"]);
+    expect(cells("Связь")).toEqual(["3 000 ₽", "—"]);
+    expect(cells("Подарки")).toEqual(["—", "1 000 ₽"]);
+    expect(cells("Нулевой план")).toEqual(["250 ₽", "0 ₽"]);
+    expect(cells("Нулевой план без факта")).toEqual(["—", "0 ₽"]);
+    // Mandatory rows are grouped apart from the rest, so the coverage figure is not mistaken for this list.
+    expect(within(table).getByRole("columnheader", { name: "Обязательные" })).toBeVisible();
+    expect(within(table).getByRole("columnheader", { name: "Остальные" })).toBeVisible();
     expect(plan).not.toHaveTextContent("Не задано");
   });
 

@@ -1,725 +1,454 @@
-.panel {
-  min-width: 0;
-}
-
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 13px;
-  margin-bottom: 18px;
-}
-
-.metric {
-  min-width: 0;
-  min-height: 168px;
-  padding: 21px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: white;
-  box-shadow: 0 1px 1px rgb(23 40 60 / 3%);
-}
-
-.metricPrimary {
-  border-color: #cfdae7;
-  background: #edf3f9;
-}
-
-.metricValue {
-  margin-top: 13px;
-  color: var(--ink);
-  font-size: clamp(1.5rem, 2.45vw, 2.55rem);
-  font-variant-numeric: tabular-nums;
-  font-weight: 680;
-  letter-spacing: -0.045em;
-  line-height: 1.18;
-  overflow-wrap: anywhere;
-}
-
-.metricValue span {
-  color: var(--muted);
-  font-size: 0.45em;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-
-.metricDetail {
-  margin-top: 11px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: 17px;
-}
+/* Income and plans as a clear sheet (#1079 stage 4, direction A). */
 
 .factLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(230px, 0.85fr);
-  gap: 24px;
-  margin-top: 7px;
+  grid-template-columns: minmax(0, 1.75fr) minmax(260px, 1fr);
+  gap: 40px;
+  align-items: start;
 }
 
-.reportSelect {
+/* Source split of the selected month */
+.breakdown {
   display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 14px;
+}
+
+.breakdownTitle {
+  display: flex;
+  align-items: center;
   gap: 4px;
   color: var(--muted);
-  font-size: 11px;
-  text-align: right;
+  font-size: var(--t-sm);
 }
 
-.reportSelect select {
-  min-width: 175px;
-  min-height: 34px;
-  padding: 5px 8px;
-  border: 1px solid #bdcadd;
-  border-radius: 7px;
-  background: white;
-  color: var(--ink);
-  font: inherit;
-  font-size: 12px;
-}
-
-.reportSelect select:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-
-.historyList,
-.valueList,
-.eventList,
-.warningList {
-  list-style: none;
+.sourceList {
+  display: grid;
   margin: 0;
   padding: 0;
+  list-style: none;
 }
 
-.historyList {
+.sourceList li {
   display: grid;
-  gap: 6px;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  border-bottom: 1px solid var(--line-2);
 }
 
-.historyItem {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 12px;
-  width: 100%;
-  padding: 10px 11px;
-  border: 1px solid #e5e9ed;
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--ink);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-
-.historyItem:hover,
-.historyItem[data-selected="true"] {
-  border-color: #9fb7d0;
-  background: #eef4fa;
-}
-
-.historyItem > span,
-.historyItem > small {
-  min-width: 0;
-}
-
-.historyItem > span {
-  display: grid;
-  gap: 2px;
-}
-
-.historyItem strong {
-  font-size: 12px;
-}
-
-.historyItem > strong {
-  align-self: center;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.historyItem small {
+.sourceList li[data-zero] {
   color: var(--muted);
-  font-size: 10px;
 }
 
-.historyItem > small {
-  grid-column: 1 / -1;
+.sourceList .sourceTotal {
+  border-bottom: 0;
+  font-weight: var(--w-semibold);
 }
 
-.breakdown {
-  min-width: 0;
-  padding: 16px;
-  border-radius: 10px;
-  background: var(--soft);
-}
-
-.valueList {
+/* Dated payout timeline */
+.windowSummary {
   display: grid;
-  margin-top: 10px;
+  gap: 10px;
 }
 
-.valueList li {
+.windowTotals {
   display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 8px 0;
-  border-bottom: 1px solid #edf0f3;
-  font-size: 12px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 18px;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
 }
 
-.valueList li:last-child {
+.windowTotals strong {
+  color: var(--fc-ink);
+  font-size: var(--t-md);
+}
+
+.windowTotals strong[data-principal] {
+  color: var(--ink-2);
+}
+
+.timeline {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 58px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.event:last-child {
   border-bottom: 0;
 }
 
-.valueList span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.valueList strong {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.valueList .planFact {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.planFactNote {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.totalRow {
-  padding-top: 12px !important;
-  border-top: 1px solid #cdd7e1;
-  font-weight: 700;
-}
-
-.forecastSummary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 18px;
-  margin-top: 11px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.forecastSummary > div {
-  display: grid;
-  gap: 2px;
-}
-
-.forecastSummary span,
-.coverageCard span,
-.windowSummary span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.forecastSummary strong {
-  font-size: 18px;
-  font-variant-numeric: tabular-nums;
-}
-
-.qualityBadge {
-  margin-left: auto;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #e8f2eb;
-  color: #23734a !important;
-  font-size: 10px !important;
-  font-weight: 700;
-}
-
-.qualityBadge[data-quality="approximate"] {
-  background: #fff4dc;
-  color: #88631d !important;
-}
-
-.warningList {
-  display: grid;
-  gap: 6px;
-  margin-top: 13px;
-  color: #795a1d;
-  font-size: 11px;
-}
-
-.warningList li {
-  padding: 8px 10px;
-  border-left: 3px solid #d8a83e;
-  background: #fff8e8;
-}
-
-.windowSummary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 12px;
-  padding: 13px;
-  border-radius: 10px;
-  background: var(--soft);
-}
-
-.windowSummary > div:not(:last-child) {
-  display: grid;
-  align-content: start;
-  gap: 3px;
-}
-
-.windowSummary strong {
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-}
-
-.windowSummary > .eventList {
-  grid-column: 1 / -1;
-}
-
-.ladderControls {
+.eventWhen {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 9px 11px;
-  border-radius: 9px;
-  background: var(--soft);
+  gap: 10px;
 }
 
-.ladderControlsLabel {
+.eventWhen time {
+  display: grid;
+  min-width: 38px;
+  font-family: var(--f-num);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+  line-height: 1.2;
+}
+
+.eventWhen time small {
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
+  font-family: var(--f-ui);
+  font-size: var(--t-xs);
+  font-weight: var(--w-regular);
 }
 
-.ladderWindow {
-  flex: 0 0 auto;
+.tag abbr {
+  text-decoration: none;
 }
 
-.eventList {
+.tag {
+  max-width: 98px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--t-xs);
+  line-height: 1.35;
+}
+
+.tag[data-component="dividend"] {
+  background: #fbefe3;
+  color: #8a5420;
+}
+
+.tag[data-component="deposit_interest"] {
+  background: #f1ecf8;
+  color: #5d4590;
+}
+
+.tag[data-component="redemption_principal"],
+.tag[data-component="other_capital_income"] {
+  background: var(--line-2);
+  color: var(--ink-2);
+}
+
+.eventWhat {
   display: grid;
-  gap: 5px;
-  margin-top: 11px;
-}
-
-.eventList li {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1.3fr) minmax(130px, auto);
-  align-items: center;
-  gap: 10px 18px;
-  padding: 10px 0;
-  border-top: 1px solid #e4e9ee;
-  font-size: 12px;
-}
-
-.eventTitle,
-.eventContext {
-  display: grid;
-  gap: 2px;
   min-width: 0;
 }
 
-.eventTitle {
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 8px;
-}
-
-.eventTitle time {
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.eventTitle strong,
-.eventContext > span {
+.eventWhat strong {
+  font-weight: var(--w-medium);
   overflow-wrap: anywhere;
 }
 
-.eventTitle strong {
-  text-align: left;
-}
-
-.eventContext > span {
-  font-size: 11px;
-  font-weight: 650;
+.eventAccount {
+  color: var(--muted);
+  font-size: var(--t-xs);
 }
 
 .eventAmount {
-  justify-self: end;
+  color: var(--fc-ink);
+  font-family: var(--f-num);
   font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
   text-align: right;
   white-space: nowrap;
 }
 
-.eventList small {
-  color: var(--muted);
-  font-size: 10px;
-  overflow-wrap: anywhere;
+.eventAmount[data-principal] {
+  color: var(--ink-2);
+  font-weight: var(--w-medium);
 }
 
-.emptyEvents,
-.emptyPlan {
-  margin-top: 13px;
-  color: var(--muted);
-  font-size: 12px;
+.approx {
+  text-decoration: none;
+  cursor: help;
 }
 
-.ladderList {
+/* Twelve-month outlook */
+.monthList {
   display: grid;
-  gap: 7px;
-  margin-top: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.ladderMonth {
-  min-width: 0;
-  border: 1px solid #e5e9ed;
-  border-radius: 9px;
-  background: var(--surface-2);
+.monthList > li {
+  border-bottom: 1px solid var(--line-2);
 }
 
-.ladderMonth summary {
+.monthList > li:last-child {
+  border-bottom: 0;
+}
+
+.monthRow {
   display: grid;
-  grid-template-columns: minmax(80px, 0.8fr) minmax(90px, 1fr) minmax(100px, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 112px minmax(40px, 1fr) 96px minmax(0, 132px);
   align-items: center;
-  padding: 11px 12px;
+  gap: 12px;
+  min-height: 40px;
+  font-size: var(--t-sm);
+}
+
+.monthDetails summary {
   cursor: pointer;
-  font-size: 11px;
-  list-style-position: inside;
+  list-style: none;
 }
 
-.ladderMonth summary span:not(:first-child) {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.ladderFacts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-  padding: 0 12px 12px;
-}
-
-.ladderFacts div {
-  display: grid;
-  gap: 3px;
-}
-
-.ladderFacts dt {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.ladderFacts dd {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-.ladderMonth > .eventList {
-  margin: 0;
-  padding: 0 12px 10px;
-}
-
-.goalsGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 15px;
-}
-
-.goalsGrid article {
-  min-width: 0;
-  padding: 15px;
-  border: 1px solid #e5e9ed;
-  border-radius: 10px;
-  background: var(--surface-2);
-}
-
-.goalHeader {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.goalHeader h3,
-.planGrid h3,
-.handoffGrid h3 {
-  font-size: 13px;
-}
-
-.goalHeader strong {
-  color: var(--accent);
-  font-size: 13px;
-}
-
-.goalTrack {
-  height: 7px;
-  margin-top: 13px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e4e9ee;
-}
-
-.goalTrack span {
-  display: block;
-  width: min(var(--goal-progress), 100%);
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-}
-
-.coverageGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.coverageCard {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  padding: 14px;
-  border-radius: 10px;
-  background: var(--soft);
-}
-
-.coverageCard strong {
-  font-size: 21px;
-  font-variant-numeric: tabular-nums;
-}
-
-.coverageCard small {
-  color: var(--muted);
-  font-size: 10px;
-  overflow-wrap: anywhere;
-}
-
-.planGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  margin-top: 19px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.handoffGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  margin-top: 5px;
-}
-
-.handoffGrid p {
-  margin-top: 7px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.goalsGrid article > p {
-  margin-top: 9px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.handoffGrid a {
-  display: inline-block;
-  margin-top: 11px;
-  font-size: 12px;
-}
-
-.draftNote {
-  margin-bottom: 15px;
-  padding: 9px 12px;
-  border: 1px solid #d8e2ee;
-  border-radius: 8px;
-  background: #eef4fa;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.collapsible > summary {
+.monthDetails summary::-webkit-details-marker {
   display: none;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  list-style-position: inside;
 }
 
-.collapsibleBody {
-  min-width: 0;
+.monthDetails summary .monthName::after {
+  content: " ›";
+  color: var(--faint);
 }
 
-@media (min-width: 1600px) {
-  .metric {
-    padding: 25px;
-  }
+.monthDetails[open] summary .monthName::after {
+  content: " ⌄";
 }
 
-@media (max-width: 1050px) {
-  .metric {
-    padding: 18px;
-  }
-
-  .factLayout {
-    grid-template-columns: 1fr;
-  }
+.monthName {
+  white-space: nowrap;
 }
 
-@media (max-width: 800px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
-
-  .windowSummary {
-    grid-template-columns: 1fr;
-  }
-
-  .windowSummary > .eventList {
-    grid-column: auto;
-  }
-
-  .collapsible > summary {
-    display: block;
-    padding: 10px 0 2px;
-  }
+.monthTrack {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line-2);
 }
 
-@media (max-width: 550px) {
-  .metric {
-    min-height: 136px;
-  }
+.monthTrack span {
+  display: block;
+  height: 100%;
+  border: 1px dashed var(--fc);
+  border-radius: inherit;
+  background: var(--fc-soft);
+}
 
-  .reportSelect {
-    width: 100%;
-    text-align: left;
-  }
+.monthAmount {
+  color: var(--fc-ink);
+}
 
-  .reportSelect select {
-    width: 100%;
-  }
+.monthPrincipal {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  text-align: right;
+  white-space: nowrap;
+}
 
-  .forecastSummary {
-    align-items: start;
-  }
-
-  .ladderControls {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 7px;
-  }
-
-  .ladderWindow {
-    width: 100%;
-  }
-
-  .qualityBadge {
-    margin-left: 0;
-  }
-
-  .ladderMonth summary {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .ladderMonth summary span:nth-child(3),
-  .ladderMonth summary span:nth-child(4) {
-    grid-column: 2;
-  }
-
-  .ladderMonth summary span:nth-child(3) {
-    grid-row: 1;
-  }
-
-  .ladderMonth summary span:nth-child(4) {
-    grid-row: 2;
-  }
-
-  .ladderFacts,
-  .coverageGrid,
-  .planGrid,
-  .handoffGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .eventList li {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
-    gap: 4px 12px;
-  }
-
-  .eventTitle {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .eventContext {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-
-  .eventAmount {
-    grid-column: 2;
-    grid-row: 1;
-    align-self: start;
-    text-align: right;
-  }
+.monthBody {
+  display: grid;
+  gap: 6px;
+  padding: 4px 0 12px 12px;
+  border-left: 2px solid var(--line);
 }
 
 .depositForecast {
-  margin-top: 20px;
+  display: grid;
+  gap: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-2);
 }
 
-.depositForecast > p {
-  margin: 6px 0 12px;
-  color: var(--muted);
-  font-size: 12px;
+.depositForecast h3,
+.planBlock h3 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
 }
 
 .depositForecast table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
-  text-align: left;
+  font-size: var(--t-sm);
 }
 
-.depositForecast th,
-.depositForecast td {
-  padding: 10px 8px;
-  border-bottom: 1px solid #e4e9ee;
+.depositForecast th {
+  padding: 6px 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  text-align: left;
 }
 
 .depositForecast th:last-child,
 .depositForecast td:last-child {
   text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
-.depositForecast td:first-child {
-  overflow-wrap: anywhere;
+.depositForecast td {
+  padding: 8px 0;
+  border-top: 1px solid var(--line-2);
 }
 
-.depositForecast small {
-  display: block;
+.depositForecast td small {
   color: var(--muted);
+}
+
+.warningList {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+/* Coverage and plan */
+.coverage {
+  display: grid;
+  gap: 4px;
+}
+
+.coverageValue {
+  font-family: var(--f-num);
+  font-size: var(--t-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+  line-height: 1.2;
+}
+
+.coverageTrack {
+  display: block;
+  height: 8px;
+  margin: 6px 0 4px;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+
+.coverageTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.planBlock {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.planTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+}
+
+.planTable thead th {
+  padding: 0 0 6px;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+  text-align: right;
+}
+
+.planTable thead th:first-child {
+  text-align: left;
+}
+
+.planTable tbody th {
+  padding: 8px 12px 8px 0;
+  font-weight: var(--w-regular);
+  text-align: left;
+}
+
+.planTable td {
+  padding: 8px 0 8px 12px;
+  border-top: 1px solid var(--line-2);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.planTable tbody th {
+  border-top: 1px solid var(--line-2);
+}
+
+.planTable .planGroup th {
+  padding: 14px 0 4px;
+  border-top: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.planCell {
+  color: var(--muted);
+}
+
+.planBarCell {
+  width: 32%;
+}
+
+.planBar {
+  position: relative;
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+
+.planFact {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  opacity: 0.75;
+}
+
+.planMark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+}
+
+.savingList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--t-sm);
+}
+
+.savingList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-2);
+}
+
+.savingList .savingTotal {
+  font-weight: var(--w-semibold);
+}
+
+@media (max-width: 1180px) {
+  .factLayout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
 }

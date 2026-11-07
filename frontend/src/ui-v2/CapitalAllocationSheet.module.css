@@ -1,0 +1,143 @@
+/* Capital allocation slices on the clear sheet (#1079 stage 4). */
+
+.block {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pick {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.pick:hover,
+.pick[aria-pressed="true"] {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.bars {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 14px;
+  width: 100%;
+  padding: 10px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.barRow:hover {
+  background: var(--surface);
+}
+
+.barRow[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+
+.barLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.barTrack {
+  grid-column: 1 / -1;
+}
+
+.excluded summary {
+  cursor: pointer;
+}
+
+.excluded ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.positions {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.positions th,
+.positions td {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: middle;
+}
+
+.positions tr:last-child th,
+.positions tr:last-child td {
+  border-bottom: 0;
+}
+
+.positions tbody th {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: var(--w-regular);
+  text-align: left;
+}
+
+.positions td {
+  padding-left: 16px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rank {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--line-2);
+  color: var(--muted);
+  font-family: var(--f-num);
+  font-size: var(--t-xs);
+}
+
+.positionName {
+  display: grid;
+  min-width: 0;
+}
+
+.positionName small {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.shareCell {
+  width: 120px;
+}
+
+.shareCell > span:first-child {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.approx {
+  text-decoration: none;
+  cursor: help;
+}
