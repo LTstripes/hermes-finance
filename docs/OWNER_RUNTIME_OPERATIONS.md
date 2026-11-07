@@ -1570,7 +1570,7 @@ process/root/cache guards. Active, paused, unknown, legacy, dirty, unpublished a
 shared worktrees remain PRESERVE. Do not adopt or backdate old folders.
 
 Install the two scripts/cleanup-workspaces.* files together under the existing
-container-relative ops/workspace-cleanup location. The script derives only the four
+container-relative ops/workspace-cleanup location. The script derives only the five
 fixed Hermes/workspaces/{codex,opencode,grok,hermes,claude} roots, Ops and recovery/workspaces
 from that installation. Main, Stable, Test/UAT, Owner, staging, backups, runtime,
 Ops and recovery are excluded. Do not relocate Ops or change its ACLs/security.
@@ -1609,7 +1609,7 @@ completion and seven days since both completion and activity remain. Active,
 paused, unknown, legacy, dirty, unpublished and shared worktrees preserve. Runtime,
 Stable/Test/UAT/Owner/Ops/staging/backups/recovery remain outside the fixed allowlist.
 
-The existing FinanceDirectory installation derivation, four client roots, origin
+The existing FinanceDirectory installation derivation, five client roots, origin
 and Global\HermesFinance.WorkspaceCleanup mutex are retained. The fixed recovery
 root is FinanceDirectory/recovery/workspaces; no arbitrary CLI destination exists.
 Root/ancestor handles and project mutex remain held. Descendant handles release

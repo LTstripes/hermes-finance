@@ -97,6 +97,7 @@ class AllowlistTests(unittest.TestCase):
             "README.md",
             "AGENTS.md",
             "CHANGELOG.md",
+            "CLAUDE.md",
             "frontend/README.md",
             "docs/VERIFICATION_POLICY.md",
             "docs/WORKSPACE_JANITOR.md",
