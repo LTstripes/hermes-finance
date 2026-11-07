@@ -6836,6 +6836,24 @@ in account capital. A nonzero bond valuation without known accrued interest is
 unknown; a demonstrably empty position is zero. Known results and components
 are labelled partial when coverage is incomplete, rather than promoted to full
 return. Rates remain unavailable when their operands are incomplete.
+
+For the clean instrument result only, a sold-out position may be inferred as
+quantity and value zero at the latest statement boundary when the whole saved
+source span is covered, every latest statement omits that ISIN, and its current,
+identified ordinary buys and sales balance exactly from zero without a negative
+holding or ambiguous trade order. Explicit intermediate quantities must agree
+with the dated trade inventory. A missing opening zero may be inferred from the
+same evidence; a nonzero or contradictory observed opening is not replaced.
+Source gaps, conflicting positions or trades, unresolved ownership, and this
+security's REPO or redemptions prevent the inference. Type comes from unambiguous
+source evidence or the exact-ISIN catalogue when the source has no type. A
+positive MyBroker trade NKD on an identified, settled ordinary trade supplies
+bond type evidence; a blank or zero NKD does not establish type. A conflict
+among source, trade and catalogue types prevents the inference. The zero is an
+analytical result, not a reported position or a financial receipt. This
+exception does not change the legacy source reader, intermediate-period
+endpoints, account reconciliation, source records or financial writers.
+
 If trade or redemption coverage is incomplete, a closing valuation cannot be
 combined with only the observed trades and presented as an investment result;
 independently observed receipts remain available. A missing or conflicting
@@ -7045,8 +7063,9 @@ dates. Without those rows, the native settled cash date is disclosed as
 `attribution_basis=native_trade_settlement`; missing settlement never falls back
 to execution date. Pending observations remain visible but uncounted. Depository
 dates drive quantity reconciliation; missing/cross-boundary settlement, negative
-observed holdings and unexplained Q1-Q0 block full P/rate. An absent holding row is
-not zero; explicit zero endpoints support initial buys and complete sales.
+observed holdings and unexplained Q1-Q0 block full P/rate. In this legacy dated
+reader, an absent holding row is not zero; explicit zero endpoints support initial
+buys and complete sales. The clean projection's narrow sold-out exception is above.
 
 Money validates saved occurrence/date/amount/currency/classification using the
 existing monthly reader. Scoped signature + occurrence multiplicity deduplicates

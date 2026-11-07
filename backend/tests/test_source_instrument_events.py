@@ -4133,3 +4133,397 @@ def test_clean_bond_overlap_uses_same_proved_principal_despite_costs(db, differe
             else:
                 assert row["pnl"]["value"] is None
     assert snapshot(db) == before
+
+
+START = date(2030, 3, 31)
+END = date(2030, 4, 30)
+
+
+def ordered_trades(root):
+    for index, row in enumerate(root.findall(".//{MyBroker}Details[@trade_no]"), 9):
+        stamp = f"15.04.2030 {index}:00:00"
+        row.set("db_time", f"{stamp}\n{stamp}")
+        row.set("Price", "100" if index == 9 else "120")
+
+
+def add_catalogue_stock(db):
+    from hermes_finance.persistence import Instrument
+
+    with db.session_factory() as session:
+        session.add(Instrument(name="Synthetic stock", instrument_type="stock", isin=ISIN))
+        session.commit()
+
+
+def clean(db, *, end=END):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    with db.session_factory() as session:
+        return read_clean_account(session, ACCOUNT, START, end, isin=ISIN, include_purchases=True)[
+            "instruments"
+        ][0]
+
+
+def test_balanced_trades_and_absent_position_use_catalogue_type_without_writes(db):
+    add_catalogue_stock(db)
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "120", None, "0")),
+        mutate=ordered_trades,
+    )
+    before = snapshot(db)
+    row = clean(db)
+    assert row["instrument_type"] == "stock"
+    assert row["opening_value"]["value"] == row["closing_value"]["value"] == "0"
+    assert row["buys"]["value"] == "10000"
+    assert row["sells"]["value"] == "12000"
+    assert row["pnl"]["value"] == "2000"
+    assert row["purchases"][0]["price_result_kopecks"] == "2000"
+    # The older source-reader contract must not turn absent rows into facts.
+    assert by_isin(read(db))[ISIN].analysis.closing.quantity is None
+    assert snapshot(db) == before
+
+
+def test_closed_position_uses_the_existing_period_return_calculation(db):
+    add_catalogue_stock(db)
+
+    def settlement_dates(root):
+        ordered_trades(root)
+        sale = root.findall(".//{MyBroker}Details[@trade_no]")[1]
+        sale.set("save_settlement_date", "23.04.2030")
+        sale.set("save_depo_settlement_date", "23.04.2030")
+
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "120", None, "0")),
+        mutate=settlement_dates,
+    )
+    row = clean(db)
+    with localcontext() as context:
+        context.prec = 60
+        assert Decimal(row["modified_dietz"]["value"]) == Decimal(13) / Decimal(23)
+    assert row["purchases"][0]["return_fraction"] == "0.2"
+
+
+def test_closed_security_uses_type_observed_in_an_earlier_statement(db):
+    save(
+        db,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "120", None, "0")),
+        mutate=ordered_trades,
+    )
+    save(db, 5, stock=None, bond=None, trades=())
+    row = clean(db, end=date(2030, 5, 31))
+    assert row["instrument_type"] == "stock"
+    assert row["closing_value"]["value"] == "0"
+    assert row["pnl"]["value"] == "2000"
+
+
+@pytest.mark.parametrize("case", ["unbalanced", "present", "unknown_type", "repo", "overlap"])
+def test_unproved_closed_position_keeps_total_unknown(db, case):
+    if case != "unknown_type":
+        add_catalogue_stock(db)
+
+    def mutate(root):
+        ordered_trades(root)
+        if case == "repo":
+            root.find(".//{MyBroker}Details[@trade_no]").set("repo_no", "12345")
+
+    trades = (
+        (ISIN, "1", "100", None, "0"),
+        (ISIN, "-2" if case == "unbalanced" else "-1", "120", None, "0"),
+    )
+    save(
+        db,
+        stock=("0", "1", "0", "100") if case == "present" else None,
+        bond=None,
+        trades=trades,
+        mutate=mutate,
+        marker="a" if case == "overlap" else None,
+    )
+    if case == "overlap":
+        save(
+            db,
+            stock=None,
+            bond=None,
+            trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "121", None, "0")),
+            mutate=ordered_trades,
+            marker="b",
+        )
+    row = clean(db)
+    assert row["pnl"]["value"] is None
+
+
+@pytest.mark.parametrize("case", ["sale_first", "same_instant", "linked_cash_conflict"])
+def test_balanced_closed_trades_require_consistent_order_and_money(db, case):
+    add_catalogue_stock(db)
+
+    def mutate(root):
+        ordered_trades(root)
+        rows = root.findall(".//{MyBroker}Details[@trade_no]")
+        if case == "sale_first":
+            rows[0].set("db_time", "15.04.2030 11:00:00")
+        elif case == "same_instant":
+            rows[1].set("db_time", "15.04.2030 09:00:00")
+        else:
+            _add_money(root, "Расчеты по сделке 10000000001", "Principal", "-99")
+
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "120", None, "0")),
+        mutate=mutate,
+    )
+    row = clean(db)
+    assert row["pnl"]["value"] is None
+    assert row["closing_value"]["value"] is None
+
+
+@pytest.mark.parametrize(
+    "case", ["quantity_conflict", "opening_conflict", "missing_month", "not_latest"]
+)
+def test_closed_inference_needs_complete_history_and_consistent_boundaries(db, case):
+    add_catalogue_stock(db)
+    save(
+        db,
+        stock=("0", "1", "0", "100")
+        if case == "quantity_conflict"
+        else ("1", "1", "100", "100")
+        if case == "opening_conflict"
+        else None,
+        bond=None,
+        trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "120", None, "0")),
+        mutate=ordered_trades,
+    )
+    month = 6 if case == "missing_month" else 5
+    save(db, month, stock=None, bond=None, trades=())
+    end = END if case == "not_latest" else date(2030, month, 30 if month == 6 else 31)
+    row = clean(db, end=end)
+    assert row["pnl"]["value"] is None
+    assert row["closing_value"]["value"] is None
+
+
+@pytest.mark.parametrize("catalogue", [False, True])
+def test_bond_with_balanced_trades_keeps_nkd_in_the_same_basis(db, catalogue):
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    if catalogue:
+        with db.session_factory() as session:
+            session.add(Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND))
+            session.commit()
+
+    def mutate(root):
+        ordered_trades(root)
+        root.findall(".//{MyBroker}Details[@trade_no]")[1].set("Price", "101")
+
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((BOND, "1", "1020", "20", "0"), (BOND, "-1", "1030", "20", "0")),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        row = read_clean_account(session, ACCOUNT, START, END, isin=BOND, include_purchases=True)[
+            "instruments"
+        ][0]
+    assert row["instrument_type"] == "bond"
+    assert row["closing_value"]["value"] == "0"
+    assert row["pnl"]["value"] == "1000"
+    assert row["purchases"][0]["price_result_kopecks"] == "1000"
+
+
+def test_trade_nkd_and_stock_catalogue_type_conflict_withholds_closed_return(db):
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    with db.session_factory() as session:
+        session.add(
+            Instrument(name="Synthetic conflicting type", instrument_type="stock", isin=BOND)
+        )
+        session.commit()
+
+    def mutate(root):
+        ordered_trades(root)
+        root.findall(".//{MyBroker}Details[@trade_no]")[1].set("Price", "101")
+
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((BOND, "1", "1020", "20", "0"), (BOND, "-1", "1030", "20", "0")),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        row = read_clean_account(session, ACCOUNT, START, END, isin=BOND)["instruments"][0]
+    assert row["pnl"]["value"] is None
+    assert row["closing_value"]["value"] is None
+
+
+@pytest.mark.parametrize("nkd", [None, "0", "-1"])
+def test_absent_or_zero_trade_nkd_does_not_invent_security_type(db, nkd):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((BOND, "1", "1000", nkd, "0"), (BOND, "-1", "1010", nkd, "0")),
+        mutate=ordered_trades,
+    )
+    with db.session_factory() as session:
+        row = read_clean_account(session, ACCOUNT, START, END, isin=BOND)["instruments"][0]
+    assert row["instrument_type"] is None
+    assert row["pnl"]["value"] is None
+
+
+def test_repo_nkd_does_not_prove_the_type_of_a_closed_security(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def mutate(root):
+        ordered_trades(root)
+        for trade in root.findall(".//{MyBroker}Details[@trade_no]"):
+            trade.set("repo_no", "12345")
+
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((BOND, "1", "1020", "20", "0"), (BOND, "-1", "1030", "20", "0")),
+        mutate=mutate,
+    )
+    with db.session_factory() as session:
+        row = read_clean_account(session, ACCOUNT, START, END, isin=BOND)["instruments"][0]
+    assert row["instrument_type"] is None
+    assert row["pnl"]["value"] is None
+
+
+def test_trade_nkd_conflicting_with_source_stock_type_withholds_closed_return(db):
+    save(
+        db,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=((ISIN, "1", "100", "1", "0"), (ISIN, "-1", "120", "1", "0")),
+        mutate=ordered_trades,
+    )
+    save(db, 5, stock=None, bond=None, trades=())
+    row = clean(db, end=date(2030, 5, 31))
+    assert row["instrument_type"] is None
+    assert row["pnl"]["value"] is None
+
+
+def test_closed_position_matches_overview_card_and_ai_export(db):
+    from hermes_finance.services import returns_overall
+    from hermes_finance.services.ai_financial_review import (
+        assemble_ai_financial_review,
+        validate_ai_financial_review,
+    )
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    add_catalogue_stock(db)
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "120", None, "0")),
+        mutate=ordered_trades,
+    )
+    with db.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=END)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        overview = returns_overall.read_clean_overall(session, include_instrument_details=True)
+        card = returns_overall.read_clean_instrument_card(session, ISIN)
+        export = assemble_ai_financial_review(
+            session, evaluated_on=date(2030, 5, 1), format_version="3.1.0"
+        )
+    validate_ai_financial_review(export)
+    overview_row = next(row for row in overview["instruments"] if row["isin"] == ISIN)
+    account = card["accounts"][0]
+    ai = export["sections"]["clean_returns"]["data"]["accounts"][0]["instruments"][0]
+    assert overview_row["accounts"][0]["pnl"]["value"] == "2000"
+    assert card["summary"]["pnl"]["value"] == "2000"
+    assert card["summary"]["quantity"]["value"] == "0"
+    assert account["detail"]["closing_quantity"] == "0"
+    assert ai["pnl"]["value"] == "2000"
+    assert ai["purchases"][0]["price_result_kopecks"] == "2000"
+    assert snapshot(db) == before
+
+
+def test_closed_position_type_conflict_with_catalogue_withholds_total(db):
+    from hermes_finance.persistence import Instrument
+
+    with db.session_factory() as session:
+        session.add(
+            Instrument(name="Synthetic conflicting type", instrument_type="bond", isin=ISIN)
+        )
+        session.commit()
+    save(
+        db,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "120", None, "0")),
+        mutate=ordered_trades,
+    )
+    save(db, 5, stock=None, bond=None, trades=())
+    row = clean(db, end=date(2030, 5, 31))
+    assert row["pnl"]["value"] is None
+    assert row["closing_value"]["value"] is None
+
+
+def test_repo_of_another_security_does_not_hide_balanced_closed_trades(db):
+    add_catalogue_stock(db)
+
+    def mutate(root):
+        ordered_trades(root)
+        root.findall(".//{MyBroker}Details[@trade_no]")[2].set("repo_no", "12345")
+
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=(
+            (ISIN, "1", "100", None, "0"),
+            (ISIN, "-1", "120", None, "0"),
+            (BOND, "1", "1020", "20", "0"),
+        ),
+        mutate=mutate,
+    )
+    row = clean(db)
+    assert row["closing_value"]["value"] == "0"
+    assert row["pnl"]["value"] == "2000"
+
+
+def test_closed_position_http_card_and_ai_export_match(db):
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    add_catalogue_stock(db)
+    save(
+        db,
+        stock=None,
+        bond=None,
+        trades=((ISIN, "1", "100", None, "0"), (ISIN, "-1", "120", None, "0")),
+        mutate=ordered_trades,
+    )
+    with db.session_factory() as session:
+        create_reporting_month(session, year=2030, month=4, snapshot_date=END)
+    before = snapshot(db)
+    with TestClient(create_app(db)) as client:
+        card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
+        export = client.get(
+            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
+        )
+    assert card.status_code == export.status_code == 200
+    account = card.json()["accounts"][0]
+    ai = export.json()["sections"]["clean_returns"]["data"]["accounts"][0]["instruments"][0]
+    assert account["detail"]["closing_quantity"] == "0"
+    assert account["clean"]["pnl"]["value"] == ai["pnl"]["value"] == "2000"
+    assert account["purchases"][0]["price_result_kopecks"] == "2000"
+    assert ai["purchases"][0]["price_result_kopecks"] == "2000"
+    assert snapshot(db) == before

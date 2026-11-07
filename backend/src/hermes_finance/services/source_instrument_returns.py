@@ -21,7 +21,7 @@ from hermes_finance.domain.instrument_return import (
     Metric,
     chain_monthly,
 )
-from hermes_finance.persistence import ExecutedTrade
+from hermes_finance.persistence import ExecutedTrade, Instrument
 from hermes_finance.services import broker_trade_money
 from hermes_finance.services.broker_statement_provisional import _minor
 from hermes_finance.services.source_money_classifications import source_reference
@@ -35,7 +35,7 @@ from hermes_finance.services.source_monthly_returns import (
     _selected_sources,
 )
 from hermes_finance.statement_import.money import normalize_currency
-from hermes_finance.statement_import.mybroker import MyBrokerError, digest
+from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, digest
 from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
 
 
@@ -1426,6 +1426,70 @@ def read_instrument_returns(
     # Owned by this one coherent read; never persisted or reused by a later GET.
     views = [{**view, "return_repo_identities": repo_return_identities(view)} for view in views]
     identities = _identities(views)
+    catalogue_kinds = {}
+    unsupported_type_isins = set()
+    if clean_projection and views:
+        # A catalogue classification may fill a missing source type for this
+        # exact ISIN in the sold-out history path. It cannot resolve a source
+        # type conflict or reclassify an ordinary current position.
+        first_source = min(date.fromisoformat(v["covered_from"]) for v in views) - timedelta(days=1)
+        last_source = max(date.fromisoformat(v["covered_to"]) for v in views)
+        last_views = [v for v in views if date.fromisoformat(v["covered_to"]) == last_source]
+        present = {
+            row["isin"] for view in last_views for row in view["document"].get("positions", ())
+        }
+        absent = set(identities) - present
+        unsupported_type_isins = {
+            proposal["isin"]
+            for view in views
+            for proposal in view.get("proposals", ())
+            for observation in proposal.get("observations", ())
+            if observation.get("source_type") and observation.get("instrument_type") is None
+        }
+        if opening_date in (None, first_source) and closing_date in (None, last_source) and absent:
+            # MyBroker's positive trade NKD is bond evidence. An absent or zero
+            # NKD says nothing about type; REPO and unidentified rows cannot
+            # establish it. Conflicting source/catalogue types still block.
+            eligible = absent - unsupported_type_isins
+            for view in views:
+                document = view["document"]
+                if (document.get("provider"), document.get("parser")) != (
+                    PROVIDER,
+                    "mybroker-s1-v2",
+                ):
+                    continue
+                for trade in document.get("trades", ()):
+                    isin = trade["core"]["isin"]
+                    nkd = _minor(trade.get("accrued_interest"))
+                    if (
+                        isin in eligible
+                        and trade.get("section") == "completed"
+                        and trade.get("state") == "settled"
+                        and trade.get("identity")
+                        and len(trade.get("ids", ())) == 2
+                        and not trade.get("repo_observed")
+                        and nkd is not None
+                        and nkd > 0
+                    ):
+                        identities[isin]["types"].add("bond")
+            catalogue_kinds = dict(
+                session.execute(
+                    select(Instrument.isin, Instrument.instrument_type).where(
+                        Instrument.isin.in_(absent)
+                    )
+                ).all()
+            )
+            unknown = {isin for isin in absent if not identities[isin]["types"]}
+            for isin in unknown:
+                kind = catalogue_kinds.get(isin)
+                if kind in {"stock", "bond"} and not any(
+                    observation.get("source_type") and observation.get("instrument_type") != kind
+                    for view in views
+                    for proposal in view.get("proposals", ())
+                    if proposal["isin"] == isin
+                    for observation in proposal.get("observations", ())
+                ):
+                    identities[isin]["types"].add(kind)
     event_gaps = []
     native_account = next(iter(native_scope)) if native_scope else None
     from hermes_finance.services.source_return_evidence import (
@@ -1686,6 +1750,14 @@ def read_instrument_returns(
                 if kind == "bond" and reviewed_basis is not None
                 else outer_analysis
             )
+            if (
+                clean_projection
+                and isin not in unsupported_type_isins
+                and catalogue_kinds.get(isin, kind) == kind
+            ):
+                from hermes_finance.services.clean_closed_position import infer_closed_position
+
+                analysis = infer_closed_position(analysis, views, isin, kind)
             analysis = replace(
                 analysis,
                 chained_monthly=chain_monthly(
