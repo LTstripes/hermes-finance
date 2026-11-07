@@ -181,15 +181,16 @@ describe("FinalMonthReview", () => {
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) {
       expect(link.getAttribute("href")).toMatch(
-        /^\/v2\/close\?month=\d+&panel=(assets|income|budget|liabilities|positions|note)$/,
+        /^\/v2\/close\?month=17&panel=(assets|income|budget|liabilities|positions|note)$/,
       );
     }
+    expect(screen.queryByRole("button", { name: /Закрыть/ })).toBeNull();
   });
 
   it("renders backend KPIs, all manual cards, unavailable data and separated future cash flows", () => {
     render(
       <MemoryRouter>
-        <FinalMonthReviewView review={review()} />
+        <FinalMonthReviewView workspace review={review()} />
       </MemoryRouter>,
     );
 
@@ -254,7 +255,7 @@ describe("FinalMonthReview", () => {
 
     render(
       <MemoryRouter>
-        <FinalMonthReviewView review={empty} />
+        <FinalMonthReviewView workspace review={empty} />
       </MemoryRouter>,
     );
 
@@ -263,35 +264,21 @@ describe("FinalMonthReview", () => {
     ).toBeGreaterThanOrEqual(5);
   });
 
-  it("links manual corrections back to the same wizard month without a close mutation", () => {
-    render(
-      <MemoryRouter>
-        <FinalMonthReviewView review={review()} />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getAllByRole("link", { name: "Изменить" })[0]).toHaveAttribute(
-      "href",
-      "/v2/data/months/17?section=assets&from=monthly-close-v2&step=final_review_close&monthId=17",
-    );
-    expect(screen.queryByRole("button", { name: /Закрыть/ })).toBeNull();
-  });
-
-  it("uses native editor sections for v2 and hides edits on a closed review", () => {
+  it("keeps workspace correction links on drafts and hides edits on a closed review", () => {
     const draft = review();
     const { rerender } = render(
       <MemoryRouter>
-        <FinalMonthReviewView origin="monthly-close-v2" review={draft} />
+        <FinalMonthReviewView workspace review={draft} />
       </MemoryRouter>,
     );
     expect(screen.getAllByRole("link", { name: "Изменить" })[0]).toHaveAttribute(
       "href",
-      "/v2/data/months/17?section=assets&from=monthly-close-v2&step=final_review_close&monthId=17",
+      "/v2/close?month=17&panel=assets",
     );
     rerender(
       <MemoryRouter>
         <FinalMonthReviewView
-          origin="monthly-close-v2"
+          workspace
           review={{ ...draft, month_header: { ...draft.month_header, status: "closed" } }}
         />
       </MemoryRouter>,
@@ -316,7 +303,7 @@ describe("FinalMonthReview", () => {
     };
     render(
       <MemoryRouter>
-        <FinalMonthReviewView review={data} />
+        <FinalMonthReviewView workspace review={data} />
       </MemoryRouter>,
     );
 
@@ -334,7 +321,7 @@ describe("FinalMonthReview", () => {
     expect(screen.queryByText(/MV\s/)).toBeNull();
     expect(screen.getAllByRole("link", { name: "Изменить" })[0]).toHaveAttribute(
       "href",
-      "/v2/data/months/17?section=assets&from=monthly-close-v2&step=final_review_close&monthId=17",
+      "/v2/close?month=17&panel=assets",
     );
   });
 });

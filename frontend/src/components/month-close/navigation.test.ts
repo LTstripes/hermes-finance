@@ -1,26 +1,46 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  monthlyCloseReturnPath,
   parseMonthlyCloseReturnContext,
-  routeForGuidedAction,
+  withMonthlyCloseReturn,
   withSelectedReturnMonth,
 } from "./navigation";
 
 describe("monthly close navigation", () => {
   it.each([
-    ["open_month", "month_setup", "/v2/data/months/42"],
-    ["clone_next_month", "next_month_outlook", "/v2/data/months?month=42"],
-  ] as const)("routes %s with exact selection and return context", (action, step, destination) => {
-    const [path, query] = routeForGuidedAction(action, 42, step).split("?");
-    const target = new URLSearchParams(query);
-    expect(path).toBe(destination.split("?")[0]);
-    if (destination.includes("?")) expect(target.get("month")).toBe("42");
-    expect(parseMonthlyCloseReturnContext(target)).toEqual({
-      monthId: 42,
-      origin: "monthly-close-v2",
-      step,
-    });
-  });
+    [
+      "/v2/data/months/42",
+      "readiness",
+      "/v2/data/months/42?from=monthly-close-v2&step=readiness&monthId=42",
+    ],
+    [
+      "/v2/data/months/42?section=payouts",
+      "future_payouts",
+      "/v2/data/months/42?section=payouts&from=monthly-close-v2&step=future_payouts&monthId=42",
+    ],
+    [
+      "/v2/data/months?month=42",
+      "month_setup",
+      "/v2/data/months?month=42&from=monthly-close-v2&step=month_setup&monthId=42",
+    ],
+  ] as const)(
+    "preserves live editor and list return context for %s",
+    (destination, step, expected) => {
+      const href = withMonthlyCloseReturn(destination, 42, step);
+      expect(href).toBe(expected);
+      const context = parseMonthlyCloseReturnContext(
+        new URL(href, "http://synthetic").searchParams,
+      );
+      expect(context).toEqual({
+        monthId: 42,
+        origin: "monthly-close-v2",
+        step,
+      });
+      if (context === null) throw new Error("Expected a valid monthly close return context");
+      expect(monthlyCloseReturnPath(context)).toBe(`/v2/close?month=42&step=${step}`);
+    },
+  );
 
   it("accepts only the enumerated v2 return context", () => {
     expect(
@@ -43,75 +63,6 @@ describe("monthly close navigation", () => {
         new URLSearchParams("from=monthly-close-v2&step=../../settings&monthId=42"),
       ),
     ).toBeNull();
-  });
-
-  it("maps action ids to fixed local routes with the requested month", () => {
-    expect(routeForGuidedAction("open_freshness", 7, "readiness")).toBe(
-      "/v2/data?month=7&from=monthly-close-v2&step=readiness&monthId=7",
-    );
-    expect(routeForGuidedAction("set_snapshot_date", 3, "month_setup")).toBe(
-      "/v2/data/months/3?section=general&from=monthly-close-v2&step=month_setup&monthId=3",
-    );
-    expect(routeForGuidedAction("open_quote_preview", 42, "market_quotes")).toBe(
-      "/v2/data/months/42?section=positions&from=monthly-close-v2&step=market_quotes&monthId=42#month-quotes",
-    );
-    expect(routeForGuidedAction("open_payout_batch_preview", 42, "future_payouts")).toBe(
-      "/v2/data/payouts?month=42&from=monthly-close-v2&step=future_payouts&monthId=42",
-    );
-    expect(routeForGuidedAction("choose_statement_file", 42, "actual_payouts")).toBe(
-      "/v2/data/payouts?month=42&from=monthly-close-v2&step=actual_payouts&monthId=42#statement-import",
-    );
-    expect(routeForGuidedAction("open_cash_flow_ladder", 42, "next_month_outlook")).toBe(
-      "/v2/data/payouts?month=42&from=monthly-close-v2&step=next_month_outlook&monthId=42",
-    );
-    expect(routeForGuidedAction("open_final_review", 3, "readiness")).toBe(
-      "/v2/close?month=3&step=final_review_close",
-    );
-  });
-
-  it("routes the v2 payout actions to the exact native month with canonical return context", () => {
-    expect(
-      routeForGuidedAction("open_payout_batch_preview", 42, "future_payouts", "monthly-close-v2"),
-    ).toBe("/v2/data/payouts?month=42&from=monthly-close-v2&step=future_payouts&monthId=42");
-    expect(
-      routeForGuidedAction("open_cash_flow_ladder", 42, "next_month_outlook", "monthly-close-v2"),
-    ).toBe("/v2/data/payouts?month=42&from=monthly-close-v2&step=next_month_outlook&monthId=42");
-  });
-
-  it("routes the v2 statement action to the native statement-import anchor", () => {
-    expect(
-      routeForGuidedAction("choose_statement_file", 42, "actual_payouts", "monthly-close-v2"),
-    ).toBe(
-      "/v2/data/payouts?month=42&from=monthly-close-v2&step=actual_payouts&monthId=42#statement-import",
-    );
-  });
-
-  it.each([
-    ["open_month", "month_setup", "/v2/data/months/42"],
-    ["set_snapshot_date", "month_setup", "/v2/data/months/42?section=general"],
-    ["clone_next_month", "next_month_outlook", "/v2/data/months?month=42"],
-  ] as const)("keeps the exact close return on native %s", (action, step, destination) => {
-    const separator = destination.includes("?") ? "&" : "?";
-    expect(routeForGuidedAction(action, 42, step, "monthly-close-v2")).toBe(
-      `${destination}${separator}from=monthly-close-v2&step=${step}&monthId=42`,
-    );
-  });
-
-  it("hands quotes off to the actual quote panel without requesting the provider", () => {
-    expect(
-      routeForGuidedAction("open_quote_preview", 42, "market_quotes", "monthly-close-v2"),
-    ).toBe(
-      "/v2/data/months/42?section=positions&from=monthly-close-v2&step=market_quotes&monthId=42#month-quotes",
-    );
-  });
-
-  it("keeps final review and confirmation in native Close", () => {
-    expect(routeForGuidedAction("open_final_review", 42, "readiness", "monthly-close-v2")).toBe(
-      "/v2/close?month=42&step=final_review_close",
-    );
-    expect(
-      routeForGuidedAction("confirm_close", 42, "final_review_close", "monthly-close-v2"),
-    ).toBe("/v2/close?month=42&step=final_review_close");
   });
 
   it("updates the selected month and bounded close return together", () => {
