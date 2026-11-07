@@ -603,3 +603,45 @@ it("shows the configured April boundary in genitive only on disclosure", async (
   fireEvent.click(screen.getAllByRole("button", { name: "Период среднего дохода" })[0]);
   expect(screen.getByRole("tooltip")).toHaveTextContent("учёт с апреля 2031");
 });
+
+it("shows unknown capital totals as a dash, not zero, when the closed month has no snapshots", async () => {
+  const { mount, state } = setup();
+  if (!state.comparison.current) throw new Error("Synthetic comparison has no current report");
+  state.comparison.current.portfolio_source_coverage = {
+    status: "unavailable",
+    reason_codes: [],
+    missing_account_ids: [],
+  };
+  state.comparison.current.liquid_assets_total.amount = "0.00";
+  state.comparison.current.included_debts.amount = "0.00";
+  state.comparison.current.liquid_capital_net.amount = "0.00";
+  for (const item of state.comparison.current.allocation) item.amount.amount = "0.00";
+  mount();
+  expect(await screen.findByTestId("v2-capital")).toHaveTextContent("—");
+  const hero = screen.getByRole("region", { name: "Главные показатели" });
+  expect(within(hero).getByText("Активы").nextElementSibling).toHaveTextContent(/^—$/);
+  expect(within(hero).getByText("Обязательства").nextElementSibling).toHaveTextContent(/^—$/);
+  expect(within(hero).queryByText(/^0 ₽$/)).toBeNull();
+  const allocation = screen.getByRole("heading", { name: "Где лежат деньги" }).closest("section");
+  if (!allocation) throw new Error("Allocation panel is missing");
+  expect(within(allocation).getByText("Нет снимков капитала")).toBeVisible();
+  expect(
+    within(allocation).queryByText("В закрытом снимке нет положительных ликвидных активов"),
+  ).toBeNull();
+});
+
+it("never shows 100 % for a capital goal that is not reached, in the facts or the ring", async () => {
+  const { mount, state } = setup();
+  const capitalGoal = state.goals.find((goal) => goal.goal_type === "capital");
+  if (!capitalGoal) throw new Error("Synthetic capital goal is missing");
+  capitalGoal.achievement_forecast.progress_pct = "99.50";
+  capitalGoal.achievement_forecast.remaining_amount = { amount: "25000.00", currency: "RUB" };
+  mount();
+  await screen.findByTestId("v2-capital");
+  const hero = screen.getByRole("region", { name: "Главные показатели" });
+  expect(within(hero).getByText(/До цели 5 млн/).nextElementSibling).toHaveTextContent(/· 99%$/);
+  expect(screen.queryByText(/100%/)).toBeNull();
+  const goals = screen.getByRole("heading", { name: "Цели" }).closest("section");
+  if (!goals) throw new Error("Goals panel is missing");
+  expect(within(goals).getAllByText("99%").length).toBeGreaterThan(0);
+});

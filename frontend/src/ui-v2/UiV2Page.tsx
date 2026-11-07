@@ -270,6 +270,7 @@ function CapitalHero({
                     {deltaUnavailable ? "—" : wholeDelta(comparison.liquid_capital_net_delta)}
                   </span>
                   {!deltaUnavailable && comparison.liquid_capital_net_delta_pct ? (
+                    // Backend rounds once to 0.1; the page only formats it.
                     <span data-testid="v2-capital-change-pct">
                       · {percentText(comparison.liquid_capital_net_delta_pct, 1, { signed: true })}
                     </span>
@@ -285,12 +286,14 @@ function CapitalHero({
               </p>
             ) : null}
             <dl className={styles.heroMeta}>
+              {/* Without capital snapshots the totals are unknown, not zero. */}
               <dt>Активы</dt>
-              <dd>{whole(current.liquid_assets_total)}</dd>
+              <dd>{unavailable ? "—" : whole(current.liquid_assets_total)}</dd>
               <dt>Обязательства</dt>
               <dd>
-                {isPositive(current.included_debts) ? "−" : ""}
-                {whole(current.included_debts)}
+                {unavailable
+                  ? "—"
+                  : `${isPositive(current.included_debts) ? "−" : ""}${whole(current.included_debts)}`}
               </dd>
               {capitalGoal && !unavailable ? (
                 goalReached(capitalGoal) ? (
@@ -303,7 +306,7 @@ function CapitalHero({
                     <dt>До цели {goalShort}</dt>
                     <dd>
                       {whole(capitalGoal.achievement_forecast.remaining_amount)} ·{" "}
-                      {percentText(capitalGoal.achievement_forecast.progress_pct, 0)}
+                      {goalPercent(capitalGoal)}
                     </dd>
                   </>
                 )
@@ -561,6 +564,8 @@ function AllocationBlock({
         <UiV2WidgetState retry={retry} />
       ) : !current ? (
         <UiV2WidgetState title="Нет закрытого снимка" />
+      ) : current.portfolio_source_coverage?.status === "unavailable" ? (
+        <UiV2WidgetState title="Нет снимков капитала" />
       ) : rows.length === 0 ? (
         <UiV2WidgetState title="В закрытом снимке нет положительных ликвидных активов" />
       ) : (

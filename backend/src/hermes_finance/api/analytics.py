@@ -177,8 +177,8 @@ class ClosedReportComparisonOut(BaseModel):
     included_debts_delta: MoneyValue | None
     liquid_capital_net_delta: MoneyValue | None
     liquid_capital_net_delta_coverage: PortfolioSourceCoverage | None
-    # Change relative to the previous closed net capital, percentage points with
-    # two decimals (HALF_UP). Null without a comparable positive base.
+    # Change relative to the previous closed net capital, percentage points rounded
+    # once to one decimal (HALF_UP), as shown. Null without a comparable positive base.
     liquid_capital_net_delta_pct: str | None = None
     linked_pair_assets_delta: MoneyValue | None
     linked_pair_debts_delta: MoneyValue | None
@@ -249,7 +249,7 @@ def _delta_pct(
     previous: CapitalCompositionPoint | None,
     coverage: PortfolioSourceCoverage | None,
 ) -> str | None:
-    """Percentage of the net-capital change against a positive previous base."""
+    """Net-capital change against a positive previous base, one decimal, rounded once."""
     if delta is None or previous is None:
         return None
     if coverage is not None and coverage.status == "unavailable":
@@ -258,7 +258,7 @@ def _delta_pct(
     if base <= 0:
         return None
     pct = (Decimal(delta.kopecks) / Decimal(base) * Decimal(100)).quantize(
-        Decimal("0.01"), rounding=FINANCIAL_ROUNDING
+        Decimal("0.1"), rounding=FINANCIAL_ROUNDING
     )
     return format(pct, "f")
 
