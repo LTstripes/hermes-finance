@@ -3551,13 +3551,17 @@ def test_clean_bond_retains_only_independently_proved_principal(db, case):
             isin=BOND,
             include_purchases=True,
         )["instruments"][0]
-    if case in {"nkd_leg_conflict", "nkd_leg_fee_conflict", "negative_nkd"}:
+    if case == "negative_nkd":
         assert result["pnl"]["value"] == "1000"
         assert result["pnl"]["status"] == "partial"
         assert "source_nkd_conflict" in result["pnl"]["assumptions"]
         assert result["purchases"][0]["price_result_kopecks"] == "1000"
         assert result["purchases"][0]["status"] == "partial"
         assert "source_nkd_conflict" in result["purchases"][0]["reason_codes"]
+    else:
+        # Linked principal and NKD money that miss the total leave it undefined.
+        assert result["pnl"]["value"] is None
+        assert result["purchases"] is None or result["purchases"][0]["price_result_kopecks"] is None
         if case == "nkd_leg_conflict":
             with TestClient(create_app(database=db)) as client:
                 card = client.get("/api/returns/instrument-card", params={"isin": BOND})
@@ -3569,11 +3573,7 @@ def test_clean_bond_retains_only_independently_proved_principal(db, case):
             export = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
             ai_row = next(row for row in export["instruments"] if row["isin"] == BOND)
             assert account["clean"]["pnl"] == ai_row["pnl"]
-            assert ai_row["pnl"]["status"] == "partial"
-            assert account["purchases"][0]["reason_codes"] == ai_row["purchases"][0]["reason_codes"]
-    else:
-        assert result["pnl"]["value"] is None
-        assert result["purchases"] is None or result["purchases"][0]["price_result_kopecks"] is None
+            assert ai_row["pnl"]["value"] is None
     assert snapshot(db) == before
 
 

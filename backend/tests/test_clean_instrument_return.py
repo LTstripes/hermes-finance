@@ -1394,7 +1394,8 @@ def test_blank_nkd_keeps_the_statement_total():
     ],
 )
 def test_blank_nkd_rule_is_narrow(changes):
-    assert not cost_only_trade(blank_nkd_trade(**changes))
+    event = blank_nkd_trade(**changes)
+    assert not cost_only_trade(event) or trade_amount_with_nkd(event) is None
 
 
 def test_classification_conflict_of_a_linked_row_is_not_unattributed_money():
@@ -1406,3 +1407,50 @@ def test_classification_conflict_of_a_linked_row_is_not_unattributed_money():
     analysis.coverage["payouts"] = Coverage(False, ("overlap_flow_choice_conflict",))
     result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
     assert "account_money_unattributed" not in result.known_result.assumptions
+
+
+def linked(principal=None, nkd=None):
+    legs = []
+    if principal is not None:
+        legs.append(CashLeg("principal", DAY, -principal, principal, ("p",), "money:p"))
+    if nkd is not None:
+        legs.append(CashLeg("nkd", DAY, -nkd, nkd, ("n",), "money:n"))
+    return tuple(legs)
+
+
+def priced_trade(**changes):
+    event = replace(
+        trade("BUY", 102050, None, basis=None),
+        provider="alfa_mybroker",
+        native_identity="trade-1",
+        native_ids=("1", "2"),
+        execution_date=DAY,
+        depository_settlement_date=DAY,
+        unit_price=Decimal("100"),
+        price_unit="PERCENT_OF_FACE",
+        face_value=Decimal("1000"),
+        face_value_date=DAY,
+        quantity_delta=Decimal("1"),
+        counted=False,
+        reason_codes=("trade_components_missing", "trade_nkd_basis_unknown"),
+    )
+    return replace(event, **changes)
+
+
+@pytest.mark.parametrize(
+    "event, amount",
+    [
+        # Linked principal and NKD exceed the statement total.
+        (priced_trade(cash_legs=linked(100000, 10000)), None),
+        # Linked principal contradicts the priced principal.
+        (priced_trade(cash_legs=linked(95000, 7050)), None),
+        # A linked NKD row alone cannot prove the missing principal row.
+        (blank_nkd_trade(cash_legs=linked(None, 500)), 102050),
+        (priced_trade(cash_legs=linked(100000, 2050)), 102050),
+        (blank_nkd_trade(cash_legs=linked(100000, 10000)), None),
+    ],
+)
+def test_linked_trade_money_must_agree_with_total_and_price(event, amount):
+    assert trade_amount_with_nkd(event) == amount
+    result = calc((event,))
+    assert (result.buys.value == amount) if amount else result.pnl.value is None

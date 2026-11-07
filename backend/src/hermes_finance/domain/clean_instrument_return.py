@@ -115,10 +115,32 @@ def _bond_total_with_blank_nkd(event: InstrumentEvent) -> bool:
             context.prec = 200
             if amount < price * face * abs(quantity) - 1:
                 return False
-    # Linked principal and NKD money together must equal the statement total.
-    paid = [leg for leg in event.cash_legs if leg.role in {"principal", "nkd"}]
+    return _linked_money_agrees(event, amount)
+
+
+def _linked_money_agrees(event: InstrumentEvent, total: int) -> bool:
+    """Linked statement money may not contradict the trade total or its price.
+
+    Legs owned by the trade itself are derived and prove nothing. A lone NKD row
+    cannot prove an unlinked principal, so it is not compared with the total.
+    """
+    linked = [leg for leg in event.cash_legs if not leg.ownership.startswith("trade:")]
+    principal = [leg.account_cash_kopecks for leg in linked if leg.role == "principal"]
+    nkd = [leg.account_cash_kopecks for leg in linked if leg.role == "nkd"]
     sign = -1 if event.kind == "BUY" else 1
-    return not paid or sum(leg.account_cash_kopecks for leg in paid) == sign * amount
+    priced = _priced_bond_principal(event)
+    if not principal:
+        return True
+    paid = sign * sum(principal)
+    if nkd:
+        return paid + sign * sum(nkd) == total and (priced is None or abs(paid - priced) <= 1)
+    # A principal row alone is the whole total or the total without its NKD.
+    accrued = event.accrued_interest_kopecks
+    return (
+        paid == total
+        or (priced is not None and abs(paid - priced) <= 1)
+        or (accrued is not None and paid == total - accrued)
+    )
 
 
 def trade_amount_with_nkd(event: InstrumentEvent) -> int | None:
@@ -127,6 +149,11 @@ def trade_amount_with_nkd(event: InstrumentEvent) -> int | None:
     Purchases, valuations and coupons are compared on one basis: a coupon
     returns NKD paid at purchase, and a statement position value carries NKD.
     """
+    total = _trade_amount_with_nkd(event)
+    return total if total is not None and _linked_money_agrees(event, total) else None
+
+
+def _trade_amount_with_nkd(event: InstrumentEvent) -> int | None:
     if _bond_total_with_blank_nkd(event):
         return event.native_trade_amount_kopecks
     principal = clean_trade_amount(event)
