@@ -24,8 +24,8 @@ import {
   CapitalCompositionChart,
   type CapitalCompositionMode,
 } from "../components/charts/CapitalCompositionChart";
+import { MissingAccountNames, PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { HelpTip } from "../components/ui";
-import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMonth, formatPercent } from "../lib/format";
 import { ASSET_CLASS_LABELS } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
@@ -33,6 +33,7 @@ import { CLASS_COLORS } from "./assetClasses";
 import { AccountAllocation, ClassAllocation, TopPositions } from "./CapitalAllocationSheet";
 import { CapitalBridgeChart } from "./CapitalBridgeChart";
 import { CapitalDraftValuation } from "./CapitalDraftValuation";
+import { ClosedReportTitle } from "./ClosedReportTitle";
 import {
   buildHoldingRows,
   filterHoldingRows,
@@ -43,14 +44,13 @@ import {
   isRiskAssetClass,
   UNASSIGNED_CASH_KEY,
 } from "./capitalHoldings";
-import { ClosedReportTitle } from "./ClosedReportTitle";
 import { selectNewestDraftAfterLatestClosed, sortReportingMonths } from "./monthSelection";
 import sheet from "./ReportSheet.module.css";
 import capitalStyles from "./UiV2Capital.module.css";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
 import { moneyText as money, moneyTone } from "./valueFormat";
-import { wholeMoneyDeltaText as wholeDelta, wholeMoneyText as whole } from "./wholeMoney";
+import { wholeMoneyText as whole, wholeMoneyDeltaText as wholeDelta } from "./wholeMoney";
 
 type HistoryWindow = 3 | 12 | "all";
 
@@ -162,6 +162,7 @@ function Hero({
     isIncomplete(comparison?.previous?.portfolio_source_coverage) ||
     (!currentIncomplete && isIncomplete(comparison?.liquid_capital_net_delta_coverage));
   const deltaPartial = deltaKnown && previousIncomplete;
+  const previousCoverage = comparison?.previous?.portfolio_source_coverage;
   return (
     <section aria-label="Главные показатели капитала" className={capitalStyles.hero}>
       <p className={sheet.eyebrow}>
@@ -200,8 +201,18 @@ function Hero({
           {deltaPartial && comparison?.previous ? (
             <p className={sheet.gapNote} data-testid="capital-delta-partial">
               {current && currentIncomplete
-                ? `Изменение посчитано по известным записям: не хватает данных в отчётах за ${formatMonth(current.year, current.month)} и ${formatMonth(comparison.previous.year, comparison.previous.month)}.`
-                : `Изменение посчитано по известным записям: в отчёте за ${formatMonth(comparison.previous.year, comparison.previous.month)} не хватает данных.`}
+                ? `Изменение посчитано по известным записям: не хватает данных в отчётах за ${formatMonth(current.year, current.month)} и ${formatMonth(comparison.previous.year, comparison.previous.month)}`
+                : `Изменение посчитано по известным записям: в отчёте за ${formatMonth(comparison.previous.year, comparison.previous.month)} не хватает данных`}
+              {previousCoverage?.reason_codes.includes("active_account_snapshot_missing") ? (
+                <>
+                  ;{" "}
+                  {previousCoverage.missing_account_ids.length > 1
+                    ? "нет снимков счетов"
+                    : "нет снимка счёта"}
+                  <MissingAccountNames ids={previousCoverage.missing_account_ids} />
+                </>
+              ) : null}
+              .
             </p>
           ) : null}
           <PortfolioCoverageNote coverage={current.portfolio_source_coverage} month={current} />

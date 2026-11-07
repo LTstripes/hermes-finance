@@ -138,7 +138,11 @@ describe("UI v2 historical report", () => {
     };
     mount();
     expect(await screen.findByTestId("report-net")).toHaveTextContent("2 761 300 ₽");
-    expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTestId("portfolio-coverage-note")).toHaveTextContent(
+        "Частично: нет снимка счёта: Синтетический старый вклад",
+      ),
+    );
   });
 
   it("shows the historical context, canonical values, composition and neighbours", async () => {

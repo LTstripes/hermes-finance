@@ -729,7 +729,13 @@ function ChangeBlock({
                 ? "—"
                 : wholeDelta(comparison.liquid_capital_net_delta)}
             </strong>
-            <PortfolioCoverageNote coverage={comparison.liquid_capital_net_delta_coverage} />
+            <PortfolioCoverageNote
+              coverage={comparison.liquid_capital_net_delta_coverage}
+              relatedCoverages={[
+                previous.portfolio_source_coverage,
+                current.portfolio_source_coverage,
+              ]}
+            />
             {explanation.noncomparable_account_ids.length > 0 ? (
               <HelpTip label="Почему часть счетов не объединена">
                 Для части счетов нет явной связи на обоих отчётах: изменение пары недоступно, суммы

@@ -1,10 +1,15 @@
-import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { CapitalCompositionPoint } from "../../api/types";
+import { buildCapitalCompositionSeries } from "../../lib/capitalComposition";
 import { rub } from "../../lib/money";
 import { CapitalCompositionChart, CapitalCompositionTooltip } from "./CapitalCompositionChart";
-import { buildCapitalCompositionSeries } from "../../lib/capitalComposition";
+
+vi.mock("../../api/accounts", () => ({
+  listAccounts: vi.fn().mockResolvedValue([{ id: 2, name: "Синтетический счёт" }]),
+}));
 
 vi.mock("recharts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("recharts")>();
@@ -81,7 +86,7 @@ describe("CapitalCompositionChart", () => {
     expect(screen.getByText("Включённые долги")).toBeInTheDocument();
   });
 
-  it("shows point-level source coverage in the history tooltip", () => {
+  it("shows the missing account in the history tooltip", async () => {
     const partial = point(1);
     partial.portfolio_source_coverage = {
       status: "partial",
@@ -93,16 +98,24 @@ describe("CapitalCompositionChart", () => {
       ["cash", "deposits", "stocks", "bonds", "gold_other"],
     )[0];
     render(
-      <CapitalCompositionTooltip
-        {...({ active: true, payload: [{ payload: datum }] } as unknown as Parameters<
-          typeof CapitalCompositionTooltip
-        >[0])}
-        assetClasses={["cash", "deposits", "stocks", "bonds", "gold_other"]}
-        mode="amount"
-        points={[partial]}
-      />,
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <CapitalCompositionTooltip
+          {...({ active: true, payload: [{ payload: datum }] } as unknown as Parameters<
+            typeof CapitalCompositionTooltip
+          >[0])}
+          assetClasses={["cash", "deposits", "stocks", "bonds", "gold_other"]}
+          mode="amount"
+          points={[partial]}
+        />
+      </QueryClientProvider>,
     );
     expect(screen.getByText("Капитал нетто")).toBeVisible();
-    expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTestId("portfolio-coverage-note")).toHaveTextContent(
+        "Частично: нет снимка счёта: Синтетический счёт",
+      ),
+    );
   });
 });
