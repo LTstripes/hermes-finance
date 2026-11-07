@@ -1837,8 +1837,8 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
       financialPosts.push(path);
   });
   await page.goto(`/v2/close?month=${month.id}`);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Месяц.*Май\s2034/);
-  await expect(page.getByText(/Снимок 01.06.2034/)).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Май\s2034$/);
+  await expect(page.getByText(/снимок 01.06.2034/i)).toBeVisible();
   await monthPanel(page, "brokers");
   const sourcePanel = page.getByRole("region", { name: "Брокерские выписки", exact: true });
   await openDisclosure(page, "Подробности");
@@ -1936,7 +1936,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await page.getByRole("button", { name: "Сохранить общие данные", exact: true }).click();
   await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
   await monthPanel(page, "brokers");
-  await expect(page.getByText(/Снимок 31.05.2034/)).toBeVisible();
+  await expect(page.getByText(/снимок 31.05.2034/i)).toBeVisible();
   const sourceA = (await currentIntakes()).find(
     (row: { document: { filename_account: string } }) =>
       row.document.filename_account === "7452034",

@@ -337,7 +337,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   await openDisclosure(page, "Подробности инструментов и предварительных выплат");
   const panel = page.getByRole("region", { name: "Бумаги и выплаты" });
   await expect(panel.getByRole("region", { name: `Инструмент ${stock}` })).toBeVisible();
-  await expect(page.getByText(/Снимок 01.06.2030/)).toBeVisible();
+  await expect(page.getByText(/снимок 01.06.2030/i)).toBeVisible();
   await expect(panel.getByText(/Интервал результата: \(2030-04-30, 2030-05-31\]/)).toBeVisible();
   const native = await (
     await request.get(
