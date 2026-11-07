@@ -705,6 +705,8 @@ export type ClosedReportComparison = {
   included_debts_delta: MoneyValue | null;
   liquid_capital_net_delta: MoneyValue | null;
   liquid_capital_net_delta_coverage?: PortfolioSourceCoverage | null;
+  /** Change against a positive previous closed base, percentage points (backend HALF_UP). */
+  liquid_capital_net_delta_pct?: string | null;
   linked_pair_assets_delta: MoneyValue | null;
   linked_pair_debts_delta: MoneyValue | null;
   linked_pair_net_contribution_delta: MoneyValue | null;

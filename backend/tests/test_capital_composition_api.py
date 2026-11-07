@@ -290,6 +290,7 @@ def test_explanation_without_any_snapshot_is_unavailable(client):
         assert close_fixture_month_http(client, month_id).status_code == 200
     body = _comparison(client)
     assert body["liquid_capital_net_delta_coverage"]["status"] == "unavailable"
+    assert body["liquid_capital_net_delta_pct"] is None
     assert body["explanation"] is None
 
 
@@ -769,6 +770,8 @@ def test_closed_report_comparison_uses_closed_pair_and_reconciles_deltas(
     assert body["liquid_assets_total_delta"] == _rub("-100000.00")
     assert body["included_debts_delta"] == _rub("-50000.00")
     assert body["liquid_capital_net_delta"] == _rub("-50000.00")
+    # -50 000 of a 1 600 000 base is -3.125 %, rounded HALF_UP away from zero.
+    assert body["liquid_capital_net_delta_pct"] == "-3.13"
     assert body["net_liquid_capital_reconciles"] is True
 
 
@@ -786,6 +789,7 @@ def test_closed_report_comparison_exposes_first_closed_report_without_zero_basel
     assert body["previous"] is None
     assert body["asset_class_deltas"] is None
     assert body["liquid_capital_net_delta"] is None
+    assert body["liquid_capital_net_delta_pct"] is None
     assert body["net_liquid_capital_reconciles"] is None
 
 

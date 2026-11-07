@@ -110,25 +110,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("renders the latest CLOSED report as a quiet Home with exactly three canonical KPIs", async () => {
-  const { mount, reads } = setup();
+it("leads Home with one capital figure, its change and a few secondary facts", async () => {
+  const { mount, reads, state } = setup();
+  state.comparison.liquid_capital_net_delta_pct = "1.54";
   mount();
 
   expect(await screen.findByRole("heading", { name: "Мои финансы" })).toBeVisible();
   expect(await screen.findByTestId("v2-capital")).toBeVisible();
-  expect(screen.getAllByText(/Июль\s+2031/).length).toBeGreaterThan(0);
-  expect(screen.getByText("Снимок 31.07.2031")).toBeVisible();
-  const kpis = screen.getByRole("region", { name: "Главные показатели" });
-  expect(within(kpis).getAllByRole("article")).toHaveLength(3);
+  expect(screen.getByTestId("v2-report-context")).toHaveTextContent(
+    /Июль\s+2031 · закрыт · снимок 31\.07\.2031/,
+  );
+  const hero = screen.getByRole("region", { name: "Главные показатели" });
+  expect(within(hero).queryAllByRole("article")).toHaveLength(0);
   expect(screen.getByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getByTestId("v2-capital-change")).toHaveTextContent("+42 600 ₽");
+  expect(screen.getByTestId("v2-capital-change")).toHaveAccessibleDescription("к маю");
+  expect(screen.getByTestId("v2-capital-change-pct")).toHaveTextContent("· +1,5%");
+  expect(within(hero).getByText("Активы")).toBeVisible();
+  expect(within(hero).getByText("Обязательства")).toBeVisible();
+  expect(within(hero).getByText(/До цели 5 млн/)).toBeVisible();
   expect(screen.getByTestId("v2-passive-actual")).toHaveTextContent("17 500 ₽");
   expect(screen.getByRole("link", { name: "Все цели →" })).toHaveAttribute(
     "href",
     "/v2/income/goals?month=91",
   );
   const changePanel = screen
-    .getByRole("heading", { name: "Где изменились суммы" })
+    .getByRole("heading", { name: "Что изменило капитал" })
     .closest("section");
   if (!changePanel) throw new Error("Change panel is missing");
   expect(within(changePanel).getByText("Вклад обязательств").nextElementSibling).toHaveAttribute(
@@ -307,12 +314,16 @@ it("distinguishes an unavailable previous CLOSED base from a genuine zero", asyn
   mount();
   expect(await screen.findByTestId("v2-capital")).toHaveTextContent("0 ₽");
   expect(screen.getByText("Пока нет базы сравнения")).toBeVisible();
+  expect(screen.queryByTestId("v2-capital-change")).toBeNull();
   expect(screen.getByTestId("v2-passive-actual")).toHaveTextContent("0 ₽");
   expect(screen.getByTestId("v2-passive-history")).toHaveAttribute("data-point-count", "1");
-  expect(screen.getAllByText("Среднее за 12 мес: 0 ₽")).toHaveLength(2);
-  fireEvent.click(screen.getAllByRole("button", { name: "Период среднего дохода" })[0]);
+  expect(screen.getByTestId("v2-passive-average")).toHaveTextContent("0 ₽");
+  fireEvent.click(screen.getByRole("button", { name: "Период среднего дохода" }));
   expect(screen.getByRole("tooltip")).toHaveTextContent("1 из 12 закрытых отчётов");
-  expect(screen.getAllByText("0,00%")).toHaveLength(2);
+  const goals = screen.getByRole("heading", { name: "Цели" }).closest("section");
+  if (!goals) throw new Error("Goals panel is missing");
+  expect(within(goals).getAllByText("0%").length).toBeGreaterThan(0);
+  expect(within(goals).getByText("Резервный капитал")).toBeVisible();
   expect(screen.getByText("Нужны два закрытых отчёта для сравнения")).toBeVisible();
 });
 
@@ -339,14 +350,17 @@ it("keeps liabilities and negative net visible when every asset slice is zero", 
   state.comparison.current.included_debts.amount = "400000.00";
   state.comparison.current.liquid_capital_net.amount = "-400000.00";
   mount();
-  const title = await screen.findByRole("heading", { name: "Структура активов" });
+  const title = await screen.findByRole("heading", { name: "Где лежат деньги" });
   const panel = title.closest("section");
   if (!panel) throw new Error("Composition panel is missing");
   expect(
     await within(panel).findByText("В закрытом снимке нет положительных ликвидных активов"),
   ).toBeVisible();
-  expect(within(panel).getByText("− 400 000 ₽")).toBeVisible();
-  expect(within(panel).getByText("−400 000 ₽")).toBeVisible();
+  const hero = screen.getByRole("region", { name: "Главные показатели" });
+  expect(screen.getByTestId("v2-capital")).toHaveTextContent("−400 000 ₽");
+  expect(within(hero).getByText("Обязательства").nextElementSibling).toHaveTextContent(
+    "−400 000 ₽",
+  );
 });
 
 it("does not present an empty passive-income window as a measured zero average", async () => {
@@ -367,8 +381,9 @@ it("does not present an empty passive-income window as a measured zero average",
   passiveGoal.achievement_forecast.passive_income_months_used = [];
   mount();
   expect(await screen.findByTestId("v2-passive-actual")).toHaveTextContent("17 500 ₽");
-  expect(screen.getAllByText("Пока нет данных")).toHaveLength(2);
-  fireEvent.click(screen.getAllByRole("button", { name: "Период среднего дохода" })[0]);
+  expect(screen.getByText("Пока нет данных")).toBeVisible();
+  expect(screen.queryByTestId("v2-passive-average")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Период среднего дохода" }));
   expect(screen.getByRole("tooltip")).toHaveTextContent(
     "0 из 12 закрытых отчётов · учёт с августа 2031",
   );
@@ -395,7 +410,7 @@ it("plots only passive-income records included by the backend average window", a
   passiveGoal.achievement_forecast.passive_income_months_used = ["2031-05", "2031-07"];
   mount();
   expect(await screen.findByTestId("v2-passive-history")).toHaveAttribute("data-point-count", "2");
-  expect(screen.getAllByText("Среднее за 12 мес: 16 550 ₽")).toHaveLength(2);
+  expect(screen.getByTestId("v2-passive-average")).toHaveTextContent("16 550 ₽");
   expect(screen.queryByText(/На графике только отчёты/)).toBeNull();
   fireEvent.click(screen.getAllByRole("button", { name: "Период среднего дохода" })[0]);
   expect(screen.getByRole("tooltip")).toHaveTextContent(
@@ -468,7 +483,7 @@ it("fails the whole goals widget closed on goal identity or version mismatch", a
     "goal_achievement_v2";
   mount();
   await screen.findByTestId("v2-capital");
-  const title = screen.getByRole("heading", { name: "Ключевые цели" });
+  const title = screen.getByRole("heading", { name: "Цели" });
   const panel = title.closest("section");
   if (!panel) throw new Error("Goals panel is missing");
   expect(within(panel).getByText("Данные временно недоступны")).toBeVisible();
@@ -481,7 +496,7 @@ it("fails the goals widget closed on forecast-sourced progress provenance", asyn
   state.goals[0].achievement_forecast.source_forecast_version = "forecast_v2";
   mount();
   await screen.findByTestId("v2-capital");
-  const title = screen.getByRole("heading", { name: "Ключевые цели" });
+  const title = screen.getByRole("heading", { name: "Цели" });
   const panel = title.closest("section");
   if (!panel) throw new Error("Goals panel is missing");
   expect(within(panel).getByText("Данные временно недоступны")).toBeVisible();
