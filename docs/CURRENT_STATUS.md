@@ -32,25 +32,27 @@ retains its original dated history and sources; it is not current installation e
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
-The 1.10.7 source includes available clean instrument returns, display of known
-parts, a cost/movements and received-income breakdown, and FIFO purchase
-analytics. Fees, taxes and accrued interest do not enter the clean return;
-missing facts remain unknown. Dividend/coupon income is shown at instrument
-level and is not allocated to individual purchases. The ordinary overview,
-card and AI projections share the relevant source basis and coverage. These are
-release-code capabilities, not proof of installed behavior or Owner acceptance.
-
-A read-only comparison of five instruments including X5 and Sber was reported
-on one working account and period; it checked calculation code, not the interface
-or longer history. Synthetic tests and independent financial/UI review cover the
-candidate, not every real account, period or private-data UAT.
+The 1.11.0 source proves each instrument from its own trades reconciled to
+statement quantities, so other issues' rows and unattributed account money no
+longer withhold its result; unattributed money adds one note. Bonds use one
+NKD-inclusive basis (Owner decision 2026-11-07, see C): trade totals with NKD,
+the statement position value and full coupons; fees and taxes stay excluded.
+Contradicting linked trade money, differing statement totals and ambiguous
+coupon links still withhold the result. A read-only snapshot check showed a full
+result for every open position; older closed positions of unknown type without
+a closing quantity remain without one. Stage 1 and 2 of the
+[#1079](https://github.com/LTstripes/hermes-finance/issues/1079) redesign ship
+the new tokens, shell, working-month plate and the Month summary and checklist.
+These are release-code capabilities, not proof of installed behavior or Owner
+acceptance.
 
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Finish the returns follow-ups in [#963](https://github.com/LTstripes/hermes-finance/issues/963)
-   and [#1089](https://github.com/LTstripes/hermes-finance/issues/1089), then begin the
-   staged interface work in [#1079](https://github.com/LTstripes/hermes-finance/issues/1079).
+1. Verify 1.11.0 on Stable after a backup-first update, then continue the
+   [#1079](https://github.com/LTstripes/hermes-finance/issues/1079) redesign with stage 3.
+   Deferred returns findings: same-second purchases in FIFO and a historical closed
+   REPO barrier.
 2. Apply the Owner's proportional verification rule: use an isolated Test or
    manual acceptance when the change or an explicit accepted gate requires it;
    state whether it was performed. Never infer UAT from green CI.
