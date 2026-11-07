@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -13,7 +14,7 @@ from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain.monthly_summary import MonthlyCapitalChange
 from hermes_finance.domain.passive_income import PassiveIncomeResult
 from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
-from hermes_finance.domain.values import RubleAmount
+from hermes_finance.domain.values import FINANCIAL_ROUNDING, RubleAmount
 from hermes_finance.services.capital_composition import (
     CapitalCompositionPoint,
     capital_composition_history,
@@ -176,6 +177,9 @@ class ClosedReportComparisonOut(BaseModel):
     included_debts_delta: MoneyValue | None
     liquid_capital_net_delta: MoneyValue | None
     liquid_capital_net_delta_coverage: PortfolioSourceCoverage | None
+    # Change relative to the previous closed net capital, percentage points rounded
+    # once to one decimal (HALF_UP), as shown. Null without a comparable positive base.
+    liquid_capital_net_delta_pct: str | None = None
     linked_pair_assets_delta: MoneyValue | None
     linked_pair_debts_delta: MoneyValue | None
     linked_pair_net_contribution_delta: MoneyValue | None
@@ -238,6 +242,25 @@ class PassiveIncomeHistoryOut(BaseModel):
 
 def _money(amount: RubleAmount) -> MoneyValue:
     return MoneyValue(amount=amount.to_api(), currency="RUB")
+
+
+def _delta_pct(
+    delta: RubleAmount | None,
+    previous: CapitalCompositionPoint | None,
+    coverage: PortfolioSourceCoverage | None,
+) -> str | None:
+    """Net-capital change against a positive previous base, one decimal, rounded once."""
+    if delta is None or previous is None:
+        return None
+    if coverage is not None and coverage.status == "unavailable":
+        return None
+    base = previous.liquid_capital_net.kopecks
+    if base <= 0:
+        return None
+    pct = (Decimal(delta.kopecks) / Decimal(base) * Decimal(100)).quantize(
+        Decimal("0.1"), rounding=FINANCIAL_ROUNDING
+    )
+    return format(pct, "f")
 
 
 def _snapshot(point: CapitalCompositionPoint) -> ClosedReportSnapshotOut:
@@ -411,6 +434,11 @@ def get_closed_report_comparison(
             else None
         ),
         liquid_capital_net_delta_coverage=comparison.liquid_capital_net_delta_coverage,
+        liquid_capital_net_delta_pct=_delta_pct(
+            comparison.liquid_capital_net_delta,
+            comparison.previous,
+            comparison.liquid_capital_net_delta_coverage,
+        ),
         linked_pair_assets_delta=(
             _money(comparison.linked_pair_assets_delta)
             if comparison.linked_pair_assets_delta is not None

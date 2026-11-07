@@ -155,9 +155,9 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
     "href",
     "/v2/close?month=12&step=market_quotes",
   );
-  await expect(
-    page.getByRole("region", { name: "Главные показатели" }).getByRole("article"),
-  ).toHaveCount(3);
+  const hero = page.getByRole("region", { name: "Главные показатели" });
+  await expect(hero.getByTestId("v2-capital")).toBeVisible();
+  await expect(hero.getByText("Обязательства")).toBeVisible();
   await expect(
     page
       .getByRole("group", { name: "Период динамики капитала" })
@@ -167,10 +167,10 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
   await expect(page.getByTestId("v2-capital-history")).toHaveAttribute("data-gap-count", "2");
   await expect(page.getByTestId("v2-passive-history")).toHaveAttribute("data-point-count", "4");
   await expect(page.getByTestId("v2-capital-change")).toHaveText("+42 600 ₽");
-  await expect(page.getByTestId("v2-capital-change")).toHaveAccessibleDescription("к Май 2031");
+  await expect(page.getByTestId("v2-capital-change")).toHaveAccessibleDescription("к маю");
   await expect(
     page
-      .getByRole("region", { name: "Где изменились суммы" })
+      .getByRole("region", { name: "Что изменило капитал" })
       .getByText("Изменение ликвидного капитала"),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "История отчётов →" })).toHaveAttribute(
@@ -277,7 +277,7 @@ for (const scene of ["no-closed", "first-closed", "zero", "passive-error"] as co
           "data-point-count",
           "1",
         );
-        await expect(page.getByText("35,00%")).toBeVisible();
+        await expect(page.getByText("35%", { exact: true })).toBeVisible();
       }
       if (scene === "zero") {
         await expect(page.getByTestId("v2-capital")).toHaveText("0 ₽");
@@ -287,8 +287,8 @@ for (const scene of ["no-closed", "first-closed", "zero", "passive-error"] as co
           "data-point-count",
           "4",
         );
-        await expect(page.getByText("21,85%")).toBeVisible();
-        await expect(page.getByText("10 925 ₽ из 50 000 ₽")).toBeVisible();
+        await expect(page.getByText("22%", { exact: true })).toBeVisible();
+        await expect(page.getByText("10 925 ₽ сейчас · осталось 39 075 ₽")).toBeVisible();
       }
       if (scene === "passive-error") {
         await expect(page.getByTestId("v2-passive-actual")).toHaveCount(0);
@@ -381,7 +381,7 @@ test("ui-v2 Home desktop long values: hierarchy and actions remain operable", as
   evidence.state.comparison.current.liquid_capital_net.amount = "9876543210123.45";
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2");
-  await expect(page.getByTestId("v2-capital")).toContainText("9 876 543 210 123,45 ₽");
+  await expect(page.getByTestId("v2-capital")).toContainText("9 876 543 210 123 ₽");
   await expect(page.getByTestId("v2-draft-action")).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-home-desktop-long-values");

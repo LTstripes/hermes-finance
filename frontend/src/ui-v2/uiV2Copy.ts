@@ -46,3 +46,28 @@ export function accountingStartLabel(value: string | null): string {
   const month = months[Number(match[2]) - 1];
   return month ? `с ${month} ${match[1]}` : "";
 }
+
+const DATIVE_MONTHS = [
+  "январю",
+  "февралю",
+  "марту",
+  "апрелю",
+  "маю",
+  "июню",
+  "июлю",
+  "августу",
+  "сентябрю",
+  "октябрю",
+  "ноябрю",
+  "декабрю",
+];
+
+/** "к сентябрю", or "к декабрю 2030" when the base is in another year. */
+export function comparedToLabel(
+  base: { year: number; month: number },
+  current: { year: number },
+): string {
+  const month = DATIVE_MONTHS[base.month - 1];
+  if (!month) return "";
+  return base.year === current.year ? `к ${month}` : `к ${month} ${base.year}`;
+}

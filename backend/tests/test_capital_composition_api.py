@@ -5,13 +5,17 @@ from __future__ import annotations
 from collections.abc import Generator
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from _month_close_helpers import close_fixture_month_http
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from hermes_finance.api.analytics import _delta_pct
 from hermes_finance.database import create_database
+from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
+from hermes_finance.domain.values import RubleAmount
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base, CashBalance, PositionSnapshot
 from hermes_finance.services import capital_composition as capital_composition_service
@@ -290,6 +294,7 @@ def test_explanation_without_any_snapshot_is_unavailable(client):
         assert close_fixture_month_http(client, month_id).status_code == 200
     body = _comparison(client)
     assert body["liquid_capital_net_delta_coverage"]["status"] == "unavailable"
+    assert body["liquid_capital_net_delta_pct"] is None
     assert body["explanation"] is None
 
 
@@ -769,6 +774,8 @@ def test_closed_report_comparison_uses_closed_pair_and_reconciles_deltas(
     assert body["liquid_assets_total_delta"] == _rub("-100000.00")
     assert body["included_debts_delta"] == _rub("-50000.00")
     assert body["liquid_capital_net_delta"] == _rub("-50000.00")
+    # -50 000 of a 1 600 000 base is -3.125 %, rounded once to one decimal.
+    assert body["liquid_capital_net_delta_pct"] == "-3.1"
     assert body["net_liquid_capital_reconciles"] is True
 
 
@@ -786,6 +793,7 @@ def test_closed_report_comparison_exposes_first_closed_report_without_zero_basel
     assert body["previous"] is None
     assert body["asset_class_deltas"] is None
     assert body["liquid_capital_net_delta"] is None
+    assert body["liquid_capital_net_delta_pct"] is None
     assert body["net_liquid_capital_reconciles"] is None
 
 
@@ -940,3 +948,28 @@ def test_comparison_can_omit_unused_explanation_without_changing_other_fields(cl
     assert response.status_code == 200
     assert response.json() == expected
     assert client.get(f"/api/months/{month_id}/close-workflow").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "delta,base,expected",
+    [
+        # 1 249 of 100 000 is exactly 1.249 %: one HALF_UP rounding gives 1.2, not 1.25 -> 1.3.
+        (124_900, 10_000_000, "1.2"),
+        (125_000, 10_000_000, "1.3"),
+        (-125_000, 10_000_000, "-1.3"),
+        (0, 10_000_000, "0.0"),
+        (100, 0, None),
+        (100, -10_000_000, None),
+    ],
+)
+def test_capital_delta_pct_is_rounded_once_against_a_positive_base(delta, base, expected):
+    previous = SimpleNamespace(liquid_capital_net=RubleAmount(base))
+    assert _delta_pct(RubleAmount(delta), previous, None) == expected
+
+
+def test_capital_delta_pct_is_withheld_without_endpoint_or_coverage():
+    previous = SimpleNamespace(liquid_capital_net=RubleAmount(10_000_000))
+    unavailable = PortfolioSourceCoverage(status="unavailable")
+    assert _delta_pct(None, previous, None) is None
+    assert _delta_pct(RubleAmount(100), None, None) is None
+    assert _delta_pct(RubleAmount(100), previous, unavailable) is None

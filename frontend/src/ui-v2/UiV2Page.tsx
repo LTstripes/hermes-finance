@@ -1,20 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 import {
   getCapitalComposition,
@@ -27,6 +13,7 @@ import { listMonths } from "../api/months";
 import type {
   CapitalCompositionPoint,
   ClosedReportComparison,
+  MoneyValue,
   PassiveIncomeAverage,
   PassiveIncomeHistory,
   ReportingMonth,
@@ -34,9 +21,10 @@ import type {
 import { isGuidedCloseStepId } from "../components/month-close/navigation";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { HelpTip } from "../components/ui";
-import { formatMoney, formatMonth } from "../lib/format";
-import { moneyToChartNumber, toKopecks } from "../lib/money";
+import { formatDate, formatMonth } from "../lib/format";
+import { moneySharePercent, moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
+import { classMeta } from "./assetClasses";
 import { uiV2GoalsPath } from "./goalRoute";
 import {
   monthWorkspacePath,
@@ -44,42 +32,93 @@ import {
   selectNewestDraftAfterLatestClosed,
   sortReportingMonths,
 } from "./monthSelection";
-import { rubleAxisTick } from "./rubleAxis";
-import styles from "./UiV2Page.module.css";
+import styles from "./UiV2Home.module.css";
+import {
+  CapitalAreaChart,
+  type CapitalChartPoint,
+  CapitalWaterfallChart,
+  PassiveBarsChart,
+  type PassiveChartPoint,
+  shortRub,
+  type WaterfallStep,
+} from "./UiV2HomeCharts";
+import pageStyles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
-import { isQueryReady, UiV2Notice, UiV2ReportContext, UiV2WidgetState } from "./UiV2StateBlocks";
-import { accountingStartLabel } from "./uiV2Copy";
-import { moneyText as money, moneyDeltaText as moneyDelta, moneyTone as tone } from "./valueFormat";
+import { isQueryReady, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
+import { accountingStartLabel, comparedToLabel } from "./uiV2Copy";
+import {
+  moneyText as money,
+  percentText,
+  moneyTone as tone,
+  moneyWholeText as whole,
+  moneyWholeDeltaText as wholeDelta,
+} from "./valueFormat";
 
 type HistoryWindow = 3 | 12 | "all";
 
-const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
-  cash: { label: "Деньги", color: "#5f7e9e" },
-  deposits: { label: "Депозиты", color: "#8e73a6" },
-  stocks: { label: "Акции", color: "#c68b51" },
-  bonds: { label: "Облигации", color: "#5f9b82" },
-  gold_other: { label: "Золото и прочее", color: "#a4a8ad" },
+/** Each asset class keeps its token colour (tokens.css) on this page. */
+const CLASS_COLOR: Record<string, string> = {
+  cash: "var(--c-cash)",
+  deposits: "var(--c-dep)",
+  stocks: "var(--c-stock)",
+  bonds: "var(--c-bond)",
+  gold_other: "var(--c-gold)",
 };
 
 const PASSIVE_SOURCE_META = [
-  ["deposit_interest", "Проценты по депозитам"],
-  ["bond_coupons", "Купоны"],
-  ["dividends", "Дивиденды"],
-  ["other_capital_income", "Прочий доход от капитала"],
+  ["bond_coupons", "Купоны", "var(--c-bond)"],
+  ["deposit_interest", "Проценты по депозитам", "var(--c-dep)"],
+  ["dividends", "Дивиденды", "var(--c-stock)"],
+  ["other_capital_income", "Прочий доход от капитала", "var(--c-cash)"],
 ] as const;
 
-function passiveAverageDetail(average: PassiveIncomeAverage): ReactNode {
+const SHORT_MONTHS = [
+  "янв",
+  "фев",
+  "мар",
+  "апр",
+  "май",
+  "июн",
+  "июл",
+  "авг",
+  "сен",
+  "окт",
+  "ноя",
+  "дек",
+];
+
+function shortMonthLabel(year: number, month: number, first: boolean): string {
+  const name = SHORT_MONTHS[month - 1] ?? String(month);
+  return first || month === 1 ? `${name} ${year}` : name;
+}
+
+function isPositive(value: MoneyValue | null | undefined): boolean {
+  return value != null && toKopecks(value.amount) > 0n;
+}
+
+/** The goal of this type the backend computes from the same figure as the page. */
+function pageGoal(goals: GoalSummary[], type: string, mode: string): GoalSummary | null {
+  const candidates = goals.filter(
+    (goal) => goal.goal_type === type && goal.calculation_mode === mode,
+  );
+  return candidates.find((goal) => goal.is_main) ?? candidates[0] ?? null;
+}
+
+function goalReached(goal: GoalSummary): boolean {
+  const forecast = goal.achievement_forecast;
+  return (
+    forecast.status === "achieved" ||
+    (forecast.remaining_amount != null && toKopecks(forecast.remaining_amount.amount) <= 0n)
+  );
+}
+
+function AverageHelp({ average }: { average: PassiveIncomeAverage }) {
   const boundary = accountingStartLabel(average.configured_start_month);
   return (
-    <>
-      {average.count_months === 0
-        ? "Пока нет данных"
-        : `Среднее за ${average.target_window_months} мес: ${money(average.average)}`}{" "}
-      <HelpTip label="Период среднего дохода">
-        {average.count_months} из {average.target_window_months} закрытых отчётов
-        {boundary ? ` · учёт ${boundary}` : ""}
-      </HelpTip>
-    </>
+    <HelpTip label="Период среднего дохода">
+      {average.count_months} из {average.target_window_months} закрытых отчётов
+      {boundary ? ` · учёт ${boundary}` : ""}
+    </HelpTip>
   );
 }
 
@@ -98,7 +137,7 @@ function DraftAction({ draft }: { draft: ReportingMonth }) {
 
   if (workflowQuery.isError) {
     return (
-      <div className={styles.draftAction} data-state="unavailable">
+      <div className={pageStyles.draftAction} data-state="unavailable">
         <span>{formatMonth(draft.year, draft.month)} ещё не закрыт</span>
         <button onClick={() => void workflowQuery.refetch()} type="button">
           Проверить снова
@@ -108,7 +147,7 @@ function DraftAction({ draft }: { draft: ReportingMonth }) {
   }
   if (!ready) {
     return (
-      <div className={styles.draftAction} data-state="loading" role="status">
+      <div className={pageStyles.draftAction} data-state="loading" role="status">
         Проверяем незакрытый {formatMonth(draft.year, draft.month).toLocaleLowerCase("ru-RU")}…
       </div>
     );
@@ -117,7 +156,7 @@ function DraftAction({ draft }: { draft: ReportingMonth }) {
 
   return (
     <Link
-      className={styles.draftAction}
+      className={pageStyles.draftAction}
       data-testid="v2-draft-action"
       to={monthWorkspacePath(draft.id, recommended)}
     >
@@ -127,96 +166,33 @@ function DraftAction({ draft }: { draft: ReportingMonth }) {
   );
 }
 
-function KpiGrid({
-  comparison,
-  comparisonReady,
-  passive,
-  passiveReady,
-  retryComparison,
-  retryPassive,
+function BlockHead({
+  id,
+  kicker,
+  title,
+  aside,
 }: {
-  comparison: ClosedReportComparison | undefined;
-  comparisonReady: boolean;
-  passive: PassiveIncomeHistory | undefined;
-  passiveReady: boolean;
-  retryComparison: () => void;
-  retryPassive: () => void;
+  id: string;
+  kicker?: string;
+  title: string;
+  aside?: ReactNode;
 }) {
-  const comparisonAvailable = comparison?.availability === "available";
   return (
-    <section aria-label="Главные показатели" className={styles.metrics}>
-      <article className={`${styles.metric} ${styles.metricPrimary}`}>
-        <p className={styles.eyebrow}>Ликвидный капитал</p>
-        {comparisonReady && comparison?.current ? (
-          <>
-            <p className={styles.metricValue} data-testid="v2-capital">
-              {comparison.current.portfolio_source_coverage?.status === "unavailable"
-                ? "—"
-                : money(comparison.current.liquid_capital_net)}
-            </p>
-            <PortfolioCoverageNote
-              coverage={comparison.current.portfolio_source_coverage}
-              month={comparison.current}
-            />
-          </>
-        ) : (
-          <UiV2WidgetState retry={comparisonReady ? undefined : retryComparison} />
-        )}
-      </article>
-
-      <article className={styles.metric}>
-        <p className={styles.eyebrow}>Изменение</p>
-        {comparisonReady && comparisonAvailable ? (
-          <>
-            <p
-              aria-describedby="v2-change-definition"
-              className={styles.metricValue}
-              data-testid="v2-capital-change"
-              data-tone={tone(comparison?.liquid_capital_net_delta)}
-            >
-              {comparison?.liquid_capital_net_delta_coverage?.status === "unavailable"
-                ? "—"
-                : moneyDelta(comparison?.liquid_capital_net_delta)}
-            </p>
-            <p className={styles.metricDetail} id="v2-change-definition">
-              к {formatMonth(comparison?.previous?.year ?? 0, comparison?.previous?.month ?? 0)}
-            </p>
-          </>
-        ) : comparisonReady && comparison?.availability === "previous_closed_report_unavailable" ? (
-          <>
-            <p className={styles.metricEmpty}>Пока нет базы сравнения</p>
-            <p className={styles.metricDetail}>Появится после следующего закрытого отчёта</p>
-          </>
-        ) : (
-          <UiV2WidgetState retry={comparisonReady ? undefined : retryComparison} />
-        )}
-      </article>
-
-      <article className={styles.metric}>
-        <p className={styles.eyebrow}>Пассивный доход</p>
-        {passiveReady && passive?.selected_report ? (
-          <>
-            <p className={styles.metricValue} data-testid="v2-passive-actual">
-              {money(passive.selected_report.passive_income_actual)}
-            </p>
-            <p className={styles.metricDetail}>{passiveAverageDetail(passive.average)}</p>
-          </>
-        ) : (
-          <UiV2WidgetState retry={passiveReady ? undefined : retryPassive} />
-        )}
-      </article>
-    </section>
+    <div className={styles.blockHead}>
+      <div>
+        {kicker ? <p className={styles.kicker}>{kicker}</p> : null}
+        <h2 id={id}>{title}</h2>
+      </div>
+      {aside}
+    </div>
   );
 }
 
-function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) {
-  const data: Array<{
-    key: string;
-    label: string;
-    amount: string | null;
-    rubles: number | null;
-    portfolio_source_coverage?: CapitalCompositionPoint["portfolio_source_coverage"];
-  }> = [];
+function capitalChartData(points: CapitalCompositionPoint[]): {
+  data: CapitalChartPoint[];
+  gapCount: number;
+} {
+  const data: CapitalChartPoint[] = [];
   let previous: CapitalCompositionPoint | undefined;
   for (const point of points) {
     if (previous && reportIndex(point) - reportIndex(previous) > 1) {
@@ -225,108 +201,330 @@ function CapitalHistoryChart({ points }: { points: CapitalCompositionPoint[] }) 
       const gapMonth = ((gapIndex - 1) % 12) + 1;
       data.push({
         key: `gap-${gapYear}-${gapMonth}`,
-        label: `${String(gapMonth).padStart(2, "0")}.${gapYear}`,
+        label: shortMonthLabel(gapYear, gapMonth, false),
+        fullLabel: formatMonth(gapYear, gapMonth),
         amount: null,
-        rubles: null,
+        value: null,
       });
     }
+    const unavailable = point.portfolio_source_coverage?.status === "unavailable";
     data.push({
       key: `${point.year}-${point.month}`,
-      label: `${String(point.month).padStart(2, "0")}.${point.year}`,
-      amount: point.liquid_capital_net.amount,
-      rubles:
-        point.portfolio_source_coverage?.status === "unavailable"
-          ? null
-          : moneyToChartNumber(point.liquid_capital_net.amount),
-      portfolio_source_coverage: point.portfolio_source_coverage,
+      label: shortMonthLabel(point.year, point.month, data.length === 0),
+      fullLabel: formatMonth(point.year, point.month),
+      amount: unavailable ? null : point.liquid_capital_net.amount,
+      value: unavailable ? null : moneyToChartNumber(point.liquid_capital_net.amount),
     });
     previous = point;
   }
-  const gapCount = data.filter((item) => item.amount === null).length;
-  return (
-    <div
-      className={styles.chart}
-      data-gap-count={gapCount}
-      data-point-count={points.length}
-      data-testid="v2-capital-history"
-    >
-      <ResponsiveContainer height={245} width="100%">
-        <LineChart data={data} margin={{ bottom: 2, left: 4, right: 12, top: 12 }}>
-          <CartesianGrid stroke="#e8edf1" strokeDasharray="3 4" vertical={false} />
-          <XAxis axisLine={false} dataKey="label" interval="preserveStartEnd" tickLine={false} />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            width={82}
-            tickFormatter={rubleAxisTick}
-            tick={{ fontSize: 11, fill: "#607084" }}
-          />
-          <Tooltip
-            formatter={(_value, _name, item) => [formatMoney(item.payload.amount), "Капитал"]}
-            labelFormatter={(label) => `Отчёт ${label}`}
-          />
-          <Line
-            activeDot={{ r: 5 }}
-            connectNulls={false}
-            dataKey="rubles"
-            dot={{ fill: "#244f83", r: 3, strokeWidth: 0 }}
-            isAnimationActive={false}
-            stroke="#244f83"
-            strokeWidth={3}
-            type="linear"
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
+  return { data, gapCount: data.filter((item) => item.key.startsWith("gap-")).length };
 }
 
-function CapitalHistoryBlock({
+function CapitalHero({
+  comparison,
+  comparisonReady,
+  retryComparison,
   points,
-  ready,
-  retry,
+  historyReady,
+  retryHistory,
+  capitalGoal,
 }: {
+  comparison: ClosedReportComparison | undefined;
+  comparisonReady: boolean;
+  retryComparison: () => void;
   points: CapitalCompositionPoint[];
-  ready: boolean;
-  retry: () => void;
+  historyReady: boolean;
+  retryHistory: () => void;
+  capitalGoal: GoalSummary | null;
 }) {
   const [window, setWindow] = useState<HistoryWindow>(12);
   const visible = window === "all" ? points : points.slice(-window);
+  const { data, gapCount } = capitalChartData(visible);
+  const current = comparison?.current ?? null;
+  const unavailable = current?.portfolio_source_coverage?.status === "unavailable";
+  const deltaUnavailable = comparison?.liquid_capital_net_delta_coverage?.status === "unavailable";
+  const deltaTone = tone(comparison?.liquid_capital_net_delta);
+  const goalTarget = capitalGoal ? moneyToChartNumber(capitalGoal.target_value.amount) : null;
+  const goalShort = goalTarget !== null ? shortRub(goalTarget) : "";
+
   return (
-    <section
-      className={`${styles.panel} ${styles.widePanel}`}
-      aria-labelledby="capital-history-title"
-    >
-      <div className={styles.panelHeader}>
-        <div>
-          <p className={styles.eyebrow}>Закрытые отчёты</p>
-          <h2 id="capital-history-title">Динамика капитала</h2>
-        </div>
-        <fieldset className={styles.segmented} aria-label="Период динамики капитала">
-          {([3, 12, "all"] as const).map((value) => (
-            <button
-              aria-pressed={window === value}
-              key={value}
-              onClick={() => setWindow(value)}
-              type="button"
-            >
-              {value === 3 ? "3 месяца" : value === 12 ? "12 месяцев" : "Всё время"}
-            </button>
-          ))}
-        </fieldset>
+    <section aria-label="Главные показатели" className={styles.hero}>
+      <div className={styles.heroFacts}>
+        <p className={styles.kicker}>Ликвидный капитал</p>
+        {comparisonReady && current ? (
+          <>
+            <p className={styles.heroValue} data-testid="v2-capital">
+              {unavailable ? "—" : whole(current.liquid_capital_net)}
+            </p>
+            <PortfolioCoverageNote coverage={current.portfolio_source_coverage} month={current} />
+            {comparison?.availability === "available" && comparison.previous ? (
+              <p className={styles.deltaRow}>
+                <span
+                  className={styles.deltaChip}
+                  data-tone={deltaUnavailable ? "neutral" : deltaTone}
+                >
+                  {!deltaUnavailable && deltaTone !== "neutral" ? (
+                    <span aria-hidden="true">{deltaTone === "negative" ? "▼" : "▲"}</span>
+                  ) : null}
+                  <span aria-describedby="v2-change-definition" data-testid="v2-capital-change">
+                    {deltaUnavailable ? "—" : wholeDelta(comparison.liquid_capital_net_delta)}
+                  </span>
+                  {!deltaUnavailable && comparison.liquid_capital_net_delta_pct ? (
+                    // Backend rounds once to 0.1; the page only formats it.
+                    <span data-testid="v2-capital-change-pct">
+                      · {percentText(comparison.liquid_capital_net_delta_pct, 1, { signed: true })}
+                    </span>
+                  ) : null}
+                </span>
+                <span className={styles.note} id="v2-change-definition">
+                  {comparedToLabel(comparison.previous, current)}
+                </span>
+              </p>
+            ) : comparison?.availability === "previous_closed_report_unavailable" ? (
+              <p className={styles.note}>
+                <span>Пока нет базы сравнения</span> · появится после следующего закрытого отчёта
+              </p>
+            ) : null}
+            <dl className={styles.heroMeta}>
+              {/* Without capital snapshots the totals are unknown, not zero. */}
+              <dt>Активы</dt>
+              <dd>{unavailable ? "—" : whole(current.liquid_assets_total)}</dd>
+              <dt>Обязательства</dt>
+              <dd>
+                {unavailable
+                  ? "—"
+                  : `${isPositive(current.included_debts) ? "−" : ""}${whole(current.included_debts)}`}
+              </dd>
+              {capitalGoal && !unavailable ? (
+                goalReached(capitalGoal) ? (
+                  <>
+                    <dt>Цель {goalShort}</dt>
+                    <dd>достигнута</dd>
+                  </>
+                ) : (
+                  <>
+                    <dt>До цели {goalShort}</dt>
+                    <dd>
+                      {whole(capitalGoal.achievement_forecast.remaining_amount)} ·{" "}
+                      {goalPercent(capitalGoal)}
+                    </dd>
+                  </>
+                )
+              ) : null}
+            </dl>
+          </>
+        ) : (
+          <UiV2WidgetState retry={comparisonReady ? undefined : retryComparison} />
+        )}
       </div>
+
+      <div className={styles.heroChart}>
+        <div className={styles.chartHead}>
+          <span className={styles.legend}>
+            <span>
+              <i style={{ background: "var(--accent)" }} />
+              Капитал, факт
+            </span>
+            {capitalGoal ? (
+              <span>
+                <i className={styles.legendDash} />
+                Цель
+              </span>
+            ) : null}
+          </span>
+          <fieldset className={styles.segmented} aria-label="Период динамики капитала">
+            {([3, 12, "all"] as const).map((value) => (
+              <button
+                aria-label={value === 3 ? "3 месяца" : value === 12 ? "12 месяцев" : "Всё время"}
+                aria-pressed={window === value}
+                key={value}
+                onClick={() => setWindow(value)}
+                type="button"
+              >
+                {value === 3 ? "3 мес" : value === 12 ? "12 мес" : "Всё"}
+              </button>
+            ))}
+          </fieldset>
+        </div>
+        {!historyReady ? (
+          <UiV2WidgetState retry={retryHistory} />
+        ) : visible.length === 0 ? (
+          <UiV2WidgetState title="История появится после закрытия первого отчёта" />
+        ) : (
+          <div
+            className={styles.chart}
+            data-gap-count={gapCount}
+            data-point-count={visible.length}
+            data-testid="v2-capital-history"
+          >
+            <CapitalAreaChart
+              data={data}
+              goal={goalTarget !== null ? { value: goalTarget, label: `цель ${goalShort}` } : null}
+            />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PassiveBlock({
+  history,
+  ready,
+  retry,
+  passiveGoal,
+}: {
+  history: PassiveIncomeHistory | undefined;
+  ready: boolean;
+  retry: () => void;
+  passiveGoal: GoalSummary | null;
+}) {
+  const selected = history?.selected_report ?? null;
+  const average = history?.average;
+  const eligible = history?.points.filter((point) => point.included_in_average_window) ?? [];
+  const data: PassiveChartPoint[] = eligible.map((point) => ({
+    key: `${point.year}-${point.month}`,
+    label: shortMonthLabel(point.year, point.month, false),
+    fullLabel: formatMonth(point.year, point.month),
+    amount: point.passive_income_actual.amount,
+    value: moneyToChartNumber(point.passive_income_actual.amount),
+  }));
+  const averageValue =
+    average && average.count_months > 0 ? moneyToChartNumber(average.average.amount) : null;
+  const goalValue = passiveGoal ? moneyToChartNumber(passiveGoal.target_value.amount) : null;
+  const maxValue = Math.max(0, ...data.map((point) => point.value));
+  // A goal far above the facts would flatten every bar; it stays in Goals.
+  const showGoal = goalValue !== null && goalValue > 0 && goalValue <= Math.max(maxValue, 1) * 2.5;
+
+  return (
+    <section className={`${styles.block} ${styles.s7}`} aria-labelledby="passive-title">
+      <BlockHead
+        aside={
+          <Link className={styles.link} to="/v2/income">
+            Выплаты и прогноз →
+          </Link>
+        }
+        id="passive-title"
+        kicker="Получено · факт"
+        title="Пассивный доход"
+      />
       {!ready ? (
         <UiV2WidgetState retry={retry} />
-      ) : visible.length === 0 ? (
+      ) : !selected || !average ? (
         <UiV2WidgetState title="История появится после закрытия первого отчёта" />
       ) : (
-        <CapitalHistoryChart points={visible} />
+        <>
+          <div className={styles.figures}>
+            <div>
+              <p className={styles.midValue} data-testid="v2-passive-actual">
+                {whole(selected.passive_income_actual)}
+              </p>
+              <p className={styles.note}>
+                {formatMonth(selected.year, selected.month).toLocaleLowerCase("ru-RU")}
+              </p>
+            </div>
+            <div>
+              {average.count_months === 0 ? (
+                <p className={`${styles.midValue} ${styles.secondary}`}>—</p>
+              ) : (
+                <p
+                  className={`${styles.midValue} ${styles.secondary}`}
+                  data-testid="v2-passive-average"
+                >
+                  {whole(average.average)}
+                </p>
+              )}
+              <p className={styles.note}>
+                {average.count_months === 0
+                  ? "Пока нет данных"
+                  : `среднее за ${average.target_window_months} мес`}{" "}
+                <AverageHelp average={average} />
+              </p>
+            </div>
+          </div>
+          {data.length > 0 ? (
+            <>
+              <div
+                className={styles.chart}
+                data-point-count={data.length}
+                data-testid="v2-passive-history"
+              >
+                <PassiveBarsChart
+                  average={averageValue}
+                  data={data}
+                  goal={showGoal ? goalValue : null}
+                />
+              </div>
+              <p className={styles.legend}>
+                <span>
+                  <i style={{ background: "var(--accent)" }} />
+                  Факт
+                </span>
+                {averageValue !== null ? (
+                  <span>
+                    <i className={styles.legendLine} />
+                    Среднее
+                  </span>
+                ) : null}
+                {showGoal && goalValue !== null ? (
+                  <span>
+                    <i className={styles.legendDash} />
+                    Цель {shortRub(goalValue)}
+                  </span>
+                ) : null}
+              </p>
+            </>
+          ) : (
+            <UiV2WidgetState title="Нет закрытой истории в выбранном периоде" />
+          )}
+          <PassiveSources history={history} />
+        </>
       )}
     </section>
   );
 }
 
-function CompositionBlock({
+function PassiveSources({ history }: { history: PassiveIncomeHistory | undefined }) {
+  const selected = history?.selected_report;
+  if (!selected) return null;
+  const total = selected.breakdown.total_net_passive_income;
+  const rows = PASSIVE_SOURCE_META.map(([key, label, color]) => ({
+    key,
+    label,
+    color,
+    amount: selected.breakdown[key],
+  }));
+  const shown = rows.filter((row) => toKopecks(row.amount.amount) !== 0n);
+  if (shown.length === 0) return null;
+  // Shares are meaningful only for a positive total of non-negative parts.
+  const shareable = isPositive(total) && shown.every((row) => toKopecks(row.amount.amount) >= 0n);
+  const share = (amount: MoneyValue) => moneySharePercent(amount.amount, total.amount, 1);
+  return (
+    <div className={styles.sources}>
+      <p className={styles.note}>
+        Из чего сложился {formatMonth(selected.year, selected.month).toLocaleLowerCase("ru-RU")}
+      </p>
+      {shareable ? (
+        <div aria-hidden="true" className={styles.segBar}>
+          {shown.map((row) => (
+            <i key={row.key} style={{ flex: share(row.amount), background: row.color }} />
+          ))}
+        </div>
+      ) : null}
+      <ul className={styles.segLegend}>
+        {shown.map((row) => (
+          <li key={row.key}>
+            <i aria-hidden="true" style={{ background: row.color }} />
+            {row.label} <strong className="money">{whole(row.amount)}</strong>
+            {shareable ? <span> · {percentText(share(row.amount), 0)}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AllocationBlock({
   comparison,
   ready,
   retry,
@@ -335,81 +533,70 @@ function CompositionBlock({
   ready: boolean;
   retry: () => void;
 }) {
-  const allocation =
-    comparison?.current?.allocation.filter((item) => toKopecks(item.amount.amount) > 0n) ?? [];
-  const slices = allocation.map((item) => ({
-    ...item,
-    name: ASSET_CLASS_META[item.asset_class]?.label ?? item.asset_class,
-    color: ASSET_CLASS_META[item.asset_class]?.color ?? "#a4a8ad",
-    value: moneyToChartNumber(item.amount.amount),
+  const current = comparison?.current;
+  const total = current?.liquid_assets_total;
+  const slices = current?.allocation.filter((item) => toKopecks(item.amount.amount) > 0n) ?? [];
+  const shareable = isPositive(total);
+  const sorted = [...slices].sort((a, b) => {
+    const diff = toKopecks(b.amount.amount) - toKopecks(a.amount.amount);
+    return diff > 0n ? 1 : diff < 0n ? -1 : 0;
+  });
+  const rows = sorted.map((item) => ({
+    key: item.asset_class,
+    label: classMeta(item.asset_class).label,
+    color: CLASS_COLOR[item.asset_class] ?? "var(--c-cash)",
+    amount: item.amount,
+    share: shareable && total ? moneySharePercent(item.amount.amount, total.amount, 1) : null,
   }));
   return (
-    <section className={styles.panel} aria-labelledby="composition-title">
-      <div className={styles.panelHeader}>
-        <div>
-          <h2 id="composition-title">Структура активов</h2>
-        </div>
-      </div>
+    <section className={`${styles.block} ${styles.s5}`} aria-labelledby="composition-title">
+      <BlockHead
+        aside={
+          <Link className={styles.link} to="/v2/capital">
+            Капитал →
+          </Link>
+        }
+        id="composition-title"
+        kicker="Структура"
+        title="Где лежат деньги"
+      />
       {!ready ? (
         <UiV2WidgetState retry={retry} />
-      ) : !comparison?.current ? (
+      ) : !current ? (
         <UiV2WidgetState title="Нет закрытого снимка" />
+      ) : current.portfolio_source_coverage?.status === "unavailable" ? (
+        <UiV2WidgetState title="Нет снимков капитала" />
+      ) : rows.length === 0 ? (
+        <UiV2WidgetState title="В закрытом снимке нет положительных ликвидных активов" />
       ) : (
         <>
-          {slices.length === 0 ? (
-            <UiV2WidgetState title="В закрытом снимке нет положительных ликвидных активов" />
-          ) : (
-            <div className={styles.compositionBody}>
-              <div className={styles.donut}>
-                <ResponsiveContainer height={185} width="100%">
-                  <PieChart>
-                    <Pie
-                      data={slices}
-                      dataKey="value"
-                      innerRadius="58%"
-                      isAnimationActive={false}
-                      nameKey="name"
-                      outerRadius="88%"
-                      paddingAngle={2}
-                      strokeWidth={0}
-                    >
-                      {slices.map((slice) => (
-                        <Cell fill={slice.color} key={slice.asset_class} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(_value, _name, item) => money(item.payload.amount)} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <ul className={styles.legend}>
-                {slices.map((slice) => (
-                  <li key={slice.asset_class}>
-                    <span aria-hidden="true" style={{ background: slice.color }} />
-                    <span>{slice.name}</span>
-                    <strong>{money(slice.amount)}</strong>
-                  </li>
-                ))}
-              </ul>
+          {rows.every((row) => row.share !== null) ? (
+            <div aria-hidden="true" className={styles.allocBar}>
+              {rows.map((row) => (
+                <i
+                  key={row.key}
+                  style={{ flex: Math.max(Number(row.share), 0.4), background: row.color }}
+                  title={row.label}
+                />
+              ))}
             </div>
-          )}
-          <dl className={styles.netSummary}>
-            <div>
-              <dt>Ликвидные активы</dt>
-              <dd>{money(comparison.current.liquid_assets_total)}</dd>
-            </div>
-            <div className={styles.deduction}>
-              <dt>Включённые обязательства</dt>
-              <dd>− {money(comparison.current.included_debts)}</dd>
-            </div>
-            <div>
-              <dt>Ликвидный капитал</dt>
-              <dd>
-                {comparison.current.portfolio_source_coverage?.status === "unavailable"
-                  ? "—"
-                  : money(comparison.current.liquid_capital_net)}
-              </dd>
-            </div>
-          </dl>
+          ) : null}
+          <ul className={styles.allocRows}>
+            {rows.map((row) => (
+              <li key={row.key}>
+                <i aria-hidden="true" style={{ background: row.color }} />
+                <span>{row.label}</span>
+                <strong className="money">{whole(row.amount)}</strong>
+                <span className={styles.share}>
+                  {row.share === null
+                    ? ""
+                    : Number(row.share) < 0.1
+                      ? "<0,1%"
+                      : percentText(row.share, 1)}
+                </span>
+              </li>
+            ))}
+          </ul>
         </>
       )}
     </section>
@@ -426,175 +613,146 @@ function ChangeBlock({
   retry: () => void;
 }) {
   const explanation = comparison?.explanation;
+  const previous = comparison?.previous;
+  const current = comparison?.current;
+  const kicker =
+    previous && current
+      ? `${formatMonth(current.year, current.month).split(/\s/)[0]} ${comparedToLabel(previous, current)}`
+      : "Изменение состояния";
+  const steps: WaterfallStep[] = [];
+  const rows: Array<{ key: string; label: string; amount: MoneyValue }> = [];
+  if (explanation?.reconciles && previous && current) {
+    steps.push({
+      key: "start",
+      label: formatMonth(previous.year, previous.month).split(/\s/)[0],
+      kind: "start",
+      value: moneyToChartNumber(previous.liquid_capital_net.amount),
+      text: shortRub(moneyToChartNumber(previous.liquid_capital_net.amount)),
+    });
+    const push = (key: string, label: string, chartLabel: string, amount: MoneyValue) => {
+      const value = moneyToChartNumber(amount.amount);
+      rows.push({ key, label, amount });
+      steps.push({
+        key,
+        label: chartLabel,
+        kind: "step",
+        value,
+        text: `${value > 0 ? "+" : value < 0 ? "−" : ""}${shortRub(Math.abs(value))}`,
+      });
+    };
+    for (const item of explanation.residual_asset_class_deltas) {
+      const label = classMeta(item.asset_class).label;
+      push(item.asset_class, label, label, item.amount);
+    }
+    push("debts", "Вклад обязательств", "Долги", explanation.residual_debt_contribution_delta);
+    for (const pair of explanation.pairs) {
+      const value = moneyToChartNumber(pair.net_contribution_delta.amount);
+      steps.push({
+        key: `pair-${pair.account_id}`,
+        label: pair.account_name,
+        kind: "step",
+        value,
+        text: `${value > 0 ? "+" : value < 0 ? "−" : ""}${shortRub(Math.abs(value))}`,
+      });
+    }
+    steps.push({
+      key: "end",
+      label: formatMonth(current.year, current.month).split(/\s/)[0],
+      kind: "end",
+      value: moneyToChartNumber(current.liquid_capital_net.amount),
+      text: shortRub(moneyToChartNumber(current.liquid_capital_net.amount)),
+    });
+  }
   return (
-    <section className={styles.panel} aria-labelledby="change-title">
-      <div className={styles.panelHeader}>
-        <div>
-          <p className={styles.eyebrow}>Изменение состояния</p>
-          <h2 id="change-title">Где изменились суммы</h2>
-        </div>
-      </div>
+    <section className={`${styles.block} ${styles.s7}`} aria-labelledby="change-title">
+      <BlockHead
+        aside={<span className={styles.note}>по классам активов</span>}
+        id="change-title"
+        kicker={kicker}
+        title="Что изменило капитал"
+      />
       {!ready ? (
         <UiV2WidgetState retry={retry} />
       ) : comparison?.availability !== "available" ? (
         <UiV2WidgetState title="Нужны два закрытых отчёта для сравнения" />
-      ) : !explanation?.reconciles ? (
+      ) : !explanation?.reconciles || !previous || !current ? (
         <UiV2WidgetState title="Разложение изменения недоступно" retry={retry} />
       ) : (
         <>
-          <ul className={styles.changeList}>
-            {explanation.residual_asset_class_deltas.map((item) => (
-              <li key={item.asset_class}>
-                <span>{ASSET_CLASS_META[item.asset_class]?.label ?? item.asset_class}</span>
-                <strong data-tone={tone(item.amount)}>{moneyDelta(item.amount)}</strong>
-              </li>
-            ))}
-            <li className={styles.liabilityChange}>
-              <span>Вклад обязательств</span>
-              <strong data-tone={tone(explanation.residual_debt_contribution_delta)}>
-                {moneyDelta(explanation.residual_debt_contribution_delta)}
-              </strong>
-            </li>
-            {explanation.pairs.map((pair) => (
-              <li key={pair.account_id}>
-                <details>
-                  <summary>{pair.account_name}</summary>
-                  <p>Связанный счёт и кредитка — изменение чистого вклада.</p>
-                  <p>
-                    {formatMonth(comparison.previous?.year ?? 0, comparison.previous?.month ?? 0)}:
-                    счёт {money(pair.previous.account_balance)}, {pair.previous.debt_name}{" "}
-                    {money(pair.previous.debt_balance)}, чистый вклад{" "}
-                    {money(pair.previous.net_contribution)}
-                  </p>
-                  <p>
-                    {formatMonth(comparison.current?.year ?? 0, comparison.current?.month ?? 0)}:
-                    счёт {money(pair.current.account_balance)}, {pair.current.debt_name}{" "}
-                    {money(pair.current.debt_balance)}, чистый вклад{" "}
-                    {money(pair.current.net_contribution)}
-                  </p>
-                </details>
-                <strong data-tone={tone(pair.net_contribution_delta)}>
-                  {moneyDelta(pair.net_contribution_delta)}
-                </strong>
+          <div
+            aria-hidden="true"
+            className={styles.chart}
+            data-step-count={steps.length}
+            data-testid="v2-capital-waterfall"
+          >
+            <CapitalWaterfallChart steps={steps} />
+          </div>
+          <ul className={styles.visuallyHidden}>
+            {rows.map((row) => (
+              <li key={row.key}>
+                <span>{row.label}</span>
+                <strong data-tone={tone(row.amount)}>{wholeDelta(row.amount)}</strong>
               </li>
             ))}
           </ul>
+          {explanation.pairs.length > 0 ? (
+            <ul className={styles.pairs}>
+              {explanation.pairs.map((pair) => (
+                <li key={pair.account_id}>
+                  <details>
+                    <summary>{pair.account_name}</summary>
+                    <p>Связанный счёт и кредитка — изменение чистого вклада.</p>
+                    <p>
+                      {formatMonth(previous.year, previous.month)}: счёт{" "}
+                      {money(pair.previous.account_balance)}, {pair.previous.debt_name}{" "}
+                      {money(pair.previous.debt_balance)}, чистый вклад{" "}
+                      {money(pair.previous.net_contribution)}
+                    </p>
+                    <p>
+                      {formatMonth(current.year, current.month)}: счёт{" "}
+                      {money(pair.current.account_balance)}, {pair.current.debt_name}{" "}
+                      {money(pair.current.debt_balance)}, чистый вклад{" "}
+                      {money(pair.current.net_contribution)}
+                    </p>
+                  </details>
+                  <strong className="money" data-tone={tone(pair.net_contribution_delta)}>
+                    {wholeDelta(pair.net_contribution_delta)}
+                  </strong>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className={styles.changeTotal}>
             <span>Изменение ликвидного капитала</span>
-            <strong data-tone={tone(comparison.liquid_capital_net_delta)}>
+            <strong className="money" data-tone={tone(comparison.liquid_capital_net_delta)}>
               {comparison.liquid_capital_net_delta_coverage?.status === "unavailable"
                 ? "—"
-                : moneyDelta(comparison.liquid_capital_net_delta)}
+                : wholeDelta(comparison.liquid_capital_net_delta)}
             </strong>
             <PortfolioCoverageNote coverage={comparison.liquid_capital_net_delta_coverage} />
+            {explanation.noncomparable_account_ids.length > 0 ? (
+              <HelpTip label="Почему часть счетов не объединена">
+                Для части счетов нет явной связи на обоих отчётах: изменение пары недоступно, суммы
+                сохранены в остальных строках.
+              </HelpTip>
+            ) : null}
           </div>
-          {explanation.noncomparable_account_ids.length > 0 ? (
-            <HelpTip label="Почему часть счетов не объединена">
-              Для части счетов нет явной связи на обоих отчётах: изменение пары недоступно, суммы
-              сохранены в остальных строках.
-            </HelpTip>
-          ) : null}
         </>
       )}
     </section>
   );
 }
 
-function PassiveChart({ data }: { data: PassiveIncomeHistory["points"] }) {
-  const points = data.map((point) => ({
-    key: `${point.year}-${point.month}`,
-    label: `${String(point.month).padStart(2, "0")}.${point.year}`,
-    amount: point.passive_income_actual.amount,
-    rubles: moneyToChartNumber(point.passive_income_actual.amount),
-  }));
-  return (
-    <div className={styles.chart} data-point-count={points.length} data-testid="v2-passive-history">
-      <ResponsiveContainer height={220} width="100%">
-        <BarChart data={points} margin={{ bottom: 2, left: 4, right: 12, top: 12 }}>
-          <CartesianGrid stroke="#e8edf1" strokeDasharray="3 4" vertical={false} />
-          <XAxis axisLine={false} dataKey="label" interval="preserveStartEnd" tickLine={false} />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            width={82}
-            tickFormatter={rubleAxisTick}
-            tick={{ fontSize: 11, fill: "#607084" }}
-          />
-          <Tooltip
-            cursor={false}
-            formatter={(_value, _name, item) => [formatMoney(item.payload.amount), "Факт"]}
-            labelFormatter={(label) => `Отчёт ${label}`}
-          />
-          <Bar
-            dataKey="rubles"
-            fill="#244f83"
-            isAnimationActive={false}
-            maxBarSize={34}
-            radius={[5, 5, 0, 0]}
-          />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
+function ringStyle(pct: string | null): CSSProperties {
+  const match = /^(\d+)(?:\.\d+)?$/.exec(pct ?? "");
+  const value = match ? Math.min(100, Number(match[1])) : 0;
+  return { "--goal-progress": String(value) } as CSSProperties;
 }
 
-function PassiveBlock({
-  history,
-  ready,
-  retry,
-}: {
-  history: PassiveIncomeHistory | undefined;
-  ready: boolean;
-  retry: () => void;
-}) {
-  const eligiblePoints = history?.points.filter((point) => point.included_in_average_window) ?? [];
-  return (
-    <section className={`${styles.panel} ${styles.widePanel}`} aria-labelledby="passive-title">
-      <div className={styles.panelHeader}>
-        <div>
-          <p className={styles.eyebrow}>Получено · факт</p>
-          <h2 id="passive-title">Пассивный доход</h2>
-        </div>
-        <Link className={styles.contextLink} to="/v2/income">
-          Выплаты и прогноз →
-        </Link>
-      </div>
-      {!ready ? (
-        <UiV2WidgetState retry={retry} />
-      ) : !history?.selected_report ? (
-        <UiV2WidgetState title="История появится после закрытия первого отчёта" />
-      ) : (
-        <div className={styles.passiveLayout}>
-          <div>
-            {eligiblePoints.length > 0 ? (
-              <PassiveChart data={eligiblePoints} />
-            ) : (
-              <UiV2WidgetState title="Нет закрытой истории в выбранном периоде" />
-            )}
-            <p className={styles.panelFootnote}>{passiveAverageDetail(history.average)}</p>
-          </div>
-          <div className={styles.sourceBreakdown}>
-            <p className={styles.eyebrow}>
-              Источники · {formatMonth(history.selected_report.year, history.selected_report.month)}
-            </p>
-            <ul>
-              {PASSIVE_SOURCE_META.map(([key, label]) => (
-                <li key={key}>
-                  <span>{label}</span>
-                  <strong>{money(history.selected_report?.breakdown[key])}</strong>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function goalProgressStyle(value: string): CSSProperties {
-  const safe = /^\d+(?:\.\d+)?$/.test(value) ? value : "0";
-  return { "--goal-progress": `${safe}%` } as CSSProperties;
+/** Rounded percent that never reads as 100 % before the goal is reached. */
+function goalPercent(goal: GoalSummary): string {
+  const text = percentText(goal.achievement_forecast.progress_pct, 0);
+  return text === "100%" && !goalReached(goal) ? "99%" : text;
 }
 
 function GoalsBlock({
@@ -608,49 +766,54 @@ function GoalsBlock({
   ready: boolean;
   retry: () => void;
 }) {
-  const supported = goals.filter(
-    (goal) =>
-      goal.is_active &&
-      goal.achievement_forecast.current_value !== null &&
-      goal.achievement_forecast.progress_pct !== null &&
-      (goal.goal_type !== "passive_income" ||
-        (goal.achievement_forecast.passive_income_months_count ?? 0) > 0),
-  );
   return (
-    <section className={`${styles.panel} ${styles.widePanel}`} aria-labelledby="goals-title">
-      <div className={styles.panelHeader}>
-        <div>
-          <p className={styles.eyebrow}>Текущий прогресс</p>
-          <h2 id="goals-title">Ключевые цели</h2>
-        </div>
-        <Link className={styles.contextLink} to={uiV2GoalsPath(monthId)}>
-          Все цели →
-        </Link>
-      </div>
+    <section className={`${styles.block} ${styles.s5}`} aria-labelledby="goals-title">
+      <BlockHead
+        aside={
+          <Link className={styles.link} to={uiV2GoalsPath(monthId)}>
+            Все цели →
+          </Link>
+        }
+        id="goals-title"
+        kicker="Текущий прогресс"
+        title="Цели"
+      />
       {!ready ? (
         <UiV2WidgetState retry={retry} />
-      ) : supported.length === 0 ? (
+      ) : goals.length === 0 ? (
         <UiV2WidgetState title="Нет активных целей" />
       ) : (
-        <div className={styles.goalsGrid}>
-          {supported.map((goal) => {
+        <ul className={styles.goals}>
+          {goals.map((goal) => {
             const forecast = goal.achievement_forecast;
             return (
-              <article key={goal.id}>
-                <div className={styles.goalHeader}>
+              <li key={goal.id}>
+                <span
+                  aria-hidden="true"
+                  className={styles.ring}
+                  style={ringStyle(forecast.progress_pct)}
+                >
+                  <span>{goalPercent(goal)}</span>
+                </span>
+                <div>
                   <h3>{goal.name}</h3>
-                  <strong>{forecast.progress_pct?.replace(".", ",")}%</strong>
+                  <p className={styles.note}>
+                    <span className="money">{whole(forecast.current_value)}</span> сейчас
+                    {goalReached(goal) ? (
+                      " · цель достигнута"
+                    ) : forecast.remaining_amount ? (
+                      <>
+                        {" "}
+                        · осталось <span className="money">{whole(forecast.remaining_amount)}</span>
+                      </>
+                    ) : null}
+                  </p>
+                  <p className={styles.visuallyHidden}>Прогресс {goalPercent(goal)}</p>
                 </div>
-                <div className={styles.goalTrack} aria-hidden="true">
-                  <span style={goalProgressStyle(forecast.progress_pct ?? "0")} />
-                </div>
-                <p>
-                  {money(forecast.current_value)} из {money(forecast.target_value)}
-                </p>
-              </article>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </section>
   );
@@ -714,6 +877,18 @@ export default function UiV2Page() {
         goal.achievement_forecast.source_forecast_version === null,
     ) ?? false;
   const goalsReady = isQueryReady(goalsQuery) && goalsIdentityMatches;
+  const supportedGoals = goalsReady
+    ? (goalsQuery.data ?? []).filter(
+        (goal) =>
+          goal.is_active &&
+          goal.achievement_forecast.current_value !== null &&
+          goal.achievement_forecast.progress_pct !== null &&
+          (goal.goal_type !== "passive_income" ||
+            (goal.achievement_forecast.passive_income_months_count ?? 0) > 0),
+      )
+    : [];
+  const capitalGoal = pageGoal(supportedGoals, "capital", "liquid_capital_net");
+  const passiveGoal = pageGoal(supportedGoals, "passive_income", "monthly_net_passive_income");
   const loading = !monthsReady;
 
   let content: ReactNode;
@@ -723,7 +898,7 @@ export default function UiV2Page() {
     );
   } else if (!monthsReady) {
     content = (
-      <p className={styles.loading} role="status">
+      <p className={pageStyles.loading} role="status">
         Проверяем последние закрытые отчёты…
       </p>
     );
@@ -739,25 +914,24 @@ export default function UiV2Page() {
   } else {
     content = (
       <>
-        <UiV2ReportContext month={latestClosed}>
-          <Link to="/v2/reports">История отчётов →</Link>
-        </UiV2ReportContext>
         {newerDraft ? <DraftAction draft={newerDraft} /> : null}
-        <KpiGrid
+        <CapitalHero
+          capitalGoal={capitalGoal}
           comparison={comparisonReady ? comparisonQuery.data : undefined}
           comparisonReady={comparisonReady}
-          passive={passiveReady ? passiveQuery.data : undefined}
-          passiveReady={passiveReady}
+          historyReady={compositionReady}
+          points={compositionReady ? (compositionQuery.data?.points ?? []) : []}
           retryComparison={() => void comparisonQuery.refetch()}
-          retryPassive={() => void passiveQuery.refetch()}
+          retryHistory={() => void compositionQuery.refetch()}
         />
-        <div className={styles.homeGrid}>
-          <CapitalHistoryBlock
-            points={compositionReady ? (compositionQuery.data?.points ?? []) : []}
-            ready={compositionReady}
-            retry={() => void compositionQuery.refetch()}
+        <div className={styles.grid}>
+          <PassiveBlock
+            history={passiveReady ? passiveQuery.data : undefined}
+            passiveGoal={passiveGoal}
+            ready={passiveReady}
+            retry={() => void passiveQuery.refetch()}
           />
-          <CompositionBlock
+          <AllocationBlock
             comparison={comparisonReady ? comparisonQuery.data : undefined}
             ready={comparisonReady}
             retry={() => void comparisonQuery.refetch()}
@@ -767,13 +941,8 @@ export default function UiV2Page() {
             ready={comparisonReady}
             retry={() => void comparisonQuery.refetch()}
           />
-          <PassiveBlock
-            history={passiveReady ? passiveQuery.data : undefined}
-            ready={passiveReady}
-            retry={() => void passiveQuery.refetch()}
-          />
           <GoalsBlock
-            goals={goalsReady ? (goalsQuery.data ?? []) : []}
+            goals={supportedGoals}
             monthId={closedId}
             ready={goalsReady}
             retry={() => void goalsQuery.refetch()}
@@ -784,7 +953,26 @@ export default function UiV2Page() {
   }
 
   return (
-    <UiV2Shell active="home" busy={loading} header={<h1>Мои финансы</h1>}>
+    <UiV2Shell
+      active="home"
+      busy={loading}
+      header={
+        <div className={styles.head}>
+          <h1>Мои финансы</h1>
+          {latestClosed ? (
+            <span className={styles.chip} data-testid="v2-report-context">
+              {formatMonth(latestClosed.year, latestClosed.month)} · закрыт · снимок{" "}
+              {formatDate(latestClosed.snapshot_date)}
+            </span>
+          ) : null}
+          {latestClosed ? (
+            <Link className={styles.link} to="/v2/reports">
+              История отчётов →
+            </Link>
+          ) : null}
+        </div>
+      }
+    >
       {content}
     </UiV2Shell>
   );

@@ -1,0 +1,507 @@
+/* "Мои финансы" in direction A "Clear sheet" (#1079 stage 3): no cards, air and thin rules. */
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.head h1 {
+  margin: 0 !important;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pos);
+}
+
+.kicker {
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.note {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.link {
+  color: var(--accent);
+  font-size: var(--t-sm);
+  font-weight: var(--w-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.head .link {
+  margin-left: auto;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.svgNum {
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hero: one main figure with its change and facts, the capital chart beside it. */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 40px;
+  padding: 4px 0 26px;
+}
+
+.heroFacts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.heroValue {
+  font-family: var(--f-num);
+  font-size: var(--t-hero);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-medium);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.deltaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.deltaChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--line-2);
+  color: var(--ink-2);
+  font-family: var(--f-num);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-medium);
+}
+
+.deltaChip[data-tone="positive"] {
+  background: var(--pos-soft);
+  color: var(--pos);
+}
+
+.deltaChip[data-tone="negative"] {
+  background: var(--neg-soft);
+  color: var(--neg);
+}
+
+.deltaChip [aria-hidden="true"] {
+  font-size: 10px;
+}
+
+.heroMeta {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px 18px;
+  margin-top: auto !important;
+  padding-top: 14px;
+  font-size: var(--t-sm);
+}
+
+.heroMeta dt {
+  color: var(--muted);
+}
+
+.heroMeta dd {
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.heroChart {
+  min-width: 0;
+}
+
+.chartHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.legend .legendLine {
+  width: 14px;
+  height: 2px;
+  border-radius: 0;
+  background: var(--ink-2);
+}
+
+.legend .legendDash {
+  width: 14px;
+  height: 0;
+  border-top: 2px dashed var(--faint);
+  border-radius: 0;
+}
+
+.segmented {
+  display: inline-flex;
+  margin: 0;
+  padding: 3px;
+  border: 0;
+  border-radius: 10px;
+  background: #ebe9e2;
+}
+
+.segmented button {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-sm);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: var(--w-semibold);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.chart {
+  min-width: 0;
+}
+
+.tooltip {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  font-size: var(--t-xs);
+}
+
+.tooltip span {
+  color: var(--muted);
+}
+
+/* Blocks below the hero: a 12-column sheet with rules between rows. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0 40px;
+}
+
+.block {
+  min-width: 0;
+  padding: 26px 0;
+  border-top: 1px solid var(--line);
+}
+
+.s7 {
+  grid-column: span 7;
+}
+
+.s5 {
+  grid-column: span 5;
+}
+
+.blockHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.blockHead h2 {
+  margin-top: 2px !important;
+}
+
+/* Passive income */
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 28px;
+  margin-bottom: 6px;
+}
+
+.midValue {
+  font-family: var(--f-num);
+  font-size: var(--t-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-medium);
+  line-height: 1.1;
+}
+
+.secondary {
+  color: var(--ink-2);
+}
+
+.sources {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.segBar,
+.allocBar {
+  display: flex;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.segBar {
+  height: 14px;
+  border-radius: 7px;
+}
+
+.segBar i,
+.allocBar i {
+  display: block;
+  min-width: 3px;
+}
+
+.segLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  list-style: none;
+}
+
+.segLegend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.segLegend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.segLegend strong {
+  color: var(--ink);
+  font-weight: var(--w-semibold);
+}
+
+/* Where the money is */
+.allocBar {
+  height: 34px;
+  margin-bottom: 12px;
+  border-radius: 9px;
+}
+
+.allocRows {
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+
+.allocRows li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line-2);
+}
+
+.allocRows li:first-child {
+  border-top: 0;
+}
+
+.allocRows i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.allocRows strong {
+  font-weight: var(--w-regular);
+  text-align: right;
+}
+
+.share {
+  color: var(--muted);
+  font-family: var(--f-num);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* What changed capital */
+.pairs {
+  display: grid;
+  margin-top: 8px !important;
+  padding: 0;
+  list-style: none;
+  font-size: var(--t-sm);
+}
+
+.pairs li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-2);
+}
+
+.pairs summary {
+  cursor: pointer;
+}
+
+.pairs details p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.changeTotal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-sm);
+}
+
+.changeTotal > strong {
+  margin-left: auto;
+  font-weight: var(--w-semibold);
+}
+
+.block strong[data-tone="positive"] {
+  color: var(--pos);
+}
+
+.block strong[data-tone="negative"] {
+  color: var(--neg);
+}
+
+/* Goals: a ring with a rounded percent and what is left. */
+.goals {
+  display: grid;
+  gap: 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.goals li {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.goals h3 {
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+.ring {
+  --goal-progress: 0;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, var(--bg) 78%, transparent 79%),
+    conic-gradient(var(--accent) calc(var(--goal-progress) * 1%), #e4e7ea 0);
+}
+
+.ring span {
+  font-family: var(--f-num);
+  font-size: var(--t-md);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+}
+
+@media (max-width: 1180px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .heroMeta {
+    max-width: 420px;
+  }
+
+  .s7,
+  .s5 {
+    grid-column: 1 / -1;
+  }
+}
