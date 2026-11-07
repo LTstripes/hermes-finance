@@ -9,7 +9,9 @@
   background: var(--surface);
   color: var(--ink-2);
   font-size: var(--t-sm);
-  white-space: nowrap;
+  /* Wraps instead of widening a narrow page. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 /* Refresh is a quiet page action, not a rival of the content (P 1.2). */

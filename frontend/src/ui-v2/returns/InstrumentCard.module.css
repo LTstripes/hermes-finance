@@ -53,7 +53,9 @@
   background: var(--surface);
   color: var(--ink-2);
   font-size: var(--t-sm);
-  white-space: nowrap;
+  /* Wraps instead of widening a narrow page. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .muted {
