@@ -30,7 +30,11 @@ FILES = (
 
 
 @pytest.fixture
-def fixture(tmp_path):
+def fixture(tmp_path, monkeypatch):
+    def clean_git(*args, **kwargs):
+        return module.subprocess.CompletedProcess(args[0], 0, stdout="", stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", clean_git)
     for name in FILES:
         dest = tmp_path / name
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -55,7 +59,7 @@ def test_updates_independent_release_identities(fixture):
         == npm["packages"][""]["version"]
         == "9.8.7"
     )
-    for name in FILES[2:]:
+    for name in FILES[2:5]:
         assert '"9.8.7"' in (fixture / name).read_text()
 
 
@@ -69,11 +73,37 @@ def test_rejects_inconsistent_input_before_any_write(fixture):
     assert before == {name: (fixture / name).read_bytes() for name in FILES}
 
 
-def test_missing_notes_refuses_without_writes(fixture):
+def test_missing_notes_creates_guarded_skeleton(fixture):
+    module.prepare(fixture, "9.8.6")
+    assert "UAT-PENDING" in (fixture / "docs/release-notes-9.8.6.md").read_text()
+
+
+@pytest.mark.parametrize(
+    "new", ["0.0.0", tomllib.loads((ROOT / FILES[0]).read_text())["project"]["version"]]
+)
+def test_non_increasing_version_refuses(fixture, new):
+    with pytest.raises(ValueError, match="greater"):
+        module.prepare(fixture, new)
+
+
+@pytest.mark.parametrize("code,out,err", [(0, " M file", ""), (128, "", "fatal"), (0, "", "error")])
+def test_dirty_or_unreadable_git_refuses(fixture, monkeypatch, code, out, err):
     before = {name: (fixture / name).read_bytes() for name in FILES}
-    with pytest.raises(ValueError, match="release notes"):
-        module.prepare(fixture, "9.8.6")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *a, **k: module.subprocess.CompletedProcess(a[0], code, stdout=out, stderr=err),
+    )
+    with pytest.raises(ValueError, match="dirty|clean Git"):
+        module.prepare(fixture, "9.8.7")
     assert before == {name: (fixture / name).read_bytes() for name in FILES}
+
+
+def test_preserves_tests_and_existing_notes(fixture):
+    before = {name: (fixture / name).read_bytes() for name in FILES[5:]}
+    module.prepare(fixture, "9.8.7")
+    assert before == {name: (fixture / name).read_bytes() for name in FILES[5:]}
+    assert (fixture / "docs/release-notes-9.8.7.md").read_text() == "Synthetic notes"
 
 
 def test_interrupted_commit_rolls_back_prior_files(fixture, monkeypatch):
@@ -161,18 +191,26 @@ def test_annotated_second_assignment_is_refused(fixture):
         module.prepare(fixture, "9.8.7")
 
 
-def test_comment_version_decoy_does_not_hide_wrong_health_assertion(fixture):
-    path = fixture / FILES[5]
-    old = tomllib.loads((fixture / FILES[0]).read_text())["project"]["version"]
-    path.write_text(path.read_text().replace(f'"{old}"', '"0.0.0"') + f'\n# "{old}"\n')
-    with pytest.raises(ValueError, match="Version assertions disagree"):
-        module.prepare(fixture, "9.8.7")
-
-
 def test_malformed_runtime_rejected_before_write(fixture):
     path = fixture / FILES[2]
     path.write_text("__version__ = (\n")
     before = {name: (fixture / name).read_bytes() for name in FILES}
     with pytest.raises(SyntaxError):
         module.prepare(fixture, "9.8.7")
+    assert before == {name: (fixture / name).read_bytes() for name in FILES}
+
+
+def test_new_notes_removed_if_install_interrupted_after_replace(fixture, monkeypatch):
+    before = {name: (fixture / name).read_bytes() for name in FILES}
+    replace = module.os.replace
+
+    def interrupt_notes(source, target):
+        replace(source, target)
+        if target.name == "release-notes-9.8.6.md":
+            raise KeyboardInterrupt()
+
+    monkeypatch.setattr(module.os, "replace", interrupt_notes)
+    with pytest.raises(OSError, match="restored"):
+        module.prepare(fixture, "9.8.6")
+    assert not (fixture / "docs/release-notes-9.8.6.md").exists()
     assert before == {name: (fixture / name).read_bytes() for name in FILES}

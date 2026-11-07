@@ -885,13 +885,27 @@ For the normal chat-driven path the owner can ask the integrator to release a pr
 1. read current GitHub `main` and capture its exact 40-character SHA;
 2. confirm canonical `ci.yml` has a completed successful `push` run for that exact `main` SHA;
 3. verify repository release identity and `docs/release-notes-X.Y.Z.md` are present;
-   for a version bump, synchronize the current-release expectations in
-   `test_health.py`, `test_r05_11_release_verification.py` and
-   `test_r13_00_release_verification.py` with the manifests/locks, while keeping
-   historical version fixtures unchanged;
+   prepare a version bump with `python scripts/prepare_release_version.py X.Y.Z`
+   from a clean task tree. It requires a greater stable version, synchronizes
+   backend/frontend manifests and locks, and creates missing canonical notes as a
+   guarded `UAT-PENDING` skeleton. Complete those notes before publication.
+   Current-release tests derive expectations from manifests and check agreement;
+   historical version fixtures stay unchanged;
 4. create the exact `/release` request comment on control issue #124 itself;
 5. read the Guarded Release run and its job summary;
 6. independently read back the tag object, peeled commit and published GitHub Release before reporting success.
+
+For the PowerShell/gh route, run
+`pwsh -NoProfile -File scripts/request-release.ps1 -Version X.Y.Z -DryRun`
+to check live origin/main, exact successful canonical push CI and notes on that
+SHA and print the exact body without posting. After release authorization,
+run the same command without `-DryRun`: it checks the authenticated owner,
+posts once to #124 using a temporary UTF-8 body file (avoiding Git Bash path
+conversion), removes the file, and prints the comment URL and newly observed
+Guarded Release run. Run discovery is bounded and matches new run IDs, SHA,
+actor and creation time; multiple matches or a timeout require inspection,
+never an automatic repost. A run URL is observation, not publication success;
+retain steps 5 and 6 above.
 
 The workflow repeats the critical checks itself. Pre-checking in chat is convenience and defense in depth, not authorization to skip workflow guards.
 

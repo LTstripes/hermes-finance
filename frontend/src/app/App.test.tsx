@@ -175,6 +175,10 @@ describe("App", () => {
   });
 
   it("resolves a delayed CLOSED report before Back and preserves the calendar URL on reload", async () => {
+    // This test controls the months request, not module transport. Resolve the
+    // real destination chunk before starting its request/history assertions;
+    // a cold lazy import can exceed findByRole's budget under parallel load.
+    await import("../ui-v2/UiV2ReturnsAccountPage");
     let finishMonths: () => void = () => {};
     const months = new Promise<void>((resolve) => {
       finishMonths = resolve;

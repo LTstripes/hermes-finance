@@ -44,14 +44,21 @@ function waitForServer(child, auditUrl, timeoutMs = 60_000) {
         reject(new Error(`Synthetic visual-audit server exited with code ${child.exitCode}.`));
         return;
       }
+      if (Date.now() - startedAt >= timeoutMs) {
+        reject(new Error("Synthetic visual-audit server did not become ready in time."));
+        return;
+      }
       const request = http.get(auditUrl, (response) => {
         response.resume();
-        if ((response.statusCode ?? 500) < 500) {
+        if (response.statusCode === 200) {
           resolve();
           return;
         }
         setTimeout(tryRequest, 200);
       });
+      request.setTimeout(Math.max(1, timeoutMs - (Date.now() - startedAt)), () =>
+        request.destroy(),
+      );
       request.on("error", () => {
         if (Date.now() - startedAt >= timeoutMs) {
           reject(new Error("Synthetic visual-audit server did not become ready in time."));
@@ -71,6 +78,7 @@ const vite = spawn(
   [viteCli, "--host", "127.0.0.1", "--port", String(auditPort), "--strictPort"],
   {
     cwd: frontendDir,
+    env: { ...process.env, HERMES_VISUAL_AUDIT: "true" },
     stdio: ["ignore", "ignore", "inherit"],
     windowsHide: true,
   },
@@ -88,7 +96,8 @@ process.once("SIGTERM", () => {
 
 let exitCode = 1;
 try {
-  await waitForServer(vite, auditUrl);
+  // Check Vite's own module, without warming the app before browser fixtures.
+  await waitForServer(vite, `${auditUrl}/@vite/client`);
   const playwright = spawn(
     process.execPath,
     [playwrightCli, "test", "--config", "playwright.visual.config.ts", ...process.argv.slice(2)],
