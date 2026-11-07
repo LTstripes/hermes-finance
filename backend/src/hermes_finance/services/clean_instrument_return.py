@@ -33,13 +33,38 @@ _ACCOUNT_SOURCE_GAPS = frozenset(
 )
 
 
+def _own_money_is_trade_nkd(events):
+    """Accept unmatched own money only as the NKD of one identified own trade."""
+    trades = [event for event in events if event.kind in {"BUY", "SELL"}]
+    for row in events:
+        if "unmatched_trade_money" not in row.reason_codes:
+            continue
+        if row.reason_codes != ("unmatched_trade_money",) or len(row.cash_legs) != 1:
+            return False
+        paid = row.cash_legs[0].account_cash_kopecks
+        match = next(
+            (
+                trade
+                for trade in trades
+                if trade.accrued_interest_kopecks == (-paid if trade.kind == "BUY" else paid)
+                and row.event_date in {trade.execution_date, trade.cash_settlement_date}
+            ),
+            None,
+        )
+        if match is None:
+            return False
+        trades.remove(match)
+    return True
+
+
 def instrument_scoped_reasons(analysis, isin, reasons):
     """Keep only reasons that can still concern this reconciled instrument."""
     own = set()
     foreign = set()
     for event in analysis.events:
         (own if event.isin == isin else foreign).update(event.reason_codes)
-    own.discard("unmatched_trade_money")
+    if _own_money_is_trade_nkd([event for event in analysis.events if event.isin == isin]):
+        own.discard("unmatched_trade_money")
     return {
         reason
         for reason in reasons
@@ -252,7 +277,9 @@ def _clean_quantity_reconciled(analysis, events, isin):
     from decimal import Decimal, localcontext
 
     if any(
-        event.isin is None and event.kind in {"BUY", "SELL", "REDEMPTION"}
+        event.isin is None
+        and event.kind in {"BUY", "SELL", "REDEMPTION"}
+        and (not event.collision_isins or isin in event.collision_isins)
         for event in analysis.events
     ):
         return False

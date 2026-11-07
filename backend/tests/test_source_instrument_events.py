@@ -2684,7 +2684,7 @@ def test_clean_missing_fee_checks_linked_principal_and_posting_date(db, principa
         assert clean.pnl.value == 10000
         with localcontext() as context:
             context.prec = 60
-            assert clean.modified_dietz.value == Decimal(10000) / (Decimal(100000) * 24 / 25)
+            assert clean.modified_dietz.value == Decimal("0.1")
 
 
 @pytest.mark.parametrize(
@@ -3785,17 +3785,20 @@ def test_clean_combined_sources_reach_overview_card_income_and_ai(db, cost_diffe
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
     ai_row = next(row for row in exported["instruments"] if row["isin"] == BOND)
     assert account["period"] == exported["period"] == summary["accounts"][0]["period"]
-    assert account["clean"]["pnl"]["value"] == ai_row["pnl"]["value"] == "4000"
-    assert summary["accounts"][0]["pnl"]["value"] == "4000"
+    # Two statement totals with NKD leave the trade money undefined.
+    expected_pnl = None if cost_difference == "nkd" else "4000"
+    assert account["clean"]["pnl"]["value"] == ai_row["pnl"]["value"] == expected_pnl
+    assert summary["accounts"][0]["pnl"]["value"] == (expected_pnl or "3000")
     assert account["clean"]["coupons"]["value"] == ai_row["coupons"]["value"] == "3000"
     assert [row["amount"]["value"] for row in income.json()["events"] if row["isin"] == BOND] == [
         "3000"
     ]
-    assert (
-        account["purchases"][0]["price_result_kopecks"]
-        == ai_row["purchases"][0]["price_result_kopecks"]
-        == "1000"
-    )
+    if cost_difference != "nkd":
+        assert (
+            account["purchases"][0]["price_result_kopecks"]
+            == ai_row["purchases"][0]["price_result_kopecks"]
+            == "1000"
+        )
     assert snapshot(db) == before
 
 
@@ -3956,8 +3959,9 @@ def test_clean_bond_overlap_uses_same_proved_principal_despite_costs(db, differe
                 isin=BOND,
                 include_purchases=True,
             )["instruments"][0]
-            if difference in {"nkd", "dirty_total", "missing_nkd"}:
-                assert row["buys"]["value"] in {"102000", "102500"}
+            if difference in {"nkd", "missing_nkd"}:
+                # Both statements prove one total with NKD; only its split differs.
+                assert row["buys"]["value"] == "102000"
                 assert row["pnl"]["value"] == "1000"
                 assert row["purchases"][0]["price_result_kopecks"] == "1000"
             else:

@@ -1,7 +1,7 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { type ReasonContext, reasonCopy } from "../../lib/reasonCopy";
-import { displayMetric, type Metric } from "./model";
+import { displayMetric, isPartialResult, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
 const methods: Record<string, string> = {
@@ -62,6 +62,13 @@ export function Explanation({ codes, context }: { codes: string[]; context?: Rea
       )}
     </>
   );
+}
+/** Keep the caveat of a shown result beside it. */
+export function ResultNote({ metric }: { metric: Metric }) {
+  const code = visibleReturnReasons(metric.reason_codes)[0];
+  return metric.value !== null && !isPartialResult(metric) && code ? (
+    <p role="note">{reasonCopy(code, { surface: "returns" }).message}</p>
+  ) : null;
 }
 /** Explain only missing operands, once per message, next to the displayed metrics. */
 export function MissingMetricNote({ metrics }: { metrics: readonly Metric[] }) {

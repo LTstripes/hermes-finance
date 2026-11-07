@@ -5,6 +5,7 @@ No classification, financial fact or receipt is written by a return reader.
 
 import json
 import re
+from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -61,8 +62,21 @@ def payout_source_unambiguous(views, view, event_date):
     return len(covered) == 1 and covered[0]["id"] == view["id"]
 
 
-def _issuer_bond_in_account(resolver, security, selected, account, day):
-    """Find the single catalogue bond of this issuer bought in the account by the payment."""
+def _bought(trade):
+    try:
+        return Decimal(trade["core"].get("quantity")) > 0
+    except (ArithmeticError, TypeError, ValueError):
+        return False
+
+
+def _issuer_bond_in_account(resolver, security, status, selected, account, day):
+    """Find the single catalogue bond of this issuer bought in the account by the payment.
+
+    Only a coupon with no identity match qualifies: an ambiguous link is a
+    conflict. An issue missing from the catalogue may be another bond of the issuer.
+    """
+    if status != "unresolved_no_match":
+        return None
     issuer = re.sub(r"^(?:ПАО|АО|ООО)\s*", "", security.issuer_name, flags=re.IGNORECASE)
     issuer = " ".join(issuer.strip('"«» ').casefold().split())
     held = {
@@ -73,7 +87,10 @@ def _issuer_bond_in_account(resolver, security, selected, account, day):
         if trade.get("state") == "settled"
         and trade["core"].get("source_account") == account
         and str(trade.get("settlement_date") or "9") <= day
+        and _bought(trade)
     }
+    if held - {instrument.isin for instrument in resolver.instruments.values()}:
+        return None
     matches = [
         (target, instrument)
         for target, instrument in resolver.instruments.items()
@@ -170,11 +187,7 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
             continue
         target, status = resolver.resolve(security)
         instrument = resolver.instruments.get(target)
-        issuer_match = (
-            None
-            if status == "linked"
-            else _issuer_bond_in_account(resolver, security, selected, account, day)
-        )
+        issuer_match = _issuer_bond_in_account(resolver, security, status, selected, account, day)
         if issuer_match is not None:
             target, instrument = issuer_match
         else:

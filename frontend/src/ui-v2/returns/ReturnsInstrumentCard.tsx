@@ -12,7 +12,7 @@ import { dateLabel, displayMetric, isPartialResult } from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
 import { MissingName } from "./ReturnsAvailable";
-import { Explanation, MissingMetricNote, visibleReturnReasons } from "./ReturnsInfo";
+import { Explanation, MissingMetricNote, ResultNote, visibleReturnReasons } from "./ReturnsInfo";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
@@ -150,7 +150,7 @@ export function ReturnsInstrumentCard({
           )}
           <section className={styles.panel} aria-label="Разложение результата">
             <h2>Из чего сложился результат</h2>
-            <p>Комиссии, налоги и НКД не входят в расчёт.</p>
+            <p>Комиссии и налоги не входят в расчёт. НКД учтён в сделках, стоимости и купонах.</p>
             {[data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl].some(
               isPartialResult,
             ) && <p>В сумму входят только рассчитанные составляющие.</p>}
@@ -177,6 +177,7 @@ export function ReturnsInstrumentCard({
             <MissingMetricNote
               metrics={[data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl]}
             />
+            <ResultNote metric={data.summary.pnl} />
             {accountsWithKnownTrades.length > 0 && (
               <section aria-label="Известные суммы сделок">
                 <h3>Известные суммы сделок</h3>
@@ -279,7 +280,7 @@ export function ReturnsInstrumentCard({
             <section className={styles.panel} aria-label="Результат сохранённых покупок">
               <h2>Результат покупок</h2>
               <p>
-                Показан результат стоимости и продаж без выплат, комиссий, налогов и НКД. При
+                Показан результат стоимости и продаж с НКД, без выплат, комиссий и налогов. При
                 продаже первыми считаются проданными самые ранние покупки (FIFO). Это аналитика
                 Hermes, не налоговый учёт брокера. Процент от первоначальной стоимости покупки, без
                 годового пересчёта. Выплаты показаны выше по инструменту.

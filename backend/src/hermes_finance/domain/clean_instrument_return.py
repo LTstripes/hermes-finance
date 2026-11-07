@@ -537,12 +537,18 @@ def calculate_clean_return(
         )
         if missing
     )
-    # An empty position has no capital to weight before its first trade.
-    interval_start = opening_date
-    if opening_clean == 0 and dated_flows:
-        interval_start = max(opening_date, min(row[0] for row in dated_flows) - timedelta(days=1))
+    # An empty position has no capital before its first trade, so the money of
+    # that first day is the capital held for the whole interval.
+    interval_start, interval_capital = opening_date, opening_clean
+    first_day = min((row[0] for row in dated_flows), default=None)
+    if opening_clean == 0 and first_day is not None:
+        if opening_date < first_day < closing_date:
+            interval_start = first_day
+            interval_capital = sum(row[1] for row in dated_flows if row[0] == first_day)
+        else:
+            interval_start = max(opening_date, first_day - timedelta(days=1))
     row = calculate_interval_return(
-        (interval_start, opening_clean), (closing_date, closing_clean), dated_flows
+        (interval_start, interval_capital), (closing_date, closing_clean), dated_flows
     )
     used = tuple(sorted(set().union(*assumptions.values())))
     result_status = available_status(used)

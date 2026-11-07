@@ -99,6 +99,7 @@ class InstrumentEvent:
     cash_legs: tuple[CashLeg, ...] = ()
     reason_codes: tuple[str, ...] = ()
     assumptions: tuple[str, ...] = ()
+    collision_isins: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

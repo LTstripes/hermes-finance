@@ -713,13 +713,34 @@ test("partial component account sets are labelled known constituents without imp
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(screen.getByRole("heading", { name: "Из чего сложился результат" })).toBeVisible();
-  expect(screen.getByText("Комиссии, налоги и НКД не входят в расчёт.")).toBeVisible();
+  expect(
+    screen.getByText(
+      "Комиссии и налоги не входят в расчёт. НКД учтён в сделках, стоимости и купонах.",
+    ),
+  ).toBeVisible();
   expect(
     screen.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
   ).toHaveTextContent("+49,77 ₽");
   fireEvent.click(screen.getByText("Купоны и дивиденды"));
   expect(screen.getByText(/Купоны: \+42,77 ₽/)).toBeVisible();
   expect(screen.getAllByText("+12 ₽").length).toBeGreaterThan(0);
+});
+
+test("whole result keeps the note about unattributed account money", async () => {
+  const value = instrumentCardFixture();
+  value.summary.pnl.value = "1200";
+  value.summary.pnl.reason_codes = ["account_money_unattributed"];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(value)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
+  expect(
+    screen.getByText(
+      "На счёте есть операции без привязки к бумаге: выплаты по ней могут быть учтены не все.",
+    ),
+  ).toBeVisible();
 });
 
 test("standalone instrument explains paid income greater than its exact total", async () => {

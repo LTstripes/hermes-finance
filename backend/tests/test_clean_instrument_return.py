@@ -174,7 +174,7 @@ def test_trade_money_with_nkd_net_receipt_and_costs_excluded():
     assert result.pnl.value == 16700
     with localcontext() as context:
         context.prec = 60
-        assert round(result.modified_dietz.value, 6) == Decimal("0.190925")
+        assert round(result.modified_dietz.value, 6) == Decimal("0.178992")
 
 
 def test_price_and_actual_payout_breakdown_uses_same_period_and_excludes_costs():
@@ -270,8 +270,7 @@ def test_linked_principal_posting_date_drives_weighting_and_conflicts_stay_unkno
     result = calc((buy,))
     with localcontext() as context:
         context.prec = 60
-        days = (END - earlier).days + 1
-        assert result.modified_dietz.value == Decimal(8000) / (Decimal(102000) * (days - 1) / days)
+        assert result.modified_dietz.value == Decimal(8000) / Decimal(102000)
     second = replace(leg, date=DAY, ownership="m2")
     assert calc((replace(buy, cash_legs=(leg, second)),)).pnl.value is None
 
@@ -821,6 +820,8 @@ def scoped_case(*, payout_reasons=("unattributed_income",), other=()):
     buy = replace(
         trade("BUY", 102000, 2000),
         quantity_delta=Decimal(1),
+        execution_date=DAY,
+        trade_time="2030-01-16T10:00:00",
         depository_settlement_date=DAY,
         cash_legs=(CashLeg("principal", DAY, -100000, 100000, ("principal",), "principal"),),
     )
@@ -893,10 +894,9 @@ def test_face_value_note_is_not_a_trade_amount_assumption():
 
 def test_return_rate_starts_at_the_first_trade_of_an_empty_position():
     result = calc((trade("BUY", 102000, 2000),))
-    days = (END - DAY).days + 1
     with localcontext() as context:
         context.prec = 60
-        assert result.modified_dietz.value == Decimal(8000) / (Decimal(102000) * (days - 1) / days)
+        assert result.modified_dietz.value == Decimal(8000) / Decimal(102000)
 
 
 class FakeResolver:
@@ -907,12 +907,12 @@ class FakeResolver:
         }
 
 
-def issuer_view(*isins, settled="2030-01-05"):
+def issuer_view(*isins, settled="2030-01-05", quantity="1"):
     trades = [
         {
             "state": "settled",
             "settlement_date": settled,
-            "core": {"isin": isin, "source_account": "a"},
+            "core": {"isin": isin, "source_account": "a", "quantity": quantity},
         }
         for isin in isins
     ]
@@ -932,11 +932,156 @@ def issuer_view(*isins, settled="2030-01-05"):
         ((("Other 001P-01", "ZZ0000000011"),), ("ZZ0000000011",), "2030-02-01", False),
         ((("Agro 001P-01", "ZZ0000000011"),), ("ZZ0000000029",), "2030-02-01", False),
         ((("Agro 001P-01", "ZZ0000000011"),), ("ZZ0000000011",), "2030-01-01", False),
+        # A second issue absent from the catalogue may be the coupon's real bond.
+        (
+            (("Agro 001P-01", "ZZ0000000011"),),
+            ("ZZ0000000011", "ZZ0000000029"),
+            "2030-02-01",
+            False,
+        ),
     ],
 )
 def test_issuer_identifies_a_coupon_only_for_one_bond_held_in_the_account(rows, isins, day, found):
     from hermes_finance.services.source_return_evidence import _issuer_bond_in_account
 
     security = SimpleNamespace(issuer_name='ООО "Agro"')
-    match = _issuer_bond_in_account(FakeResolver(*rows), security, [issuer_view(*isins)], "a", day)
+    selected = [issuer_view(*isins)]
+    match = _issuer_bond_in_account(
+        FakeResolver(*rows), security, "unresolved_no_match", selected, "a", day
+    )
     assert (match is not None) == found
+
+
+@pytest.mark.parametrize("status", ["unresolved_ambiguous", "linked"])
+def test_issuer_never_overrides_a_conflicting_coupon_identity(status):
+    from hermes_finance.services.source_return_evidence import _issuer_bond_in_account
+
+    security = SimpleNamespace(issuer_name='ООО "Agro"')
+    resolver = FakeResolver(("Agro 001P-01", "ZZ0000000011"))
+    selected = [issuer_view("ZZ0000000011")]
+    assert not _issuer_bond_in_account(resolver, security, status, selected, "a", "2030-02-01")
+
+
+def test_a_sale_alone_does_not_make_the_issuer_bond_held():
+    from hermes_finance.services.source_return_evidence import _issuer_bond_in_account
+
+    security = SimpleNamespace(issuer_name='ООО "Agro"')
+    resolver = FakeResolver(("Agro 001P-01", "ZZ0000000011"))
+    selected = [issuer_view("ZZ0000000011", quantity="-1")]
+    assert not _issuer_bond_in_account(
+        resolver, security, "unresolved_no_match", selected, "a", "2030-02-01"
+    )
+
+
+def own_money(index, amount):
+    return replace(
+        cash("FEE", amount),
+        kind="UNRESOLVED",
+        event_key=f"money-{index}",
+        counted=False,
+        current=False,
+        cash_legs=(
+            CashLeg("trade_settlement", DAY, amount, -amount, ("money",), "trade_settlement"),
+        ),
+        reason_codes=("unmatched_trade_money",),
+    )
+
+
+@pytest.mark.parametrize(
+    "amounts, proven",
+    [((-2000,), True), ((-12000,), False), ((-2000, -2000), False), ((2000,), False)],
+)
+def test_own_money_row_is_ignored_only_as_nkd_of_an_own_trade(amounts, proven):
+    rows = tuple(own_money(index, amount) for index, amount in enumerate(amounts))
+    analysis = scoped_case(other=rows)
+    analysis.coverage["events"] = Coverage(False, ("unmatched_trade_money",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.pnl.value == (-3000 if proven else None)
+    purchases = clean_purchase_price_contributions(
+        analysis, result, "ZZ0000000011", instrument_type="bond"
+    )
+    assert (purchases is not None and purchases[0]["price_result_kopecks"] == "-3000") == proven
+
+
+def collision(*isins):
+    return replace(
+        trade("BUY", 500, 0),
+        event_key="collision",
+        isin=None,
+        counted=False,
+        reason_codes=("overlapping_trade_conflict",),
+        collision_isins=isins,
+    )
+
+
+@pytest.mark.parametrize(
+    "isins, visible",
+    [
+        (("ZZ0000000029", "ZZ0000000037"), True),
+        (("ZZ0000000011", "ZZ0000000029"), False),
+        ((), False),
+    ],
+)
+def test_trade_collision_blocks_only_the_issues_it_concerns(isins, visible):
+    analysis = scoped_case(other=(collision(*isins),))
+    analysis.coverage["events"] = Coverage(False, ("overlapping_trade_conflict",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert (result.pnl.value == -3000) == visible
+    purchases = clean_purchase_price_contributions(
+        analysis, result, "ZZ0000000011", instrument_type="bond"
+    )
+    assert (purchases is not None and purchases[0]["remaining_quantity"] == "1") == visible
+
+
+def rate_case(day):
+    buy = replace(trade("BUY", 10000, 0), event_date=day, cash_settlement_date=day)
+    return calculate_clean_return(
+        START,
+        END,
+        0,
+        11000,
+        (buy,),
+        trades_complete=True,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=True,
+    )
+
+
+def test_rate_counts_the_first_trade_as_capital_for_the_whole_holding():
+    result = rate_case(END - timedelta(days=1))
+    assert result.pnl.value == 1000
+    assert result.modified_dietz.value == Decimal("0.1")
+
+
+def test_rate_stays_unknown_for_a_trade_on_the_closing_day():
+    result = rate_case(END)
+    assert result.pnl.value == 1000
+    assert result.modified_dietz.value is None
+
+
+def clean_account(status, assumptions=()):
+    return {
+        "scope": "s",
+        "clean": {"pnl": {"value": "100", "status": status, "assumptions": list(assumptions)}},
+    }
+
+
+@pytest.mark.parametrize(
+    "status, whole",
+    [("supported", True), ("provisional", True), ("partial", False), ("unavailable", False)],
+)
+def test_card_is_whole_only_for_results_without_a_partial_status(status, whole):
+    from hermes_finance.services.returns_overall import _accounts_have_full_result
+
+    assert _accounts_have_full_result([clean_account(status)], set()) is whole
+
+
+def test_card_keeps_the_note_of_every_account():
+    from hermes_finance.services.returns_overall import _account_result_notes
+
+    accounts = [
+        clean_account("provisional", ("account_money_unattributed",)),
+        clean_account("supported"),
+    ]
+    assert _account_result_notes(accounts) == ["account_money_unattributed"]
