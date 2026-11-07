@@ -99,6 +99,8 @@ async function installApi(page: Page, scene: Scene = "normal") {
       status = state.passiveError ? 503 : 200;
     } else if (url.pathname === "/api/goals/summary") {
       json = state.goals;
+    } else if (url.pathname === "/api/accounts") {
+      json = uiV2Accounts;
     } else if (url.pathname === "/api/months/12/close-workflow") {
       json = makeUiV2Workflow();
       status = state.workflowError ? 503 : 200;
@@ -205,7 +207,14 @@ test("ui-v2 Home partial capital coverage stays beside the known subtotal", asyn
   const evidence = await installApi(page, "coverage");
   await page.goto("/v2");
   await expect(page.getByTestId("v2-capital")).toHaveText("2 803 900 ₽");
-  await expect(page.getByText("Частично: нет снимка счёта")).toHaveCount(2);
+  const notes = page.getByTestId("portfolio-coverage-note");
+  await expect(notes).toHaveCount(2);
+  await expect(notes.nth(0)).toContainText("Синтетический старый вклад");
+  await expect(notes.nth(1)).toContainText("Синтетический старый вклад");
+  await notes.nth(0).getByRole("button", { name: "Подробнее" }).click();
+  await expect(notes.nth(0)).toContainText(
+    "Не хватает снимка за Июль 2031: Синтетический старый вклад",
+  );
   await assertBounded(page);
   await capture(page, testInfo, "issue-538-home-partial");
   expect(evidence.unexpected).toEqual([]);
@@ -1140,7 +1149,9 @@ test("ui-v2 Capital partial coverage keeps the known net", async ({ page }, test
   const evidence = await installCapitalApi(page, "coverage");
   await page.goto("/v2/capital");
   await expect(page.getByTestId("capital-net")).toHaveText("2 803 900 ₽");
-  await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
+  await expect(page.getByTestId("portfolio-coverage-note")).toContainText(
+    "Частично: нет снимка счёта: Синтетический старый вклад",
+  );
   await assertBounded(page);
   await capture(page, testInfo, "issue-538-capital-partial");
   expect(evidence.unexpected).toEqual([]);
@@ -1409,12 +1420,18 @@ test("issue 538 archive keeps a known subtotal beside its source coverage", asyn
   selected.portfolio_source_coverage = {
     status: "partial",
     reason_codes: ["active_account_snapshot_missing"],
-    missing_account_ids: [2],
+    missing_account_ids: [2, 3],
   };
   await page.goto("/v2/reports");
   const row = page.getByTestId(`reports-row-${uiV2CapitalPreviousMonthId}`);
   await expect(row).toContainText("2 761 300 ₽");
-  await expect(row).toContainText("Частично: нет снимка счёта");
+  await expect(row).toContainText(
+    "Частично: нет снимков счетов: Синтетический старый вклад, Синтетический брокерский счёт",
+  );
+  await row.getByRole("button", { name: "Подробнее" }).click();
+  await expect(row).toContainText(
+    "Не хватает снимков за Май 2031: Синтетический старый вклад, Синтетический брокерский счёт",
+  );
   const overlap = await row.evaluate((element) => {
     const note = element.querySelector('[data-testid="portfolio-coverage-note"]');
     const assets = element.querySelectorAll("td")[4];
@@ -1422,6 +1439,7 @@ test("issue 538 archive keeps a known subtotal beside its source coverage", asyn
     return note.getBoundingClientRect().right > assets.getBoundingClientRect().left;
   });
   expect(overlap).toBe(false);
+  await assertBounded(page);
   await capture(page, testInfo, "issue-538-archive-partial");
   expect(evidence.errors).toEqual([]);
   expect(evidence.unexpected).toEqual([]);
@@ -1497,7 +1515,9 @@ test("ui-v2 report partial source coverage stays beside the historical value", a
   const evidence = await installReportsApi(page, "report-coverage");
   await page.goto(`/v2/reports/${uiV2CapitalPreviousMonthId}`);
   await expect(page.getByTestId("report-net")).toHaveText("2 761 300 ₽");
-  await expect(page.getByText("Частично: нет снимка счёта")).toBeVisible();
+  await expect(page.getByTestId("portfolio-coverage-note")).toContainText(
+    "Частично: нет снимка счёта: Синтетический старый вклад",
+  );
   await assertBounded(page);
   await capture(page, testInfo, "issue-538-report-partial");
   expect(evidence.unexpected).toEqual([]);

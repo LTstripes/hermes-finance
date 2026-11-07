@@ -2,13 +2,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import type { BrokerMonthReadback } from "../api/brokerMonths";
 import { createQueryClient } from "../queryClient";
 import { makeCapitalDraft } from "../test/capitalDraftFixtures";
-import type { BrokerMonthReadback } from "../api/brokerMonths";
 import {
-  makeUiV2Cash,
   makeUiV2CapitalHistory,
+  makeUiV2Cash,
   makeUiV2Comparison,
   makeUiV2Dashboard,
   makeUiV2Debts,
@@ -329,12 +328,17 @@ it("keeps the known capital and marks partial source support", async () => {
   };
   mount();
   expect(await screen.findByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
-  expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+  await waitFor(() =>
+    expect(screen.getByTestId("portfolio-coverage-note")).toHaveTextContent(
+      "Частично: нет снимка счёта: Синтетический старый вклад",
+    ),
+  );
 });
 
 it("marks a change against an incomplete previous report once, in plain words", async () => {
   const { mount, state } = setup();
-  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
+  if (!state.comparison.current || !state.comparison.previous)
+    throw new Error("Missing comparison fixtures");
   state.comparison.current.portfolio_source_coverage = {
     status: "complete",
     reason_codes: [],
@@ -346,10 +350,17 @@ it("marks a change against an incomplete previous report once, in plain words", 
     reason_codes: ["active_account_snapshot_missing"],
     missing_account_ids: [2],
   };
+  state.comparison.previous.portfolio_source_coverage = {
+    status: "partial",
+    reason_codes: ["active_account_snapshot_missing"],
+    missing_account_ids: [2],
+  };
   mount();
   const note = await screen.findByTestId("capital-delta-partial");
-  expect(note.textContent?.replaceAll(" ", " ")).toBe(
-    "Изменение посчитано по известным записям: в отчёте за Май 2031 не хватает данных.",
+  await waitFor(() =>
+    expect(note.textContent?.replaceAll(" ", " ")).toBe(
+      "Изменение посчитано по известным записям: в отчёте за Май 2031 не хватает данных; нет снимка счёта: Синтетический старый вклад.",
+    ),
   );
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getByText("+42 600 ₽", { exact: false })).toBeVisible();
@@ -378,11 +389,17 @@ it("names both reports once when the current and the previous are incomplete", a
   };
   mount();
   const note = await screen.findByTestId("capital-delta-partial");
-  expect(note.textContent?.replaceAll(" ", " ")).toBe(
-    "Изменение посчитано по известным записям: не хватает данных в отчётах за Июль 2031 и Май 2031.",
+  await waitFor(() =>
+    expect(note.textContent?.replaceAll(" ", " ")).toBe(
+      "Изменение посчитано по известным записям: не хватает данных в отчётах за Июль 2031 и Май 2031; нет снимка счёта: Синтетический депозитный счёт.",
+    ),
   );
   expect(screen.getAllByTestId("capital-delta-partial")).toHaveLength(1);
-  expect(screen.getByText("Частично: нет снимка счёта")).toBeVisible();
+  await waitFor(() =>
+    expect(screen.getByTestId("portfolio-coverage-note")).toHaveTextContent(
+      "Частично: нет снимка счёта: Синтетический старый вклад",
+    ),
+  );
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
 });
 
@@ -403,7 +420,11 @@ it("explains a partial current report once when the previous report is complete"
     };
   state.comparison.liquid_capital_net_delta_coverage = partial;
   mount();
-  expect(await screen.findByText("Частично: нет снимка счёта")).toBeVisible();
+  await waitFor(() =>
+    expect(screen.getByTestId("portfolio-coverage-note")).toHaveTextContent(
+      "Частично: нет снимка счёта: Синтетический старый вклад",
+    ),
+  );
   expect(screen.queryByTestId("capital-delta-partial")).toBeNull();
 });
 

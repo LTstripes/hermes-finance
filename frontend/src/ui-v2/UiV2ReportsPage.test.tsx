@@ -7,6 +7,7 @@ import { createQueryClient } from "../queryClient";
 import {
   makeUiV2ArchiveHistory,
   makeUiV2CapitalHistory,
+  uiV2Accounts,
   uiV2ArchiveMonths,
   uiV2Months,
 } from "../test/uiV2Fixtures";
@@ -43,6 +44,9 @@ function setup(path = "/v2/reports") {
         case "/api/analytics/capital-composition":
           data = state.composition;
           failed = state.compositionError;
+          break;
+        case "/api/accounts":
+          data = uiV2Accounts;
           break;
         default:
           throw new Error(`Unexpected API: ${url.pathname}${url.search}`);
@@ -99,7 +103,11 @@ describe("UI v2 reports archive", () => {
     mount();
     const row = await screen.findByTestId("reports-row-90");
     await waitFor(() => expect(row).toHaveTextContent("2 761 300 ₽"));
-    expect(within(row).getByText("Частично: нет снимка счёта")).toBeVisible();
+    await waitFor(() =>
+      expect(within(row).getByTestId("portfolio-coverage-note")).toHaveTextContent(
+        "Частично: нет снимка счёта: Синтетический старый вклад",
+      ),
+    );
     expect(within(row).getByText("Итог известных записей")).toBeVisible();
   });
 
@@ -122,10 +130,10 @@ describe("UI v2 reports archive", () => {
     };
     mount();
     const row = await screen.findByTestId("reports-row-90");
-    await waitFor(() => expect(row).toHaveTextContent("Нет снимков капитала"));
+    await waitFor(() => expect(row).toHaveTextContent("Синтетический старый вклад"));
     const cells = within(row).getAllByRole("cell");
     expect(cells.slice(3, 6).map((cell) => cell.textContent?.trim())).toEqual([
-      "—Нет снимков капитала",
+      "—Нет снимков капитала; нет снимка счёта: Синтетический старый вклад",
       "—",
       "—",
     ]);
@@ -156,10 +164,10 @@ describe("UI v2 reports archive", () => {
     };
     mount();
     const row = await screen.findByTestId("reports-row-90");
-    await waitFor(() => expect(row).toHaveTextContent("Нет снимков капитала"));
+    await waitFor(() => expect(row).toHaveTextContent("Синтетический старый вклад"));
     const cells = within(row).getAllByRole("cell");
     expect(cells.slice(3, 6).map((cell) => cell.textContent?.trim())).toEqual([
-      "—Нет снимков капитала",
+      "—Нет снимков капитала; нет снимка счёта: Синтетический старый вклад",
       "—",
       "—",
     ]);

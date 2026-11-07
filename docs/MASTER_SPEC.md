@@ -362,7 +362,7 @@ Historical loading is part of the same source-first direction. A long report can
 <a id="p3"></a>
 ## 3. Screens and honest interpretation
 
-Home and Capital show the selected monthly/closed-history known subtotals with coverage. An exact sum of known rows may have partial source coverage. Keep missing accounts visible and attach reasons to totals, deltas, goals and allocation; C2 owns the required-account rule. Missing calendar months are gaps, not zero points.
+Home and Capital show the selected monthly/closed-history known subtotals with coverage. An exact sum of known rows may have partial source coverage. Keep missing accounts visible and attach reasons to totals, deltas, goals and allocation; C2 owns the required-account rule. When an account snapshot is missing, show available account names in the warning and its details; if a name is unavailable, say it is unknown rather than exposing an internal ID. Missing calendar months are gaps, not zero points.
 
 The primary sidebar has five destinations: Мои финансы, Капитал, Доходность,
 Доход и планы, Настройки. Data, source review, exports/copies and application

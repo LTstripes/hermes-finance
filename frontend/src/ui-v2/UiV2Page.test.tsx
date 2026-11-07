@@ -11,6 +11,7 @@ import {
   makeUiV2Goals,
   makeUiV2PassiveHistory,
   makeUiV2Workflow,
+  uiV2Accounts,
   uiV2Months,
 } from "../test/uiV2Fixtures";
 import { UiV2ErrorBoundary, UiV2LoadingFallback } from "./UiV2Entry";
@@ -51,6 +52,8 @@ function setup(path = "/v2") {
       if (url.pathname === "/api/months") {
         data = state.months;
         failed = state.monthsError;
+      } else if (url.pathname === "/api/accounts") {
+        data = uiV2Accounts;
       } else if (url.pathname === "/api/analytics/closed-report-comparison") {
         data = structuredClone(state.comparison);
         await state.comparisonWait;
@@ -146,19 +149,41 @@ it("leads Home with one capital figure, its change and a few secondary facts", a
   expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
 });
 
-it("shows the backend partial-source marker beside the known subtotal and delta", async () => {
+it("names affected accounts beside the known subtotal and comparison", async () => {
   const { mount, state } = setup();
-  const partial = {
+  const currentPartial = {
     status: "partial" as const,
     reason_codes: ["active_account_snapshot_missing"],
     missing_account_ids: [2],
   };
-  if (!state.comparison.current) throw new Error("Missing current comparison fixture");
-  state.comparison.current.portfolio_source_coverage = partial;
-  state.comparison.liquid_capital_net_delta_coverage = partial;
+  if (!state.comparison.current || !state.comparison.previous)
+    throw new Error("Missing comparison fixtures");
+  state.comparison.current.portfolio_source_coverage = currentPartial;
+  state.comparison.previous.portfolio_source_coverage = {
+    ...currentPartial,
+    missing_account_ids: [3],
+  };
+  // The combined API coverage has no IDs, but each endpoint does.
+  state.comparison.liquid_capital_net_delta_coverage = {
+    ...currentPartial,
+    missing_account_ids: [],
+  };
   mount();
   expect(await screen.findByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
-  expect(screen.getAllByText("Частично: нет снимка счёта")).toHaveLength(2);
+  const hero = screen.getByRole("region", { name: "Главные показатели" });
+  const change = screen.getByRole("heading", { name: "Что изменило капитал" }).closest("section");
+  if (!change) throw new Error("Missing change section");
+  await waitFor(() =>
+    expect(within(hero).getByTestId("portfolio-coverage-note")).toHaveTextContent(
+      "Синтетический старый вклад",
+    ),
+  );
+  const note = within(change).getByTestId("portfolio-coverage-note");
+  expect(note).toHaveTextContent("Синтетический брокерский счёт, Синтетический старый вклад");
+  fireEvent.click(within(note).getByRole("button", { name: "Подробнее" }));
+  expect(
+    note.textContent?.match(/Синтетический брокерский счёт, Синтетический старый вклад/g),
+  ).toHaveLength(2);
 });
 
 it("renders a backend pair once, with gross endpoints and a zero net delta", async () => {

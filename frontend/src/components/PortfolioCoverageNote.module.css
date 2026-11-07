@@ -1,12 +1,15 @@
 .note {
   display: inline-block;
+  max-inline-size: 100%;
   margin-inline-start: 0.4em;
   padding: 0.12em 0.45em;
   border: 1px solid currentColor;
   border-radius: 0.45em;
   color: var(--color-text-muted, #725b32);
-  font-size: 0.72em;
+  font-size: max(0.72em, 0.75rem);
   font-weight: 500;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: start;
   vertical-align: middle;
 }
