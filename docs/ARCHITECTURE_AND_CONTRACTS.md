@@ -6952,7 +6952,12 @@ the money of the first trade day as capital held for the whole holding interval;
 earlier payout stays in the result but not in the rate. A comparison of 13 statement
 bond values with trades within four days matched price plus NKD 12 times, so the
 statement value is treated as including NKD; no format document states this.
-Saved decisions and receipts are not changed.
+A proved zero quantity is worth zero even without a printed value. A dividend naming
+a registration number of the listed issue counts in the clean result. A blank NKD on
+an identified bond trade keeps the statement total, which already holds any NKD. For
+a proved closed REPO pair the two legs may share an instant, since settlement orders
+them, and an execution time may prove that same-day incoming shares came before an
+outgoing leg. Saved decisions and receipts are not changed.
 
 The recommended AI financial review requests version `3.1.0` and includes the
 same source-scoped clean operands under `sections.clean_returns` with file-local

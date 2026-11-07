@@ -395,7 +395,7 @@ def test_v31_keeps_closed_purchase_when_open_valuation_is_unknown(database):
     assert snapshot(database) == before
 
 
-def test_v31_keeps_closed_purchase_when_later_bond_clean_cost_is_unknown(database):
+def test_v31_blank_nkd_keeps_the_statement_total_of_a_later_bond_purchase(database):
     from test_source_instrument_returns_service import save
 
     isin = "RU000A000001"
@@ -440,7 +440,7 @@ def test_v31_keeps_closed_purchase_when_later_bond_clean_cost_is_unknown(databas
         {k: v for k, v in row.items() if k != "id"} for row in account["purchases"]
     ]
     assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
-    assert rows[1]["cost_kopecks"] is None and rows[1]["price_result_kopecks"] is None
+    assert rows[1]["cost_kopecks"] == "20000" and rows[1]["price_result_kopecks"] == "-5000"
     assert snapshot(database) == before
 
 

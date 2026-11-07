@@ -88,11 +88,13 @@ _UNIDENTIFIED_MONEY_GAPS = frozenset(
 
 def has_unidentified_trade_money(analysis):
     """Money of an unknown issue may be a trade, so the result carries a note."""
-    if any(
-        _UNIDENTIFIED_MONEY_GAPS & set(analysis.coverage[name].reason_codes)
+    gaps = {
+        reason
         for name in ("events", "payouts")
         if name in analysis.coverage
-    ):
+        for reason in analysis.coverage[name].reason_codes
+    } & _UNIDENTIFIED_MONEY_GAPS
+    if _has_unattributed_payout_gap(analysis, gaps):
         return True
     return any(
         event.isin is None
@@ -111,12 +113,23 @@ def _has_unattributed_payout_gap(analysis, reasons):
     return any(reason in unattributed or reason not in identified for reason in reasons)
 
 
+def _dividend_identified_by_registration(event):
+    """The dividend names a registration number of this listed issue."""
+    return (
+        event.kind == "DIVIDEND"
+        and event.attribution_basis == "registration_scope"
+        and bool(event.cash_legs)
+        and set(event.reason_codes) <= {"payout_link_missing", "payout_link_unresolved_no_match"}
+    )
+
+
 def instrument_scoped_reasons(analysis, isin, reasons):
     """Keep only reasons that can still concern this reconciled instrument."""
     own = set()
     foreign = set()
     for event in analysis.events:
-        (own if event.isin == isin else foreign).update(event.reason_codes)
+        if not _dividend_identified_by_registration(event):
+            (own if event.isin == isin else foreign).update(event.reason_codes)
     if _own_money_is_trade_nkd([event for event in analysis.events if event.isin == isin]):
         own.discard("unmatched_trade_money")
     return {
@@ -128,10 +141,11 @@ def instrument_scoped_reasons(analysis, isin, reasons):
 
 def _clean_endpoint(endpoint, instrument_type):
     """Return the position value on the same NKD-inclusive basis as trades."""
+    # A proved zero quantity is worth nothing, whether or not a value was printed.
     if (
         endpoint.quantity == 0
-        and endpoint.reported_value_kopecks == 0
-        and not (set(endpoint.reason_codes) - {"bond_valuation_basis_unknown"})
+        and endpoint.reported_value_kopecks in (0, None)
+        and not (set(endpoint.reason_codes) - {"bond_valuation_basis_unknown", "missing_endpoint"})
     ):
         return 0
     if endpoint.economic_value_kopecks is not None:
@@ -197,6 +211,8 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
     for event in analysis.events:
         if event.isin != isin:
             continue
+        if _dividend_identified_by_registration(event):
+            event = replace(event, counted=True, current=True, reason_codes=())
         # The investment-report adapter records the native amount only for a
         # unique, fully identified ordinary trade. Stocks have no NKD; do not
         # extend this inference to bonds, anonymous Money or REPO.

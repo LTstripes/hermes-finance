@@ -177,8 +177,9 @@ def without_proven_closed_repo(analysis, views, isin):
             partner = "repo:" + digest(
                 [PROVIDER, trade["core"]["source_account"], trade["repo_partner"]]
             )
+            # A broker concludes both legs at one instant; settlement orders them.
             first, second = _instant(event), _instant(by_id[partner])
-            if first is None or second is None or first >= second:
+            if first is None or second is None or first > second:
                 return analysis
 
     changing = [
@@ -186,7 +187,7 @@ def without_proven_closed_repo(analysis, views, isin):
     ]
     if analysis.opening.quantity is None or analysis.closing.quantity is None:
         return analysis
-    by_execution_day, by_delivery = defaultdict(list), defaultdict(list)
+    instants, by_delivery = defaultdict(set), defaultdict(list)
     for event in changing:
         if (
             event.kind == "REDEMPTION"
@@ -201,20 +202,28 @@ def without_proven_closed_repo(analysis, views, isin):
         instant = _instant(event)
         if instant is None or instant.date() > event.depository_settlement_date:
             return analysis
-        by_execution_day[instant.date()].append(instant)
-        by_delivery[event.depository_settlement_date].append(event.quantity_delta)
-    if any(len(times) != len(set(times)) for times in by_execution_day.values()):
+        if event not in repo_events:
+            instants[instant].add(event.quantity_delta > 0)
+        by_delivery[event.depository_settlement_date].append((instant, event.quantity_delta))
+    # Fills of one order share a second; a buy and a sale in it have no order.
+    if any(len(sides) > 1 for sides in instants.values()):
         return analysis
     # Settlement dates do not prove intraday custody order. Require holdings to
-    # stay nonnegative even if same-day outgoing legs happen before incoming.
+    # stay nonnegative even if same-day outgoing legs happen before incoming,
+    # unless execution times prove that the incoming trade came first.
     with localcontext() as context:
         context.prec = 200
         held = analysis.opening.quantity
         for day in sorted(by_delivery):
             changes = by_delivery[day]
-            if held + sum((q for q in changes if q < 0), Decimal(0)) < 0:
+            outgoing = [(at, q) for at, q in changes if q < 0]
+            first_out = min((at for at, _ in outgoing), default=None)
+            earlier = sum(
+                (q for at, q in changes if q > 0 and first_out and at < first_out), Decimal(0)
+            )
+            if held + earlier + sum((q for _, q in outgoing), Decimal(0)) < 0:
                 return analysis
-            held += sum(changes, Decimal(0))
+            held += sum((q for _, q in changes), Decimal(0))
         if held != analysis.closing.quantity:
             return analysis
 
