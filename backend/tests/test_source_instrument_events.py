@@ -1597,10 +1597,11 @@ def test_fifo_reader_repo_checks_intermediate_custody_under_all_day_orders(db, s
     assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
 
 
+@pytest.mark.parametrize("same_instant", [False, True])
 @pytest.mark.parametrize("closed", [True, False])
 @pytest.mark.parametrize("overlap", [None, "identical", "missing", "changed", "duplicate"])
 def test_fifo_reader_closed_repo_before_selected_period_does_not_hide_later_purchase(
-    db, closed, overlap
+    db, closed, overlap, same_instant
 ):
     from hermes_finance.services.clean_instrument_return import read_clean_account
 
@@ -1609,7 +1610,7 @@ def test_fifo_reader_closed_repo_before_selected_period_does_not_hide_later_purc
             row.set("trade_no", f"B9000{i}")
             row.set("repo_no", f"B9000{3 - i}")
             row.set("comment", f"репо ч.{i}")
-            stamp = f"{i:02}.04.2030 09:00:00"
+            stamp = f"{1 if same_instant else i:02}.04.2030 09:00:00"
             row.set("db_time", f"{stamp}\n{stamp}")
             row.set("save_settlement_date", f"{i:02}.04.2030")
             row.set("save_depo_settlement_date", f"{i:02}.04.2030")
@@ -1683,6 +1684,67 @@ def test_fifo_reader_closed_repo_before_selected_period_does_not_hide_later_purc
         assert rows and rows[0]["price_result_kopecks"] == "8000"
     else:
         assert rows is None or all(row["price_result_kopecks"] is None for row in rows)
+
+
+@pytest.mark.parametrize("fault", [None, "cash_order", "delivery_order", "missing_witness"])
+def test_historical_equal_instant_repo_requires_ordered_settlements_and_witness(
+    db, monkeypatch, fault
+):
+    from hermes_finance.services import clean_repo_pairs
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def repo(root):
+        for i, row in enumerate(root.findall(".//m:Details[@trade_no]", NS), 1):
+            row.set("trade_no", f"B9000{i}")
+            row.set("repo_no", f"B9000{3 - i}")
+            row.set("comment", f"репо ч.{i}")
+            row.set("db_time", "01.04.2030 09:00:00\n01.04.2030 09:00:00")
+            row.set("save_settlement_date", f"{i:02}.04.2030")
+            row.set("save_depo_settlement_date", f"{i:02}.04.2030")
+            if fault == "cash_order":
+                row.set("save_settlement_date", f"{3 - i:02}.04.2030")
+            if fault == "delivery_order":
+                row.set("save_depo_settlement_date", f"{3 - i:02}.04.2030")
+
+    save(
+        db,
+        4,
+        stock=("0", "0", "0", "0"),
+        bond=None,
+        trades=((ISIN, "1", "100", "0", "0"), (ISIN, "-1", "101", "0", "0")),
+        mutate=repo,
+    )
+    save(db, 5, stock=("0", "1", "0", "110"), bond=None, trades=((ISIN, "1", "100", "0", "0"),))
+    if fault == "missing_witness":
+        original = clean_repo_pairs.repo_return_identities
+
+        def without_one_witness(view):
+            witnesses = original(view)
+            if witnesses:
+                witnesses.pop(next(iter(witnesses)))
+            return witnesses
+
+        monkeypatch.setattr(clean_repo_pairs, "repo_return_identities", without_one_witness)
+    with db.session_factory() as session:
+        data = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 4, 30),
+            date(2030, 5, 31),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    instrument = data["instruments"][0]
+    assert instrument["pnl"]["value"] == "1000"
+    rows = instrument["purchases"]
+    if fault is None:
+        assert len(rows) == 1
+        assert rows[0]["price_result_kopecks"] == "1000"
+        assert rows[0]["return_fraction"] == "0.1"
+    else:
+        assert rows is None or all(
+            row["price_result_kopecks"] is None and row["return_fraction"] is None for row in rows
+        )
 
 
 def test_pending_b_identifier_is_rejected_by_existing_parser():
