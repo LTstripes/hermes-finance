@@ -390,7 +390,9 @@ def _closed_historical_repo_tokens(views, account, isin, opening):
             ):
                 continue
             earlier, later = times if first["repo_leg"] == "репо ч.1" else times[::-1]
-            if earlier >= later:
+            # Equal execution instants are ordered by the proved settlements,
+            # just as in without_proven_closed_repo.
+            if earlier > later:
                 continue
             for token, items in ((own, entries), (partner, peers)):
                 member_views = {id(item[0]) for item in items}

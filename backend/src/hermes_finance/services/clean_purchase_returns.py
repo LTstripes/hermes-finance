@@ -53,8 +53,16 @@ def _unordered_buys_resolve_as_a_group(group, prefix, by_day):
         if ahead < 0:
             return False
         group_quantity = sum((row[4] for row in group), Decimal(0))
-        for day in sorted(day for day in by_day if day > group[0][1]):
-            sales = [row for row in by_day[day] if row[0].kind == "SELL"]
+        for day in sorted(day for day in by_day if day >= group[0][1]):
+            sales = [
+                row
+                for row in by_day[day]
+                if row[0].kind == "SELL"
+                and (
+                    day > group[0][1]
+                    or (group[0][2] is not None and row[2] is not None and row[2] > group[0][2])
+                )
+            ]
             instants = [row[2] for row in sales]
             if len(sales) > 1 and (None in instants or len(instants) != len(set(instants))):
                 total = sum((-row[4] for row in sales), Decimal(0))
@@ -295,16 +303,25 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
     for trade in trades:
         by_day[trade[1]].append(trade)
     ordered, ambiguous_at = [], None
+    groups = []
     for day in sorted(by_day):
-        group = by_day[day]
+        # Date-only observations cannot be placed relative to timed trades.
+        if any(row[2] is None for row in by_day[day]):
+            groups.append(by_day[day])
+        else:
+            by_instant = defaultdict(list)
+            for row in by_day[day]:
+                by_instant[row[2]].append(row)
+            groups.extend(by_instant[instant] for instant in sorted(by_instant))
+    for group_index, group in enumerate(groups):
         instants = [row[2] for row in group]
         ambiguous = len(group) > 1 and (None in instants or len(instants) != len(set(instants)))
         safe_unordered = ambiguous and _unordered_buys_resolve_as_a_group(group, ordered, by_day)
         if ambiguous and not safe_unordered:
             ambiguous_at = len(ordered)
             ordered.extend(sorted(group, key=lambda row: row[0].event_key))
-            for later in sorted(d for d in by_day if d > day):
-                ordered.extend(sorted(by_day[later], key=lambda row: row[0].event_key))
+            for later in groups[group_index + 1 :]:
+                ordered.extend(sorted(later, key=lambda row: row[0].event_key))
             break
         ordered.extend(
             sorted(group, key=lambda row: (row[2] or datetime.min.time(), row[0].event_key))

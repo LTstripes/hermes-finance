@@ -586,6 +586,64 @@ def test_same_day_buys_fully_sold_together_have_order_independent_results():
     assert [r["return_fraction"] for r in rows] == ["0.5", "-0.25"]
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("sale_day", [10, 11])
+def test_same_instant_buys_fully_consumed_by_one_sale(reverse, sale_day):
+    first = replace(buy("a", 50000, "5", date(2030, 1, 10)), trade_time="2030-01-10T09:00:00")
+    second = replace(buy("b", 60000, "5", date(2030, 1, 10)), trade_time=first.trade_time)
+    sale = replace(
+        buy("sale", 130000, "-10", date(2030, 1, sale_day)),
+        kind="SELL",
+        trade_time=f"2030-01-{sale_day:02}T10:00:00",
+    )
+    events = [first, second, sale]
+    rows = case(events[::-1] if reverse else events, quantity="0", closing=0)
+    assert [r["cost_kopecks"] for r in rows] == ["50000", "60000"]
+    assert [r["sale_proceeds_kopecks"] for r in rows] == ["65000", "65000"]
+    assert [r["remaining_quantity"] for r in rows] == ["0", "0"]
+    assert [r["price_result_kopecks"] for r in rows] == ["15000", "5000"]
+    with localcontext() as context:
+        context.prec = 200
+        assert [r["return_fraction"] for r in rows] == ["0.3", str(Decimal(5000) / 60000)]
+
+
+@pytest.mark.parametrize("sales", [1, 2])
+@pytest.mark.parametrize("sale_time", ["09:00:00", "10:00:00"])
+def test_same_instant_order_dependent_purchases_remain_unknown(sales, sale_time):
+    first = replace(buy("a", 50000, "5", date(2030, 1, 10)), trade_time="2030-01-10T09:00:00")
+    second = replace(buy("b", 60000, "5", date(2030, 1, 10)), trade_time=first.trade_time)
+    sale = replace(
+        buy("sale", 70000, "-5", date(2030, 1, 10)),
+        kind="SELL",
+        trade_time=f"2030-01-10T{sale_time}",
+    )
+    events = [first, second, sale]
+    if sales == 2:
+        events.append(
+            replace(
+                sale,
+                event_key="sale2",
+                trade_time="2030-01-10T11:00:00",
+                native_trade_amount_kopecks=60000,
+            )
+        )
+    rows = case(events, quantity="5" if sales == 1 else "0", closing=65000 if sales == 1 else 0)
+    assert all(r["price_result_kopecks"] is None and r["return_fraction"] is None for r in rows)
+    assert all("fifo_order_ambiguous" in r["reason_codes"] for r in rows)
+
+
+def test_same_instant_group_untouched_after_sale_of_older_lot():
+    older = replace(buy("older", 10000, "1", date(2030, 1, 10)), trade_time="2030-01-10T08:00:00")
+    first = replace(buy("a", 50000, "5", date(2030, 1, 10)), trade_time="2030-01-10T09:00:00")
+    second = replace(buy("b", 60000, "5", date(2030, 1, 10)), trade_time=first.trade_time)
+    sale = replace(
+        buy("sale", 12000, "-1", date(2030, 1, 10)), kind="SELL", trade_time="2030-01-10T10:00:00"
+    )
+    rows = case([older, first, second, sale], quantity="10", closing=130000)
+    assert [r["remaining_quantity"] for r in rows] == ["0", "5", "5"]
+    assert [r["price_result_kopecks"] for r in rows] == ["2000", "15000", "5000"]
+
+
 @pytest.mark.parametrize("sales", [1, 2])
 def test_unordered_buys_split_between_sales_keep_affected_results_unknown(sales):
     first = buy("a", 10000, "1", date(2030, 1, 10))
