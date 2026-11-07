@@ -48,7 +48,7 @@ test("user-decided Close: unconfirmed Clone, warnings, lost ACK, reload and expl
   const path = `/v2/close?month=${cloned.id}&step=final_review_close`;
   const readinessPath = `/api/months/${cloned.id}/close-readiness`;
   const commandPath = `/api/months/${cloned.id}/close`;
-  const workflowPattern = `**/api/months/${cloned.id}/close-workflow`;
+  const workflowPattern = `**/api/months/${cloned.id}/close-workflow*`;
   let posts = 0;
   page.on("request", (sent) => {
     if (sent.method() === "POST" && sent.url().endsWith(commandPath)) posts++;
@@ -131,7 +131,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   let workflowReads = 0;
   let expenseWrites = 0;
   page.on("request", (sent) => {
-    if (sent.url().endsWith(workflowPath)) workflowReads += 1;
+    if (new URL(sent.url()).pathname === workflowPath) workflowReads += 1;
     if (sent.method() === "POST" && sent.url().includes("/api/expenses")) expenseWrites += 1;
   });
 
@@ -215,7 +215,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await page.getByRole("button", { name: "Перейти без сохранения" }).click();
   await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
 
-  await page.route(`**${workflowPath}`, async (route) => {
+  await page.route(`**${workflowPath}*`, async (route) => {
     const response = await route.fetch();
     const stale = await response.json();
     stale.final_review.month_header.id = 99;
@@ -226,7 +226,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
     page.getByRole("heading", { name: "Состояние месяца не подтверждено" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Закрыть месяц" })).toHaveCount(0);
-  await page.unroute(`**${workflowPath}`);
+  await page.unroute(`**${workflowPath}*`);
   await page.reload();
 
   await page.getByRole("button", { name: "Закрыть месяц" }).click();

@@ -2233,7 +2233,7 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
   await page.goBack();
   const [workflowAfterBackReload] = await Promise.all([
     page.waitForResponse(
-      (response) => response.url().endsWith(`/api/months/${month.id}/close-workflow`),
+      (response) => new URL(response.url()).pathname === `/api/months/${month.id}/close-workflow`,
       { timeout: 30000 },
     ),
     page.reload(),
@@ -2344,7 +2344,7 @@ test("strict dividend v2 and durable payout: API to UI, lost ACK, Back Reload, r
   );
   const [workflowAfterReload] = await Promise.all([
     page.waitForResponse(
-      (response) => response.url().endsWith(`/api/months/${month.id}/close-workflow`),
+      (response) => new URL(response.url()).pathname === `/api/months/${month.id}/close-workflow`,
       { timeout: 30000 },
     ),
     page.reload(),
@@ -2420,7 +2420,9 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
       currency: "RUB",
     });
     const [workflowResponse] = await Promise.all([
-      page.waitForResponse((r) => r.url().endsWith(`/api/months/${monthId}/close-workflow`)),
+      page.waitForResponse(
+        (r) => new URL(r.url()).pathname === `/api/months/${monthId}/close-workflow`,
+      ),
       page.goto(`/v2/close?month=${monthId}&step=future_payouts`),
     ]);
     expect(workflowResponse.status()).toBe(200);

@@ -271,6 +271,13 @@ it("keeps a newer draft separate and routes its single CTA to the server recomme
   );
   expect(screen.getByTestId("v2-draft-action")).toHaveTextContent("Август 2031 ещё не закрыт");
   expect(screen.getByTestId("v2-capital")).toHaveTextContent("2 803 900 ₽");
+  // The Month checklist is a Month page read; Home keeps the lighter workflow read.
+  const workflowUrls = vi
+    .mocked(fetch)
+    .mock.calls.map(([input]) => String(input))
+    .filter((url) => url.includes("/close-workflow"));
+  expect(workflowUrls.length).toBeGreaterThan(0);
+  expect(workflowUrls.some((url) => url.includes("include_checklist"))).toBe(false);
 });
 
 it("shows no financial snapshot when there is no closed report yet", async () => {

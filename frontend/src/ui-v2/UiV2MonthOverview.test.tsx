@@ -57,6 +57,44 @@ describe("Month overview (#1079 stage 2)", () => {
     );
   });
 
+  it("shows missing capital snapshots as unknown rather than a zero sum", () => {
+    const workflow = makeUiV2Workflow();
+    if (!workflow.final_review.available) throw new Error("Synthetic review is missing");
+    workflow.final_review.kpis = {
+      ...workflow.final_review.kpis,
+      liquid_capital_net: { amount: "0.00", currency: "RUB" },
+      liquid_capital_delta: { amount: "-1000.00", currency: "RUB" },
+      portfolio_source_coverage: {
+        status: "unavailable",
+        reason_codes: ["no_capital_snapshots"],
+        missing_account_ids: [],
+      },
+    };
+    renderOverview(workflow);
+    const result = document.querySelector<HTMLElement>('dl[aria-label="Итог месяца"]');
+    if (!result) throw new Error("Month result is missing");
+    const capital = within(result).getByText("Ликвидный капитал").closest("div") as HTMLElement;
+    expect(capital).toHaveTextContent("—");
+    expect(capital).not.toHaveTextContent("0 ₽");
+    expect(capital).not.toHaveTextContent("за месяц");
+    expect(within(capital).getByTestId("portfolio-coverage-note")).toHaveTextContent(
+      "Нет снимков капитала",
+    );
+  });
+
+  it("shows mandatory expenses without any rows as not entered", () => {
+    const workflow = makeUiV2Workflow();
+    const checklist = makeUiV2Checklist();
+    checklist.expenses = { ...checklist.expenses, mandatory_items: [] };
+    workflow.checklist = checklist;
+    renderOverview(workflow);
+    const result = document.querySelector<HTMLElement>('dl[aria-label="Итог месяца"]');
+    if (!result) throw new Error("Month result is missing");
+    const expenses = within(result).getByText("Обязательные расходы").closest("div") as HTMLElement;
+    expect(expenses).toHaveTextContent("—");
+    expect(expenses).toHaveTextContent("не заполнено");
+  });
+
   it("keeps the mandatory list equal to its total and shows other expenses once", () => {
     const workflow = makeUiV2Workflow();
     workflow.checklist = makeUiV2Checklist();

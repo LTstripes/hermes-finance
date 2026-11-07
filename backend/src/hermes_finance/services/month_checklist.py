@@ -21,7 +21,6 @@ from hermes_finance.domain.monthly_summary import MonthlySummaryResult
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
     BrokerMonthApply,
-    ExpectedCashFlow,
     ExpenseEntry,
     InvestmentCashFlow,
     MonthlyComment,
@@ -31,6 +30,8 @@ from hermes_finance.persistence import (
 from hermes_finance.services.close_readiness import CloseReadiness, CloseReadinessItem
 from hermes_finance.services.debts import total_debts
 from hermes_finance.services.month_working_status import saved_section_facts
+from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
+from hermes_finance.services.payout_calendar import merged_payout_calendar
 
 ChecklistStepId = Literal[
     "general",
@@ -81,6 +82,8 @@ _CODE_STEP: dict[str, ChecklistStepId] = {
 # Already visible as empty sections; counting it again would double the gap.
 _NOT_A_SECTION_FINDING = frozenset({"empty_manual_month"})
 _ATTENTION_SEVERITIES = frozenset({"hard_blocker", "warning"})
+# Received payouts only; fees, taxes, transfers and trading results are not payouts.
+_PAYOUT_FLOW_TYPES = ("coupon", "dividend", "interest", "redemption")
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +175,22 @@ def _mandatory_expense_items(session: Session, month_id: int) -> tuple[Checklist
     return tuple(items)
 
 
+def _expected_payout_count(session: Session, month: ReportingMonth) -> int:
+    """Items of the payout calendar the Payouts section shows.
+
+    The merged calendar de-duplicates manual and applied provider rows. Close
+    readiness reads it with the same arguments inside the same read snapshot,
+    so this reuses that result rather than reading the calendar again.
+    """
+
+    if month.snapshot_date is None:
+        return 0
+    calendar = merged_payout_calendar(
+        session, reporting_month_id=month.id, forecast_version=DEFAULT_FORECAST_VERSION
+    )
+    return sum(len(bucket.items) for bucket in calendar)
+
+
 def _figures(
     session: Session, month: ReportingMonth, summary: MonthlySummaryResult
 ) -> dict[str, tuple[ChecklistFigure | None, int | None]]:
@@ -207,8 +226,16 @@ def _figures(
             None,
         ),
         "payouts": (
-            ChecklistFigure(kind="count", count=_count(session, InvestmentCashFlow, month_id)),
-            _count(session, ExpectedCashFlow, month_id),
+            ChecklistFigure(
+                kind="count",
+                count=_count(
+                    session,
+                    InvestmentCashFlow,
+                    month_id,
+                    InvestmentCashFlow.flow_type.in_(_PAYOUT_FLOW_TYPES),
+                ),
+            ),
+            _expected_payout_count(session, month),
         ),
         "budget": (
             ChecklistFigure(kind="money", amount=cash.mandatory_expenses),

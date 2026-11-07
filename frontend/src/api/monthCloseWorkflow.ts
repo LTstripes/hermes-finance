@@ -300,18 +300,29 @@ export type MonthCloseWorkflow = {
 export function getMonthCloseWorkflow(
   monthId: number,
   signal?: AbortSignal,
+  { includeChecklist = false }: { includeChecklist?: boolean } = {},
 ): Promise<MonthCloseWorkflow> {
-  return apiRequest<MonthCloseWorkflow>(`/api/months/${monthId}/close-workflow`, {
+  const query = includeChecklist ? "?include_checklist=true" : "";
+  return apiRequest<MonthCloseWorkflow>(`/api/months/${monthId}/close-workflow${query}`, {
     method: "GET",
     signal,
   });
 }
 
-export function useMonthCloseWorkflow(monthId: number | null) {
+/**
+ * Only the Month page asks for the checklist; other readers, such as the Home
+ * draft action, keep the lighter read and their own cache entry.
+ */
+export function useMonthCloseWorkflow(
+  monthId: number | null,
+  { includeChecklist = false }: { includeChecklist?: boolean } = {},
+) {
   return useQuery({
     enabled: monthId !== null,
-    queryKey: queryKeys.monthCloseWorkflow(monthId),
-    queryFn: ({ signal }) => getMonthCloseWorkflow(monthId as number, signal),
+    queryKey: includeChecklist
+      ? queryKeys.monthCloseWorkflowWithChecklist(monthId)
+      : queryKeys.monthCloseWorkflow(monthId),
+    queryFn: ({ signal }) => getMonthCloseWorkflow(monthId as number, signal, { includeChecklist }),
     refetchOnWindowFocus: true,
   });
 }

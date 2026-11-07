@@ -423,7 +423,8 @@ describe("native Monthly Close work mode", () => {
     expect(state.writes).toEqual(["close"]);
     const workflowGets = fetchMock.mock.calls.filter(
       ([input, init]) =>
-        String(input).endsWith("/close-workflow") && (init?.method ?? "GET") === "GET",
+        String(input).endsWith("/close-workflow?include_checklist=true") &&
+        (init?.method ?? "GET") === "GET",
     );
     expect(workflowGets).toHaveLength(3);
   });
@@ -593,7 +594,7 @@ describe("native Monthly Close work mode", () => {
     const confirm = await screen.findByRole("button", { name: "Закрыть" });
     const foreign = structuredClone(state.workflow);
     if (foreign.final_review.available) foreign.final_review.month_header.id = 91;
-    act(() => client.setQueryData(queryKeys.monthCloseWorkflow(12), foreign));
+    act(() => client.setQueryData(queryKeys.monthCloseWorkflowWithChecklist(12), foreign));
     fireEvent.click(confirm);
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(state.writes).toEqual([]);

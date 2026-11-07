@@ -55,7 +55,7 @@ test("ui-v2 final review keeps broker blockers, evidence and keyboard details @v
   workflow.final_review.close_readiness = { can_close: false, items };
   await page.route("**/api/months", (route) => route.fulfill({ json: [month] }));
   await page.route("**/api/months/7", (route) => route.fulfill({ json: month }));
-  await page.route("**/api/months/7/close-workflow", (route) => route.fulfill({ json: workflow }));
+  await page.route("**/api/months/7/close-workflow*", (route) => route.fulfill({ json: workflow }));
   await page.route("**/api/broker-months?reporting_month_id=7", (route) =>
     route.fulfill({ json: [] }),
   );

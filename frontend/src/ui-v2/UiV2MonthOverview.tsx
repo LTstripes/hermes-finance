@@ -8,6 +8,7 @@ import type {
   MonthCloseWorkflow,
 } from "../api/monthCloseWorkflow";
 import type { MoneyValue } from "../api/types";
+import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatDate, formatPercent } from "../lib/format";
 import styles from "./UiV2MonthOverview.module.css";
 import { moneyDeltaText, moneyText, moneyTone } from "./valueFormat";
@@ -156,11 +157,14 @@ function Kpi({
   value,
   note,
   tone,
+  extra,
 }: {
   label: string;
   value: string;
   note?: ReactNode;
   tone?: "positive" | "negative" | "neutral";
+  /** A backend coverage marker shown once, under the value it qualifies. */
+  extra?: ReactNode;
 }) {
   return (
     <div className={styles.kpi}>
@@ -171,6 +175,7 @@ function Kpi({
           {note}
         </dd>
       ) : null}
+      {extra ? <dd className={styles.kpiNote}>{extra}</dd> : null}
     </div>
   );
 }
@@ -184,21 +189,43 @@ function MonthKpis({ workflow }: { workflow: MonthCloseWorkflow }) {
   const review = workflow.final_review;
   if (!review.available) return null;
   const { kpis } = review;
-  const capital = deltaNote(kpis.liquid_capital_delta, "за месяц");
+  // Without capital snapshots the backend sum is 0.00 by construction, not a measured zero.
+  const coverage = kpis.portfolio_source_coverage;
+  const capitalUnknown = coverage?.status === "unavailable";
+  const capital =
+    capitalUnknown || kpis.liquid_capital_delta_coverage?.status === "unavailable"
+      ? deltaNote(null, "")
+      : deltaNote(kpis.liquid_capital_delta, "за месяц");
   const passive = deltaNote(kpis.passive_income_delta, "к прошлому месяцу");
   const budget = workflow.checklist?.steps.find((step) => step.id === "budget");
+  const noExpenseRows = workflow.checklist?.expenses.mandatory_items.length === 0;
   const articles =
     budget?.secondary_count != null
       ? countText(budget.secondary_count, ["статья", "статьи", "статей"])
       : undefined;
   return (
     <dl aria-label="Итог месяца" className={styles.kpis}>
-      <Kpi label="Ликвидный капитал" value={moneyText(kpis.liquid_capital_net)} {...capital} />
+      <Kpi
+        label="Ликвидный капитал"
+        value={capitalUnknown ? "—" : moneyText(kpis.liquid_capital_net)}
+        {...capital}
+        extra={
+          coverage &&
+          (coverage.status !== "complete" ||
+            coverage.source_account_financial_coverage?.status === "partial") ? (
+            <PortfolioCoverageNote
+              coverage={coverage}
+              month={{ year: workflow.month.year, month: workflow.month.month }}
+            />
+          ) : undefined
+        }
+      />
       <Kpi label="Пассивный доход" value={moneyText(kpis.passive_income_actual)} {...passive} />
       <Kpi
         label="Обязательные расходы"
-        value={moneyText(kpis.mandatory_expenses)}
-        note={articles}
+        // No mandatory rows at all is "not entered", not a measured zero.
+        value={noExpenseRows ? "—" : moneyText(kpis.mandatory_expenses)}
+        note={noExpenseRows ? "не заполнено" : articles}
       />
       <Kpi
         label="Покрытие расходов"

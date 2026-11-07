@@ -69,7 +69,7 @@ export function useMonthCloseLifecycle(
   monthId: number | null,
   expectedPeriod?: Pick<ReportingMonth, "year" | "month">,
 ) {
-  const workflowQuery = useMonthCloseWorkflow(monthId);
+  const workflowQuery = useMonthCloseWorkflow(monthId, { includeChecklist: true });
   const queryClient = useQueryClient();
   const [pendingLifecycle, setPendingLifecycle] = useState<Lifecycle | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
@@ -191,8 +191,9 @@ export function useMonthCloseLifecycle(
         throw new Error("Выбранный месяц изменился. Действие отменено.");
       }
       assertLifecycleWorkflowIdentity(
-        queryClient.getQueryData<MonthCloseWorkflow>(queryKeys.monthCloseWorkflow(monthId)) ??
-          workflowQuery.data,
+        queryClient.getQueryData<MonthCloseWorkflow>(
+          queryKeys.monthCloseWorkflowWithChecklist(monthId),
+        ) ?? workflowQuery.data,
         monthId,
         expectedPeriod,
       );

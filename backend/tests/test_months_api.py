@@ -8,19 +8,26 @@ from the production database.
 """
 
 from collections.abc import Generator
+from datetime import date
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, update
 
+from hermes_finance.api import month_close_workflow as workflow_api
 from hermes_finance.database import Database, create_database
+from hermes_finance.domain.instruments import InstrumentType
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base, IncomeEntry
+from hermes_finance.services.accounts import create_account
 from hermes_finance.services.close_readiness import (
     CloseReadinessItem,
     CloseReadinessSeverity,
 )
+from hermes_finance.services.expected_cash_flows import create_expected_cash_flow
+from hermes_finance.services.instruments import create_instrument
+from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
 from hermes_finance.services.month_checklist import attention_step
 
 
@@ -370,7 +377,7 @@ def _checklist_month(client: TestClient, snapshot_date: str = "2031-01-31") -> i
 
 
 def _checklist_workflow(client: TestClient, month_id: int) -> dict:
-    response = client.get(f"/api/months/{month_id}/close-workflow")
+    response = client.get(f"/api/months/{month_id}/close-workflow?include_checklist=true")
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -532,3 +539,92 @@ def test_attention_step_routes_findings_to_sections() -> None:
     # Information and a month-wide empty finding are not section findings.
     assert attention_step(_readiness_item("backup_none", "info")) is None
     assert attention_step(_readiness_item("empty_manual_month")) is None
+
+
+def test_checklist_is_built_only_for_the_month_page(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    month_id = _checklist_month(client)
+    calls: list[int] = []
+    original = workflow_api.build_month_checklist
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(workflow_api, "build_month_checklist", counted)
+    # Other callers, such as the Home draft action, keep the lighter read.
+    plain = client.get(f"/api/months/{month_id}/close-workflow")
+    assert plain.status_code == 200, plain.text
+    assert plain.json()["checklist"] is None
+    assert calls == []
+
+    assert _checklist_workflow(client, month_id)["checklist"]["total_count"] == 10
+    assert calls == [1]
+
+
+def _flow(session, month_id: int, account_id: int, flow_type: str, instrument_id=None) -> None:
+    create_investment_cash_flow(
+        session,
+        reporting_month_id=month_id,
+        account_id=account_id,
+        instrument_id=instrument_id,
+        flow_type=flow_type,
+        event_date=date(2031, 1, 20),
+        gross_amount="10.00",
+        net_amount="10.00",
+        source="synthetic",
+    )
+
+
+def test_payout_counts_follow_payouts_and_the_calendar(
+    client: TestClient, database: Database
+) -> None:
+    month_id = _checklist_month(client)
+    with database.session_factory() as session:
+        account = create_account(session, name="Synthetic broker", account_type="brokerage")
+        bond = create_instrument(
+            session, name="Synthetic bond", instrument_type=InstrumentType.BOND
+        )
+        _flow(session, month_id, account.id, "commission")
+        account_id, bond_id = account.id, bond.id
+
+    # A fee fills the section but is not a received payout.
+    payouts = _checklist_steps(_checklist_workflow(client, month_id))["payouts"]
+    assert payouts["has_saved_facts"] is True
+    assert payouts["figure"]["count"] == 0
+    assert payouts["secondary_count"] == 0
+
+    with database.session_factory() as session:
+        _flow(session, month_id, account_id, "coupon", bond_id)
+        create_expected_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=bond_id,
+            flow_type="coupon",
+            expected_date=date(2031, 3, 14),
+            gross_amount="12.00",
+            expected_net_amount="12.00",
+            source="synthetic calendar",
+            source_as_of_date=date(2031, 1, 31),
+            forecast_version="v1",
+        )
+        # Outside the calendar year after the snapshot: not on the calendar.
+        create_expected_cash_flow(
+            session,
+            reporting_month_id=month_id,
+            account_id=account_id,
+            instrument_id=bond_id,
+            flow_type="coupon",
+            expected_date=date(2033, 3, 14),
+            gross_amount="12.00",
+            expected_net_amount="12.00",
+            source="synthetic calendar",
+            source_as_of_date=date(2031, 1, 31),
+            forecast_version="v1",
+        )
+
+    payouts = _checklist_steps(_checklist_workflow(client, month_id))["payouts"]
+    assert payouts["figure"]["count"] == 1
+    assert payouts["secondary_count"] == 1

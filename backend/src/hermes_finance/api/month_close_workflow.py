@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
@@ -336,7 +336,8 @@ class GuidedCloseWorkflowOut(BaseModel):
     freshness: WorkflowFreshnessOut
     final_review: FinalMonthReviewOut
     outlook: NextMonthOutlookOut | None
-    checklist: MonthChecklistOut
+    # Only the Month page asks for it; other callers keep the lighter read.
+    checklist: MonthChecklistOut | None = None
     links: WorkflowLinksOut
 
 
@@ -765,6 +766,7 @@ def get_month_close_workflow(
     request: Request,
     session: Session = Depends(session_for_request),
     database: Database = Depends(_database_for_request),
+    include_checklist: bool = Query(default=False),
 ) -> GuidedCloseWorkflowOut:
     clock = getattr(request.app.state, "freshness_generated_at", None)
     generated_at = clock() if callable(clock) else datetime.now(UTC)
@@ -785,8 +787,10 @@ def get_month_close_workflow(
             steps=steps,
         )
         outlook = build_next_month_outlook(session, month) if month.status == "closed" else None
-        checklist = build_month_checklist(
-            session, month, readiness=readiness, summary=final_review.summary
+        checklist = (
+            build_month_checklist(session, month, readiness=readiness, summary=final_review.summary)
+            if include_checklist
+            else None
         )
         completed_or_skipped = sum(
             step.state.value in {"completed", "skipped"}
@@ -809,7 +813,7 @@ def get_month_close_workflow(
             freshness=_freshness_out(freshness),
             final_review=_final_review_out(session, final_review, month),
             outlook=_outlook_out(outlook) if outlook is not None else None,
-            checklist=_checklist_out(checklist),
+            checklist=_checklist_out(checklist) if checklist is not None else None,
             links=WorkflowLinksOut(
                 month=f"/months/{month.id}",
                 close_readiness=f"/api/months/{month.id}/close-readiness",
