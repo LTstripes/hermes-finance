@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { classReturnsFixture } from "../src/test/classReturnsFixture";
 import { returnsDiagnosticsFixture } from "../src/test/returnsDiagnosticsFixture";
+import { fulfillMonthPlate } from "./visual-fixtures";
 
 for (const width of [1366]) {
   for (const scenario of ["values", "evidence", "xirr-only"] as const) {
@@ -19,6 +20,7 @@ for (const width of [1366]) {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.route("**/api/**", async (route) => {
+        if (await fulfillMonthPlate(route)) return;
         const url = new URL(route.request().url());
         const host = returnsDiagnosticsFixture(url, [
           { id: 1, name: "Синтетический инвестиционный счёт для проверки длинного названия" },
@@ -198,6 +200,7 @@ for (const width of [1366]) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.route("**/api/**", async (route) => {
+      if (await fulfillMonthPlate(route)) return;
       const url = new URL(route.request().url());
       const host = returnsDiagnosticsFixture(url, [
         { id: 1, name: "Синтетический инвестиционный счёт для проверки длинного названия" },
@@ -338,6 +341,7 @@ for (const width of [1366]) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.route("**/api/**", async (route) => {
+      if (await fulfillMonthPlate(route)) return;
       const request = route.request();
       const url = new URL(request.url());
       const host = returnsDiagnosticsFixture(url);

@@ -57,7 +57,7 @@
   margin: 16px 0;
 }
 .tableWrap:focus-visible {
-  outline: 3px solid #2b74c4;
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 .table {

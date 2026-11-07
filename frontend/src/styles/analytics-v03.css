@@ -49,7 +49,7 @@
 }
 
 .composition-tooltip__row strong {
-  font-family: var(--mono);
+  font-family: var(--f-num);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

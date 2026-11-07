@@ -100,11 +100,11 @@ test("ui-v2: keeps native Close visible and keyboard-operable on desktop", {
   await installReadOnlyApiFixtures(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
-  const close = page.getByRole("link", { name: "Месяц", exact: true });
+  const close = page.getByRole("complementary").getByRole("link", { name: /Месяц/i });
   await expect(close).toBeVisible();
-  await expect(close).toHaveAttribute("href", "/v2/close");
+  await expect(close).toHaveAttribute("href", /^\/v2\/close/);
   await close.focus();
   await expect(close).toBeFocused();
   await close.press("Enter");
-  await expectPathAndSearch(page, "/v2/close");
+  await expectPathAndSearch(page, "/v2/close?month=12");
 });

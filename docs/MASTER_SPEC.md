@@ -530,9 +530,9 @@ use that exact same period. An explicit `month=<id>` resolves the exact CLOSED
 report to its calendar boundaries through a read; invalid, missing, repeated or
 DRAFT month IDs never substitute the latest report.
 
-The sidebar has one Returns item and one Income/plans item; “Рабочие разделы”
-contains only Month. The current parent remains marked on nested routes and is
-visually distinguished with a left marker and WCAG AA text contrast.
+The sidebar has one Returns item and one Income/plans item; Month is reached
+through the working month plate (12.4). The current parent remains marked on nested
+routes and is visually distinguished with a left marker and WCAG AA text contrast.
 
 The overview links to account diagnostics through “Подробнее о данных”.
 “Подробнее о данных” on `/v2/returns/account` lazily opens the existing source
@@ -902,6 +902,13 @@ Every read has explicit loading/error/empty/partial states. Failed or stale refr
 Данные, разбор источника, экспорт/копии и настройки приложения доступны внутри
 «Настройки». Рабочие месяцы, справочники и отдельные аналитические инструменты
 сохраняют существующие адреса и переходы.
+
+Под основными разделами находится плашка рабочего месяца: название месяца и его
+статус, «Закрыт» с датой снимка или «N из M шагов». Она ведёт в этот месяц.
+Рабочий месяц — новейший черновик после последнего закрытого отчёта, иначе этот
+отчёт. Шаг засчитан, когда в разделе месяца есть сохранённый факт. Это подсказка о
+заполненности, а не решение о закрытии. Плашка читает только
+`GET /api/months/working-status` и не загружает `close-workflow` на каждой странице.
 
 ---
 

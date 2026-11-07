@@ -82,7 +82,7 @@
 }
 
 .reportSelect select:focus-visible {
-  outline: 3px solid #2b74c4;
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -108,7 +108,7 @@
   padding: 10px 11px;
   border: 1px solid #e5e9ed;
   border-radius: 8px;
-  background: #fbfcfd;
+  background: var(--surface-2);
   color: var(--ink);
   cursor: pointer;
   font: inherit;
@@ -388,7 +388,7 @@
   min-width: 0;
   border: 1px solid #e5e9ed;
   border-radius: 9px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .ladderMonth summary {
@@ -449,7 +449,7 @@
   padding: 15px;
   border: 1px solid #e5e9ed;
   border-radius: 10px;
-  background: #fbfcfd;
+  background: var(--surface-2);
 }
 
 .goalHeader {

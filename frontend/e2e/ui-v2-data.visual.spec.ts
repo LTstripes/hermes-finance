@@ -10,6 +10,7 @@ import {
   uiV2Instruments,
   uiV2Months,
 } from "../src/test/uiV2Fixtures";
+import { fulfillMonthPlate } from "./visual-fixtures";
 
 async function assertBounded(page: Page) {
   expect(
@@ -49,6 +50,7 @@ async function installDataApi(page: Page) {
       unexpected.push(`external: ${url.origin}`);
   });
   await page.route("**/api/**", async (route) => {
+    if (await fulfillMonthPlate(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -157,6 +159,7 @@ async function installFilesApi(page: Page) {
     }
   });
   await page.route("**/api/**", async (route) => {
+    if (await fulfillMonthPlate(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -187,7 +190,7 @@ test("Settings sidebar remains visible and scrolls independently on a short desk
 }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "One desktop ownership check");
   await installDataApi(page);
-  await page.setViewportSize({ width: 1440, height: 420 });
+  await page.setViewportSize({ width: 1440, height: 320 });
   await page.goto("/v2/data");
   await expect(page.getByTestId("freshness-clocks")).toBeVisible();
   const sidebar = page.locator("aside");
@@ -196,14 +199,14 @@ test("Settings sidebar remains visible and scrolls independently on a short desk
   expect(box).not.toBeNull();
   // Fractional document heights may round sticky containment by half a CSS pixel.
   expect(Math.abs(box?.y ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(1);
-  expect(box?.height).toBe(420);
+  expect(box?.height).toBe(320);
   expect(await sidebar.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
     true,
   );
   await sidebar.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
-  await expect(sidebar.getByText("Только на этом компьютере")).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: /Рабочий месяц/ })).toBeInViewport();
   const main = await page.locator("#v2-main").boundingBox();
   expect(main && box && main.x >= box.x + box.width).toBeTruthy();
   await assertBounded(page);

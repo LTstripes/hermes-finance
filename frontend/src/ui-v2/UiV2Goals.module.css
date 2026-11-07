@@ -103,7 +103,7 @@
 }
 
 .content :global(.goal-card__progress) {
-  accent-color: #244f83;
+  accent-color: var(--accent);
 }
 
 @media (max-width: 680px) {

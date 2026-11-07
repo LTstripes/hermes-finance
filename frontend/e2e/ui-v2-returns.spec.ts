@@ -13,6 +13,7 @@ import {
   overviewFixture,
 } from "../src/ui-v2/returns/fixtures";
 import { instrumentCardFixture, overallFixture } from "../src/ui-v2/returns/overallFixtures";
+import { fulfillMonthPlate } from "./visual-fixtures";
 
 async function install(page: Page, extendedHistory = false) {
   const calls: string[] = [];
@@ -20,6 +21,7 @@ async function install(page: Page, extendedHistory = false) {
   await page.route(
     (url) => url.pathname.startsWith("/api/"),
     async (route) => {
+      if (await fulfillMonthPlate(route)) return;
       const request = route.request();
       const url = new URL(request.url());
       calls.push(`${request.method()} ${url.pathname}`);
@@ -386,6 +388,7 @@ test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport
   await page.route(
     (url) => url.pathname.startsWith("/api/"),
     async (route) => {
+      if (await fulfillMonthPlate(route)) return;
       const request = route.request();
       calls.push(`${request.method()} ${new URL(request.url()).pathname}`);
       expect(request.method()).toBe("GET");
@@ -463,6 +466,7 @@ for (const retired of ["performance", "monthly-returns", "monthly-result", "stat
     await page.route(
       (url) => url.pathname.startsWith("/api/"),
       async (route) => {
+        if (await fulfillMonthPlate(route)) return;
         expect(route.request().method()).toBe("GET");
         expect(new URL(route.request().url()).pathname).toBe("/api/returns/overall");
         await route.fulfill({ json: overallFixture() });
@@ -535,6 +539,7 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
   await page.route(
     (url) => url.pathname.startsWith("/api/"),
     async (route) => {
+      if (await fulfillMonthPlate(route)) return;
       const url = new URL(route.request().url());
       expect(route.request().method()).toBe("GET");
       calls.push(url.pathname);

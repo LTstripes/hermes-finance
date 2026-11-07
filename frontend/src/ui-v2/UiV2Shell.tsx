@@ -2,23 +2,64 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 
 import { UiV2BackToTop } from "./UiV2BackToTop";
+import { UiV2MonthPlate } from "./UiV2MonthPlate";
 import styles from "./UiV2Page.module.css";
 
 export type UiV2Section = "home" | "capital" | "returns" | "data" | "income";
 
-const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: string; to: string }> = [
-  { id: "home", label: "Мои финансы", icon: "⌂", to: "/v2" },
-  { id: "capital", label: "Капитал", icon: "◧", to: "/v2/capital" },
-  { id: "returns", label: "Доходность", icon: "↗", to: "/v2/returns" },
-  { id: "income", label: "Доход и планы", icon: "◒", to: "/v2/income" },
-  { id: "data", label: "Настройки", icon: "⚙", to: "/v2/data/app" },
+const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: ReactNode; to: string }> = [
+  {
+    id: "home",
+    label: "Мои финансы",
+    icon: <path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />,
+    to: "/v2",
+  },
+  {
+    id: "capital",
+    label: "Капитал",
+    icon: (
+      <>
+        <rect height="18" rx="2" width="8" x="3" y="3" />
+        <rect height="8" rx="2" width="8" x="13" y="3" />
+        <rect height="8" rx="2" width="8" x="13" y="13" />
+      </>
+    ),
+    to: "/v2/capital",
+  },
+  {
+    id: "returns",
+    label: "Доходность",
+    icon: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
+    to: "/v2/returns",
+  },
+  {
+    id: "income",
+    label: "Доход и планы",
+    icon: (
+      <>
+        <rect height="16" rx="2" width="18" x="3" y="5" />
+        <path d="M3 10h18M8 3v4M16 3v4" />
+      </>
+    ),
+    to: "/v2/income",
+  },
+  {
+    id: "data",
+    label: "Настройки",
+    icon: (
+      <>
+        <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+        <circle cx="16" cy="7" r="2" />
+        <circle cx="8" cy="17" r="2" />
+      </>
+    ),
+    to: "/v2/data/app",
+  },
 ];
-
-const WORKSPACE_LINKS: Array<{ label: string; to: string }> = [{ label: "Месяц", to: "/v2/close" }];
 
 /**
  * Shared UI v2 shell: dark sidebar, one native section marked as the current
- * page and direct links to native workspaces.
+ * page and the working month plate.
  */
 export function UiV2Shell({
   active,
@@ -52,7 +93,7 @@ export function UiV2Shell({
             H
           </span>
           <span>
-            Hermes Finance<small>Личные финансы</small>
+            Hermes Finance<small>Только на этом компьютере</small>
           </span>
         </Link>
         <nav aria-label="Основная навигация" className={styles.navigation}>
@@ -62,29 +103,23 @@ export function UiV2Shell({
               key={section.id}
               to={section.to}
             >
-              <span aria-hidden="true">{section.icon}</span> {section.label}
+              <svg
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                viewBox="0 0 24 24"
+              >
+                {section.icon}
+              </svg>
+              {section.label}
             </Link>
           ))}
         </nav>
         {sidebarExtra}
-        <div className={styles.sidebarNote}>
-          <span className={styles.eyebrow}>Финансовая картина</span>
-          <p>Капитал, изменения, доход и цели по подтверждённым отчётам.</p>
-        </div>
-        <div className={styles.legacyLinks}>
-          <p className={styles.eyebrow}>Рабочие разделы</p>
-          {WORKSPACE_LINKS.map((link) => (
-            <Link key={link.to} to={link.to}>
-              {link.label} <span aria-hidden="true">↗</span>
-            </Link>
-          ))}
-        </div>
-        <p className={styles.localOnly}>Только на этом компьютере</p>
+        <UiV2MonthPlate />
       </aside>
       <div className={styles.workspace}>
-        <div className={styles.topbar}>
-          <span>Основной интерфейс</span>
-        </div>
         <main aria-busy={busy} className={styles.main} id="v2-main" tabIndex={-1}>
           <header className={styles.header}>{header}</header>
           {children}

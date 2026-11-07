@@ -33,9 +33,9 @@
 
 .goal-card--main {
   grid-column: 1 / -1;
-  border-color: rgb(39 115 76 / 35%);
+  border-color: rgb(31 78 140 / 35%);
   background: var(--surface);
-  box-shadow: 0 10px 28px rgb(39 115 76 / 7%);
+  box-shadow: 0 10px 28px rgb(31 78 140 / 7%);
 }
 
 .goal-card__header {
