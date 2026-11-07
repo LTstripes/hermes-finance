@@ -698,6 +698,54 @@ def test_existing_numeric_return_and_presence_claim_get_scoped_pending_defect(da
     assert client.get(path).json()["status"] == "indicative"
 
 
+def test_batched_month_source_status_matches_individual_reads_and_refreshes(database):
+    from sqlalchemy import event
+
+    from hermes_finance.database import coherent_read_snapshot
+    from hermes_finance.services.reporting_months import create_reporting_month
+
+    scope = _broker_month_setup(database)
+    client = TestClient(create_app(database=database))
+    xml = _source_inbox_xml(database)
+    view = save(client, xml, scope)
+    month_id = scope["reporting_month_id"]
+    with database.session_factory() as session:
+        other = create_reporting_month(session, year=2031, month=2, snapshot_date=date(2031, 2, 28))
+        other_id = other.id
+    reads = []
+
+    def count(_conn, _cursor, statement, _params, _context, _many):
+        if (
+            "SELECT source_intake_revisions.reporting_month_id, source_intake_revisions.original_id"
+            in statement
+        ):
+            reads.append(statement)
+
+    event.listen(database.engine, "before_cursor_execute", count)
+    try:
+        with database.session_factory() as session, coherent_read_snapshot(session):
+            expected = {
+                mid: source_intake.scoped_status(session, mid) for mid in (month_id, other_id)
+            }
+            assert source_intake.scoped_status_for_months(session, []) == {}
+            actual = source_intake.scoped_status_for_months(session, [month_id, other_id, month_id])
+            assert actual == expected
+            assert len(reads) == 1
+            assert actual[month_id]["intake_count"] == 1
+            assert actual[other_id]["intake_count"] == 0
+        response = review(
+            client, view, xml, intent(view, default_enabled=False), "synthetic-change"
+        )
+        assert response.status_code == 200, response.text
+        with database.session_factory() as session, coherent_read_snapshot(session):
+            changed = source_intake.scoped_status_for_months(session, [month_id, other_id])
+            assert changed[month_id] == source_intake.scoped_status(session, month_id)
+            assert changed[month_id]["revision_digest"] != actual[month_id]["revision_digest"]
+            assert changed[other_id] == actual[other_id]
+    finally:
+        event.remove(database.engine, "before_cursor_execute", count)
+
+
 def test_restore_preserves_queue_but_retires_old_confirmations(database):
     from hermes_finance.services.backups import create_backup, restore_backup
 

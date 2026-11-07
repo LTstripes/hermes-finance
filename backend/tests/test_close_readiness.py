@@ -1438,3 +1438,58 @@ def test_workflow_builds_calendar_once_per_fresh_request(tmp_path, monkeypatch):
     finally:
         session.close()
         database.engine.dispose()
+
+
+def test_checklist_reuses_payout_state_but_reads_new_forecasts_next_request(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from hermes_finance.services import actual_payouts, payout_calendar
+
+    session, database = session_for(tmp_path)
+    try:
+        month = create_reporting_month(session, year=2030, month=5, snapshot_date=date(2030, 5, 12))
+        account = create_account(session, name="Synthetic broker", account_type="brokerage")
+        instrument = create_instrument(session, name="Synthetic bond", instrument_type="bond")
+        month_id, account_id, instrument_id = month.id, account.id, instrument.id
+
+        def add_forecast(day):
+            with database.session_factory() as writer:
+                create_expected_cash_flow(
+                    writer,
+                    reporting_month_id=month_id,
+                    account_id=account_id,
+                    instrument_id=instrument_id,
+                    flow_type="coupon",
+                    expected_date=day,
+                    gross_amount="10.00",
+                    expected_net_amount="10.00",
+                    source="synthetic",
+                    source_as_of_date=date(2030, 5, 12),
+                    forecast_version="v1",
+                )
+
+        session.close()
+        add_forecast(date(2030, 6, 1))
+        calendar = Mock(wraps=payout_calendar._merged_payout_calendar)
+        future = Mock(wraps=actual_payouts._future_states)
+        monkeypatch.setattr(payout_calendar, "_merged_payout_calendar", calendar)
+        monkeypatch.setattr(actual_payouts, "_future_states", future)
+        with TestClient(create_app(database)) as client:
+            for expected in (1, 2):
+                if expected == 2:
+                    add_forecast(date(2030, 7, 1))
+                response = client.get(
+                    f"/api/months/{month_id}/close-workflow?include_checklist=true"
+                )
+                assert response.status_code == 200, response.text
+                payouts = next(
+                    step
+                    for step in response.json()["checklist"]["steps"]
+                    if step["id"] == "payouts"
+                )
+                assert payouts["secondary_count"] == expected
+                assert calendar.call_count == expected
+                assert future.call_count == expected
+    finally:
+        session.close()
+        database.engine.dispose()

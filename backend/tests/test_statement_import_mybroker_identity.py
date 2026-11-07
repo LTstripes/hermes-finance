@@ -96,6 +96,50 @@ def test_original_bound_preview_keeps_s1_v2_shape_and_writes_nothing(database):
     assert "source_name" not in frozen["positions"][0]
 
 
+def test_identity_catalogue_lookups_refresh_after_snapshot(database):
+    from hermes_finance.database import coherent_read_snapshot
+    from hermes_finance.services import mybroker_identity
+
+    queries = []
+
+    def count(_conn, _cursor, statement, _params, _context, _many):
+        if "FROM instruments" in statement:
+            queries.append(statement)
+
+    event.listen(database.engine, "before_cursor_execute", count)
+    try:
+        with database.session_factory() as session, coherent_read_snapshot(session):
+            exact = mybroker_identity._exact_instruments(session, ISIN)
+            assert len(exact) == 1
+            candidate = mybroker_identity._instrument_candidates(session, ISIN, "other name")
+            assert candidate == exact
+            name_only = mybroker_identity._instrument_candidates(
+                session, "RU000A000099", exact[0].name
+            )
+            assert name_only == exact
+            assert mybroker_identity._exact_instruments(session, ISIN) == exact
+            assert (
+                mybroker_identity._instrument_candidates(session, ISIN, "other name") == candidate
+            )
+            assert len(queries) == 3
+            instrument_id = exact[0].id
+        with database.session_factory() as writer:
+            instrument = writer.get(Instrument, instrument_id)
+            instrument.is_active = False
+            instrument.name = "Synthetic changed identity"
+            writer.commit()
+        with database.session_factory() as session, coherent_read_snapshot(session):
+            changed = mybroker_identity._exact_instruments(session, ISIN)
+            assert changed[0].name == "Synthetic changed identity"
+            assert changed[0].is_active is False
+            assert (
+                mybroker_identity._instrument_candidates(session, "RU000A000099", exact[0].name)
+                == ()
+            )
+    finally:
+        event.remove(database.engine, "before_cursor_execute", count)
+
+
 def test_two_novel_stock_bond_proposals_need_currency_not_settlement_rub(database):
     xml = identity_xml(bond=True, isin="RU000A000002")
     with database.session_factory() as session:
