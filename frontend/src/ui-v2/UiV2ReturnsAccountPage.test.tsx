@@ -303,6 +303,7 @@ test("account leaders show clean monetary results and label partial amounts", as
   // The partial amount is marked once by a footnote, not by a prefix on every row.
   expect(tops).not.toHaveTextContent("Известная часть:");
   expect(tops.querySelector("sup")).toHaveTextContent("*");
+  expect(within(tops).getByText("(известная часть, не полный итог)")).toBeInTheDocument();
   expect(tops).toHaveTextContent("Горизонт");
   expect(tops).toHaveTextContent("известная часть результата, не полный итог");
 });

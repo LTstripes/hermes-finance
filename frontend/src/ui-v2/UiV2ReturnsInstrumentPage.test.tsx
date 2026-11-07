@@ -871,3 +871,37 @@ test.each([true, false])(
     expect(within(section).getAllByText("—")).toHaveLength(3);
   },
 );
+
+test("bridge draws equality only when the shown parts add up to the total", async () => {
+  // Fixture summary: −34 ₽ + 49,77 ₽ against a 12 ₽ total from another account set.
+  const partial = instrumentCardFixture();
+  partial.summary.payouts.value = "4977";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(partial)),
+  );
+  const { unmount } = setup("/v2/returns/instrument/RU000A000002");
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(region.queryByText("Итог")).toBeNull();
+  expect(region.queryByText("=")).toBeNull();
+  expect(
+    region.getByText(
+      "Части и итог посчитаны по разным наборам данных, поэтому их сумма не равна итогу.",
+    ),
+  ).toBeVisible();
+  unmount();
+
+  const whole = instrumentCardFixture();
+  whole.summary.valuation_and_trades.value = "-3400";
+  whole.summary.payouts.value = "4600";
+  whole.summary.pnl.value = "1200";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(whole)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const exact = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(exact.getByText("Итог")).toBeVisible();
+  expect(exact.getByText("=")).toBeInTheDocument();
+  expect(exact.queryByText(/по разным наборам данных/)).toBeNull();
+});

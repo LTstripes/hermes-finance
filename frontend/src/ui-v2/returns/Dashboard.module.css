@@ -187,6 +187,12 @@
   font-size: var(--t-xs);
 }
 
+.accountNote {
+  padding: 8px 0 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
 .accountRate {
   color: var(--ink-2) !important;
 }

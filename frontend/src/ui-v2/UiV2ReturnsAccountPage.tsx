@@ -234,7 +234,13 @@ function Instruments({
                         <strong className={positive ? styles.positive : styles.negative}>
                           {displayMetric(r[mode], true)}
                           {mode === "pnl" && isPartialResult(r.pnl) && (
-                            <sup aria-hidden="true">*</sup>
+                            <>
+                              <sup aria-hidden="true">*</sup>
+                              <span className={sheet.visuallyHidden}>
+                                {" "}
+                                (известная часть, не полный итог)
+                              </span>
+                            </>
                           )}
                         </strong>
                       </li>

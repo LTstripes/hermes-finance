@@ -50,6 +50,12 @@ const amountTone = (value: string | null) =>
         ? "negative"
         : undefined;
 
+/** Exact kopecks for an equality check only; never a displayed or derived amount. */
+const exactKopecks = (metric: Metric) =>
+  metric.unit === "kopecks" && metric.value !== null && /^-?\d+$/.test(metric.value)
+    ? BigInt(metric.value)
+    : null;
+
 /** One period chip for the whole card when every account shares it. */
 function periodText(card: InstrumentCard, selected: boolean) {
   const first = card.accounts[0]?.period;
@@ -172,6 +178,14 @@ export function ReturnsInstrumentCard({
   const summaryMetrics = data
     ? [data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl]
     : [];
+  // Equality is drawn only when the shown parts add up to the shown total exactly;
+  // parts and total may come from different account sets when a result is partial.
+  const bridge = data
+    ? [data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl].map(exactKopecks)
+    : [];
+  const bridgeKnown = bridge.length === 3 && bridge.every((value) => value !== null);
+  const bridgeAdds =
+    bridgeKnown && (bridge[0] as bigint) + (bridge[1] as bigint) === (bridge[2] as bigint);
   const unattributedPurchases = !!data?.accounts.some((account) =>
     account.purchases?.some((purchase) =>
       purchase.reason_codes.includes("account_money_unattributed"),
@@ -306,9 +320,11 @@ export function ReturnsInstrumentCard({
                       : "покупки, продажи и стоимость сейчас"}
                   </small>
                 </Figure>
-                <span className={styles.operator} aria-hidden="true">
-                  +
-                </span>
+                {bridgeAdds && (
+                  <span className={styles.operator} aria-hidden="true">
+                    +
+                  </span>
+                )}
                 <Figure label="Полученные выплаты" metric={data.summary.payouts}>
                   {[
                     ["купоны", data.summary.coupons],
@@ -327,15 +343,13 @@ export function ReturnsInstrumentCard({
                     </small>
                   )}
                 </Figure>
-                {data.summary.pnl.value !== null && (
+                {bridgeAdds && (
                   <>
                     <span className={styles.operator} aria-hidden="true">
                       =
                     </span>
                     <div className={styles.term} aria-hidden="true">
-                      <span className={styles.termLabel}>
-                        {partialTotal ? "По доступным данным" : "Итог"}
-                      </span>
+                      <span className={styles.termLabel}>Итог</span>
                       <strong data-tone={tone(data.summary.pnl)}>
                         {displayMetric(data.summary.pnl, true)}
                       </strong>
@@ -343,6 +357,11 @@ export function ReturnsInstrumentCard({
                   </>
                 )}
               </div>
+              {bridgeKnown && !bridgeAdds && (
+                <p className={styles.caveat}>
+                  Части и итог посчитаны по разным наборам данных, поэтому их сумма не равна итогу.
+                </p>
+              )}
               <p className={sheet.muted}>
                 Комиссии и налоги не входят в расчёт. НКД учтён в сделках, стоимости и купонах.
               </p>

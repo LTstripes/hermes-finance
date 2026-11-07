@@ -328,6 +328,15 @@ export default function UiV2ReturnsPage() {
                             data-tone={tone(a.result.pnl)}
                           >
                             {displayWhole(a.result.pnl, true)}
+                            {isPartialResult(a.result.pnl) && (
+                              <>
+                                <sup aria-hidden="true">*</sup>
+                                <span className={sheet.visuallyHidden}>
+                                  {" "}
+                                  (известная часть, не полный итог)
+                                </span>
+                              </>
+                            )}
                           </strong>
                         ) : !a.result || a.result.pnl.value === null ? (
                           <p>Пока нет результата по сохранённым данным</p>
@@ -344,6 +353,12 @@ export default function UiV2ReturnsPage() {
                         />
                       </li>
                     ))}
+                    {accounts.length > 1 &&
+                      accounts.some((a) => a.result && isPartialResult(a.result.pnl)) && (
+                        <li className={layout.accountNote}>
+                          * Сумма известных результатов бумаг счёта, не полный итог.
+                        </li>
+                      )}
                   </ul>
                 </div>
                 <p className={layout.note}>
@@ -501,7 +516,13 @@ export default function UiV2ReturnsPage() {
                                             >
                                               {displayWhole(a.pnl, true)}
                                               {isPartialResult(a.pnl) && (
-                                                <sup aria-hidden="true">*</sup>
+                                                <>
+                                                  <sup aria-hidden="true">*</sup>
+                                                  <span className={sheet.visuallyHidden}>
+                                                    {" "}
+                                                    (известная часть, не полный итог)
+                                                  </span>
+                                                </>
                                               )}
                                             </strong>{" "}
                                             <span className={layout.rate}>

@@ -429,3 +429,37 @@ test("instrument results retain each account's money, rate and own dates, includ
   expect(b).toHaveTextContent("31.03.2030 — 30.04.2030");
   expect(calls).toEqual(["/api/returns/overall?include_instrument_summaries=true"]);
 });
+
+test("partial account and income subtotals are marked once, also for screen readers", async () => {
+  const data = overallFixture();
+  for (const account of data.source_accounts)
+    if (account.result)
+      account.result.pnl = {
+        ...account.result.pnl,
+        reason_codes: ["clean_partial_result"],
+        estimate: true,
+      };
+  // Both accounts are included, but one subtotal is itself partial.
+  const [first, second] = data.coupon_income.accounts;
+  Object.assign(second, {
+    included: true,
+    proof_status: "current",
+    exclusion_reason: null,
+    reason_codes: [],
+    period: first.period,
+    amount: { ...first.amount, value: "100", reason_codes: [] },
+  });
+  data.coupon_income.accounts[0].amount = {
+    ...data.coupon_income.accounts[0].amount,
+    reason_codes: ["clean_partial_result"],
+  };
+  install(data);
+  setup();
+  const accounts = await screen.findByRole("list", { name: "Счета" });
+  expect(within(accounts).getAllByText("(известная часть, не полный итог)")).toHaveLength(2);
+  expect(
+    within(accounts).getAllByText("* Сумма известных результатов бумаг счёта, не полный итог."),
+  ).toHaveLength(1);
+  const coupon = screen.getByRole("region", { name: "Полученные купоны" });
+  expect(within(coupon).getByText("По известным выплатам, не полный итог")).toBeVisible();
+});

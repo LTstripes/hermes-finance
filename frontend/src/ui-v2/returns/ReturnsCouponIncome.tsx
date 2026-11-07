@@ -3,7 +3,7 @@ import { useState } from "react";
 import { getIncome, type IncomeKind } from "./cards";
 import layout from "./Dashboard.module.css";
 import { readDisplayNames } from "./dashboard";
-import { dateLabel, displayMetric, displayWhole } from "./model";
+import { dateLabel, displayMetric, displayWhole, isPartialResult } from "./model";
 import type { CouponIncome } from "./overall";
 import styles from "./Returns.module.css";
 
@@ -145,10 +145,12 @@ export function ReturnsCouponIncome({
       <strong title={displayMetric(value.known_total)}>
         {compact ? displayWhole(value.known_total) : displayMetric(value.known_total)}
       </strong>
-      {value.included_accounts < value.selected_accounts && (
+      {value.included_accounts < value.selected_accounts ? (
         <small>
-          Учтены {value.included_accounts} из {value.selected_accounts} счетов
+          Учтены {value.included_accounts} из {value.selected_accounts} счетов, не полный итог
         </small>
+      ) : (
+        isPartialResult(value.known_total) && <small>По известным выплатам, не полный итог</small>
       )}
       <details className={layout.income} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary>По инструментам</summary>
