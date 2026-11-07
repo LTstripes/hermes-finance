@@ -178,14 +178,16 @@ export function ReturnsInstrumentCard({
   const summaryMetrics = data
     ? [data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl]
     : [];
-  // Equality is drawn only when the shown parts add up to the shown total exactly;
-  // parts and total may come from different account sets when a result is partial.
+  // Equality is drawn only for a complete bridge: all three values known, none partial
+  // (one producer-owned account set), and the parts adding up to the total exactly.
+  // Matching numbers alone do not prove that parts and total cover the same data.
   const bridge = data
     ? [data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl].map(exactKopecks)
     : [];
   const bridgeKnown = bridge.length === 3 && bridge.every((value) => value !== null);
-  const bridgeAdds =
+  const bridgeSums =
     bridgeKnown && (bridge[0] as bigint) + (bridge[1] as bigint) === (bridge[2] as bigint);
+  const bridgeAdds = bridgeSums && !partialTotal;
   const unattributedPurchases = !!data?.accounts.some((account) =>
     account.purchases?.some((purchase) =>
       purchase.reason_codes.includes("account_money_unattributed"),
@@ -357,7 +359,7 @@ export function ReturnsInstrumentCard({
                   </>
                 )}
               </div>
-              {bridgeKnown && !bridgeAdds && (
+              {bridgeKnown && !partialTotal && !bridgeSums && (
                 <p className={styles.caveat}>
                   Части и итог посчитаны по разным наборам данных, поэтому их сумма не равна итогу.
                 </p>

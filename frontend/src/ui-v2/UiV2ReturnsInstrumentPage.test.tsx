@@ -905,3 +905,31 @@ test("bridge draws equality only when the shown parts add up to the total", asyn
   expect(exact.getByText("=")).toBeInTheDocument();
   expect(exact.queryByText(/по разным наборам данных/)).toBeNull();
 });
+
+test("matching partial numbers never draw a complete equality", async () => {
+  // Account A knows valuation and trades (100 ₽) but not payouts; account B knows
+  // payouts (0 ₽) but not valuation. The available total is 100 ₽ and stays partial.
+  const card = instrumentCardFixture();
+  const partial = (value: string) => ({
+    value,
+    unit: "kopecks" as const,
+    method: "known_clean_instruments",
+    estimate: true,
+    reason_codes: ["clean_partial_result"],
+  });
+  card.summary.valuation_and_trades = partial("10000");
+  card.summary.payouts = partial("0");
+  card.summary.pnl = partial("10000");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  expect(region.queryByText("Итог")).toBeNull();
+  expect(region.queryByText("=")).toBeNull();
+  expect(region.queryByText("+")).toBeNull();
+  expect(region.getByText("по доступным данным")).toBeVisible();
+  expect(region.getAllByText(/Это не полный итог/)).toHaveLength(1);
+  expect(region.queryByText(/по разным наборам данных/)).toBeNull();
+});
