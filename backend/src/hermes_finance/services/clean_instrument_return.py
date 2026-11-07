@@ -75,6 +75,12 @@ def _own_money_is_trade_nkd(events):
 
 def has_unidentified_trade_money(analysis):
     """Money of an unknown issue may be a trade, so the result carries a note."""
+    if any(
+        "classification_missing_legacy_intake" in analysis.coverage[name].reason_codes
+        for name in ("events", "payouts")
+        if name in analysis.coverage
+    ):
+        return True
     return any(
         event.isin is None
         and event.attribution_basis != "explicit_tax_unclassified"
@@ -224,6 +230,8 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         return (coverage.complete or bool(coverage.reason_codes)) and not reasons
 
     payouts_known = complete("payouts")
+    payout_reasons = set(analysis.coverage["payouts"].reason_codes) - ignored_cost_reasons
+    own_payout_reasons = instrument_scoped_reasons(analysis, isin, payout_reasons)
     # An unattributed account row may be a payout of this bond, so the result
     # stays visible and carries one note instead of being withheld.
     clean = calculate_clean_return(
@@ -233,20 +241,12 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         closing,
         tuple(events),
         trades_complete=clean_complete("events") and clean_complete("quantity"),
-        payouts_complete=payouts_known
-        or (
-            quantity_reconciled
-            and not instrument_scoped_reasons(
-                analysis,
-                isin,
-                set(analysis.coverage["payouts"].reason_codes) - ignored_cost_reasons,
-            )
-        ),
+        payouts_complete=payouts_known or (quantity_reconciled and not own_payout_reasons),
         redemptions_complete=clean_complete("quantity"),
         valuation_complete=opening is not None and closing is not None,
-        result_assumptions=()
-        if payouts_known and not has_unidentified_trade_money(analysis)
-        else ("account_money_unattributed",),
+        result_assumptions=("account_money_unattributed",)
+        if payout_reasons - own_payout_reasons or has_unidentified_trade_money(analysis)
+        else (),
     )
     if "source_sections_not_financially_accepted" in getattr(analysis, "reason_codes", ()):
         reason = "source_sections_not_financially_accepted"

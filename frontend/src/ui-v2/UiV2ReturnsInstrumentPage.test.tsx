@@ -333,6 +333,11 @@ test("account-level note does not mark each purchase incomplete", async () => {
   );
   expect(region.getByText("10,00 ₽")).toBeVisible();
   expect(region.queryByText("Данные неполные")).not.toBeInTheDocument();
+  expect(
+    region.getByText(
+      "На счёте есть операции без привязки к бумаге: результат по ней может быть неполным.",
+    ),
+  ).toBeVisible();
 });
 
 test("shows known purchase result and explains conflicting NKD", async () => {

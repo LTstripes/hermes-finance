@@ -907,7 +907,9 @@ class FakeResolver:
         }
 
 
-def issuer_view(*isins, settled="2030-01-05", quantity="1", positions=()):
+def issuer_view(
+    *isins, settled="2030-01-05", quantity="1", positions=(), covered_from="2030-01-01"
+):
     trades = [
         {
             "state": "settled",
@@ -917,8 +919,8 @@ def issuer_view(*isins, settled="2030-01-05", quantity="1", positions=()):
         for isin in isins
     ]
     view = {
-        "covered_from": "2030-01-01",
-        "covered_to": "2030-12-31",
+        "covered_from": covered_from,
+        "covered_to": "2031-12-31",
         "document": {"trades": trades, "positions": list(positions)},
     }
     return (None, view, None)
@@ -981,6 +983,25 @@ def test_incoming_position_of_another_issue_keeps_the_coupon_unattributed():
     selected = [issuer_view("ZZ0000000011", positions=(incoming,))]
     assert not _issuer_bond_in_account(
         resolver, security, "unresolved_no_match", selected, "a", "2030-02-01"
+    )
+
+
+def test_opening_position_counts_from_the_day_before_its_statement():
+    from hermes_finance.services.source_return_evidence import _issuer_bond_in_account
+
+    security = SimpleNamespace(issuer_name='ООО "Agro"')
+    resolver = FakeResolver(("Agro 001P-01", "ZZ0000000011"), ("Agro 001P-02", "ZZ0000000029"))
+    incoming = {
+        "isin": "ZZ0000000029",
+        "source_account": "a",
+        "beginning_actual_quantity": "5",
+    }
+    selected = [
+        issuer_view("ZZ0000000011"),
+        issuer_view(positions=(incoming,), covered_from="2031-01-01"),
+    ]
+    assert not _issuer_bond_in_account(
+        resolver, security, "unresolved_no_match", selected, "a", "2030-12-31"
     )
 
 
@@ -1107,6 +1128,25 @@ def test_alternate_date_of_a_collision_still_blocks_its_issue():
     analysis.coverage["events"] = Coverage(False, ("overlapping_trade_conflict",))
     result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
     assert result.pnl.value is None
+
+
+def test_missing_money_classification_marks_purchases():
+    analysis = scoped_case()
+    analysis.events = analysis.events[:1]
+    analysis.coverage["payouts"] = Coverage(False, ("classification_missing_legacy_intake",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    rows = clean_purchase_price_contributions(
+        analysis, result, "ZZ0000000011", instrument_type="bond"
+    )
+    assert rows[0]["reason_codes"] == ["account_money_unattributed"]
+
+
+def test_own_payout_conflict_is_not_reported_as_unattributed_money():
+    analysis = scoped_case(payout_reasons=("pdf_xml_payout_mismatch",))
+    analysis.events = analysis.events[:1]
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert "account_money_unattributed" not in result.known_result.assumptions
+    assert "account_money_unattributed" not in result.pnl.assumptions
 
 
 def test_foreign_collision_does_not_undo_a_commission_only_conflict():

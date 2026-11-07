@@ -285,6 +285,15 @@ export function ReturnsInstrumentCard({
                 Hermes, не налоговый учёт брокера. Процент от первоначальной стоимости покупки, без
                 годового пересчёта. Выплаты показаны выше по инструменту.
               </p>
+              {data.accounts.some((account) =>
+                account.purchases?.some((purchase) =>
+                  purchase.reason_codes.includes("account_money_unattributed"),
+                ),
+              ) && (
+                <p role="note">
+                  {reasonCopy("account_money_unattributed", { surface: "returns" }).message}
+                </p>
+              )}
               {data.accounts.map((account) =>
                 account.purchases ? (
                   <div className={styles.scroll} key={account.scope}>

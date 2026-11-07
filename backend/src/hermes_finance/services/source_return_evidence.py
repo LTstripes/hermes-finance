@@ -5,6 +5,7 @@ No classification, financial fact or receipt is written by a return reader.
 
 import json
 import re
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -69,6 +70,10 @@ def _positive(value):
         return False
 
 
+def _day_before(day):
+    return (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+
+
 def _issues_held_from_positions(view, account, day):
     """Issues a statement proves were held by the payment, bought there or not."""
     return {
@@ -76,7 +81,10 @@ def _issues_held_from_positions(view, account, day):
         for row in view["document"].get("positions", [])
         if row.get("source_account") == account
         and (
-            (view["covered_from"] <= day and _positive(row.get("beginning_actual_quantity")))
+            (
+                _day_before(view["covered_from"]) <= day
+                and _positive(row.get("beginning_actual_quantity"))
+            )
             or (view["covered_to"] <= day and _positive(row.get("actual_quantity")))
         )
     }
