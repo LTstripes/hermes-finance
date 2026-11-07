@@ -1289,3 +1289,168 @@ def test_card_keeps_the_note_of_every_account():
     assert _account_result_notes([*accounts, {"scope": "x", "clean": None}]) == [
         "account_money_unattributed"
     ]
+
+
+def test_empty_position_needs_no_reported_value():
+    from hermes_finance.services.clean_instrument_return import _clean_endpoint
+
+    empty = Endpoint(
+        START, Decimal(0), None, None, None, "reported_unknown", (), ("missing_endpoint",)
+    )
+    assert _clean_endpoint(empty, "stock") == 0
+    held = replace(empty, quantity=Decimal(1))
+    assert _clean_endpoint(held, "stock") is None
+    unknown = replace(empty, reason_codes=("missing_endpoint", "instrument_type_unknown"))
+    assert _clean_endpoint(unknown, None) is None
+
+
+def scoped_dividend(reasons=("payout_link_unresolved_no_match",), **changes):
+    event = replace(
+        cash("DIVIDEND", 700),
+        counted=False,
+        current=False,
+        attribution_basis="registration_scope",
+        reason_codes=reasons,
+    )
+    return replace(event, **changes)
+
+
+def test_dividend_identified_by_registration_number_counts():
+    analysis = scoped_case(payout_reasons=("payout_link_unresolved_no_match",))
+    analysis.events = (analysis.events[0], scoped_dividend())
+    analysis.coverage["events"] = Coverage(True)
+    analysis.coverage["quantity"] = Coverage(True)
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert result.dividends.value == 700
+    assert result.pnl.value == -2300
+    assert "account_money_unattributed" not in result.pnl.assumptions
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"attribution_basis": "persisted_link"},
+        {"reason_codes": ("payout_link_unresolved_no_match", "pdf_xml_payout_mismatch")},
+        {"kind": "COUPON"},
+    ],
+)
+def test_other_unlinked_payouts_do_not_count(changes):
+    analysis = scoped_case(payout_reasons=("payout_link_unresolved_no_match",))
+    analysis.events = (analysis.events[0], scoped_dividend(**changes))
+    analysis.coverage["events"] = Coverage(True)
+    analysis.coverage["quantity"] = Coverage(True)
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="stock")
+    assert (result.dividends.value or 0) + (result.coupons.value or 0) == 0
+
+
+def blank_nkd_trade(**changes):
+    event = replace(
+        trade("BUY", 102050, None, basis=None),
+        provider="alfa_mybroker",
+        native_identity="trade-1",
+        native_ids=("1", "2"),
+        execution_date=DAY,
+        depository_settlement_date=DAY,
+        unit_price=Decimal("102.05"),
+        price_unit="PERCENT_OF_FACE",
+        quantity_delta=Decimal("1"),
+        counted=False,
+        reason_codes=("trade_components_missing", "trade_nkd_basis_unknown"),
+    )
+    return replace(event, **changes)
+
+
+def test_blank_nkd_keeps_the_statement_total():
+    event = blank_nkd_trade()
+    assert trade_amount_with_nkd(event) == 102050
+    assert cost_only_trade(event)
+    assert calc((event,)).buys.value == 102050
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"provider": "synthetic"},
+        {"price_unit": "RUB_PER_UNIT"},
+        {"native_identity": None},
+        {"native_ids": ("1",)},
+        {"accrued_interest_kopecks": 100},
+        {
+            "reason_codes": (
+                "trade_components_missing",
+                "trade_nkd_basis_unknown",
+                "repo_trade_unsupported",
+            )
+        },
+        {"quantity_delta": Decimal("-1")},
+        {"native_trade_amount_kopecks": None},
+        {"cash_legs": (CashLeg("principal", DAY, -90000, 90000, ("m",), "m"),)},
+        {
+            "cash_legs": (
+                CashLeg("principal", DAY, -102050, 102050, ("m",), "m"),
+                CashLeg("nkd", DAY, -500, 500, ("n",), "n"),
+            )
+        },
+    ],
+)
+def test_blank_nkd_rule_is_narrow(changes):
+    event = blank_nkd_trade(**changes)
+    assert not cost_only_trade(event) or trade_amount_with_nkd(event) is None
+
+
+def test_classification_conflict_of_a_linked_row_is_not_unattributed_money():
+    analysis = scoped_case()
+    linked = replace(
+        cash("FEE", -100), kind="UNRESOLVED", reason_codes=("overlap_flow_choice_conflict",)
+    )
+    analysis.events = (analysis.events[0], linked)
+    analysis.coverage["payouts"] = Coverage(False, ("overlap_flow_choice_conflict",))
+    result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert "account_money_unattributed" not in result.known_result.assumptions
+
+
+def linked(principal=None, nkd=None):
+    legs = []
+    if principal is not None:
+        legs.append(CashLeg("principal", DAY, -principal, principal, ("p",), "money:p"))
+    if nkd is not None:
+        legs.append(CashLeg("nkd", DAY, -nkd, nkd, ("n",), "money:n"))
+    return tuple(legs)
+
+
+def priced_trade(**changes):
+    event = replace(
+        trade("BUY", 102050, None, basis=None),
+        provider="alfa_mybroker",
+        native_identity="trade-1",
+        native_ids=("1", "2"),
+        execution_date=DAY,
+        depository_settlement_date=DAY,
+        unit_price=Decimal("100"),
+        price_unit="PERCENT_OF_FACE",
+        face_value=Decimal("1000"),
+        face_value_date=DAY,
+        quantity_delta=Decimal("1"),
+        counted=False,
+        reason_codes=("trade_components_missing", "trade_nkd_basis_unknown"),
+    )
+    return replace(event, **changes)
+
+
+@pytest.mark.parametrize(
+    "event, amount",
+    [
+        # Linked principal and NKD exceed the statement total.
+        (priced_trade(cash_legs=linked(100000, 10000)), None),
+        # Linked principal contradicts the priced principal.
+        (priced_trade(cash_legs=linked(95000, 7050)), None),
+        # A linked NKD row alone cannot prove the missing principal row.
+        (blank_nkd_trade(cash_legs=linked(None, 500)), 102050),
+        (priced_trade(cash_legs=linked(100000, 2050)), 102050),
+        (blank_nkd_trade(cash_legs=linked(100000, 10000)), None),
+    ],
+)
+def test_linked_trade_money_must_agree_with_total_and_price(event, amount):
+    assert trade_amount_with_nkd(event) == amount
+    result = calc((event,))
+    assert (result.buys.value == amount) if amount else result.pnl.value is None

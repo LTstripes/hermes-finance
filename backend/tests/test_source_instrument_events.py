@@ -1281,15 +1281,116 @@ def test_overlapping_account_cost_gap_stays_with_account(db, description, accoun
     assert snapshot(db) == before
 
 
+def test_repo_after_each_purchase_keeps_the_proved_intraday_order(db):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def interleaved(root):
+        rows = root.findall(".//m:Details[@trade_no]", NS)
+        plan = [
+            (None, None, None, "09:00", "10.04.2030"),
+            ("B90001", "B90002", "репо ч.1", "10:00", "10.04.2030"),
+            ("B90002", "B90001", "репо ч.2", "10:00", "11.04.2030"),
+            (None, None, None, "11:00", "10.04.2030"),
+            ("B90003", "B90004", "репо ч.1", "12:00", "10.04.2030"),
+            ("B90004", "B90003", "репо ч.2", "12:00", "11.04.2030"),
+        ]
+        for row, (number, partner, comment, time, delivery) in zip(rows, plan, strict=True):
+            stamp = f"10.04.2030 {time}:00"
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", delivery)
+            row.set("save_depo_settlement_date", delivery)
+            if number:
+                row.set("trade_no", number)
+                row.set("repo_no", partner)
+                row.set("comment", comment)
+
+    save(
+        db,
+        stock=("0", "10", "0", "1300"),
+        bond=None,
+        trades=(
+            (ISIN, "5", "500", "0", "0"),
+            (ISIN, "-5", "500", "0", "0"),
+            (ISIN, "5", "500", "0", "0"),
+            (ISIN, "5", "600", "0", "0"),
+            (ISIN, "-5", "600", "0", "0"),
+            (ISIN, "5", "600", "0", "0"),
+        ),
+        mutate=interleaved,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    assert result["instruments"][0]["pnl"]["value"] == "20000"
+
+
+@pytest.mark.parametrize("lent, visible", [("10", True), ("11", False)])
+def test_rolling_repo_chain_and_same_second_fills_keep_the_result(db, lent, visible):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def rolling(root):
+        rows = root.findall(".//m:Details[@trade_no]", NS)
+        plan = [
+            (None, None, None, "10.04.2030 09:00:00", "10.04.2030"),
+            (None, None, None, "10.04.2030 09:00:00", "10.04.2030"),
+            ("B90001", "B90002", "репо ч.1", "15.04.2030 18:00:00", "15.04.2030"),
+            ("B90002", "B90001", "репо ч.2", "15.04.2030 18:00:00", "16.04.2030"),
+            ("B90003", "B90004", "репо ч.1", "16.04.2030 18:00:00", "16.04.2030"),
+            ("B90004", "B90003", "репо ч.2", "16.04.2030 18:00:00", "17.04.2030"),
+        ]
+        for row, (number, partner, comment, stamp, delivery) in zip(rows, plan, strict=True):
+            row.set("db_time", f"{stamp}\n{stamp}")
+            row.set("save_settlement_date", delivery)
+            row.set("save_depo_settlement_date", delivery)
+            if number:
+                row.set("trade_no", number)
+                row.set("repo_no", partner)
+                row.set("comment", comment)
+
+    save(
+        db,
+        stock=("0", "10", "0", "1100"),
+        bond=None,
+        trades=(
+            (ISIN, "5", "500", "0", "0"),
+            (ISIN, "5", "500", "0", "0"),
+            (ISIN, f"-{lent}", "500", "0", "0"),
+            (ISIN, lent, "500", "0", "0"),
+            (ISIN, f"-{lent}", "501", "0", "0"),
+            (ISIN, lent, "501", "0", "0"),
+        ),
+        mutate=rolling,
+    )
+    with db.session_factory() as session:
+        result = read_clean_account(
+            session,
+            ACCOUNT,
+            date(2030, 3, 31),
+            date(2030, 4, 30),
+            isin=ISIN,
+            include_purchases=True,
+        )
+    assert result["instruments"][0]["pnl"]["value"] == ("10000" if visible else None)
+
+
+@pytest.mark.parametrize("same_instant", [False, True])
 @pytest.mark.parametrize("paired", [True, False])
 @pytest.mark.parametrize("repo_fee", ["0", None])
-def test_fifo_reader_same_isin_repo_and_unique_ordinary_trades(db, paired, repo_fee):
+def test_fifo_reader_same_isin_repo_and_unique_ordinary_trades(db, paired, repo_fee, same_instant):
     from hermes_finance.services.clean_instrument_return import read_clean_account
 
     def repo_after_ordinary(root):
         rows = root.findall(".//m:Details[@trade_no]", NS)
         for index, row in enumerate(rows, 9):
-            stamp = f"15.04.2030 {index}:00:00"
+            # Both legs of a broker REPO are concluded at the same instant.
+            hour = 11 if same_instant and index >= 11 else index
+            stamp = f"15.04.2030 {hour}:00:00"
             row.set("db_time", f"{stamp}\n{stamp}")
             delivery = f"{index + 7}.04.2030"
             row.set("save_settlement_date", delivery)
@@ -3337,7 +3438,9 @@ def test_clean_bond_price_uses_dated_trade_nominal_without_nkd(db, face_present,
             isin=BOND,
             include_purchases=True,
         )["instruments"][0]
-    if face_present:
+    # A blank NKD keeps the statement total; differing commissions across two
+    # statements still leave an unnamed nominal unproved.
+    if face_present or not overlap:
         assert result["buys"]["value"] == "102000"
         assert result["sells"]["value"] == "103000"
         assert result["valuation_and_trades"]["value"] == result["pnl"]["value"] == "1000"
@@ -3448,13 +3551,17 @@ def test_clean_bond_retains_only_independently_proved_principal(db, case):
             isin=BOND,
             include_purchases=True,
         )["instruments"][0]
-    if case in {"nkd_leg_conflict", "nkd_leg_fee_conflict", "negative_nkd"}:
+    if case == "negative_nkd":
         assert result["pnl"]["value"] == "1000"
         assert result["pnl"]["status"] == "partial"
         assert "source_nkd_conflict" in result["pnl"]["assumptions"]
         assert result["purchases"][0]["price_result_kopecks"] == "1000"
         assert result["purchases"][0]["status"] == "partial"
         assert "source_nkd_conflict" in result["purchases"][0]["reason_codes"]
+    else:
+        # Linked principal and NKD money that miss the total leave it undefined.
+        assert result["pnl"]["value"] is None
+        assert result["purchases"] is None or result["purchases"][0]["price_result_kopecks"] is None
         if case == "nkd_leg_conflict":
             with TestClient(create_app(database=db)) as client:
                 card = client.get("/api/returns/instrument-card", params={"isin": BOND})
@@ -3466,11 +3573,7 @@ def test_clean_bond_retains_only_independently_proved_principal(db, case):
             export = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
             ai_row = next(row for row in export["instruments"] if row["isin"] == BOND)
             assert account["clean"]["pnl"] == ai_row["pnl"]
-            assert ai_row["pnl"]["status"] == "partial"
-            assert account["purchases"][0]["reason_codes"] == ai_row["purchases"][0]["reason_codes"]
-    else:
-        assert result["pnl"]["value"] is None
-        assert result["purchases"] is None or result["purchases"][0]["price_result_kopecks"] is None
+            assert ai_row["pnl"]["value"] is None
     assert snapshot(db) == before
 
 

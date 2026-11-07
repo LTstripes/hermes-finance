@@ -83,12 +83,79 @@ def clean_trade_amount(event: InstrumentEvent) -> int | None:
     return _priced_bond_principal(event)
 
 
+def _bond_total_with_blank_nkd(event: InstrumentEvent) -> bool:
+    """The statement total of a bond trade already holds any NKD left blank."""
+    amount = event.native_trade_amount_kopecks
+    quantity = event.quantity_delta
+    if (
+        event.provider != "alfa_mybroker"
+        or event.price_unit != "PERCENT_OF_FACE"
+        or event.kind not in {"BUY", "SELL"}
+        or not event.current
+        or event.counted
+        or not event.native_identity
+        or len(event.native_ids) != 2
+        or event.native_total_basis is not None
+        or event.accrued_interest_kopecks is not None
+        or set(event.reason_codes) != {"trade_components_missing", "trade_nkd_basis_unknown"}
+        or amount is None
+        or amount < 0
+        or not isinstance(quantity, Decimal)
+        or not quantity.is_finite()
+        or (event.kind == "BUY" and quantity <= 0)
+        or (event.kind == "SELL" and quantity >= 0)
+        or not _clean_trade_chronology(event)
+    ):
+        return False
+    # A total below the priced principal cannot hold any NKD. Percent of a
+    # ruble face is already kopecks, as in the principal calculation above.
+    price, face = event.unit_price, event.face_value
+    if all(isinstance(value, Decimal) and value.is_finite() for value in (price, face)):
+        with localcontext() as context:
+            context.prec = 200
+            if amount < price * face * abs(quantity) - 1:
+                return False
+    return _linked_money_agrees(event, amount)
+
+
+def _linked_money_agrees(event: InstrumentEvent, total: int) -> bool:
+    """Linked statement money may not contradict the trade total or its price.
+
+    Legs owned by the trade itself are derived and prove nothing. A lone NKD row
+    cannot prove an unlinked principal, so it is not compared with the total.
+    """
+    linked = [leg for leg in event.cash_legs if not leg.ownership.startswith("trade:")]
+    principal = [leg.account_cash_kopecks for leg in linked if leg.role == "principal"]
+    nkd = [leg.account_cash_kopecks for leg in linked if leg.role == "nkd"]
+    sign = -1 if event.kind == "BUY" else 1
+    priced = _priced_bond_principal(event)
+    if not principal:
+        return True
+    paid = sign * sum(principal)
+    if nkd:
+        return paid + sign * sum(nkd) == total and (priced is None or abs(paid - priced) <= 1)
+    # A principal row alone is the whole total or the total without its NKD.
+    accrued = event.accrued_interest_kopecks
+    return (
+        paid == total
+        or (priced is not None and abs(paid - priced) <= 1)
+        or (accrued is not None and paid == total - accrued)
+    )
+
+
 def trade_amount_with_nkd(event: InstrumentEvent) -> int | None:
     """Return the trade money including NKD, excluding commission.
 
     Purchases, valuations and coupons are compared on one basis: a coupon
     returns NKD paid at purchase, and a statement position value carries NKD.
     """
+    total = _trade_amount_with_nkd(event)
+    return total if total is not None and _linked_money_agrees(event, total) else None
+
+
+def _trade_amount_with_nkd(event: InstrumentEvent) -> int | None:
+    if _bond_total_with_blank_nkd(event):
+        return event.native_trade_amount_kopecks
     principal = clean_trade_amount(event)
     if principal is None:
         return None
@@ -340,6 +407,7 @@ def cost_only_trade(event: InstrumentEvent) -> bool:
         missing_fee_only(event)
         or fee_only_trade_conflict(event)
         or _priced_bond_without_costs(event)
+        or _bond_total_with_blank_nkd(event)
         or _fee_only_overlap(event)
     )
 

@@ -1191,7 +1191,7 @@ def test_clean_card_closed_fifo_purchase_survives_missing_open_valuation(db):
     assert rows[1]["price_result_kopecks"] is None
 
 
-def test_clean_card_closed_fifo_purchase_survives_later_unknown_buy_amount(db):
+def test_clean_card_blank_nkd_keeps_the_later_bond_purchase(db):
     from test_source_instrument_returns_service import save
 
     isin = "RU000A000001"
@@ -1220,7 +1220,7 @@ def test_clean_card_closed_fifo_purchase_survives_later_unknown_buy_amount(db):
         card = overall.read_clean_instrument_card(session, isin)
     rows = card["accounts"][0]["purchases"]
     assert rows[0]["price_result_kopecks"] == "8000" and rows[0]["return_fraction"] == "0.8"
-    assert rows[1]["cost_kopecks"] is None and rows[1]["price_result_kopecks"] is None
+    assert rows[1]["cost_kopecks"] == "20000" and rows[1]["price_result_kopecks"] == "-5000"
 
 
 def _manual_gold(db):
