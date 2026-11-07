@@ -17,6 +17,11 @@ from sqlalchemy import event, update
 from hermes_finance.database import Database, create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base, IncomeEntry
+from hermes_finance.services.close_readiness import (
+    CloseReadinessItem,
+    CloseReadinessSeverity,
+)
+from hermes_finance.services.month_checklist import attention_step
 
 
 @pytest.fixture
@@ -333,3 +338,197 @@ def test_working_status_stays_one_month_query_and_one_facts_query(
     assert len(selects) == 2
     assert "FROM reporting_months" in selects[0]
     assert "EXISTS" in selects[1]
+
+
+# Month page checklist inside the close workflow read (#1079, stage 2). It is
+# presentation: it must agree with the sidebar plate and not change readiness.
+
+STEP_IDS = [
+    "general",
+    "income",
+    "assets",
+    "liabilities",
+    "budget",
+    "brokers",
+    "positions",
+    "payouts",
+    "note",
+    "close",
+]
+
+
+def _money(amount: str) -> dict:
+    return {"amount": amount, "currency": "RUB"}
+
+
+def _checklist_month(client: TestClient, snapshot_date: str = "2031-01-31") -> int:
+    response = client.post(
+        "/api/months", json={"year": 2031, "month": 1, "snapshot_date": snapshot_date}
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+def _checklist_workflow(client: TestClient, month_id: int) -> dict:
+    response = client.get(f"/api/months/{month_id}/close-workflow")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _checklist_steps(body: dict) -> dict[str, dict]:
+    return {step["id"]: step for step in body["checklist"]["steps"]}
+
+
+def _checklist_expense(
+    client: TestClient, month_id: int, category: str, amount: str, kind: str
+) -> None:
+    response = client.post(
+        "/api/expenses",
+        json={
+            "reporting_month_id": month_id,
+            "category": category,
+            "amount": _money(amount),
+            "expense_type": kind,
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_empty_month_lists_ten_steps_without_figures(client: TestClient) -> None:
+    month_id = _checklist_month(client)
+    checklist = _checklist_workflow(client, month_id)["checklist"]
+
+    assert [step["id"] for step in checklist["steps"]] == STEP_IDS
+    assert [step["group"] for step in checklist["steps"]] == [
+        *["data"] * 5,
+        *["sources"] * 3,
+        "plan",
+        "close",
+    ]
+    assert checklist["total_count"] == 10
+    assert checklist["completed_count"] == 1
+    steps = _checklist_steps({"checklist": checklist})
+    assert steps["general"]["state"] == "done"
+    assert steps["general"]["figure"] == {
+        "kind": "date",
+        "amount": None,
+        "day": "2031-01-31",
+        "count": None,
+    }
+    assert steps["note"]["state"] == "optional"
+    assert steps["note"]["required"] is False
+    for step_id in ("income", "assets", "positions", "budget", "close"):
+        assert steps[step_id]["state"] == "empty"
+        # An empty section shows no figure rather than a zero fact.
+        assert steps[step_id]["figure"] is None
+        assert steps[step_id]["secondary_count"] is None
+
+
+def test_checklist_count_matches_the_sidebar_plate(client: TestClient) -> None:
+    month_id = _checklist_month(client)
+    assert (
+        client.post(
+            "/api/cash-balances",
+            json={
+                "reporting_month_id": month_id,
+                "name": "Synthetic cash",
+                "amount": _money("10.00"),
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            "/api/comments", json={"reporting_month_id": month_id, "text": "Synthetic note"}
+        ).status_code
+        == 201
+    )
+
+    plate = client.get("/api/months/working-status").json()
+    checklist = _checklist_workflow(client, month_id)["checklist"]
+    assert checklist["completed_count"] == plate["completed_steps"] == 3
+    assert checklist["total_count"] == plate["total_steps"]
+
+    steps = _checklist_steps({"checklist": checklist})
+    assert steps["assets"]["state"] == "done"
+    assert steps["assets"]["figure"]["amount"] == _money("10.00")
+    assert steps["note"]["state"] == "done"
+    assert steps["note"]["figure"] == {"kind": "count", "amount": None, "day": None, "count": 1}
+
+
+def test_expenses_keep_mandatory_and_other_totals_apart(client: TestClient) -> None:
+    month_id = _checklist_month(client)
+    _checklist_expense(client, month_id, "Synthetic rent", "300.00", "mandatory")
+    _checklist_expense(client, month_id, "Synthetic phone", "20.00", "mandatory")
+    _checklist_expense(client, month_id, "Synthetic phone", "5.00", "mandatory")
+    _checklist_expense(client, month_id, "Synthetic cinema", "7.50", "other")
+
+    body = _checklist_workflow(client, month_id)
+    expenses = body["checklist"]["expenses"]
+    assert expenses["mandatory_items"] == [
+        {"category": "Synthetic rent", "amount": _money("300.00")},
+        {"category": "Synthetic phone", "amount": _money("25.00")},
+    ]
+    assert expenses["mandatory_total"] == _money("325.00")
+    # The overview KPI and the item list use one mandatory total.
+    assert body["final_review"]["kpis"]["mandatory_expenses"] == _money("325.00")
+    assert expenses["other_total"] == _money("7.50")
+
+    budget = _checklist_steps(body)["budget"]
+    assert budget["state"] == "done"
+    assert budget["figure"]["amount"] == _money("325.00")
+    assert budget["secondary_count"] == 3
+
+
+def test_readiness_warning_marks_its_section(client: TestClient) -> None:
+    month_id = _checklist_month(client)
+    account = {"name": "Synthetic broker", "account_type": "brokerage"}
+    assert client.post("/api/accounts", json=account).status_code == 201
+
+    body = _checklist_workflow(client, month_id)
+    codes = [item["code"] for item in body["final_review"]["close_readiness"]["items"]]
+    assert "active_account_snapshot_missing" in codes
+    positions = _checklist_steps(body)["positions"]
+    assert positions["state"] == "attention"
+    assert positions["attention_count"] == 1
+    assert positions["has_saved_facts"] is False
+    assert body["checklist"]["attention_count"] >= 1
+    # Presentation never changes the close decision.
+    assert body["readiness"]["can_close"] is True
+
+
+def test_closed_month_completes_the_close_step(client: TestClient) -> None:
+    month_id = _checklist_month(client)
+    assert (
+        client.post(
+            "/api/comments", json={"reporting_month_id": month_id, "text": "Synthetic note"}
+        ).status_code
+        == 201
+    )
+    readiness_before = _checklist_workflow(client, month_id)["readiness"]
+    assert client.post(f"/api/months/{month_id}/close").status_code == 200
+
+    body = _checklist_workflow(client, month_id)
+    assert _checklist_steps(body)["close"]["state"] == "done"
+    assert body["checklist"]["completed_count"] == 3
+    assert readiness_before["can_close"] is True
+
+
+def _readiness_item(code: str, severity: str = "warning", **context: object) -> CloseReadinessItem:
+    return CloseReadinessItem(
+        severity=CloseReadinessSeverity(severity), code=code, message="", context=context
+    )
+
+
+def test_attention_step_routes_findings_to_sections() -> None:
+    assert attention_step(_readiness_item("snapshot_date_required")) == "general"
+    assert attention_step(_readiness_item("salary_tax_history_incomplete")) == "income"
+    assert attention_step(_readiness_item("active_account_snapshot_missing")) == "positions"
+    assert attention_step(_readiness_item("unresolved_payout_reconciliation")) == "payouts"
+    assert attention_step(_readiness_item("quote_stale", family_id="market_quotes")) == "positions"
+    assert attention_step(_readiness_item("x", family_id="deposit_cash_snapshots")) == "assets"
+    assert attention_step(_readiness_item("x", family_id="alfa_statement_payouts")) == "brokers"
+    assert attention_step(_readiness_item("cash_control_mismatch", "hard_blocker")) == "brokers"
+    # Information and a month-wide empty finding are not section findings.
+    assert attention_step(_readiness_item("backup_none", "info")) is None
+    assert attention_step(_readiness_item("empty_manual_month")) is None

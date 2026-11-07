@@ -2438,9 +2438,7 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
     });
     expect(denied.status()).toBe(409);
     expect((await (await request.get(`/api/months/${monthId}`)).json()).status).toBe("closed");
-    await expect(
-      page.getByRole("heading", { name: "Месяц · Декабрь 2037", exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Декабрь 2037", exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Открыть месяц заново", exact: true }),
     ).toBeVisible();

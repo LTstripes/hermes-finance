@@ -41,6 +41,7 @@ from hermes_finance.services.cash import total_cash
 from hermes_finance.services.close_readiness import CloseReadiness
 from hermes_finance.services.debts import total_debts
 from hermes_finance.services.freshness_provenance import FreshnessProvenanceSummary
+from hermes_finance.services.month_checklist import MonthChecklist, build_month_checklist
 from hermes_finance.services.month_close_workflow import (
     WORKFLOW_CONTRACT_VERSION,
     FinalMonthReview,
@@ -260,6 +261,68 @@ class WorkflowLinksOut(BaseModel):
     freshness: str
 
 
+class ChecklistFigureOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["money", "date", "count"]
+    amount: MoneyValue | None
+    day: date | None
+    count: int | None
+
+
+class ChecklistStepOut(BaseModel):
+    """One Month page section: saved-fact presence, findings and a key figure."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: Literal[
+        "general",
+        "income",
+        "assets",
+        "liabilities",
+        "positions",
+        "brokers",
+        "payouts",
+        "budget",
+        "note",
+        "close",
+    ]
+    group: Literal["data", "sources", "plan", "close"]
+    required: bool
+    has_saved_facts: bool
+    state: Literal["done", "attention", "empty", "optional"]
+    attention_count: int
+    figure: ChecklistFigureOut | None
+    secondary_count: int | None
+
+
+class ChecklistExpenseItemOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str
+    amount: MoneyValue
+
+
+class ChecklistExpensesOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mandatory_total: MoneyValue
+    other_total: MoneyValue
+    mandatory_items: list[ChecklistExpenseItemOut]
+
+
+class MonthChecklistOut(BaseModel):
+    """Presentation of the month sections; not a close decision (#1079)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    completed_count: int
+    total_count: int
+    attention_count: int
+    steps: list[ChecklistStepOut]
+    expenses: ChecklistExpensesOut
+
+
 class GuidedCloseWorkflowOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -273,6 +336,7 @@ class GuidedCloseWorkflowOut(BaseModel):
     freshness: WorkflowFreshnessOut
     final_review: FinalMonthReviewOut
     outlook: NextMonthOutlookOut | None
+    checklist: MonthChecklistOut
     links: WorkflowLinksOut
 
 
@@ -610,6 +674,50 @@ def _final_review_out(
     )
 
 
+def _rub(amount: RubleAmount) -> MoneyValue:
+    return MoneyValue(amount=amount.to_api(), currency="RUB")
+
+
+def _checklist_out(checklist: MonthChecklist) -> MonthChecklistOut:
+    return MonthChecklistOut(
+        completed_count=checklist.completed_count,
+        total_count=checklist.total_count,
+        attention_count=checklist.attention_count,
+        steps=[
+            ChecklistStepOut(
+                id=step.id,
+                group=step.group,
+                required=step.required,
+                has_saved_facts=step.has_saved_facts,
+                state=step.state,
+                attention_count=step.attention_count,
+                figure=(
+                    ChecklistFigureOut(
+                        kind=step.figure.kind,
+                        amount=(
+                            _rub(step.figure.amount) if step.figure.amount is not None else None
+                        ),
+                        day=step.figure.day,
+                        count=step.figure.count,
+                    )
+                    if step.figure is not None
+                    else None
+                ),
+                secondary_count=step.secondary_count,
+            )
+            for step in checklist.steps
+        ],
+        expenses=ChecklistExpensesOut(
+            mandatory_total=_rub(checklist.mandatory_expenses_total),
+            other_total=_rub(checklist.other_expenses_total),
+            mandatory_items=[
+                ChecklistExpenseItemOut(category=item.category, amount=_rub(item.amount))
+                for item in checklist.mandatory_expense_items
+            ],
+        ),
+    )
+
+
 def _outlook_out(outlook: NextMonthOutlook) -> NextMonthOutlookOut:
     ladder_out = (
         cash_flow_ladder_to_out(outlook.cash_flow_ladder)
@@ -677,6 +785,9 @@ def get_month_close_workflow(
             steps=steps,
         )
         outlook = build_next_month_outlook(session, month) if month.status == "closed" else None
+        checklist = build_month_checklist(
+            session, month, readiness=readiness, summary=final_review.summary
+        )
         completed_or_skipped = sum(
             step.state.value in {"completed", "skipped"}
             for step in steps
@@ -698,6 +809,7 @@ def get_month_close_workflow(
             freshness=_freshness_out(freshness),
             final_review=_final_review_out(session, final_review, month),
             outlook=_outlook_out(outlook) if outlook is not None else None,
+            checklist=_checklist_out(checklist),
             links=WorkflowLinksOut(
                 month=f"/months/{month.id}",
                 close_readiness=f"/api/months/{month.id}/close-readiness",

@@ -221,6 +221,48 @@ export type GuidedCloseStep = {
   diagnostics: Record<string, unknown>;
 };
 
+export type MonthChecklistStepId =
+  | "general"
+  | "income"
+  | "assets"
+  | "liabilities"
+  | "positions"
+  | "brokers"
+  | "payouts"
+  | "budget"
+  | "note"
+  | "close";
+
+/** One Month page section: saved facts, close-readiness findings and a key figure. */
+export type MonthChecklistStep = {
+  id: MonthChecklistStepId;
+  group: "data" | "sources" | "plan" | "close";
+  required: boolean;
+  has_saved_facts: boolean;
+  state: "done" | "attention" | "empty" | "optional";
+  attention_count: number;
+  figure: {
+    kind: "money" | "date" | "count";
+    amount: MoneyValue | null;
+    day: string | null;
+    count: number | null;
+  } | null;
+  secondary_count: number | null;
+};
+
+/** Presentation of the month sections (#1079); never a close decision. */
+export type MonthChecklist = {
+  completed_count: number;
+  total_count: number;
+  attention_count: number;
+  steps: MonthChecklistStep[];
+  expenses: {
+    mandatory_total: MoneyValue;
+    other_total: MoneyValue;
+    mandatory_items: Array<{ category: string; amount: MoneyValue }>;
+  };
+};
+
 export type MonthCloseWorkflow = {
   contract_version: "monthly_close_workflow_v1";
   generated_at: string;
@@ -250,6 +292,8 @@ export type MonthCloseWorkflow = {
   };
   final_review: FinalMonthReview | FinalMonthReviewUnavailable;
   outlook: NextMonthOutlook | null;
+  /** Absent in responses from builds before #1079 stage 2. */
+  checklist?: MonthChecklist;
   links: { month: string; close_readiness: string; freshness: string };
 };
 
