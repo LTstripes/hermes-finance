@@ -1423,3 +1423,63 @@ def test_navigation_and_coupon_conflicts_use_exact_accepted_identity_not_labels(
     else:
         assert ids == [1, 2]
         assert value.coupon_income.known_total.value == "50"
+
+
+def _snapshot_checker():
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "returns_snapshot_check", Path(__file__).parents[1] / "scripts/returns_snapshot_check.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_snapshot_check_refuses_repository_output(db):
+    checker = _snapshot_checker()
+    with pytest.raises(ValueError, match="outside"):
+        checker.validate_paths(db.database_path, checker.REPOSITORY / "private-output")
+
+
+def test_snapshot_check_source_unchanged_and_comparison(db, tmp_path, monkeypatch, capsys):
+    import hashlib
+    import json
+
+    from test_source_instrument_returns_service import save
+
+    checker = _snapshot_checker()
+    save(
+        db,
+        stock=("0", "2", "0", "300"),
+        bond=None,
+        trades=(("RU000A000000", "1", "100", "0", "3"), ("RU000A000000", "1", "200", "0", "7")),
+    )
+    # Synthetic artifacts stay in pytest's repository-local basetemp; production
+    # validation is tested separately above, with an isolated synthetic boundary here.
+    monkeypatch.setattr(checker, "REPOSITORY", tmp_path / "synthetic-repository")
+    path = db.database_path
+    before = (path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).digest())
+    result = checker.run(path, tmp_path / "first")
+    assert result["totals"]["purchases_with_result"] == 2
+    assert result["totals"]["rows_with_full_result"] == 1
+    assert result["totals"]["open_positions_with_full_result"] == 1
+    assert before == (path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).digest())
+    assert not list((tmp_path / "first").glob("*.sqlite"))
+    console = capsys.readouterr().out
+    assert "RU000A" not in console
+    assert "5000" not in console
+    previous = json.loads(json.dumps(result))
+    previous["rows"][0]["full_result"] = False
+    previous["rows"][0]["purchases_with_result"] = 0
+    previous_path = tmp_path / "previous.json"
+    previous_path.write_text(json.dumps(previous), encoding="utf-8")
+    checker.run(path, tmp_path / "second", compare=previous_path, keep_copy=True)
+    console = capsys.readouterr().out
+    assert "full_result: False -> True" in console
+    assert "purchases_with_result: 0 -> 2" in console
+    assert "rows_with_full_result" not in console
+    assert len(list((tmp_path / "second").glob("*.sqlite"))) == 1
+    assert checker.differences(result, result) == []
+    assert "True -> False" in checker.differences(result, previous)[0]
