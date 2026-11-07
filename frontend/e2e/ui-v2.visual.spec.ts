@@ -1103,8 +1103,9 @@ test("ui-v2 Capital desktop: closed composition, allocation and holdings stay bo
   await expect(page.getByTestId("capital-composition")).toHaveAttribute("data-point-count", "4");
   await expect(page.getByTestId("capital-change-list")).toHaveCount(0);
   for (const name of ["По классам активов", "По счетам", "Крупнейшие позиции"]) {
-    await expect(page.getByRole("table", { name })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
   }
+  await expect(page.getByRole("table", { name: "Крупнейшие позиции" })).toBeVisible();
   await expect(page.getByTestId("capital-class-cash")).toContainText("803 900 ₽");
   await expect(page.getByTestId("capital-bucket-unassigned_cash")).toContainText(
     "Наличные без привязки к счёту",
@@ -1119,7 +1120,7 @@ test("ui-v2 Capital desktop: closed composition, allocation and holdings stay bo
   expect(evidence.reads.some((read) => read.includes("/api/performance"))).toBe(false);
   await expect(page.getByText("Разница: капитал − ипотека")).toBeVisible();
   await expect(
-    page.locator(".capital-composition-chart path[fill='#5f7e9e']").first(),
+    page.locator(".capital-composition-chart path[fill='#9aa3ae']").first(),
   ).toBeVisible();
   expect(await page.locator(".capital-composition-chart path[fill='#27734c']").count()).toBe(0);
   await expect(page.getByText("164,9%", { exact: false })).toBeVisible();
@@ -1217,7 +1218,7 @@ test("ui-v2 Capital interactions: filters, windows and native navigation preserv
   const evidence = await installCapitalApi(page);
   await page.goto(`/v2/capital?month=${uiV2CapitalPreviousMonthId}&step=actual_payouts`);
   await expect(page.getByTestId("capital-net")).toBeVisible();
-  await page.getByRole("button", { name: "3 месяца" }).click();
+  await page.getByRole("button", { name: "3 мес" }).click();
   await expect(page.getByTestId("capital-composition")).toHaveAttribute("data-point-count", "3");
   await page.getByTestId("capital-class-stock").getByRole("button").click();
   await expect(page.getByText("Фильтр: Акции")).toBeVisible();

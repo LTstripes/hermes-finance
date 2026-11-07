@@ -11,11 +11,12 @@ import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import { listPositions } from "../api/positions";
 import { listProperties } from "../api/properties";
-import { getRiskAllocation, type RiskAllocationResponse } from "../api/riskAllocation";
+import { getRiskAllocation } from "../api/riskAllocation";
 import type {
   CapitalCompositionPoint,
   ClosedReportComparison,
   DashboardMortgage,
+  MoneyValue,
   PropertySnapshot,
 } from "../api/types";
 import {
@@ -25,9 +26,11 @@ import {
 import { HelpTip } from "../components/ui";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatMonth, formatPercent } from "../lib/format";
-import { unsupportedMetricReason } from "../lib/riskSupportCopy";
 import { ASSET_CLASS_LABELS } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
+import { CLASS_COLORS } from "./assetClasses";
+import { AccountAllocation, ClassAllocation, TopPositions } from "./CapitalAllocationSheet";
+import { CapitalBridgeChart } from "./CapitalBridgeChart";
 import { CapitalDraftValuation } from "./CapitalDraftValuation";
 import {
   buildHoldingRows,
@@ -39,22 +42,13 @@ import {
   isRiskAssetClass,
   UNASSIGNED_CASH_KEY,
 } from "./capitalHoldings";
-import { CLASS_COLORS } from "./assetClasses";
+import { ClosedReportTitle } from "./ClosedReportTitle";
 import { selectNewestDraftAfterLatestClosed, sortReportingMonths } from "./monthSelection";
+import sheet from "./ReportSheet.module.css";
 import capitalStyles from "./UiV2Capital.module.css";
-import { UiV2Panel } from "./UiV2Panel";
-import {
-  isQueryReady,
-  UiV2Loading,
-  UiV2Notice,
-  UiV2ReportContext,
-  UiV2WidgetState,
-} from "./UiV2StateBlocks";
 import { UiV2Shell } from "./UiV2Shell";
-import { Allocation, Concentration } from "./UiV2CapitalAllocationPage";
-import allocationStyles from "./UiV2CapitalAllocation.module.css";
-import styles from "./UiV2Page.module.css";
-import { moneyDeltaText as moneyDelta, moneyText as money } from "./valueFormat";
+import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
+import { moneyDeltaText as moneyDelta, moneyText as money, moneyTone } from "./valueFormat";
 
 type HistoryWindow = 3 | 12 | "all";
 
@@ -70,31 +64,67 @@ function isZeroAmount(amount: string): boolean {
   return /^-?0(?:\.0+)?$/.test(amount.trim());
 }
 
-function Panel({
-  action,
+const MONTHS_DATIVE = [
+  "январю",
+  "февралю",
+  "марту",
+  "апрелю",
+  "маю",
+  "июню",
+  "июлю",
+  "августу",
+  "сентябрю",
+  "октябрю",
+  "ноябрю",
+  "декабрю",
+];
+
+/** "к июню 2031": the month the change is measured against. */
+function toMonthText(year: number, month: number): string {
+  const name = MONTHS_DATIVE[month - 1];
+  return name ? `${name} ${year}` : formatMonth(year, month);
+}
+
+/** Geometry only: widths never feed a shown amount. */
+function coordinate(value: MoneyValue): number {
+  const number = Number(value.amount);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function SheetSection({
+  actions,
   children,
   eyebrow,
-  hint,
+  help,
   id,
   title,
-  wide = false,
-}: Omit<Parameters<typeof UiV2Panel>[0], "testIdPrefix">) {
+}: {
+  actions?: ReactNode;
+  children: ReactNode;
+  eyebrow: string;
+  help?: ReactNode;
+  id: string;
+  title: string;
+}) {
   return (
-    <UiV2Panel
-      action={action}
-      eyebrow={eyebrow}
-      hint={hint}
-      id={id}
-      testIdPrefix="capital-panel"
-      title={title}
-      wide={wide}
-    >
+    <section aria-labelledby={id} className={sheet.section} data-testid={`capital-panel-${id}`}>
+      <div className={sheet.sectionHead}>
+        <div>
+          <p className={sheet.eyebrow}>{eyebrow}</p>
+          <h2 id={id}>
+            {title}
+            {help}
+          </h2>
+        </div>
+        {actions ? <div className={sheet.sectionActions}>{actions}</div> : null}
+      </div>
       {children}
-    </UiV2Panel>
+    </section>
   );
 }
 
-function HeadlineGrid({
+/** Hero: liquid capital, its change and the two subtotals it is made of. */
+function Hero({
   comparison,
   ready,
   loading,
@@ -106,132 +136,63 @@ function HeadlineGrid({
   retry: () => void;
 }) {
   const current = ready ? (comparison?.current ?? null) : null;
-  const retryOrNothing = ready ? undefined : retry;
-  const metrics: Array<{
-    eyebrow: string;
-    primary?: boolean;
-    testId: string;
-    value: string | null;
-  }> = [
-    {
-      eyebrow: "Ликвидный капитал",
-      primary: true,
-      testId: "capital-net",
-      value: current
-        ? current.portfolio_source_coverage?.status === "unavailable"
-          ? "—"
-          : money(current.liquid_capital_net)
-        : null,
-    },
-    {
-      eyebrow: "Ликвидные активы",
-      testId: "capital-assets",
-      value: current ? money(current.liquid_assets_total) : null,
-    },
-    {
-      eyebrow: "Включённые обязательства",
-      testId: "capital-debts",
-      value: current ? `− ${money(current.included_debts)}` : null,
-    },
-  ];
+  const unavailable = current?.portfolio_source_coverage?.status === "unavailable";
+  const delta = ready ? (comparison?.liquid_capital_net_delta ?? null) : null;
+  const deltaKnown =
+    delta !== null &&
+    comparison?.previous != null &&
+    !unavailable &&
+    comparison.liquid_capital_net_delta_coverage?.status !== "unavailable";
+  const tone = moneyTone(delta);
   return (
-    <>
-      <section aria-label="Главные показатели капитала" className={styles.metrics}>
-        {metrics.map((metric) => (
-          <article
-            className={`${styles.metric} ${metric.primary ? styles.metricPrimary : ""}`}
-            key={metric.testId}
-          >
-            <p className={styles.eyebrow}>
-              {metric.eyebrow}
-              {metric.primary ? (
-                <HelpTip label="Как считается капитал">
-                  Ликвидные активы минус включённые обязательства = ликвидный капитал. Жильё и
-                  ипотека в ликвидный капитал не входят.
-                </HelpTip>
-              ) : null}
-            </p>
-            {metric.value === null ? (
-              loading ? (
-                <UiV2Loading label="Загружаем показатели…" />
-              ) : (
-                <UiV2WidgetState retry={retryOrNothing} />
-              )
-            ) : (
-              <>
-                <p className={styles.metricValue} data-testid={metric.testId}>
-                  {metric.value}
-                </p>
-                {metric.primary ? (
-                  <PortfolioCoverageNote
-                    coverage={current?.portfolio_source_coverage}
-                    month={current ?? undefined}
-                  />
-                ) : null}
-              </>
-            )}
-          </article>
-        ))}
-      </section>
-      <p>
-        <Link className={styles.contextLink} to="/v2/returns">
-          Доходность в целом — вся доступная история и инструменты
-        </Link>
+    <section aria-label="Главные показатели капитала" className={capitalStyles.hero}>
+      <p className={sheet.eyebrow}>
+        Ликвидный капитал
+        <HelpTip label="Как считается капитал">
+          Ликвидные активы минус включённые обязательства = ликвидный капитал. Жильё и ипотека в
+          ликвидный капитал не входят.
+        </HelpTip>
       </p>
-    </>
-  );
-}
-
-function CapitalChange({ comparison }: { comparison: ClosedReportComparison | undefined }) {
-  const change = comparison?.capital_change;
-  if (
-    !comparison?.current ||
-    !change ||
-    change.reporting_month_id !== comparison?.current?.reporting_month_id ||
-    change.previous_reporting_month_id !== (comparison?.previous?.reporting_month_id ?? null)
-  )
-    return null;
-  const breakdown = change.breakdown;
-  const rows = breakdown
-    ? ([
-        ["Начальный капитал", breakdown.start],
-        ["Внешние внесения и изъятия", breakdown.external_net],
-        ["Инвестиционный результат", breakdown.investment_result],
-        ["Прочие изменения", breakdown.other_changes],
-        ["Необъяснённый остаток", breakdown.unexplained],
-        ["Конечный капитал", breakdown.end],
-      ] as const)
-    : [];
-  return (
-    <Panel
-      eyebrow={formatMonth(comparison.current.year, comparison.current.month)}
-      id="capital-change-title"
-      title="Как изменился капитал за месяц"
-      wide
-    >
-      {breakdown ? (
-        <>
-          <dl className={styles.netSummary}>
-            {rows.map(([label, amount], index) => (
-              <div key={label} data-testid={index === 4 ? "capital-unexplained" : undefined}>
-                <dt>{label}</dt>
-                <dd>{index === 0 || index === 5 ? money(amount) : moneyDelta(amount)}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className={styles.panelFootnote}>
-            Показаны известные суммы. Прочие изменения — изменение включённых обязательств.
-            Неподтверждённые движения и недоступные результаты остаются в отдельном необъяснённом
-            остатке.
-            {change.reason_codes.includes("capital_investment_source_estimate")
-              ? " Инвестиционный результат включает оценку по выпискам с совпадающими остатками."
-              : ""}
-          </p>
-        </>
+      {current === null ? (
+        loading ? (
+          <UiV2Loading label="Загружаем показатели…" />
+        ) : (
+          <UiV2WidgetState retry={ready ? undefined : retry} />
+        )
       ) : (
-        <p>Для объяснения нужны данные на конец этого и предыдущего календарного месяца.</p>
+        <>
+          <p className={sheet.hero} data-testid="capital-net">
+            {unavailable ? "—" : money(current.liquid_capital_net)}
+          </p>
+          {deltaKnown && comparison?.previous ? (
+            <p className={capitalStyles.deltaRow}>
+              <span className={sheet.delta} data-tone={tone}>
+                {tone === "positive" ? "▲ " : tone === "negative" ? "▼ " : ""}
+                {moneyDelta(delta)}
+              </span>
+              <span className={sheet.muted}>
+                к {toMonthText(comparison.previous.year, comparison.previous.month)}
+              </span>
+            </p>
+          ) : null}
+          <PortfolioCoverageNote coverage={current.portfolio_source_coverage} month={current} />
+          <dl className={capitalStyles.facts}>
+            <div>
+              <dt>Ликвидные активы</dt>
+              <dd className={sheet.amount} data-testid="capital-assets">
+                {money(current.liquid_assets_total)}
+              </dd>
+            </div>
+            <div>
+              <dt>Включённые обязательства</dt>
+              <dd className={sheet.amount} data-testid="capital-debts">
+                − {money(current.included_debts)}
+              </dd>
+            </div>
+          </dl>
+        </>
       )}
-    </Panel>
+    </section>
   );
 }
 
@@ -250,10 +211,19 @@ function CompositionOverTime({
   const [mode, setMode] = useState<CapitalCompositionMode>("amount");
   const visible = window === "all" ? points : points.slice(-window);
   return (
-    <Panel
-      action={
-        <div className={capitalStyles.controls}>
-          <fieldset className={styles.segmented} aria-label="Показатель состава">
+    <div
+      className={capitalStyles.composition}
+      data-testid="capital-panel-capital-composition-title"
+    >
+      <div className={capitalStyles.compositionHead}>
+        <h2 className={sheet.visuallyHidden} id="capital-composition-title">
+          Состав во времени
+        </h2>
+        <p className={sheet.eyebrow} aria-hidden="true">
+          Состав по закрытым отчётам
+        </p>
+        <div className={sheet.sectionActions}>
+          <fieldset className={sheet.segmented} aria-label="Показатель состава">
             <button
               aria-pressed={mode === "amount"}
               onClick={() => setMode("amount")}
@@ -265,7 +235,7 @@ function CompositionOverTime({
               Доли
             </button>
           </fieldset>
-          <fieldset className={styles.segmented} aria-label="Период состава">
+          <fieldset className={sheet.segmented} aria-label="Период состава">
             {([3, 12, "all"] as const).map((value) => (
               <button
                 aria-pressed={window === value}
@@ -273,17 +243,12 @@ function CompositionOverTime({
                 onClick={() => setWindow(value)}
                 type="button"
               >
-                {value === 3 ? "3 месяца" : value === 12 ? "12 месяцев" : "Всё время"}
+                {value === 3 ? "3 мес" : value === 12 ? "12 мес" : "Всё"}
               </button>
             ))}
           </fieldset>
         </div>
-      }
-      eyebrow="Закрытые отчёты"
-      id="capital-composition-title"
-      title="Состав во времени"
-      wide
-    >
+      </div>
       {!ready ? (
         <UiV2WidgetState retry={retry} />
       ) : visible.length === 0 ? (
@@ -293,178 +258,78 @@ function CompositionOverTime({
           <CapitalCompositionChart
             assetClasses={assetClasses}
             classColors={CLASS_COLORS}
+            height={300}
             mode={mode}
             points={visible}
           />
         </div>
       )}
-    </Panel>
+    </div>
   );
 }
 
-function AccountBuckets({
-  filter,
-  onPickAccount,
-  retry,
-  risk,
-}: {
-  filter: HoldingFilter;
-  onPickAccount: (key: string, label: string) => void;
-  retry: () => void;
-  risk: RiskAllocationResponse;
-}) {
-  const metric = risk.allocation_by_account;
-  const unsupported = unsupportedMetricReason(metric.support.status, metric.support.reason_codes);
-  if (unsupported) {
-    return <UiV2WidgetState retry={retry} title={unsupported} />;
-  }
-  if (metric.items.length === 0) {
-    return <p className={capitalStyles.muted}>В закрытом отчёте нет строк для этого среза.</p>;
-  }
+function CapitalChange({ comparison }: { comparison: ClosedReportComparison | undefined }) {
+  const change = comparison?.capital_change;
+  if (
+    !comparison?.current ||
+    !change ||
+    change.reporting_month_id !== comparison?.current?.reporting_month_id ||
+    change.previous_reporting_month_id !== (comparison?.previous?.reporting_month_id ?? null)
+  )
+    return null;
+  const breakdown = change.breakdown;
   return (
-    <ul className={capitalStyles.bucketList}>
-      {metric.items.map((item) => (
-        <li key={item.key}>
-          <button
-            aria-pressed={filter?.kind === "account" && filter.value === item.key}
-            className={capitalStyles.bucketButton}
-            data-testid={`capital-bucket-${item.key}`}
-            onClick={() => onPickAccount(item.key, item.label)}
-            type="button"
-          >
-            <span className={capitalStyles.className}>
-              {item.key === UNASSIGNED_CASH_KEY ? "Наличные без привязки к счёту" : item.label}
-            </span>
-            <strong>{money(item.amount)}</strong>
-            <span className={capitalStyles.classShare}>
-              {formatPercent(item.share_pct, { digits: 1 })}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function HoldingsBlock({
-  filter,
-  onPickAccount,
-  monthId,
-  resetFilter,
-  retryRisk,
-  risk,
-  riskReady,
-  rows,
-  lists,
-}: {
-  filter: HoldingFilter;
-  lists: Record<"cash" | "deposit" | "position", { ready: boolean; retry: () => void }>;
-  monthId: number;
-  onPickAccount: (key: string, label: string) => void;
-  resetFilter: () => void;
-  retryRisk: () => void;
-  risk: RiskAllocationResponse | undefined;
-  riskReady: boolean;
-  rows: HoldingRow[];
-}) {
-  const location = useLocation();
-  const backParams = new URLSearchParams(location.search);
-  if (filter) {
-    backParams.set("holding_kind", filter.kind);
-    backParams.set("holding_value", filter.value);
-    backParams.set("holding_label", filter.label);
-  } else {
-    for (const key of ["holding_kind", "holding_value", "holding_label"]) backParams.delete(key);
-  }
-  const back = `${location.pathname}${backParams.size ? `?${backParams}` : ""}`;
-  const visible = filterHoldingRows(rows, filter);
-  const sections: Array<{ kind: HoldingRow["kind"]; title: string }> = [
-    { kind: "cash", title: "Денежные строки" },
-    { kind: "deposit", title: "Вклады" },
-    { kind: "position", title: "Позиции" },
-  ];
-  return (
-    <Panel eyebrow="Строки отчёта" id="capital-holdings-title" title="Где лежит капитал" wide>
-      {filter ? (
-        <div className={capitalStyles.filterBar}>
-          <span>Фильтр: {filter.label}</span>
-          <button onClick={resetFilter} type="button">
-            Сбросить
-          </button>
-        </div>
-      ) : null}
-      <div className={capitalStyles.subBlock}>
-        <h3>Счета</h3>
-        {!riskReady || !risk ? (
-          <UiV2WidgetState retry={retryRisk} />
-        ) : (
-          <AccountBuckets
-            filter={filter}
-            onPickAccount={onPickAccount}
-            retry={retryRisk}
-            risk={risk}
+    <SheetSection
+      eyebrow={formatMonth(comparison.current.year, comparison.current.month)}
+      help={
+        breakdown ? (
+          <HelpTip label="Как читать изменение капитала">
+            Показаны известные суммы. Прочие изменения — изменение включённых обязательств.
+            Неподтверждённые движения и недоступные результаты остаются в отдельном необъяснённом
+            остатке.
+          </HelpTip>
+        ) : undefined
+      }
+      id="capital-change-title"
+      title="Как изменился капитал за месяц"
+    >
+      {breakdown ? (
+        <>
+          <CapitalBridgeChart
+            steps={[
+              { label: "Начало месяца", amount: breakdown.start, kind: "level" },
+              {
+                label: "Внешние внесения и изъятия",
+                amount: breakdown.external_net,
+                kind: "change",
+              },
+              {
+                label: "Инвестиционный результат",
+                amount: breakdown.investment_result,
+                kind: "change",
+              },
+              { label: "Прочие изменения", amount: breakdown.other_changes, kind: "change" },
+              {
+                label: "Необъяснённый остаток",
+                amount: breakdown.unexplained,
+                kind: "change",
+                testId: "capital-unexplained",
+              },
+              { label: "Конец месяца", amount: breakdown.end, kind: "level" },
+            ]}
           />
-        )}
-      </div>
-      {sections.map((section) => {
-        const list = lists[section.kind];
-        const sectionRows = visible.filter((row) => row.kind === section.kind);
-        return (
-          <div className={capitalStyles.subBlock} key={section.kind}>
-            <h3>{section.title}</h3>
-            {!list.ready ? (
-              <UiV2WidgetState retry={list.retry} />
-            ) : sectionRows.length === 0 ? (
-              <p className={capitalStyles.muted}>
-                {filter
-                  ? "В фильтре нет строк этого вида."
-                  : "В закрытом отчёте нет строк этого вида."}
-              </p>
-            ) : (
-              <ul className={capitalStyles.holdingList}>
-                {sectionRows.map((row) => (
-                  <li
-                    className={capitalStyles.holdingRow}
-                    data-included={row.includeInCapital ? "true" : "false"}
-                    data-testid={`capital-holding-${row.key}`}
-                    key={row.key}
-                  >
-                    <div className={capitalStyles.holdingMain}>
-                      {row.kind === "position" && holdingReturnsNavigation(row, back).href ? (
-                        <Link
-                          className={capitalStyles.holdingName}
-                          to={holdingReturnsNavigation(row, back).href ?? ""}
-                        >
-                          {row.name}
-                        </Link>
-                      ) : (
-                        <span className={capitalStyles.holdingName}>{row.name}</span>
-                      )}
-                      {row.kind === "position" && !holdingReturnsNavigation(row, back).href && (
-                        <small>{holdingReturnsNavigation(row).reason}</small>
-                      )}
-                      <span className={capitalStyles.holdingMeta}>
-                        {holdingContextLabel(row)}
-                        {row.accountName === null ? "" : ` · ${row.accountName}`}
-                      </span>
-                    </div>
-                    <strong className={capitalStyles.holdingAmount}>{money(row.amount)}</strong>
-                    {row.includeInCapital ? null : (
-                      <span className={capitalStyles.excludedBadge}>
-                        не входит в ликвидный капитал
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        );
-      })}
-      <p className={styles.panelFootnote}>
-        <Link to={`/v2/data/months/${monthId}`}>Данные отчётного месяца →</Link>
-      </p>
-    </Panel>
+          {change.reason_codes.includes("capital_investment_source_estimate") ? (
+            <p className={sheet.gapNote}>
+              Инвестиционный результат включает оценку по выпискам с совпадающими остатками.
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <p className={sheet.muted}>
+          Для объяснения нужны данные на конец этого и предыдущего календарного месяца.
+        </p>
+      )}
+    </SheetSection>
   );
 }
 
@@ -481,41 +346,59 @@ function PropertyBlock({
 }) {
   const mortgageClosed = mortgage !== null && isZeroAmount(mortgage.mortgage_balance.amount);
   return (
-    <Panel
+    <SheetSection
       eyebrow="Отдельно от ликвидного капитала"
+      help={
+        <HelpTip label="Сравнение капитала и ипотеки">
+          Недвижимость и ипотека не входят в ликвидный капитал. Положительная разница — капитала
+          больше остатка ипотеки, отрицательная — меньше.
+        </HelpTip>
+      }
       id="capital-property-title"
       title="Недвижимость"
-      wide
     >
       {!ready ? (
         <UiV2WidgetState retry={retry} />
       ) : (
-        <>
-          <ul className={capitalStyles.holdingList}>
-            {properties.map((property) => (
-              <li className={capitalStyles.holdingRow} key={property.id}>
-                <div className={capitalStyles.holdingMain}>
-                  <span className={capitalStyles.holdingName}>{property.name}</span>
-                  <span className={capitalStyles.holdingMeta}>Оценка и остаток ипотеки</span>
-                </div>
-                <strong className={capitalStyles.holdingAmount}>
-                  {money(property.estimated_value)}
-                </strong>
-                <span className={capitalStyles.excludedBadge}>
-                  ипотека {money(property.mortgage_balance)}
-                </span>
-              </li>
-            ))}
+        <div className={capitalStyles.property}>
+          <ul className={capitalStyles.propertyList}>
+            {properties.map((property) => {
+              const value = coordinate(property.estimated_value);
+              const debt = coordinate(property.mortgage_balance);
+              const debtWidth =
+                value > 0 ? `${Math.max(0, Math.min(100, (debt / value) * 100))}%` : "0%";
+              return (
+                <li key={property.id}>
+                  <div className={capitalStyles.propertyHead}>
+                    <span>{property.name}</span>
+                    <strong className={sheet.amount}>{money(property.estimated_value)}</strong>
+                  </div>
+                  {value > 0 ? (
+                    <span aria-hidden="true" className={capitalStyles.propertyBar}>
+                      <span style={{ width: debtWidth }} />
+                    </span>
+                  ) : null}
+                  <span className={capitalStyles.propertyKey}>
+                    <span>
+                      <i data-part="debt" /> ипотека {money(property.mortgage_balance)}
+                    </span>
+                    <span>
+                      <i data-part="value" /> оценка {money(property.estimated_value)}
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
           </ul>
           {mortgage ? (
-            <dl className={styles.netSummary}>
+            <dl className={capitalStyles.facts}>
               <div>
                 <dt>Остаток ипотеки по отчёту</dt>
-                <dd>{money(mortgage.mortgage_balance)}</dd>
+                <dd className={sheet.amount}>{money(mortgage.mortgage_balance)}</dd>
               </div>
               <div>
                 <dt>Покрытие ипотеки капиталом</dt>
-                <dd>
+                <dd className={sheet.amount}>
                   {mortgageClosed
                     ? "ипотека закрыта"
                     : formatPercent(mortgage.coverage_pct, { digits: 1 })}
@@ -524,18 +407,142 @@ function PropertyBlock({
               {mortgageClosed ? null : (
                 <div>
                   <dt>Разница: капитал − ипотека</dt>
-                  <dd>{moneyDelta(mortgage.gap)}</dd>
+                  <dd className={sheet.amount} data-tone={moneyTone(mortgage.gap)}>
+                    {moneyDelta(mortgage.gap)}
+                  </dd>
                 </div>
               )}
             </dl>
           ) : null}
-          <HelpTip label="Сравнение капитала и ипотеки">
-            Недвижимость и ипотека не входят в ликвидный капитал. Положительная разница — капитала
-            больше остатка ипотеки, отрицательная — меньше.
-          </HelpTip>
-        </>
+        </div>
       )}
-    </Panel>
+    </SheetSection>
+  );
+}
+
+function HoldingsBlock({
+  filter,
+  monthId,
+  resetFilter,
+  rows,
+  lists,
+}: {
+  filter: HoldingFilter;
+  lists: Record<"cash" | "deposit" | "position", { ready: boolean; retry: () => void }>;
+  monthId: number;
+  resetFilter: () => void;
+  rows: HoldingRow[];
+}) {
+  const location = useLocation();
+  const backParams = new URLSearchParams(location.search);
+  if (filter) {
+    backParams.set("holding_kind", filter.kind);
+    backParams.set("holding_value", filter.value);
+    backParams.set("holding_label", filter.label);
+  } else {
+    for (const key of ["holding_kind", "holding_value", "holding_label"]) backParams.delete(key);
+  }
+  const back = `${location.pathname}${backParams.size ? `?${backParams}` : ""}`;
+  const visible = filterHoldingRows(rows, filter);
+  const sections: Array<{ kind: HoldingRow["kind"]; title: string }> = [
+    { kind: "cash", title: "Деньги" },
+    { kind: "deposit", title: "Вклады" },
+    { kind: "position", title: "Позиции" },
+  ];
+  const shown = sections.filter((section) => {
+    const list = lists[section.kind];
+    return !list.ready || visible.some((row) => row.kind === section.kind);
+  });
+  const noLinkReasons = Array.from(
+    new Set(
+      visible
+        .filter((row) => row.kind === "position" && !holdingReturnsNavigation(row, back).href)
+        .map((row) => holdingReturnsNavigation(row).reason)
+        .filter((reason): reason is string => Boolean(reason)),
+    ),
+  );
+  return (
+    <SheetSection
+      actions={<Link to={`/v2/data/months/${monthId}`}>Данные отчётного месяца →</Link>}
+      eyebrow="Строки отчёта"
+      id="capital-holdings-title"
+      title="Где лежит капитал"
+    >
+      {filter ? (
+        <div className={capitalStyles.filterBar}>
+          <span>Фильтр: {filter.label}</span>
+          <button onClick={resetFilter} type="button">
+            Сбросить
+          </button>
+        </div>
+      ) : null}
+      {shown.length === 0 ? (
+        <p className={sheet.muted}>
+          {filter ? "В фильтре нет строк." : "В закрытом отчёте нет строк капитала."}
+        </p>
+      ) : null}
+      <div className={capitalStyles.holdingGroups}>
+        {shown.map((section) => {
+          const list = lists[section.kind];
+          const sectionRows = visible.filter((row) => row.kind === section.kind);
+          return (
+            <div className={capitalStyles.holdingGroup} key={section.kind}>
+              <h3>{section.title}</h3>
+              {!list.ready ? (
+                <UiV2WidgetState retry={list.retry} />
+              ) : (
+                <ul className={capitalStyles.holdingList}>
+                  {sectionRows.map((row) => {
+                    const target =
+                      row.kind === "position" ? holdingReturnsNavigation(row, back) : null;
+                    return (
+                      <li
+                        className={capitalStyles.holdingRow}
+                        data-included={row.includeInCapital ? "true" : "false"}
+                        data-testid={`capital-holding-${row.key}`}
+                        key={row.key}
+                      >
+                        <div className={capitalStyles.holdingMain}>
+                          {target?.href ? (
+                            <Link className={capitalStyles.holdingName} to={target.href}>
+                              {row.name}
+                            </Link>
+                          ) : (
+                            <span className={capitalStyles.holdingName}>{row.name}</span>
+                          )}
+                          {target && !target.href && target.reason ? (
+                            <span className={sheet.visuallyHidden}>{target.reason}</span>
+                          ) : null}
+                          <span className={capitalStyles.holdingMeta}>
+                            {holdingContextLabel(row)}
+                            {row.accountName === null ? "" : ` · ${row.accountName}`}
+                          </span>
+                        </div>
+                        {row.includeInCapital ? (
+                          <span />
+                        ) : (
+                          <span className={capitalStyles.excludedBadge}>
+                            не входит в ликвидный капитал
+                          </span>
+                        )}
+                        <strong className={`${sheet.amount} ${capitalStyles.holdingAmount}`}>
+                          {money(row.amount)}
+                        </strong>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {section.kind === "position" && noLinkReasons.length > 0 ? (
+                <p aria-hidden="true" className={sheet.gapNote}>
+                  Без ссылки на разбор: {noLinkReasons.join(" ")}
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </SheetSection>
   );
 }
 
@@ -731,40 +738,18 @@ export default function UiV2CapitalPage() {
     );
   } else {
     const mortgage = dashboardReady ? (dashboardQuery.data?.mortgage ?? null) : null;
+    const risk = riskReady ? riskQuery.data : undefined;
     content = (
-      <>
-        <UiV2ReportContext month={latestClosed}>
-          <span className={styles.reportContextLinks}>
-            <Link to={`/v2/returns?month=${latestClosed.id}`}>Доходность за месяц →</Link>
-            <Link to="/v2/reports">Все отчёты →</Link>
-          </span>
-        </UiV2ReportContext>
-        {newerDraft ? (
-          <p className={capitalStyles.draftNote} data-testid="capital-draft-note">
-            {formatMonth(newerDraft.year, newerDraft.month)} ещё не закрыт — картина остаётся по
-            последнему закрытому отчёту. <Link to="/v2">Черновик месяца в «Мои финансы» →</Link>
-          </p>
-        ) : null}
-        <HeadlineGrid
-          comparison={comparison}
-          ready={comparisonReady}
-          loading={comparisonQuery.isPending || comparisonQuery.isFetching}
-          retry={() => void comparisonQuery.refetch()}
-        />
-        {accountsReady ? (
-          <CapitalDraftValuation months={months} accounts={accountsQuery.data ?? []} />
-        ) : null}
-        <div className={styles.homeGrid}>
-          <CapitalChange
-            comparison={
-              comparisonReady &&
-              isQueryReady(capitalChangeQuery) &&
-              capitalChangeQuery.data?.comparison_basis === "latest_closed_to_previous_closed" &&
-              capitalChangeQuery.data.current?.reporting_month_id === closedId &&
-              (capitalChangeQuery.data.previous?.reporting_month_id ?? null) === previousClosedId
-                ? capitalChangeQuery.data
-                : undefined
-            }
+      <div className={sheet.sheet}>
+        <section
+          aria-label="Капитал и его состав"
+          className={`${sheet.section} ${capitalStyles.top}`}
+        >
+          <Hero
+            comparison={comparison}
+            loading={comparisonQuery.isPending || comparisonQuery.isFetching}
+            ready={comparisonReady}
+            retry={() => void comparisonQuery.refetch()}
           />
           <CompositionOverTime
             assetClasses={compositionReady ? (compositionQuery.data?.asset_classes ?? []) : []}
@@ -772,49 +757,70 @@ export default function UiV2CapitalPage() {
             ready={compositionReady}
             retry={() => void compositionQuery.refetch()}
           />
-          <Panel
-            eyebrow="Состав капитала"
+        </section>
+        {accountsReady ? (
+          <CapitalDraftValuation months={months} accounts={accountsQuery.data ?? []} />
+        ) : null}
+        <CapitalChange
+          comparison={
+            comparisonReady &&
+            isQueryReady(capitalChangeQuery) &&
+            capitalChangeQuery.data?.comparison_basis === "latest_closed_to_previous_closed" &&
+            capitalChangeQuery.data.current?.reporting_month_id === closedId &&
+            (capitalChangeQuery.data.previous?.reporting_month_id ?? null) === previousClosedId
+              ? capitalChangeQuery.data
+              : undefined
+          }
+        />
+        <div className={sheet.columns}>
+          <SheetSection
+            eyebrow="Структура · ликвидные активы"
             id="capital-allocation-title"
-            title="Распределение и концентрация"
-            wide
+            title="По классам активов"
           >
             {!riskReady ? (
               <UiV2WidgetState retry={() => void riskQuery.refetch()} />
             ) : (
-              <>
-                <div className={allocationStyles.grid}>
-                  <Allocation
-                    expanded
-                    metric={riskQuery.data?.allocation_by_asset_class}
-                    title="По классам активов"
-                    onSelect={(key) => pickRiskClass(key)}
-                  />
-                  <Allocation
-                    expanded
-                    account
-                    metric={riskQuery.data?.allocation_by_account}
-                    title="По счетам"
-                    onSelect={pickAccount}
-                  />
-                </div>
-                <Concentration
-                  expanded
-                  metric={riskQuery.data?.top_positions}
-                  title="Крупнейшие позиции"
-                  renderLabel={(item) => {
-                    const row = holdingRows.find(
-                      (r) =>
-                        r.key === `position-${item.position_id}` &&
-                        r.accountId === item.account_id &&
-                        r.instrumentId === item.instrument_id,
-                    );
-                    const target = row ? holdingReturnsNavigation(row, capitalBack) : null;
-                    return target?.href ? <Link to={target.href}>{item.label}</Link> : item.label;
-                  }}
-                />
-              </>
+              <ClassAllocation
+                metric={risk?.allocation_by_asset_class}
+                onSelect={pickRiskClass}
+                selected={filter?.kind === "risk_class" ? filter.value : null}
+              />
             )}
-          </Panel>
+          </SheetSection>
+          <SheetSection eyebrow="Структура" id="capital-accounts-title" title="По счетам">
+            {!riskReady ? (
+              <UiV2WidgetState retry={() => void riskQuery.refetch()} />
+            ) : (
+              <AccountAllocation
+                metric={risk?.allocation_by_account}
+                onSelect={pickAccount}
+                retry={() => void riskQuery.refetch()}
+                selected={filter?.kind === "account" ? filter.value : null}
+              />
+            )}
+          </SheetSection>
+        </div>
+        <div className={sheet.columns}>
+          <SheetSection eyebrow="Концентрация" id="capital-top-title" title="Крупнейшие позиции">
+            {!riskReady ? (
+              <UiV2WidgetState retry={() => void riskQuery.refetch()} />
+            ) : (
+              <TopPositions
+                metric={risk?.top_positions}
+                renderLabel={(item) => {
+                  const row = holdingRows.find(
+                    (r) =>
+                      r.key === `position-${item.position_id}` &&
+                      r.accountId === item.account_id &&
+                      r.instrumentId === item.instrument_id,
+                  );
+                  const target = row ? holdingReturnsNavigation(row, capitalBack) : null;
+                  return target?.href ? <Link to={target.href}>{item.label}</Link> : item.label;
+                }}
+              />
+            )}
+          </SheetSection>
           {propertiesQuery.isError ||
           (propertiesReady && (propertiesQuery.data?.length ?? 0) > 0) ? (
             <PropertyBlock
@@ -824,23 +830,19 @@ export default function UiV2CapitalPage() {
               retry={() => void propertiesQuery.refetch()}
             />
           ) : null}
-          <HoldingsBlock
-            filter={filter}
-            lists={{
-              cash: { ready: cashReady, retry: () => void cashQuery.refetch() },
-              deposit: { ready: depositsReady, retry: () => void depositsQuery.refetch() },
-              position: { ready: positionsReady, retry: () => void positionsQuery.refetch() },
-            }}
-            monthId={latestClosed.id}
-            onPickAccount={pickAccount}
-            resetFilter={resetFilter}
-            retryRisk={() => void riskQuery.refetch()}
-            risk={riskReady ? riskQuery.data : undefined}
-            riskReady={riskReady}
-            rows={holdingRows}
-          />
         </div>
-      </>
+        <HoldingsBlock
+          filter={filter}
+          lists={{
+            cash: { ready: cashReady, retry: () => void cashQuery.refetch() },
+            deposit: { ready: depositsReady, retry: () => void depositsQuery.refetch() },
+            position: { ready: positionsReady, retry: () => void positionsQuery.refetch() },
+          }}
+          monthId={latestClosed.id}
+          resetFilter={resetFilter}
+          rows={holdingRows}
+        />
+      </div>
     );
   }
 
@@ -850,12 +852,25 @@ export default function UiV2CapitalPage() {
       busy={!monthsReady}
       header={
         <>
-          <p className={styles.eyebrow}>Откуда складывается капитал</p>
-          <h1>Капитал</h1>
-          <p className={styles.subtitle}>Ликвидный капитал, его состав и счета.</p>
-          <p className={capitalStyles.backLink}>
-            <Link to="/v2">← Мои финансы</Link>
-          </p>
+          <ClosedReportTitle
+            links={
+              latestClosed ? (
+                <>
+                  <Link to={`/v2/returns?month=${latestClosed.id}`}>Доходность за месяц →</Link>
+                  <Link to="/v2/returns">Доходность в целом →</Link>
+                  <Link to="/v2/reports">Все отчёты →</Link>
+                </>
+              ) : null
+            }
+            month={latestClosed}
+            title="Капитал"
+          />
+          {newerDraft ? (
+            <p className={sheet.draftNote} data-testid="capital-draft-note">
+              {formatMonth(newerDraft.year, newerDraft.month)} ещё не закрыт — картина остаётся по
+              последнему закрытому отчёту. <Link to="/v2">Черновик месяца в «Мои финансы» →</Link>
+            </p>
+          ) : null}
         </>
       }
     >

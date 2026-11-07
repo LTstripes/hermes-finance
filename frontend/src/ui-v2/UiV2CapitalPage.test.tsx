@@ -248,23 +248,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("shows the three capital headlines in the frozen order and reads only GET", async () => {
+it("shows the capital hero and its two subtotals in the frozen order and reads only GET", async () => {
   const { mount, reads } = setup();
   mount();
 
   expect(await screen.findByRole("heading", { level: 1, name: "Капитал" })).toBeVisible();
   await screen.findByTestId("capital-net");
   const headlines = screen.getByRole("region", { name: "Главные показатели капитала" });
-  const cards = within(headlines).getAllByRole("article");
-  expect(cards).toHaveLength(3);
-  expect(within(cards[0]).getByText("Ликвидный капитал")).toBeVisible();
-  expect(within(cards[1]).getByText("Ликвидные активы")).toBeVisible();
-  expect(within(cards[2]).getByText("Включённые обязательства")).toBeVisible();
+  expect(within(headlines).getByText("Ликвидный капитал")).toBeVisible();
+  expect(within(headlines).getByText("Ликвидные активы")).toBeVisible();
+  expect(within(headlines).getByText("Включённые обязательства")).toBeVisible();
+  const [net, assets, debts] = ["capital-net", "capital-assets", "capital-debts"].map((id) =>
+    within(headlines).getByTestId(id),
+  );
+  expect(net.compareDocumentPosition(assets) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(assets.compareDocumentPosition(debts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // The change against the previous closed report comes from the backend delta.
+  expect(within(headlines).getByText("+42 600 ₽", { exact: false })).toBeVisible();
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 900 ₽");
   expect(screen.getByTestId("capital-debts")).toHaveTextContent("− 400 000 ₽");
   expect(screen.queryByRole("tooltip")).toBeNull();
-  fireEvent.click(within(cards[0]).getByRole("button", { name: "Как считается капитал" }));
+  fireEvent.click(within(headlines).getByRole("button", { name: "Как считается капитал" }));
   expect(screen.getByRole("tooltip")).toHaveTextContent(
     "Ликвидные активы минус включённые обязательства = ликвидный капитал",
   );
@@ -275,28 +280,37 @@ it("shows the three capital headlines in the frozen order and reads only GET", a
   expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
 });
 
-it("places existing allocation after the chart, property before holdings and removes duplicate panels and reads", async () => {
+it("places the structure after the chart, property before holdings and removes duplicate panels and reads", async () => {
   const { mount, reads } = setup();
   mount();
-  await screen.findByRole("heading", { name: "Распределение и концентрация" });
+  await screen.findByTestId("capital-class-cash");
   await screen.findByRole("heading", { name: "Недвижимость" });
+  const section = (name: string) => {
+    const found = screen.getByRole("heading", { name }).closest("section");
+    if (!found) throw new Error(`missing Capital section ${name}`);
+    return found;
+  };
   const chart = screen.getByTestId("capital-composition").closest("section");
-  const allocation = screen
-    .getByRole("heading", { name: "Распределение и концентрация" })
-    .closest("section");
-  const property = screen.getByRole("heading", { name: "Недвижимость" }).closest("section");
-  const holdings = screen.getByRole("heading", { name: "Где лежит капитал" }).closest("section");
-  if (!chart || !allocation || !property || !holdings) throw new Error("missing Capital sections");
-  expect(chart.compareDocumentPosition(allocation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  if (!chart) throw new Error("missing Capital chart");
+  const order = [
+    chart,
+    section("По классам активов"),
+    section("По счетам"),
+    section("Крупнейшие позиции"),
+    section("Недвижимость"),
+    section("Где лежит капитал"),
+  ];
+  for (const [index, current] of order.slice(1).entries())
+    expect(
+      order[index].compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  expect(within(section("По классам активов")).getByTestId("capital-class-cash")).toBeVisible();
+  expect(within(section("По счетам")).getByTestId("capital-bucket-account:1")).toBeVisible();
   expect(
-    allocation.compareDocumentPosition(property) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    property.compareDocumentPosition(holdings) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(within(allocation).getByRole("table", { name: "По классам активов" })).toBeVisible();
-  expect(within(allocation).getByRole("table", { name: "По счетам" })).toBeVisible();
-  expect(within(allocation).getByRole("table", { name: "Крупнейшие позиции" })).toBeVisible();
+    within(section("Крупнейшие позиции")).getByRole("table", { name: "Крупнейшие позиции" }),
+  ).toBeVisible();
+  // Accounts are listed once, not again above the holdings.
+  expect(screen.getAllByTestId("capital-bucket-account:1")).toHaveLength(1);
   for (const name of ["Доходность портфеля", "Связанные пары", "Где изменились суммы", "Сейчас"])
     expect(screen.queryByRole("heading", { name })).toBeNull();
   expect(
@@ -422,7 +436,7 @@ it("switches the composition window and mode over closed reports with visible ga
 
   expect(await screen.findByTestId("capital-composition")).toHaveAttribute("data-point-count", "4");
   expect(screen.getByText(/Пропуски означают неизвестную историю/i)).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "3 месяца" }));
+  fireEvent.click(screen.getByRole("button", { name: "3 мес" }));
   expect(screen.getByTestId("capital-composition")).toHaveAttribute("data-point-count", "3");
   fireEvent.click(screen.getByRole("button", { name: "Доли" }));
   expect(screen.getByRole("button", { name: "Доли" })).toHaveAttribute("aria-pressed", "true");
@@ -485,10 +499,10 @@ it("does not blank unrelated widgets when a single widget fails", async () => {
   state.riskError = true;
   mount();
 
-  const nowPanel = (
-    await screen.findByRole("heading", { name: "Распределение и концентрация" })
-  ).closest("section");
-  if (!nowPanel) throw new Error("Capital «Сейчас» panel is missing");
+  const nowPanel = (await screen.findByRole("heading", { name: "По классам активов" })).closest(
+    "section",
+  );
+  if (!nowPanel) throw new Error("Capital class panel is missing");
   await waitFor(() =>
     expect(within(nowPanel).getByText("Данные временно недоступны")).toBeVisible(),
   );
@@ -503,10 +517,8 @@ it("fails the concentration closed when the risk read model is unsupported", asy
   mount();
 
   expect(await screen.findByText(/оценка позиции непригодна для расчёта/i)).toBeVisible();
-  const nowPanel = screen
-    .getByRole("heading", { name: "Распределение и концентрация" })
-    .closest("section");
-  if (!nowPanel) throw new Error("Capital «Сейчас» panel is missing");
+  const nowPanel = screen.getByRole("heading", { name: "Крупнейшие позиции" }).closest("section");
+  if (!nowPanel) throw new Error("Capital top positions panel is missing");
   expect(within(nowPanel).queryByTestId("capital-top-positions")).toBeNull();
 });
 
@@ -568,7 +580,7 @@ it("keeps current capital facts without a legacy escape for month and step conte
   expect(
     screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
   ).not.toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /← Мои финансы/ })).toHaveAttribute("href", "/v2");
+  expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
   expect(screen.getByRole("link", { name: "Капитал" })).toHaveAttribute("aria-current", "page");
 });
 
@@ -832,7 +844,7 @@ it("shows loading rather than a false error while the capital comparison is pend
     release = resolve;
   });
   mount();
-  expect(await screen.findAllByText("Загружаем показатели…")).toHaveLength(3);
+  expect(await screen.findAllByText("Загружаем показатели…")).toHaveLength(1);
   const headline = screen.getByRole("region", { name: "Главные показатели капитала" });
   expect(within(headline).queryByText("Данные временно недоступны")).toBeNull();
   release();

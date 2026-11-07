@@ -1,0 +1,393 @@
+/*
+ * "Clear sheet" layout shared by Income and Capital (#1079 stage 4, direction A):
+ * no cards, sections separated by air and thin rules, one hero figure per page.
+ */
+
+.sheet {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Page heading: title, closed-report chip and page links on one line. */
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  white-space: nowrap;
+}
+
+.chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pos);
+}
+
+.titleLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-left: auto;
+  font-size: var(--t-sm);
+}
+
+.titleLinks a {
+  text-decoration: none;
+}
+
+.titleLinks a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.draftNote {
+  margin-top: 8px !important;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+/* One section of the sheet. The first section sits right under the heading. */
+.section {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-width: 0;
+  padding: 30px 0;
+  border-top: 1px solid var(--line);
+}
+
+.section:first-child {
+  padding-top: 8px;
+  border-top: 0;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+
+.sectionHead h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px !important;
+}
+
+.sectionActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: var(--t-sm);
+}
+
+/* Two sections side by side on wide screens. */
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 48px;
+  border-top: 1px solid var(--line);
+}
+
+.columns > .section {
+  border-top: 0;
+}
+
+.columns > :only-child {
+  grid-column: 1 / -1;
+}
+
+.columns > .section:first-child {
+  padding-top: 30px;
+}
+
+/* Figures: one leading number, the rest secondary. */
+.figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 18px 44px;
+}
+
+.figure {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.figureValue {
+  font-family: var(--f-num);
+  font-size: var(--t-xl);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.figureLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.figureDetail {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.figure[data-kind="forecast"] .figureValue {
+  color: var(--fc-ink);
+}
+
+.hero {
+  font-family: var(--f-num);
+  font-size: var(--t-hero);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+/* Signed change: sign and colour only, P 12.1. */
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--line-2);
+  color: var(--ink-2);
+  font-family: var(--f-num);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-semibold);
+  white-space: nowrap;
+}
+
+.delta[data-tone="positive"] {
+  background: var(--pos-soft);
+}
+
+.delta[data-tone="negative"] {
+  background: var(--neg-soft);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+/* A material gap, explained once: muted line with a help mark. */
+.gapNote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--line-2);
+}
+
+.segmented button {
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-sm);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(20 30 45 / 10%);
+  font-weight: var(--w-semibold);
+}
+
+.select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.select select {
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* 100% composition strip with a legend of amounts. */
+.strip {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+
+.strip span {
+  display: block;
+  min-width: 3px;
+  height: 100%;
+}
+
+.legend {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.legend li:last-child {
+  border-bottom: 0;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.amount {
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-medium);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.share {
+  min-width: 52px;
+  color: var(--muted);
+  font-family: var(--f-num);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* A row that filters the holdings below; looks like text until hovered. */
+.rowButton {
+  display: contents;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.pickable {
+  cursor: pointer;
+}
+
+.pickable:hover {
+  background: var(--surface);
+}
+
+.pickable[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+
+/* Simple horizontal bar inside a row. */
+.track {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-sm);
+}
+
+@media (max-width: 1180px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .columns > .section + .section {
+    border-top: 1px solid var(--line);
+  }
+}
