@@ -71,3 +71,58 @@ export function createTaxBenefit(
     signal,
   });
 }
+
+export function updateIisContribution(
+  accountId: number,
+  contributionId: number,
+  payload: {
+    amount?: { amount: string; currency: string };
+    is_target_reached?: boolean;
+  },
+  signal?: AbortSignal,
+): Promise<IisContribution> {
+  return apiRequest<IisContribution>(`/api/iis/${accountId}/contributions/${contributionId}`, {
+    method: "PATCH",
+    body: payload,
+    signal,
+  });
+}
+
+export function deleteIisContribution(
+  accountId: number,
+  contributionId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return apiRequest<void>(`/api/iis/${accountId}/contributions/${contributionId}`, {
+    method: "DELETE",
+    signal,
+  });
+}
+
+export function updateTaxBenefit(
+  accountId: number,
+  benefitId: number,
+  payload: {
+    status?: string;
+    amount?: { amount: string; currency: string };
+    received_at?: string;
+  },
+  signal?: AbortSignal,
+): Promise<TaxBenefit> {
+  return apiRequest<TaxBenefit>(`/api/iis/${accountId}/benefits/${benefitId}`, {
+    method: "PATCH",
+    body: payload,
+    signal,
+  });
+}
+
+export function deleteTaxBenefit(
+  accountId: number,
+  benefitId: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return apiRequest<void>(`/api/iis/${accountId}/benefits/${benefitId}`, {
+    method: "DELETE",
+    signal,
+  });
+}
