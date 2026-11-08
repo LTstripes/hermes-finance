@@ -1164,7 +1164,7 @@ def test_position_comparison_api_matches_card_without_changing_export_projection
     assert clean["simple_return"]["start_date"] == "2030-04-15"
     assert clean["simple_return"]["end_date"] == "2030-04-30"
     assert clean["xirr"]["holding_days"] == 15
-    assert clean["xirr"]["weighted_holding_days"] == "15"
+    assert clean["xirr"]["weighted_holding_days"] == "15.00"
     assert clean["xirr"]["eligibility_basis"] == "capital_weighted_holding_days"
     assert clean["xirr"]["value"] is None
     assert clean["xirr"]["reason_codes"] == ["short_holding"]

@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, replace
 from datetime import timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from hermes_finance.domain.clean_instrument_return import (
     calculate_clean_return,
@@ -474,7 +474,11 @@ def read_clean_account(
                 value = metric["invested_kopecks"]
                 metric["invested_kopecks"] = None if value is None else str(value)
                 days = metric["weighted_holding_days"]
-                metric["weighted_holding_days"] = None if days is None else format(days, "f")
+                metric["weighted_holding_days"] = (
+                    None
+                    if days is None
+                    else format(days.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
+                )
         if include_position_rates:
             metrics["modified_dietz"].update(
                 method="modified_dietz",
