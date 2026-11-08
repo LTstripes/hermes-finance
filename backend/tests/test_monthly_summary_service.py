@@ -439,10 +439,281 @@ def test_capital_bridge_does_not_infer_missing_calendar_month(tmp_path):
         march = create_reporting_month(session, year=2031, month=3, snapshot_date=date(2031, 3, 31))
         result = monthly_summary(session, march.id).capital_change
         assert result.breakdown is None
+        assert result.flow_breakdown is None
+        assert result.context_hints == ()
         assert "capital_calendar_gap" in result.reason_codes
     finally:
         session.close()
         database.engine.dispose()
+
+
+@pytest.fixture
+def capital_flow_months(tmp_path):
+    session, database = session_for(tmp_path)
+    try:
+        jan = create_reporting_month(session, year=2031, month=1, snapshot_date=date(2031, 1, 31))
+        feb = create_reporting_month(session, year=2031, month=2, snapshot_date=date(2031, 2, 28))
+        yield session, jan, feb
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+@pytest.mark.parametrize("record_expense", [True, False])
+def test_capital_flow_card_purchase_and_saving_allocation(capital_flow_months, record_expense):
+    from hermes_finance.services.debts import create_debt
+    from hermes_finance.services.expenses import create_expense_entry, create_saving_allocation
+
+    session, jan, feb = capital_flow_months
+    account = create_account(session, name="Synthetic flow deposit", account_type="deposit")
+    for month, balance in ((jan, "1000.00"), (feb, "1300.00")):
+        add_deposit(
+            session,
+            month_id=month.id,
+            account_id=account.id,
+            balance=balance,
+            actual_interest_received="0.00",
+        )
+    for month, debt in ((jan, "0.00"), (feb, "200.00")):
+        create_debt(
+            session,
+            reporting_month_id=month.id,
+            debt_type="credit_card",
+            name="Synthetic card",
+            current_balance=debt,
+        )
+    create_income_entry(
+        session,
+        reporting_month_id=feb.id,
+        income_type="side_income",
+        name="Synthetic income",
+        gross_amount="300.00",
+        net_amount="300.00",
+        tax_amount="0.00",
+    )
+    create_saving_allocation(
+        session,
+        reporting_month_id=feb.id,
+        destination="Synthetic reserve",
+        amount="80.00",
+    )
+    if record_expense:
+        create_expense_entry(
+            session,
+            reporting_month_id=feb.id,
+            category="Synthetic purchase",
+            amount="200.00",
+            expense_type="other",
+        )
+    result = monthly_summary(session, feb.id).capital_change
+    flow = result.flow_breakdown
+    assert flow is not None
+    assert flow.monthly_flow.to_api() == ("100.00" if record_expense else "300.00")
+    assert flow.unexplained.to_api() == ("0.00" if record_expense else "-200.00")
+    assert flow.end.kopecks - flow.start.kopecks == 10_000
+    assert flow.investment_market_change.amount == RubleAmount(0)
+    assert flow.physical_gold_revaluation.amount == RubleAmount(0)
+    if record_expense:
+        assert result.context_hints == ()
+    else:
+        (hint,) = result.context_hints
+        assert hint.reason_code == "card_debt_growth_exceeds_recorded_expenses"
+        assert hint.card_debt_growth.to_api() == "200.00"
+        assert hint.recorded_expenses.to_api() == "0.00"
+
+
+def test_capital_flow_linked_pair_repayment_is_internal(capital_flow_months):
+    from hermes_finance.services.debts import create_debt, link_debt_to_account
+
+    session, jan, feb = capital_flow_months
+    account = create_account(session, name="Synthetic reserve", account_type="deposit")
+    for month, balance, debt in ((jan, "1000.00", "200.00"), (feb, "800.00", "0.00")):
+        add_deposit(
+            session,
+            month_id=month.id,
+            account_id=account.id,
+            balance=balance,
+            actual_interest_received="0.00",
+        )
+        debt_row = create_debt(
+            session,
+            reporting_month_id=month.id,
+            debt_type="credit_card",
+            name="Synthetic linked card",
+            current_balance=debt,
+        )
+        link_debt_to_account(session, debt_row.id, account.id)
+    summary = monthly_summary(session, feb.id)
+    (pair,) = summary.liquid_capital.linked_pairs
+    assert pair.net_contribution.to_api() == "800.00"
+    flow = summary.capital_change.flow_breakdown
+    assert flow.start == flow.end == RubleAmount(80_000)
+    assert flow.monthly_flow == flow.unexplained == RubleAmount(0)
+    assert summary.capital_change.context_hints == ()
+
+
+@pytest.mark.parametrize("case", ["same", "changed", "missing", "future", "partial"])
+def test_capital_flow_gold_revaluation_preserves_unknown(capital_flow_months, case):
+    from hermes_finance.services.positions import create_position_snapshot
+
+    session, jan, feb = capital_flow_months
+    account = create_account(session, name="Synthetic physical metal", account_type="other")
+    instrument = create_instrument(session, name="Synthetic gold", instrument_type="gold")
+    for month, price, quantity in (
+        (jan, "100.00", "2"),
+        (feb, "90.00", "3" if case == "changed" else "2"),
+    ):
+        if case == "missing" and month.id == jan.id:
+            # Preserve endpoint capital evidence without inventing a gold valuation.
+            from hermes_finance.services.cash import create_cash_balance
+
+            create_cash_balance(
+                session,
+                reporting_month_id=month.id,
+                account_id=account.id,
+                name="Synthetic cash",
+                amount="0.00",
+            )
+            continue
+        create_position_snapshot(
+            session,
+            reporting_month_id=month.id,
+            account_id=account.id,
+            instrument_id=instrument.id,
+            quantity=quantity,
+            average_cost_per_unit="100.00",
+            market_price_per_unit=price,
+            price_date=date(2031, 3, 1)
+            if case == "future" and month.id == feb.id
+            else month.snapshot_date,
+        )
+    if case == "partial":
+        second = create_instrument(session, name="Synthetic unknown gold", instrument_type="gold")
+        create_position_snapshot(
+            session,
+            reporting_month_id=feb.id,
+            account_id=account.id,
+            instrument_id=second.id,
+            quantity="1",
+            average_cost_per_unit="50.00",
+            market_price_per_unit="50.00",
+            price_date=feb.snapshot_date,
+        )
+    flow = monthly_summary(session, feb.id).capital_change.flow_breakdown
+    gold = flow.physical_gold_revaluation
+    if case == "same":
+        assert gold.amount.to_api() == "-20.00"
+        assert flow.unexplained == RubleAmount(0)
+    else:
+        assert gold.amount is None
+        assert gold.reason_codes
+        assert any(item.amount is None for item in gold.items)
+        assert gold.known_subtotal.to_api() == ("-20.00" if case == "partial" else "0.00")
+        assert (
+            flow.unexplained.to_api()
+            == {
+                "changed": "70.00",
+                "missing": "180.00",
+                "future": "-20.00",
+                "partial": "50.00",
+            }[case]
+        )
+    assert (
+        flow.start.kopecks
+        + flow.monthly_flow.kopecks
+        + gold.known_subtotal.kopecks
+        + flow.unexplained.kopecks
+        == flow.end.kopecks
+    )
+
+
+@pytest.mark.parametrize(
+    "case", ["known", "missing", "assumed", "unknown_flow", "mismatch", "partial"]
+)
+def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, monkeypatch, case):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from hermes_finance.services import monthly_capital_change as service
+    from hermes_finance.services.cash import create_cash_balance
+    from hermes_finance.services.investment_cash_flows import create_investment_cash_flow
+
+    session, jan, feb = capital_flow_months
+    broker = create_account(session, name="Synthetic broker", account_type="brokerage")
+    deposit = create_account(session, name="Synthetic interest", account_type="deposit")
+    # Broker: 1000 + funding 100 + coupon 10 + dividend 5 + market change 20.
+    # Deposit: 500 - internal funding 100 + interest 3.
+    for month, cash, balance, interest in (
+        (jan, "1000.00", "500.00", "0.00"),
+        (feb, "1135.00", "403.00", "3.00"),
+    ):
+        create_cash_balance(
+            session,
+            reporting_month_id=month.id,
+            account_id=broker.id,
+            name="Synthetic account value",
+            amount=cash,
+        )
+        add_deposit(
+            session,
+            month_id=month.id,
+            account_id=deposit.id,
+            balance=balance,
+            actual_interest_received=interest,
+        )
+    for kind, amount in (("coupon", "10.00"), ("dividend", "5.00")):
+        create_investment_cash_flow(
+            session,
+            reporting_month_id=feb.id,
+            account_id=broker.id,
+            flow_type=kind,
+            net_amount=amount,
+            gross_amount=amount,
+            event_date=date(2031, 2, 15),
+            source="synthetic",
+        )
+    row = SimpleNamespace(
+        opening_kopecks=None if case == "missing" else 100_000,
+        closing_kopecks=113_501 if case == "mismatch" else 113_500,
+        contributions_kopecks=None if case == "unknown_flow" else 10_000,
+        withdrawals_kopecks=0,
+        growth_kopecks=3500,
+        assumptions_used=case == "assumed",
+        approximate=False,
+    )
+    monkeypatch.setattr(service, "_source_scopes", lambda session: {"synthetic": "synthetic"})
+    monkeypatch.setattr(
+        service,
+        "account_link",
+        lambda *args: {"status": "linked", "financial_account_id": broker.id},
+    )
+    monkeypatch.setattr(service, "source_read_snapshot", lambda session: nullcontext())
+    monkeypatch.setattr(service, "read_monthly_result", lambda *args, **kwargs: row)
+    if case == "partial":
+        other = create_account(session, name="Synthetic unlinked IIS", account_type="iis")
+        for month, cash in ((jan, "100.00"), (feb, "107.00")):
+            create_cash_balance(
+                session,
+                reporting_month_id=month.id,
+                account_id=other.id,
+                name="Synthetic unlinked value",
+                amount=cash,
+            )
+    flow = monthly_summary(session, feb.id).capital_change.flow_breakdown
+    assert flow.monthly_flow.to_api() == "18.00"
+    investments = flow.investment_market_change
+    if case == "known":
+        assert investments.amount.to_api() == "20.00"
+        assert flow.unexplained == RubleAmount(0)
+    elif case == "partial":
+        assert investments.amount is None
+        assert investments.known_subtotal.to_api() == "20.00"
+        assert flow.unexplained.to_api() == "7.00"
+    else:
+        assert investments.amount is None
+        assert investments.items[0].amount is None
+        assert investments.reason_codes
+        assert flow.unexplained.to_api() == "20.00"
 
 
 @pytest.mark.parametrize("case", ["linked", "unlinked", "mismatch", "excluded"])

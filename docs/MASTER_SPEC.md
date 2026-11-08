@@ -371,12 +371,21 @@ On desktop the sidebar remains visible while the page scrolls, with its own
 scrolling at short heights and no content overlap.
 
 Capital shows a monthly change explanation for adjacent month-end snapshots:
-начальный капитал → внешние внесения/изъятия → инвестиционный результат →
-прочие изменения → отдельный необъяснённый остаток → конечный капитал.
-Amounts are backend-owned known subtotals; one plain-language note explains
-missing evidence. Other changes identify included-liability movement and never
-absorb the unexplained residual. Missing endpoints or calendar months withhold
-the bridge instead of fabricating a zero baseline.
+начальный капитал → поток месяца до откладывания (доходы − внесённые расходы) →
+изменение стоимости инвестиций без выплат, уже учтённых в потоке → переоценка
+физического золота → отдельный необъяснённый остаток → конечный капитал.
+Проценты, купоны и дивиденды входят в поток один раз. Откладывание и погашение
+кредитки с депозита внутри капитала — переводы; покупки по карте владелец вносит
+как расходы. Существующая связанная пара показывается одной позицией периметра,
+без повторного вычитания долга. Движение обязательств не является строкой суммы.
+При росте долга по картам больше внесённых расходов дать одну контекстную подсказку
+с обеими суммами; не объявлять её доказательством пропущенной покупки.
+Amounts are backend-owned known contributions. Unknown investment/gold rows remain
+unavailable with one plain-language explanation; their known parts stay visible
+and the unallocated change remains in the residual. Missing endpoints or calendar
+months withhold the bridge instead of fabricating a zero baseline. C2 owns the
+formulas and evidence gates. The additive flow bridge preserves the legacy API
+decomposition; the Capital screen migration is delivered separately.
 
 Capital places the existing allocation by asset class/account and largest
 positions below its main chart, followed by property and Где лежит капитал.

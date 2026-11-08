@@ -732,6 +732,77 @@ Other changes currently contain only previous minus current included liabilities
 No residual asset delta is silently assigned to other changes. This read model
 creates no financial/Close authority and performs no source or runtime writes.
 
+The additive `capital_change.flow_breakdown` (`basis=monthly_flow_v1`) is the
+Capital page's flow-based explanation. The legacy `breakdown`, its field meanings
+and reasons remain unchanged for existing consumers. The two decompositions are
+alternatives and must never be added together.
+
+```text
+monthly_flow = cash_balance.total + cash_balance.breakdown.saving_allocations
+             = recorded income (including passive income) - recorded expenses
+start + monthly_flow + investment_market_change.known_subtotal
+      + physical_gold_revaluation.known_subtotal + unexplained = end
+```
+
+Saving allocations and repayment of included credit-card debt from an included
+deposit are internal capital transfers. Neither is an expense in this bridge;
+card purchases must be entered as expenses by the Owner. Liability movement is
+not a separate explanation row. ExternalFlow is not added to monthly flow.
+Unknown funding or unrecorded spending remains in `unexplained`; no balancing
+amount is relabelled as a known component.
+
+Each investment/gold component carries nullable `amount`, `known_subtotal`,
+per-account (gold: per-account/instrument) `items` and `reason_codes`. `amount` is
+NULL if any item is unavailable; a genuinely empty set is zero. The identity uses
+only explicitly known items, retaining known contributions even when a sibling
+item is NULL. It is a reconciliation of known contributions, not a claim that
+NULL equals zero or the full change has been explained. Endpoint/calendar and
+partial-coverage gates above apply to both bridges.
+
+For included brokerage/IIS accounts, use the exact canonical source-account link,
+the same calendar interval and matching saved capital valuations at both ends.
+Source account growth must have known contributions and withdrawals and no
+`assumptions_used`; otherwise return NULL with
+`capital_investment_account_result_unavailable`,
+`capital_investment_endpoints_unproven` or `capital_investment_flows_unproven`.
+From eligible growth subtract that account's passive `investment_cash_flow`
+sources already included by `cash_balance_for_month` (net coupons, dividends,
+interest and other capital payments). Deposit interest is represented only in
+monthly flow. No deposit balance delta, instrument cost gain, guessed funding or
+unattributed income is substituted. A retained source estimate carries
+`capital_investment_source_estimate`; this bridge does not promote source authority.
+The existing source reader marks even its source-only proof projection with
+assumptions; that projection alone therefore cannot establish this stricter row.
+
+Physical gold is a saved gold position outside brokerage/IIS (snapshot historical
+type first, catalogue type for legacy untyped rows), matched by account and
+instrument. Brokerage gold is covered only by its account row. For RUB gold with
+equal quantities and saved valuations on both boundaries, revaluation is closing
+minus opening market value. Future-dated prices, absent boundaries or incompatible
+type/currency withhold the item (`capital_gold_endpoints_unproven` or
+`capital_gold_scope_unproven`). A changed quantity is NULL with
+`capital_gold_quantity_changed_history_unproven`: this assembler has no accepted
+gold transaction-history adapter and does not infer trades from value changes.
+
+`capital_change.context_hints` is separate from both sums. For included
+`credit_card` debt, compute growth as the current aggregate minus previous
+aggregate; emit `card_debt_growth_exceeds_recorded_expenses` iff growth is strictly
+greater than the month's mandatory plus other recorded expenses. Compare integer
+kopecks with no additional materiality threshold (equality emits nothing). Return
+both `card_debt_growth` and `recorded_expenses`. This is a factual comparison, not
+proof of an omitted purchase or authority to create an expense. Do not compare
+against saving allocations, other debt types or debts outside the perimeter.
+Existing linked-pair endpoint/net-contribution models and the closed-comparison
+`explanation.pairs` present each comparable pair as one perimeter position; do not
+sum gross pair legs or subtract their debts a second time.
+
+Consumers: summary and dashboard APIs share `capital_change_to_out` with
+`/api/analytics/closed-report-comparison`; Capital UI currently reads legacy
+`breakdown` and its migration is separate. `include_capital_change=false` still
+omits the entire optional explanation. The AI analysis/review exports use their
+own allowlisted projections and do not serialize this bridge; no export format
+or saved-file reader changes here.
+
 <a id="c2-master_spec-668-102-чистая-стоимость-недвижимости"></a>
 #### 10.2. Чистая стоимость недвижимости
 

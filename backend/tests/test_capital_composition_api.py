@@ -901,6 +901,82 @@ def test_monthly_capital_bridge_api_keeps_unexplained_separate(client, end, resi
     summary = client.get(f"/api/months/{feb}/summary")
     assert summary.status_code == 200, summary.text
     assert summary.json()["capital_change"] == change
+    flow = change["flow_breakdown"]
+    assert flow["basis"] == "monthly_flow_v1"
+    assert flow["monthly_flow"] == _rub("0.00")
+    assert flow["unexplained"] == _rub(residual)
+    assert flow["investment_market_change"]["amount"] == _rub("0.00")
+    assert change["context_hints"] == []
+    dashboard = client.get(f"/api/months/{feb}/dashboard")
+    assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["summary"]["capital_change"] == change
+
+
+@pytest.mark.parametrize("expenses", ["0.00", "199.99", "200.00", "200.01"])
+def test_capital_flow_api_card_hint_uses_strict_kopeck_rule(client, expenses):
+    jan = _create_month(client, year=2031, month=1, snapshot_date="2031-01-31")
+    feb = _create_month(client, year=2031, month=2, snapshot_date="2031-02-28")
+    for month, debt in ((jan, "0.00"), (feb, "200.00")):
+        _create_cash(client, month, "1000.00")
+        response = client.post(
+            "/api/debts",
+            json={
+                "reporting_month_id": month,
+                "debt_type": "credit_card",
+                "name": "Synthetic card",
+                "current_balance": _rub(debt),
+            },
+        )
+        assert response.status_code == 201, response.text
+    response = client.post(
+        "/api/expenses",
+        json={
+            "reporting_month_id": feb,
+            "category": "Synthetic expense",
+            "expense_type": "other",
+            "amount": _rub(expenses),
+        },
+    )
+    assert response.status_code == 201, response.text
+    change = client.get(f"/api/months/{feb}/summary").json()["capital_change"]
+    flow = change["flow_breakdown"]
+    assert flow["monthly_flow"] == _rub(
+        f"{-Decimal(expenses):.2f}" if expenses != "0.00" else "0.00"
+    )
+    assert flow["unexplained"] == _rub(f"{Decimal(expenses) - Decimal('200.00'):.2f}")
+    if Decimal(expenses) < Decimal("200.00"):
+        assert change["context_hints"] == [
+            {
+                "reason_code": "card_debt_growth_exceeds_recorded_expenses",
+                "card_debt_growth": _rub("200.00"),
+                "recorded_expenses": _rub(expenses),
+            }
+        ]
+    else:
+        assert change["context_hints"] == []
+
+
+def test_capital_flow_api_missing_broker_value_is_null_with_reason(client):
+    jan = _create_month(client, year=2031, month=1, snapshot_date="2031-01-31")
+    feb = _create_month(client, year=2031, month=2, snapshot_date="2031-02-28")
+    account = client.post(
+        "/api/accounts",
+        json={
+            "name": "Synthetic broker",
+            "account_type": "brokerage",
+        },
+    ).json()
+    _create_cash(client, jan, "1000.00", account_id=account["id"])
+    _create_cash(client, feb, "1007.00", account_id=account["id"])
+    response = client.get(f"/api/months/{feb}/summary")
+    assert response.status_code == 200, response.text
+    flow = response.json()["capital_change"]["flow_breakdown"]
+    investment = flow["investment_market_change"]
+    assert investment["amount"] is None
+    assert investment["known_subtotal"] == _rub("0.00")
+    assert investment["reason_codes"] == ["capital_investment_account_result_unavailable"]
+    assert investment["items"][0]["amount"] is None
+    assert flow["unexplained"] == _rub("7.00")
 
 
 def test_optional_capital_explanation_failure_preserves_closed_comparison(client, monkeypatch):
