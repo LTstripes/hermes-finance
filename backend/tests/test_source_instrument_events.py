@@ -4824,10 +4824,10 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
 @pytest.mark.parametrize(
     "quantity,native,expected",
     [
-        ("155", "-155", True),
-        ("155", "-155.0000000000", True),
-        ("155", "-155.0000000001", False),
-        ("155", "-154.9999999999", False),
+        ("37", "-37", True),
+        ("37", "-37.0000000000", True),
+        ("37", "-37.0000000001", False),
+        ("37", "-36.9999999999", False),
         ("2.5", "-2.5", True),
         ("2.5000", "-2.5000000000", True),
         ("2.5", "-2", False),
