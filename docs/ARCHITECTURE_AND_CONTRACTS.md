@@ -6977,12 +6977,14 @@ a proved closed REPO pair the two legs may share an instant, since settlement or
 them, and an execution time may prove that same-day incoming shares came before an
 outgoing leg. Saved decisions and receipts are not changed.
 
-The recommended AI financial review requests version `3.1.0` and includes the
+The UI downloads only financial review `3.1.0` from
+`GET /api/export/ai-financial-review/json`, without a format selector. It includes the
 same source-scoped clean operands under `sections.clean_returns` with file-local
 account references. Each account retains its own period and metric coverage.
 The format is defined in [`ai_financial_review.v3_1.schema.json`](schemas/ai_financial_review.v3_1.schema.json).
-Earlier financial review formats and explicitly requested legacy Returns API
-versions retain their historical meaning; no old field is silently redefined.
+Earlier financial review files remain readable and schema-validatable under
+[C10](#c10-ai_financial_review-1-6-versioning-and-compatibility); they are no longer
+generated. Explicit legacy Returns API versions retain their historical meaning.
 
 The original monthly/all-time fields below remain the compatibility contract.
 The additive dated analysis has stricter full-result availability and explicitly
@@ -13876,17 +13878,23 @@ defined by Hermes Finance. It is intended for an explicit owner download and lat
 submission to an AI assistant. Hermes does not send the bundle anywhere, call an LLM or cloud
 API, persist an AI interpretation, or change financial data while generating it.
 
-This contract does not introduce a financial model. A future exporter must call the existing
-backend services and map their results. It must not reproduce formulas in an export service,
-router, frontend component, or prompt. R07-01 defines only this contract, its synthetic fixture,
-and validation; it does not define an endpoint, UI, or file-generation workflow.
+This contract does not introduce a financial model. The exporter calls existing
+backend services and maps their results; it does not reproduce formulas.
+The two UI buttons use `POST /api/export/ai-analysis-bundle` (JSON) and
+`POST /api/export/ai-analysis-bundle/markdown` (Markdown), both format `1.4.0`.
+The `/api/export/ai-analysis-bundle/json` alias is removed. The `media` query
+selector is removed and returns `422` on either retained endpoint, with guidance
+to choose the endpoint instead; it never silently selects a different format.
+`forecast_version` and `generated_at` retain their existing validation.
+By the Owner decision of 2026-11-08, Hermes UI is the sole AI-export API consumer;
+there are no external clients or scripts requiring these compatibility routes.
 
 
 <a id="c10-ai_analysis_bundle-1-representation-rules"></a>
 #### Representation rules
 
 AI Analysis Bundle and the recommended AI Financial Review also expose the optional
-additive `statement_top_ups` block (including normalized v2). Existing fields and
+additive `statement_top_ups` block (also readable in saved normalized v2 files). Existing fields and
 previous packages remain valid. One shared broker_money reader selects each
 canonical account-funding target once from its latest effective proof; stale,
 retired or revoked authority is excluded. Amounts are per financial account and
@@ -14116,25 +14124,24 @@ It must:
 <a id="c10-ai_financial_review-1"></a>
 ### Financial review composition and consumer constraints
 
-**Status:** implemented and shipped. The read-only backend assembler and export
-endpoints (`GET /api/export/ai-financial-review` and
-`GET /api/export/ai-financial-review/json`) exist on canonical `main` and have
-been part of the published application since v1.0.0; the Export page presents
-the recommended report and its technical alternatives. This document and its
-schema remain the normative contract for the generated report. The
-implementation adds no migration, provider call, cloud upload or LLM call, and
-later staged UAT work does not change this contract.
+**Current generation:** one read-only JSON download,
+`GET /api/export/ai-financial-review/json`, emitting only `3.1.0`.
+The UI sends no `format_version`. That retired query parameter returns `422`
+(including an explicit `3.1.0`), with guidance that only `3.1.0` is generated and
+the parameter must be omitted. Validation occurs before assembly. The unsuffixed
+`GET /api/export/ai-financial-review` is removed. `forecast_version` and
+`generated_at` retain their existing validation; responses retain attachment
+filenames, `Cache-Control: no-store`, `nosniff` and rollback after the read.
+No migration, provider refresh, cloud upload, LLM call or persisted export is added.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Recommended download:** see [C7](#c7) for the current UI format. Supported API
-versions and defaults are specified below.
-
-**Normative schemas:** [`v2`](schemas/ai_financial_review.v2.schema.json) and
-[`legacy v1.4/v1.5`](schemas/ai_financial_review.schema.json)
-
-**Synthetic fixtures:** [`v2`](schemas/ai_financial_review.v2.synthetic.json) and
-[`legacy v1`](schemas/ai_financial_review.synthetic.json)
+**Generated schema:** [`3.1.0`](schemas/ai_financial_review.v3_1.schema.json).
+Historical [`v3`](schemas/ai_financial_review.v3.schema.json),
+[`v2`](schemas/ai_financial_review.v2.schema.json) and
+[`v1`](schemas/ai_financial_review.schema.json) schemas and synthetic fixtures
+remain unchanged for reading and validating previously saved files. They do not
+advertise generation support. [C7](#c7) owns the current clean-return meaning.
 
 
 <a id="c10-ai_financial_review-1-1-purpose-and-product-role"></a>
@@ -14176,7 +14183,8 @@ The intended source map is:
 | `debts_and_real_estate` | Existing package context plus direct allowlisted debt/property read models for persisted rows and the #336 fields (`annual_rate`, due/end dates, mortgage rate). The report may expose facts that the old package did not project, but must not derive new debt or property semantics. |
 | `user_context` | Persisted `monthly_comments` and explicitly owner-entered notes. Text is carried with provenance and is never parsed as a number or used in a calculation. |
 | `budget_and_saving` | Persisted `saving_allocations`, actual `expense_entries`, and #336 `planned_budget_lines`. Plan-vs-actual rows use the exact `(period, category, expense_type)` key and are a side-by-side presentation only. |
-| `performance` | Existing R08-02 XIRR, R08-03 exact TWRR and PERF04A value-bridge builders over the adjacent closed reporting-month window. The report preserves their availability, quality, coverage, reason codes, exact units, method identity and version metadata; it does not calculate a second return or attribution model. |
+| `clean_returns` | The same clean-return and FIFO purchase producers as current Returns, with per-account periods and file-local references. Source-only facts do not establish financial Close authority; see C7. |
+| `performance` | `unavailable`, `data=null`, with `clean_capital_return_unavailable`. Cash-based Performance v1 is not presented as a clean security return. |
 | `current_capital.linked_pairs`, `historical_dynamics[].linked_pairs` | Canonical #365 `LinkedPairReadModel` facts for the selected month and each represented month. Current rows use current debt-catalog refs; historical rows use explicitly period-scoped debt identities and do not join the current debt catalog. The adapter exposes gross asset/debt balances and the explanatory net contribution without recalculating them or changing capital totals. |
 | `data_quality`, `warnings`, `field_states` | Existing deterministic insights, coverage states and stable warning codes. Open evidence maps, raw diagnostics and provider payloads stay out of the export. |
 
@@ -14194,10 +14202,11 @@ and no old debt snapshot is aliased to the current one. Pair `ref` values remain
 stable wherever the same persisted pair is represented in the report.
 
 
-#### Source-only returns in the recommended JSON (#856)
+#### Saved v1/v2 source-only returns (#856)
 
+This subsection describes historical saved files, not current generation.
 Schema 1.4.0 adds optional `sections.source_returns` and its coverage domain.
-The canonical assembler emits both, in the same coherent read snapshot as the
+Those files contained both in the same coherent read snapshot as the
 other sections. Existing `performance` (R08/PERF04A), passive income and portfolio
 meanings do not change. This section is always provisional with
 `financial_authority=none`; it never upgrades source evidence to financial Close.
@@ -14267,12 +14276,12 @@ Event chronology can cross a selected boundary. Each cash leg explicitly states
 eligible cash leg lies inside that interval. Aggregate event cash details are
 NULL for cross-boundary events; dates remain explanatory. This projects the
 existing economics' eligibility and does not calculate another return.
-The existing local JSON download/CTA is retained; no upload, provider call or
-financial write occurs.
+Current generation uses `clean_returns` instead; reading historical files does
+not upload, call a provider or write financial data.
 
-#### Current available-history Returns in the recommended JSON
+#### Saved v1/v2 available-history Returns
 
-Schema 1.5.0 adds optional `sections.returns_overall` and its coverage domain,
+In historical saved files, schema 1.5.0 adds optional `sections.returns_overall` and its coverage domain,
 using the same coherent read snapshot and existing producers as ordinary Returns.
 It is explicitly `current_available_history_not_limited_to_selected_month`:
 the historical report's selected `as_of_date` does not silently truncate this
@@ -14363,10 +14372,11 @@ The required sections are:
 12. `data_quality` — deterministic insights and the report-level quality
     summary; warnings and unavailable/partial paths are also repeated in the
     canonical top-level `warnings`/`field_states` lists.
-13. `performance` — the exact selected-scope Performance v1 window, portfolio
-    and supported-account XIRR/TWRR, PERF04A monetary bridge evidence, and an
-    explicit separation between external contributions/withdrawals, return
-    metrics and value change after external flows.
+13. `performance` — explicitly unavailable with `data=null` and
+    `clean_capital_return_unavailable`; cash-based Performance is separate from
+    the clean security return.
+14. `clean_returns` — source-scoped clean operands and FIFO purchases, file-local
+    account references, actual periods and metric coverage under C7.
 
 
 <a id="c10-ai_financial_review-1-4-financial-and-availability-invariants"></a>
@@ -14408,10 +14418,9 @@ The required sections are:
 - `market_value_change` and cash-flow-adjusted `investment_return` are
   unavailable unless an accepted authoritative aggregate exists. Liquid-capital
   movement is not relabelled as return.
-- Performance v1 is exposed in its own section. XIRR/TWRR remain percentage
-  return metrics; PERF04A remains the monetary `value_change_after_external_flows`
-  identity with its contribution/withdrawal summary and evidence. It is not
-  component profit attribution, and no export-layer formula is introduced.
+- The current report keeps `performance` unavailable rather than presenting
+  cash-based XIRR/TWRR/PERF04A as clean security returns. Those fields in saved
+  v1/v2 files retain their original units and meanings; no formula is redefined.
 - Linked-pair rows are attribution-only facts from the canonical #365 read
   model. Gross asset and linked-debt balances already participate in the
   canonical liquid-capital totals; `net_economic_contribution` is explanatory
@@ -14445,10 +14454,10 @@ The required sections are:
 - `hermes.finance.ai_analysis_bundle` `1.4.0`;
 - `hermes.finance.portfolio_review_package` `1.1.0`.
 
-The performance section records the accepted builder identities as method
-metadata: `R08-02` for XIRR, `R08-03` for exact TWRR and `PERF04A/1` for the
-monetary bridge. These identifiers describe the source contracts; they do not
-create a second calculation implementation.
+Saved v1/v2 performance sections record builder identities `R08-02`, `R08-03`
+and `PERF04A/1`. They remain historical source contracts. Current `3.1.0` marks
+this section unavailable and exposes the distinct clean-return producer under
+`clean_returns`; it introduces no second calculation.
 
 Linked-pair metrics use `source=linked_pair_read_model`; this identifies the
 canonical #365 read model rather than a provider payload or an exporter-side
@@ -14475,6 +14484,7 @@ documents, stack traces, SQL and open-ended diagnostic evidence.
 - major: removal/rename, changed requiredness/units, changed source meaning or
   changed financial counting semantics.
 
+The following version history describes saved files, not supported generation.
 Version `1.4.0` adds optional provisional `source_returns` and its coverage domain,
 without changing earlier financial fields. Version `1.5.0` adds the optional
 current available-history Returns section and retains acceptance of historical
@@ -14482,15 +14492,14 @@ current available-history Returns section and retains acceptance of historical
 1.1.0; these independent format versions are not application versions.
 Version `1.2.0` adds the required `performance` section. Version `1.3.0`
 adds optional month-local linked-pair fields to `current_capital` and
-`historical_dynamics`; the canonical exporter emits them on every generated
-report, including empty arrays. It changes no capital formula or counting
-semantics. The generated canonical v1.3 instance validates strictly.
+`historical_dynamics`. Current reports retain these fields, including empty
+arrays. The saved canonical v1.3 instance continues to validate strictly.
 
-Version `2.0.0` changes only the source-analysis representation. The current UI
-requests `format_version=3.1.0` as described in [C7](#c7). Both existing GET routes
-default to `1.6.0` and accept `1.5.0`, `1.6.0`, `2.0.0`, `2.1.0`, `3.0.0` and
-`3.1.0`. Unsupported format versions fail before assembly. The other
-bundle/package formats are unchanged.
+Version `2.0.0` changed only the source-analysis representation. By the Owner
+decision of 2026-11-08, generation of `1.5.0`, `1.6.0`, `2.0.0`, `2.1.0` and
+`3.0.0` is removed. Only `3.1.0` is generated through the single JSON download
+above; there is no version negotiation or fallback. Bundle/package formats
+are unchanged. The following v2 rules remain the saved-file reading contract.
 
 `source_payloads` stores exact already-allowlisted instrument metadata, endpoints,
 result blocks (metrics/components/coverage/reasons/assumptions) and interval-masked
@@ -14513,8 +14522,8 @@ Semantic validation additionally rejects dangling/wrong-table refs, changed
 payload hashes, ISIN conflicts and unused payloads. It reads references without
 rebuilding the full expanded report. The representation-only expansion helper
 restores v1 facts/order/multiplicity and independent mutable occurrences; it does
-not recompute, activate or attest financial data. Generation still runs existing
-currentness/source/financial controls and never substitutes stale numeric facts.
+not recompute, activate or attest financial data. Current generation still runs
+existing currentness/source/financial controls and never substitutes stale facts.
 
 Consumers dispatch on the major version and validate the exact schema declared
 by the file. The v1 contract is strict (`additionalProperties=false` in the

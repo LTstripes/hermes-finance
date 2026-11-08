@@ -23,7 +23,6 @@ from hermes_finance.database import Database, create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import (
     Account,
-    AccountPerformanceScopeMembership,
     Base,
     CashBalance,
     Debt,
@@ -34,20 +33,15 @@ from hermes_finance.persistence import (
     SavingAllocation,
 )
 from hermes_finance.services import ai_analysis_bundle as bundle_service
-from hermes_finance.services import ai_review_payloads
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.ai_financial_review import validate_ai_financial_review
-from hermes_finance.services.cash import create_cash_balance
-from hermes_finance.services.cash_boundary_coverage import create_cash_boundary_coverage
-from hermes_finance.services.deposits import create_deposit_snapshot
-from hermes_finance.services.in_kind_boundary_coverage import attest_in_kind_boundary_history
 from hermes_finance.services.instruments import create_instrument
-from hermes_finance.services.positions import create_position_snapshot
-from hermes_finance.services.reporting_months import close_reporting_month, create_reporting_month
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_analysis_bundle.schema.json"
-FINANCIAL_REVIEW_SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.schema.json"
+FINANCIAL_REVIEW_SCHEMA_PATH = (
+    REPO_ROOT / "docs" / "schemas" / "ai_financial_review.v3_1.schema.json"
+)
 PORTFOLIO_REVIEW_SCHEMA_PATH = (
     REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.schema.json"
 )
@@ -531,10 +525,12 @@ def _seed_issue_285_august_fixture(client: TestClient) -> int:
 
 
 def _export(client: TestClient, *, media: str = "json", path: str | None = None):
-    target = path or "/api/export/ai-analysis-bundle"
+    target = path or (
+        "/api/export/ai-analysis-bundle/markdown"
+        if media == "markdown"
+        else "/api/export/ai-analysis-bundle"
+    )
     params: dict[str, str] = {"generated_at": GENERATED_AT}
-    if path is None:
-        params["media"] = media
     return client.post(target, params=params)
 
 
@@ -623,11 +619,6 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
 
     again = _export(client)
     assert again.content == response.content
-    explicit = _export(client, path="/api/export/ai-analysis-bundle/json")
-    assert explicit.status_code == 200, explicit.text
-    assert json.loads(explicit.content.decode("utf-8"))["current_portfolio"][
-        "selection_reason"
-    ] == ("latest_closed")
 
 
 def test_latest_closed_selection_refreshes_after_close_in_same_process(
@@ -640,7 +631,7 @@ def test_latest_closed_selection_refreshes_after_close_in_same_process(
     assert before["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 4}
     assert before["current_portfolio"]["selection_reason"] == "latest_closed"
     review_before = client.get(
-        "/api/export/ai-financial-review", params={"generated_at": GENERATED_AT}
+        "/api/export/ai-financial-review/json", params={"generated_at": GENERATED_AT}
     )
     assert review_before.status_code == 200, review_before.text
     assert review_before.json()["scope"]["reporting_period"] == {"year": 2026, "month": 4}
@@ -655,7 +646,7 @@ def test_latest_closed_selection_refreshes_after_close_in_same_process(
     assert after["current_portfolio"]["selection_reason"] == "latest_closed"
     assert after["current_portfolio"]["reporting_status"] == "closed"
     review_after = client.get(
-        "/api/export/ai-financial-review", params={"generated_at": GENERATED_AT}
+        "/api/export/ai-financial-review/json", params={"generated_at": GENERATED_AT}
     )
     assert review_after.status_code == 200, review_after.text
     assert review_after.json()["scope"]["reporting_period"] == {"year": 2026, "month": 6}
@@ -682,7 +673,7 @@ def test_latest_closed_selection_refreshes_after_close_in_same_process(
     assert final["current_portfolio"]["reporting_period"] == {"year": 2026, "month": 8}
     assert final["current_portfolio"]["selection_reason"] == "latest_closed"
     review_final = client.get(
-        "/api/export/ai-financial-review", params={"generated_at": GENERATED_AT}
+        "/api/export/ai-financial-review/json", params={"generated_at": GENERATED_AT}
     )
     assert review_final.status_code == 200, review_final.text
     assert review_final.json()["scope"]["reporting_period"] == {"year": 2026, "month": 8}
@@ -778,7 +769,7 @@ def test_future_dated_valuation_is_unavailable_in_period_aggregates(
     assert package["sections"]["deterministic_insights"]["status"] == "partial"
 
     review_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert review_response.status_code == 200, review_response.text
@@ -1300,7 +1291,7 @@ def test_two_account_snapshot_gap_propagates_across_review_goal_and_allocation(
         }
 
     review_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert review_response.status_code == 200, review_response.text
@@ -1392,9 +1383,6 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     assert body.startswith("# Hermes Finance AI Analysis Bundle 1.4.0")
     assert "generation_mode: read_only" in body
     assert "Canonical machine-readable artifact" in body
-    alias = _export(client, path="/api/export/ai-analysis-bundle/markdown")
-    assert alias.status_code == 200, alias.text
-    assert alias.content.decode("utf-8").startswith("# Hermes Finance AI Analysis Bundle 1.4.0")
     assert _table_counts(database) == before
 
 
@@ -1476,7 +1464,7 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
         socket.create_connection(("example.com", 443), timeout=1)
     with _forbid_sql_writes(database.engine):
         response = client.get(
-            "/api/export/ai-financial-review",
+            "/api/export/ai-financial-review/json",
             params={"generated_at": GENERATED_AT},
         )
 
@@ -1484,7 +1472,7 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     payload = json.loads(response.content.decode("utf-8"))
     _financial_review_validator().validate(payload)
     assert payload["schema_name"] == "hermes.finance.ai_financial_review"
-    assert payload["schema_version"] == "1.6.0"
+    assert payload["schema_version"] == "3.1.0"
     assert response.headers["content-type"] == "application/json; charset=utf-8"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["metadata"]["source_contracts"] == [
@@ -1511,21 +1499,13 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert payload["scope"]["missing_calendar_periods"] == [{"year": 2026, "month": 2}]
     assert sections["current_capital"]["data"]["total_net_worth"]["value"] is None
     assert sections["current_capital"]["data"]["total_net_worth"]["availability"] == "unavailable"
-    performance = sections["performance"]
-    assert performance["status"] == "partial"
-    assert performance["data"]["calculation_window"] == {
-        "selection": "adjacent_closed_reporting_months",
-        "start_period": {"year": 2026, "month": 3},
-        "end_period": {"year": 2026, "month": 4},
-        "start_date": "2026-03-31",
-        "end_date": "2026-04-30",
+    assert sections["performance"] == {
+        "status": "unavailable",
+        "reason_codes": ["clean_capital_return_unavailable"],
+        "data": None,
     }
-    assert performance["data"]["portfolio"]["xirr"]["availability"] == "not_computable"
-    assert performance["data"]["portfolio"]["twrr"]["availability"] == "not_computable"
-    assert performance["data"]["portfolio"]["monetary_bridge"]["availability"] == "not_computable"
-    assert performance["data"]["portfolio"]["xirr"]["method_version"] == "R08-02"
-    assert performance["data"]["portfolio"]["twrr"]["method_version"] == "R08-03"
-    assert performance["data"]["portfolio"]["monetary_bridge"]["method_version"] == "PERF04A/1"
+    assert "clean_returns" in sections
+    assert "source_returns" not in sections and "returns_overall" not in sections
 
     portfolio = sections["current_portfolio"]["data"]
     assert [item["ref"] for item in portfolio["accounts"]] == sorted(
@@ -1604,18 +1584,12 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert _table_counts(database) == before
 
     again = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert again.status_code == 200, again.text
     assert again.content == response.content
-    download = client.get(
-        "/api/export/ai-financial-review/json",
-        params={"generated_at": GENERATED_AT},
-    )
-    assert download.status_code == 200, download.text
-    assert download.content == response.content
-    assert download.headers["content-disposition"] == (
+    assert response.headers["content-disposition"] == (
         'attachment; filename="hermes-ai-financial-review-2026-04-30.json"'
     )
 
@@ -1648,7 +1622,7 @@ def test_ai_financial_review_uses_one_snapshot_when_price_changes_mid_read(
     ids = _seed_history(client)
 
     baseline_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert baseline_response.status_code == 200, baseline_response.text
@@ -1692,7 +1666,7 @@ def test_ai_financial_review_uses_one_snapshot_when_price_changes_mid_read(
     )
 
     response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert response.status_code == 200, response.text
@@ -1709,7 +1683,7 @@ def test_ai_financial_review_uses_one_snapshot_when_price_changes_mid_read(
     )
 
     fresh_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert fresh_response.status_code == 200, fresh_response.text
@@ -1726,17 +1700,17 @@ def test_ai_financial_review_uses_one_snapshot_when_price_changes_mid_read(
     )
 
 
-def test_ai_financial_review_routes_disable_caching(
+def test_ai_financial_review_download_disables_caching(
     app_context: tuple[TestClient, Database],
 ) -> None:
     client, _database = app_context
     _seed_history(client)
 
-    for path in ("/api/export/ai-financial-review", "/api/export/ai-financial-review/json"):
-        response = client.get(path, params={"generated_at": GENERATED_AT})
-
-        assert response.status_code == 200, response.text
-        assert response.headers["cache-control"] == "no-store"
+    response = client.get(
+        "/api/export/ai-financial-review/json", params={"generated_at": GENERATED_AT}
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_allocation_money_null_is_limited_to_unavailable_support(
@@ -1762,7 +1736,7 @@ def test_allocation_money_null_is_limited_to_unavailable_support(
     assert not _portfolio_review_validator().is_valid(package)
 
     review_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert review_response.status_code == 200, review_response.text
@@ -1866,25 +1840,12 @@ def test_ai_financial_review_preserves_authoritative_context_and_zero_unknown_st
     before = _table_counts(database)
     with _forbid_sql_writes(database.engine):
         response = client.get(
-            "/api/export/ai-financial-review",
+            "/api/export/ai-financial-review/json",
             params={"generated_at": GENERATED_AT},
         )
     assert response.status_code == 200, response.text
     payload = response.json()
     _financial_review_validator().validate(payload)
-    # A saved gold valuation proves an as-of date, not a dated return period.
-    gold_component = next(
-        row
-        for row in payload["sections"]["returns_overall"]["data"]["mixed_result"]["components"]
-        if row["category"] == "gold"
-    )
-    assert gold_component["source_account_ref"] is None
-    assert gold_component["period"] is None
-    assert gold_component["valuation_date"] == "2026-04-30"
-    referenced = ai_review_payloads.normalize_source_payloads(payload)
-    validate_ai_financial_review(referenced)
-    assert ai_review_payloads.expand_source_payloads(referenced) == payload
-
     portfolio = payload["sections"]["current_portfolio"]["data"]
     instruments = {item["name"]: item for item in portfolio["instruments"]}
     assert instruments["Synthetic Bond"]["isin"] == "RU000A0JXNU8"
@@ -1995,7 +1956,7 @@ def test_ai_financial_review_matches_duplicate_rows_by_cash_identity_and_preserv
 
     before = _table_counts(database)
     response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert response.status_code == 200, response.text
@@ -2101,7 +2062,7 @@ def test_ai_cash_identity_survives_bundle_package_and_review_with_linked_pair(
     }
 
     review_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert review_response.status_code == 200, review_response.text
@@ -2139,7 +2100,7 @@ def test_ai_financial_review_merges_freshness_summary_and_bundle_valuation_field
 
     with _forbid_sql_writes(database.engine):
         response = client.get(
-            "/api/export/ai-financial-review",
+            "/api/export/ai-financial-review/json",
             params={"generated_at": GENERATED_AT},
         )
     assert response.status_code == 200, response.text
@@ -2271,7 +2232,7 @@ def test_iis_complete_and_partial_metadata_are_both_present(
     assert next(item for item in package_accounts if item["iis_type"] is None)["opened_at"] is None
 
     review_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert review_response.status_code == 200, review_response.text
@@ -2334,7 +2295,7 @@ def test_selected_month_salary_tax_is_consistent_when_nets_match(
     assert "salary_net_mismatch" not in selected["reason_codes"]
 
     review_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert review_response.status_code == 200, review_response.text
@@ -2378,114 +2339,6 @@ def test_selected_month_salary_tax_is_unavailable_when_history_incomplete(
     assert "salary_net_mismatch" not in selected["reason_codes"]
 
 
-def test_ai_financial_review_exports_authoritative_performance_v1_metrics(
-    app_context: tuple[TestClient, Database],
-) -> None:
-    client, database = app_context
-    start = date(2030, 1, 31)
-    end = date(2030, 2, 28)
-    with database.session_factory() as session:
-        january = create_reporting_month(session, year=2030, month=1, snapshot_date=start)
-        february = create_reporting_month(session, year=2030, month=2, snapshot_date=end)
-        account = create_account(
-            session,
-            name="Synthetic Performance Account",
-            account_type="brokerage",
-        )
-        instrument = create_instrument(
-            session,
-            name="Synthetic Performance Instrument",
-            instrument_type="bond",
-        )
-        session.add(
-            AccountPerformanceScopeMembership(
-                account_id=account.id,
-                effective_from=date(2029, 1, 1),
-                include_in_returns=True,
-            )
-        )
-        session.commit()
-        for month, value in ((january, "1000.00"), (february, "1160.00")):
-            create_position_snapshot(
-                session,
-                reporting_month_id=month.id,
-                account_id=account.id,
-                instrument_id=instrument.id,
-                quantity=1,
-                average_cost_per_unit=value,
-                market_price_per_unit=value,
-                price_date=month.snapshot_date,
-            )
-            create_deposit_snapshot(
-                session,
-                reporting_month_id=month.id,
-                account_id=account.id,
-                name=f"{month.month} deposit",
-                deposit_type="deposit",
-                balance="0.00",
-                annual_rate="0.00",
-            )
-            create_cash_balance(
-                session,
-                reporting_month_id=month.id,
-                account_id=account.id,
-                name=f"{month.month} cash",
-                amount="0.00",
-            )
-        create_cash_boundary_coverage(
-            session,
-            account_id=account.id,
-            covered_from=start,
-            covered_to=end,
-        )
-        attest_in_kind_boundary_history(
-            session,
-            account_id=account.id,
-            covered_from=start,
-            covered_to=end,
-        )
-        close_reporting_month(session, january.id)
-        close_reporting_month(session, february.id)
-
-    response = client.get(
-        "/api/export/ai-financial-review",
-        params={"generated_at": GENERATED_AT},
-    )
-    assert response.status_code == 200, response.text
-    report = response.json()
-    _financial_review_validator().validate(report)
-
-    performance = report["sections"]["performance"]
-    assert performance["status"] == "included"
-    assert performance["reason_codes"] == []
-    data = performance["data"]
-    assert data["coverage"] == {"status": "complete", "reason_codes": []}
-    assert data["calculation_window"] == {
-        "selection": "adjacent_closed_reporting_months",
-        "start_period": {"year": 2030, "month": 1},
-        "end_period": {"year": 2030, "month": 2},
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
-    }
-    assert data["portfolio"]["xirr"]["availability"] == "available"
-    assert data["portfolio"]["xirr"]["value_unit"] == "percentage_points"
-    assert data["portfolio"]["xirr"]["annualized"] is True
-    assert data["portfolio"]["twrr"]["value"] == "16"
-    bridge = data["portfolio"]["monetary_bridge"]
-    assert bridge["value"] == _money("160.00")
-    assert bridge["external_flow_summary"] == {
-        "contributions": _money("0.00"),
-        "withdrawals": _money("0.00"),
-        "signed_total": _money("0.00"),
-    }
-    assert bridge["contract"] == "PERF04A"
-    assert bridge["contract_version"] == 1
-    assert len(data["accounts"]) == 1
-    assert data["accounts"][0]["account_ref"].startswith("acct-")
-    assert data["accounts"][0]["monetary_bridge"]["value"] == _money("160.00")
-    assert data["separation"]["investment_performance"] == ["portfolio.xirr", "portfolio.twrr"]
-
-
 def test_capital_goal_source_metric_path_translates_to_historical_dynamics(
     app_context: tuple[TestClient, Database],
 ) -> None:
@@ -2521,7 +2374,7 @@ def test_capital_goal_source_metric_path_translates_to_historical_dynamics(
     assert package_goal["source_metric_path"] == expected_path
 
     review_response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert review_response.status_code == 200, review_response.text
@@ -2533,8 +2386,7 @@ def test_capital_goal_source_metric_path_translates_to_historical_dynamics(
     assert review_goal["source_metric_path"] == expected_path
 
 
-@pytest.mark.parametrize("normalized", [False, True])
-def test_statement_top_ups_count_effective_funding_once(app_context, normalized):
+def test_statement_top_ups_count_effective_funding_once(app_context):
     from test_statement_import_mybroker import FILENAME
     from test_statement_import_mybroker_endpoints import _money_apply, _money_decide, _money_setup
 
@@ -2593,8 +2445,7 @@ def test_statement_top_ups_count_effective_funding_once(app_context, normalized)
             assert Decimal(expected) > 0
 
         compact = _ok(client.post("/api/export/ai-analysis-bundle"), status=200)
-        params = {"format_version": "2.1.0" if normalized else "1.6.0"}
-        full = _ok(client.get("/api/export/ai-financial-review", params=params), status=200)
+        full = _ok(client.get("/api/export/ai-financial-review/json"), status=200)
         validate_ai_financial_review(full)
         assert full["statement_top_ups"] == compact["statement_top_ups"]
         funding = compact["statement_top_ups"]
@@ -2705,3 +2556,68 @@ def test_statement_top_ups_keep_account_and_event_month_boundaries(app_context, 
         ("acct-second", "2031-02", None),
     ]
     assert result["months"][-1]["excluded_event_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "version", ["1.5.0", "1.6.0", "2.0.0", "2.1.0", "3.0.0", "3.1.0", "9.0.0", ""]
+)
+def test_financial_review_rejects_retired_version_selector_before_assembly(
+    app_context, monkeypatch, version
+):
+    from hermes_finance.api import ai_financial_review as api
+
+    client, database = app_context
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("retired version selector reached assembly")
+
+    monkeypatch.setattr(api, "assemble_ai_financial_review", forbidden)
+    before = _table_counts(database)
+    with _forbid_sql_writes(database.engine):
+        response = client.get(
+            "/api/export/ai-financial-review/json", params={"format_version": version}
+        )
+    assert response.status_code == 422, response.text
+    assert "only 3.1.0; omit format_version" in response.json()["error"]["message"]
+    assert "content-disposition" not in response.headers
+    assert _table_counts(database) == before
+
+
+@pytest.mark.parametrize(
+    "path", ["/api/export/ai-analysis-bundle", "/api/export/ai-analysis-bundle/markdown"]
+)
+@pytest.mark.parametrize("media", ["json", "markdown", "invalid", ""])
+def test_bundle_rejects_retired_media_query_before_assembly(app_context, monkeypatch, path, media):
+    from hermes_finance.api import ai_analysis_bundle as api
+
+    client, database = app_context
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("retired media selector reached assembly")
+
+    monkeypatch.setattr(api, "assemble_ai_analysis_bundle", forbidden)
+    before = _table_counts(database)
+    with _forbid_sql_writes(database.engine):
+        response = client.post(path, params={"media": media})
+    assert response.status_code == 422, response.text
+    assert "Choose the JSON or Markdown endpoint; omit media" in response.json()["error"]["message"]
+    assert "content-disposition" not in response.headers
+    assert _table_counts(database) == before
+
+
+def test_openapi_exposes_only_current_ai_export_routes_and_parameters(app_context):
+    client, _database = app_context
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/api/export/ai-financial-review" not in paths
+    assert "/api/export/ai-analysis-bundle/json" not in paths
+    for path, method in [
+        ("/api/export/ai-financial-review/json", "get"),
+        ("/api/export/ai-analysis-bundle", "post"),
+        ("/api/export/ai-analysis-bundle/markdown", "post"),
+    ]:
+        assert {p["name"] for p in paths[path][method].get("parameters", [])} == {
+            "forecast_version",
+            "generated_at",
+        }
+    assert client.get("/api/export/ai-financial-review").status_code == 404
+    assert client.post("/api/export/ai-analysis-bundle/json").status_code == 404

@@ -27,16 +27,14 @@ from hermes_finance.persistence import (
     PositionSnapshot,
     SourceMoneyClassification,
 )
-from hermes_finance.services import ai_review_payloads, returns_overall
 from hermes_finance.services import ai_source_returns as adapter
+from hermes_finance.services import returns_overall
 from hermes_finance.services import source_investment_proofs as proofs
 from hermes_finance.services.ai_financial_review import (
     assemble_ai_financial_review,
     canonical_json,
-    validate_ai_financial_review,
 )
 from hermes_finance.services.reporting_months import create_reporting_month
-from hermes_finance.services.returns_view import read_detail, read_overview
 
 pytestmark = [pytest.mark.import_export, pytest.mark.ci_integrations]
 START, END = date(2029, 12, 31), date(2030, 1, 31)
@@ -66,188 +64,7 @@ def _first(section):
     return section["data"]["accounts"][0]["intervals"][0]
 
 
-@pytest.mark.parametrize("account_type", ["brokerage", "iis"])
-def test_versioned_referenced_download_preserves_legacy_default_and_read_only_facts(
-    database, monkeypatch, account_type
-):
-    with database.session_factory() as session:
-        account = session.scalar(select(Account).where(Account.name == "Synthetic account"))
-        account.account_type = account_type
-        session.commit()
-    from hermes_finance.api import ai_financial_review as api
-
-    _save(database, monkeypatch)
-    with database.session_factory() as session:
-        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
-    monkeypatch.setattr(api, "moscow_today", lambda _request: date(2030, 2, 1))
-    params = {"generated_at": "2030-02-01T00:00:00Z"}
-    before = snapshot(database)
-    with TestClient(create_app(database)) as client:
-        previous = client.get("/api/export/ai-financial-review", params=params)
-        assert previous.status_code == 200, previous.text
-        assert previous.json()["schema_version"] == "1.6.0"
-        assert (
-            previous.json()["sections"]["source_returns"]["data"]["accounts"][0]["account_type"]
-            == account_type
-        )
-        current = client.get(
-            "/api/export/ai-financial-review/json", params={**params, "format_version": "2.1.0"}
-        )
-        assert current.status_code == 200, current.text
-        assert current.json()["schema_version"] == "2.1.0"
-        assert ai_review_payloads.expand_source_payloads(current.json()) == previous.json()
-        for old_version in ("1.5.0", "2.0.0"):
-            historical = client.get(
-                "/api/export/ai-financial-review/json",
-                params={**params, "format_version": old_version},
-            )
-            assert historical.status_code == 200, historical.text
-            assert historical.json()["schema_version"] == old_version
-            legacy = historical.json()
-            validate_ai_financial_review(legacy)
-            if old_version == "2.0.0":
-                legacy = ai_review_payloads.expand_source_payloads(legacy)
-            assert (
-                legacy["sections"]["returns_overall"]["data"]["mixed_result"]["known_result"]
-                == previous.json()["sections"]["returns_overall"]["data"]["mixed_result"][
-                    "known_result"
-                ]
-            )
-            assert all(
-                row["category"] not in {"iis", "brokerage_iis"}
-                for row in legacy["sections"]["returns_overall"]["data"]["mixed_result"][
-                    "components"
-                ]
-            )
-            legacy_account = legacy["sections"]["source_returns"]["data"]["accounts"][0]
-            assert legacy_account["mapping_status"] == "not_asserted"
-            assert legacy_account["financial_account_ref"] is None
-            assert "mapping_reason_codes" not in legacy_account
-            assert "account_type" not in legacy_account
-            legacy_interval = legacy_account["intervals"][0]
-            for item in (
-                legacy_interval,
-                legacy_interval["account"],
-                *legacy_interval["instruments"],
-            ):
-                if item is not None:
-                    assert "period" not in item and "valuation_date" not in item
-        assert current.headers["cache-control"] == "no-store"
-        assert "attachment;" in current.headers["content-disposition"]
-        assert (
-            client.get(
-                "/api/export/ai-financial-review/json", params={"format_version": "9.0.0"}
-            ).status_code
-            == 422
-        )
-    assert snapshot(database) == before
-
-
-def test_saved_source_round_trip_api_detail_parity_and_read_only(database, monkeypatch):
-    _save(database, monkeypatch)
-    with database.session_factory() as session:
-        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
-    before = snapshot(database)
-    with database.session_factory() as session:
-        report = assemble_ai_financial_review(
-            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
-        )
-        exported = report["sections"]["source_returns"]
-        current = report["sections"]["returns_overall"]["data"]
-        interval = _first(exported)
-        instrument = interval["instruments"][0]
-        ordinary = proofs.read_reports(session, source_account=ACCOUNT)[0]["interval"]
-        view = read_overview(session, scope=f"source:{ACCOUNT}", start=START, end=END)
-        detail = read_detail(
-            session, scope=f"source:{ACCOUNT}", start=START, end=END, isin=instrument["isin"]
-        )
-        overview = returns_overall.read_overall(session, include_instrument_details=True)
-        card = returns_overall.read_instrument_card(session, instrument["isin"], overview=overview)
-    assert report["schema_version"] == "1.6.0"
-    assert current["scope"] == "current_available_history_not_limited_to_selected_month"
-    assert current["mixed_result"]["known_result"] == adapter._overall_metric(
-        overview["mixed_result"]["known_result"]
-    )
-    for key in ("coupon_income", "dividend_income"):
-        assert current[key]["known_total"] == adapter._overall_metric(overview[key]["known_total"])
-        assert current[key]["accounts"][0]["source_account_ref"] == "source-account-1"
-    current_card = current["instruments"][0]
-    assert current_card["isin"] == card["isin"]
-    assert current_card["summary"]["valuation_dates"] == [
-        day.isoformat() if isinstance(day, date) else day
-        for day in card["summary"]["valuation_dates"]
-    ]
-    for key in ("pnl", "rate", "coupons", "dividends", "redemption", "costs", "taxes"):
-        assert current_card["summary"][key] == adapter._overall_metric(card["summary"][key])
-    current_account = current_card["accounts"][0]
-    assert current_account["proof_status"] == "current"
-    assert current_account["source_interval_ref"] == interval["ref"]
-    assert current_account["detail"]["opening_quantity"] == detail["opening_quantity"]
-    assert current_account["detail"]["analysis"]["metrics"] == instrument["metrics"]
-    assert interval["opening_date"] == str(START) and interval["closing_date"] == str(END)
-    assert interval["account"]["metrics"]["pnl"]["value"]["amount"] == "90.00"
-    assert Decimal(instrument["metrics"]["pnl"]["value"]["amount"]) * 100 == Decimal(
-        view["instruments"][0]["pnl"]["value"]
-    )
-    for name in ("modified_dietz", "xirr_annualized", "xirr_period"):
-        m = instrument["metrics"][name]
-        with localcontext() as context:
-            context.prec = 100
-            assert Decimal(m["value"]) == Decimal(ordinary["instruments"][0][name]["value"]) * 100
-        assert m["reason_codes"] == ordinary["instruments"][0][name]["reason_codes"]
-    assert instrument["metrics"]["xirr_annualized"]["annualized"]
-    assert not instrument["metrics"]["xirr_period"]["annualized"]
-    assert instrument["period"] == {"start": str(START), "end": str(END)}
-    assert instrument["valuation_date"] == str(detail["valuation_date"]) == str(END)
-    assert view["instruments"][0]["valuation_date"] == END
-    assert instrument["opening"]["quantity"] == detail["opening_quantity"]
-    assert instrument["closing"]["quantity"] == detail["closing_quantity"]
-    assert instrument["components"]["buys"]["value"]["amount"] == "1000.00"
-    assert instrument["components"]["fees"]["value"]["amount"] == "10.00"
-    assert instrument["components"]["coupons"]["value"]["amount"] == "0.00"
-    assert instrument["events"] and any(e["cash_legs"] for e in instrument["events"])
-    account = exported["data"]["accounts"][0]
-    assert account["mapping_status"] == "linked"
-    assert account["mapping_reason_codes"] == []
-    assert account["financial_account_ref"] in {
-        a["ref"] for a in report["sections"]["current_portfolio"]["data"]["accounts"]
-    }
-    assert account["all_history_ref"] == account["selected_month"]["interval_ref"]
-    assert account["monthly_history_refs"] == [account["all_history_ref"]]
-    validate_ai_financial_review(json.loads(canonical_json(report)))
-    with TestClient(create_app(database)) as client:
-        response = client.get(
-            "/api/export/ai-financial-review/json",
-            params={"generated_at": "2030-02-01T00:00:00Z", "evaluated_on": "2030-02-01"},
-        )
-        assert response.status_code == 200, response.text
-        assert response.json()["sections"]["source_returns"] == exported
-        assert response.json()["sections"]["returns_overall"]["data"] == current
-        ordinary_card = client.get(
-            "/api/returns/instrument-card", params={"isin": instrument["isin"], "basis": "legacy"}
-        )
-        assert ordinary_card.status_code == 200, ordinary_card.text
-        assert ordinary_card.json()["summary"]["pnl"]["value"] == card["summary"]["pnl"]["value"]
-    wire = json.dumps({"history": exported, "current": current})
-    for forbidden in (
-        ACCOUNT,
-        "1234567",
-        "proof_id",
-        "intake_id",
-        "sha256",
-        "native_source_account",
-        "source_references",
-        "document",
-        "event_key",
-        "canonical_account_id",
-        "account_id",
-        "instrument_id",
-    ):
-        assert forbidden not in wire
-    assert snapshot(database) == before
-
-
-def test_v3_clean_returns_match_ordinary_overview_and_card(database, monkeypatch):
+def test_current_clean_returns_match_ordinary_overview_and_card(database, monkeypatch):
     from hermes_finance.services.clean_instrument_return import (
         clean_export_data,
         read_clean_overview,
@@ -262,13 +79,14 @@ def test_v3_clean_returns_match_ordinary_overview_and_card(database, monkeypatch
             session,
             generated_at=datetime(2030, 2, 1, tzinfo=UTC),
             evaluated_on=date(2030, 2, 1),
-            format_version="3.0.0",
         )
-        clean = clean_export_data(read_clean_overview(session))
+        clean = clean_export_data(
+            read_clean_overview(session, include_purchases=True), include_purchases=True
+        )
         overview = returns_overall.read_clean_overall(session, include_instrument_details=True)
         isin = clean["accounts"][0]["instruments"][0]["isin"]
         card = returns_overall.read_clean_instrument_card(session, isin)
-    assert report["schema_version"] == "3.0.0"
+    assert report["schema_version"] == "3.1.0"
     assert "source_returns" not in report["sections"]
     assert "returns_overall" not in report["sections"]
     assert report["sections"]["clean_returns"]["data"] == clean
@@ -289,14 +107,14 @@ def test_v3_clean_returns_match_ordinary_overview_and_card(database, monkeypatch
         assert card_wire["accounts"][0]["ai_account_ref"] == clean["accounts"][0]["account_ref"]
         response = client.get(
             "/api/export/ai-financial-review/json",
-            params={"format_version": "3.0.0", "generated_at": "2030-02-01T00:00:00Z"},
+            params={"generated_at": "2030-02-01T00:00:00Z"},
         )
         assert response.status_code == 200, response.text
         assert response.json()["sections"]["clean_returns"]["data"] == clean
     assert snapshot(database) == before
 
 
-def test_v31_fifo_export_matches_card_and_v30_remains_compatible(database):
+def test_current_fifo_export_matches_card(database):
     from test_source_instrument_returns_service import save
 
     isin = "RU000A000000"
@@ -322,14 +140,8 @@ def test_v31_fifo_export_matches_card_and_v30_remains_compatible(database):
     before = snapshot(database)
     with TestClient(create_app(database)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": isin}).json()
-        old = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.0.0"})
-        response = client.get(
-            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
-        )
-    assert old.status_code == response.status_code == 200, (old.text, response.text)
-    old_data = old.json()["sections"]["clean_returns"]["data"]
-    assert old_data["schema_version"] == "1.0.0" and "purchase_method" not in old_data
-    assert "purchases" not in old_data["accounts"][0]["instruments"][0]
+        response = client.get("/api/export/ai-financial-review/json")
+    assert response.status_code == 200, response.text
     report = response.json()
     assert report["schema_version"] == "3.1.0"
     data = report["sections"]["clean_returns"]["data"]
@@ -377,9 +189,7 @@ def test_v31_keeps_closed_purchase_when_open_valuation_is_unknown(database):
     before = snapshot(database)
     with TestClient(create_app(database)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": isin})
-        report = client.get(
-            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
-        )
+        report = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == report.status_code == 200, (card.text, report.text)
     card_account = card.json()["accounts"][0]
     ai_account = report.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -425,9 +235,7 @@ def test_v31_blank_nkd_keeps_the_statement_total_of_a_later_bond_purchase(databa
     before = snapshot(database)
     with TestClient(create_app(database)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": isin})
-        report = client.get(
-            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
-        )
+        report = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == report.status_code == 200, (card.text, report.text)
     account = card.json()["accounts"][0]
     exported = report.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -469,9 +277,7 @@ def test_v31_fifo_same_day_buys_sold_together_match_card(database):
     before = snapshot(database)
     with TestClient(create_app(database)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": isin})
-        report = client.get(
-            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
-        )
+        report = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == report.status_code == 200, (card.text, report.text)
     account = card.json()["accounts"][0]
     exported = report.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -522,62 +328,6 @@ def test_latest_stale_scope_never_revives_numeric_month_or_history(database, mon
     assert all(a["detail"] is None for i in current["instruments"] for a in i["accounts"])
 
 
-def test_current_available_history_is_not_limited_to_selected_month_or_as_of(database, monkeypatch):
-    _save(database, monkeypatch)
-    with database.session_factory() as session:
-        create_reporting_month(session, year=2029, month=12, snapshot_date=START)
-    before = snapshot(database)
-    with database.session_factory() as session:
-        report = assemble_ai_financial_review(
-            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
-        )
-    history = report["sections"]["source_returns"]["data"]
-    current = report["sections"]["returns_overall"]["data"]
-    assert history["as_of_date"] == "2029-12-31"
-    assert history["accounts"][0]["all_history_ref"] is None
-    assert current["source_accounts"][0]["period"]["end"] == str(END)
-    assert current["source_accounts"][0]["result"]["pnl"]["value"]["amount"] == "90.00"
-    account = current["instruments"][0]["accounts"][0]
-    assert account["source_interval_ref"] is None
-    assert account["detail"]["analysis"]["metrics"]["xirr_annualized"]["value"] is not None
-    assert account["detail"]["analysis"]["metrics"]["xirr_period"]["value"] is not None
-    assert snapshot(database) == before
-
-
-def test_complete_export_reuses_source_derivation_and_discards_snapshot_cache(
-    database, monkeypatch
-):
-    from hermes_finance.services.source_monthly_returns import (
-        _SOURCE_INVESTMENT_READS,
-        source_read_snapshot,
-    )
-
-    _save(database, monkeypatch)
-    with database.session_factory() as session:
-        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
-    original = proofs._derive
-    calls = []
-
-    def derive(*args, **kwargs):
-        calls.append(args[1].id)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(proofs, "_derive", derive)
-    with database.session_factory() as session:
-        with source_read_snapshot(session):
-            _section(session)
-        baseline = len(calls)
-        assert _SOURCE_INVESTMENT_READS not in session.info
-    calls.clear()
-    with database.session_factory() as session:
-        report = assemble_ai_financial_review(
-            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
-        )
-        assert _SOURCE_INVESTMENT_READS not in session.info
-    assert report["sections"]["returns_overall"]["data"]["instruments"][0]["accounts"][0]["detail"]
-    assert len(calls) == baseline
-
-
 def test_saved_gold_projection_keeps_observation_date_cost_result_and_privacy(database):
     with database.session_factory() as session:
         month = create_reporting_month(session, year=2030, month=1, snapshot_date=END)
@@ -624,53 +374,6 @@ def test_saved_gold_projection_keeps_observation_date_cost_result_and_privacy(da
     ):
         assert forbidden not in wire
     assert snapshot(database) == before
-
-
-def test_current_and_history_keep_one_snapshot_when_proof_changes_between_sections(
-    database, monkeypatch
-):
-    from hermes_finance.services import ai_financial_review as review
-
-    _save(database, monkeypatch)
-    with database.session_factory() as session:
-        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
-    with database.engine.connect() as connection:
-        assert connection.exec_driver_sql("PRAGMA journal_mode=WAL").scalar_one() == "wal"
-    original = review.source_returns_section
-    written = False
-
-    def interleaved(*args, **kwargs):
-        nonlocal written
-        section = original(*args, **kwargs)
-        if not written:
-            written = True
-            with database.session_factory() as writer:
-                row = writer.scalar(
-                    select(SourceMoneyClassification).order_by(SourceMoneyClassification.id)
-                )
-                row.classification = "unknown" if row.classification != "unknown" else "fee"
-                writer.commit()
-        return section
-
-    monkeypatch.setattr(review, "source_returns_section", interleaved)
-    with database.session_factory() as session:
-        report = assemble_ai_financial_review(
-            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
-        )
-    assert written and _first(report["sections"]["source_returns"])["currentness"] == "current"
-    assert (
-        report["sections"]["returns_overall"]["data"]["source_accounts"][0]["proof_status"]
-        == "current"
-    )
-    with database.session_factory() as session:
-        fresh = assemble_ai_financial_review(
-            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
-        )
-    assert _first(fresh["sections"]["source_returns"])["currentness"] == "stale"
-    assert (
-        fresh["sections"]["returns_overall"]["data"]["source_accounts"][0]["proof_status"]
-        == "stale"
-    )
 
 
 def _derived(doc, raw, report, money, *, from_zero=True):
@@ -1243,166 +946,6 @@ def test_full_gold_history_allowlist_preserves_basis_dates_fees_and_revision_ref
         adapter._gold_history(
             raw, 1, {40: "returns-gold-account-1"}, {90: "returns-gold-instrument-1"}
         )
-
-
-def _save_manual_gold(database, *, quote=True, draft=False, unknown_fee=False):
-    from hermes_finance.services.owner_manual_gold_history import (
-        apply_gold_history,
-        preview_gold_history,
-    )
-
-    with database.session_factory() as session:
-        month = create_reporting_month(session, year=2030, month=1, snapshot_date=END)
-        account = Account(name="private-gold-account-424242", account_type="other")
-        instrument = Instrument(name="Synthetic history gold", instrument_type="gold")
-        session.add_all([account, instrument])
-        session.flush()
-        if quote:
-            session.add(
-                PositionSnapshot(
-                    reporting_month_id=month.id,
-                    account_id=account.id,
-                    instrument_id=instrument.id,
-                    quantity=Decimal("4"),
-                    average_cost_per_unit_kopecks=5000,
-                    market_price_per_unit_kopecks=6500,
-                    market_value_kopecks=26000,
-                    cost_basis_kopecks=20000,
-                    unrealized_result_kopecks=6000,
-                    price_date=date(2030, 1, 29),
-                    manual_adjustment=False,
-                )
-            )
-        month.status = "draft" if draft else "closed"
-        account_id, instrument_id = account.id, instrument.id
-        session.commit()
-    intent = {
-        "account_id": account_id,
-        "instrument_id": instrument_id,
-        "expected_revision": 0,
-        "covered_from": "2030-01-01",
-        "covered_to": "2030-01-31",
-        "complete": True,
-        "zero_start": True,
-        "current_quantity": "4",
-        "current_quantity_date": "2030-01-31",
-        "provenance_reference": "D:\\private\\synthetic-history",
-        "events": [
-            {
-                "event_id": "private-buy",
-                "event_date": "2030-01-03",
-                "side": "BUY",
-                "grams": "6",
-                "amount_basis": "actual",
-                "amount_rub": "300.00",
-                "fee_state": "unknown" if unknown_fee else "known_zero",
-            },
-            {
-                "event_id": "private-sell",
-                "event_date": "2030-01-16",
-                "side": "SELL",
-                "grams": "2",
-                "amount_basis": "derived_unit_price",
-                "unit_price_rub": "70.00",
-                "fee_state": "known",
-                "fee_rub": "1.00",
-            },
-        ],
-    }
-    with database.session_factory() as session:
-        preview = preview_gold_history(session, intent)
-        apply_gold_history(
-            session,
-            {
-                **intent,
-                "confirmation_digest": preview["confirmation_digest"],
-                "request_id": "ai-synthetic-gold",
-            },
-        )
-    return intent
-
-
-@pytest.mark.parametrize("mode", ["closed", "draft", "missing_quote", "unknown_fee"])
-def test_current_export_gold_history_matches_shared_producer_and_keeps_local_gaps(database, mode):
-    from hermes_finance.services.owner_manual_gold_history import read_gold_histories
-
-    _save_manual_gold(
-        database,
-        quote=mode != "missing_quote",
-        draft=mode == "draft",
-        unknown_fee=mode == "unknown_fee",
-    )
-    before = snapshot(database)
-    with database.session_factory() as session:
-        report = assemble_ai_financial_review(
-            session, generated_at=datetime(2030, 2, 1, tzinfo=UTC), evaluated_on=date(2030, 2, 1)
-        )
-        producer = read_gold_histories(session)[0]
-        ordinary = returns_overall.read_overall(session)
-    current = report["sections"]["returns_overall"]["data"]
-    history = current["gold"]["histories"][0]
-    assert history["authority"] == "owner_attestation" and history["events_loaded"]
-    assert len(history["events"]) == len(producer["events"]) == 2
-    assert history["declaration"]["complete"] and history["declaration"]["zero_start"]
-    for name in (
-        "total_result",
-        "realized_result",
-        "unrealized_result",
-        "remaining_cost",
-        "buy_amount",
-        "sale_amount",
-        "separate_fees",
-        "net_sales",
-        "valuation",
-    ):
-        assert history["result"][name] == adapter._money(producer["result"][name + "_kopecks"])
-    for name in (
-        "as_of_date",
-        "valuation_date",
-        "valuation_basis",
-        "valuation_provisional",
-        "total_reason_codes",
-        "realized_reason_codes",
-        "unrealized_reason_codes",
-    ):
-        assert history["result"][name] == producer["result"][name]
-    assert current["mixed_result"]["known_result"] == adapter._overall_metric(
-        ordinary["mixed_result"]["known_result"]
-    )
-    if mode in {"closed", "draft"}:
-        assert history["result"]["total_result"]["amount"] == "99.00"
-        assert history["valuation"]["date"] == "2030-01-29"
-        assert history["valuation"]["snapshot_date"] == "2030-01-31"
-        assert history["valuation"]["provisional"] == (mode == "draft")
-        assert current["mixed_result"]["known_result"]["value"]["amount"] == "99.00"
-    if mode == "missing_quote":
-        assert history["result"]["total_result"] is None
-        assert history["result"]["unrealized_result"] is None
-        assert history["result"]["realized_result"]["amount"] == "39.00"
-        assert history["result"]["as_of_date"] == "2030-01-31"
-        assert history["result"]["valuation_date"] is None
-    if mode == "unknown_fee":
-        assert history["events"][0]["separate_fee"] is None
-        assert history["result"]["total_result"] is None
-        assert history["result"]["net_sales"]["amount"] == "139.00"
-    wire = json.dumps(current)
-    for forbidden in (
-        "private-gold-account-424242",
-        "private-buy",
-        "private-sell",
-        "history_id",
-        "account_id",
-        "instrument_id",
-        "snapshot_id",
-        "event_id",
-        "provenance_reference",
-        "synthetic-history",
-        "confirmation_digest",
-        "request_id",
-    ):
-        assert forbidden not in wire
-    validate_ai_financial_review(report)
-    assert snapshot(database) == before
 
 
 def test_monthly_reader_fallback_schema_and_partial_cutoff(database, monkeypatch):

@@ -542,7 +542,7 @@ def test_clean_synthetic_x5_and_sber_do_not_inherit_other_redemption(db):
     assert rows[BOND]["pnl"]["value"] == "10000", rows[BOND]["pnl"]
     client = TestClient(create_app(database=db))
     overview = client.get("/api/returns/overall?include_instrument_summaries=true").json()
-    report_response = client.get("/api/export/ai-financial-review/json?format_version=3.0.0")
+    report_response = client.get("/api/export/ai-financial-review/json")
     assert report_response.status_code == 200, report_response.text
     report = report_response.json()["sections"]["clean_returns"]["data"]
     ai_rows = {row["isin"]: row for row in report["accounts"][0]["instruments"]}
