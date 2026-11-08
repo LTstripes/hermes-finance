@@ -2731,9 +2731,12 @@ def test_saved_proof_repo_custody_readback(database, monkeypatch, safe, card_fir
     assert exported["account_ref"] == card["accounts"][0]["ai_account_ref"]
     assert exported["period"] == jsonable_encoder(card["accounts"][0]["period"])
     assert [
-        {k: v for k, v in row.items() if k != "id"}
+        {k: v for k, v in row.items() if k not in {"id", "return_context"}}
         for row in exported["instruments"][0]["purchases"]
-    ] == [{k: v for k, v in row.items() if k != "id"} for row in jsonable_encoder(rows)]
+    ] == [
+        {k: v for k, v in row.items() if k not in {"id", "return_context"}}
+        for row in jsonable_encoder(rows)
+    ]
     assert snapshot(database) == before
 
     if safe and not card_first:
@@ -3641,10 +3644,10 @@ def test_clean_current_pdf_identical_coupon_occurrences_are_preserved(current_bo
     assert row["coupons"]["value"] == "6000"
     # The export deliberately uses file-local purchase IDs. All financial fields agree.
     assert [
-        {key: value for key, value in purchase.items() if key != "id"}
+        {key: value for key, value in purchase.items() if key not in {"id", "return_context"}}
         for purchase in account["purchases"]
     ] == [
-        {key: value for key, value in purchase.items() if key != "id"}
+        {key: value for key, value in purchase.items() if key not in {"id", "return_context"}}
         for purchase in row["purchases"]
     ]
     assert snapshot(database) == before

@@ -1545,9 +1545,12 @@ def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(
     assert exported["account_ref"] == account["ai_account_ref"]
     assert exported["period"] == account["period"]
     assert [
-        {k: v for k, v in row.items() if k != "id"}
+        {k: v for k, v in row.items() if k not in {"id", "return_context"}}
         for row in exported["instruments"][0]["purchases"]
-    ] == [{k: v for k, v in row.items() if k != "id"} for row in account["purchases"]]
+    ] == [
+        {k: v for k, v in row.items() if k not in {"id", "return_context"}}
+        for row in account["purchases"]
+    ]
     assert account["purchases"][0]["price_result_kopecks"] == (
         None if repo_fee in {"missing_depo", "depo_before_execution"} else "8000"
     )
@@ -2111,8 +2114,11 @@ def test_late_repo_conflict_preserves_only_proven_closed_prefix(db, conflict):
     if card_rows is None:
         assert exported_rows is None
     else:
-        assert [{k: v for k, v in row.items() if k != "id"} for row in card_rows] == [
-            {k: v for k, v in row.items() if k != "id"} for row in exported_rows
+        assert [
+            {k: v for k, v in row.items() if k not in {"id", "return_context"}} for row in card_rows
+        ] == [
+            {k: v for k, v in row.items() if k not in {"id", "return_context"}}
+            for row in exported_rows
         ]
         assert (card_rows[0]["price_result_kopecks"] == "8000") == (conflict == "late")
     assert snapshot(db) == before

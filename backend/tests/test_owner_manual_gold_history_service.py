@@ -164,10 +164,33 @@ def test_clean_overview_gold_ignores_fees_without_changing_receipt(source, fee_u
     exported = report["sections"]["clean_returns"]["data"]["gold"][0]
     assert exported["total_result"] == history["total_result"]
     assert exported["valuation_date"] == history["valuation_date"]
+    assert exported["name"] == "Synthetic gold"
+    assert exported["account_name"] == "Synthetic vault"
+    assert exported["split_status"] == "unknown"
+    snapshot = report["sections"]["clean_returns"]["data"]["gold_snapshots"][0]
+    assert snapshot["current_value"]["value"] == "3150000"
+    assert snapshot["cost_basis"]["value"] == "2700000"
+    assert snapshot["valuation_date"] == "2033-03-29"
+    assert snapshot["split_status"] == "unknown"
     assert (
         gold.apply_gold_history(session, request)["accepted_revision"]
         == response["accepted_revision"]
     )
+    assert economic_rows(database) == before
+
+
+def test_ai_gold_snapshot_is_present_without_dated_history(source):
+    from hermes_finance.services.ai_financial_review import assemble_ai_financial_review
+
+    database, session, *_ = source
+    before = economic_rows(database)
+    data = assemble_ai_financial_review(session)["sections"]["clean_returns"]["data"]
+    assert data["gold"] == []
+    assert len(data["gold_snapshots"]) == 1
+    row = data["gold_snapshots"][0]
+    assert row["name"] == "Synthetic gold" and row["account_name"] == "Synthetic vault"
+    assert row["cost_basis"]["value"] == "2700000"
+    assert row["split_status"] == "unknown"
     assert economic_rows(database) == before
 
 
