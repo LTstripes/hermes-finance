@@ -6,13 +6,18 @@ import { listAccounts } from "../api/accounts";
 import {
   createIisContribution,
   createTaxBenefit,
+  deleteIisContribution,
+  deleteTaxBenefit,
   getIisProfile,
   listIisContributions,
   listTaxBenefits,
+  updateIisContribution,
+  updateTaxBenefit,
   upsertIisProfile,
 } from "../api/iis";
 import { getTaxIisPlanner } from "../api/taxIisPlanner";
 import type { Account, IisContribution, IisProfile, TaxBenefit } from "../api/types";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { formatMoney } from "../lib/format";
 import { BENEFIT_STATUS_LABELS, IIS_TYPE_LABELS, labelOf } from "../lib/labels";
 import { normalizeMoneyInput } from "../lib/money";
@@ -23,6 +28,19 @@ type Snapshot = {
   contributions: IisContribution[];
   benefits: TaxBenefit[];
 };
+
+type RowRef = { kind: "contribution"; row: IisContribution } | { kind: "benefit"; row: TaxBenefit };
+
+function findRow(snapshot: Snapshot, target: RowRef): IisContribution | TaxBenefit | undefined {
+  return target.kind === "contribution"
+    ? snapshot.contributions.find((row) => row.id === target.row.id)
+    : snapshot.benefits.find((row) => row.id === target.row.id);
+}
+
+/** Edit inputs show whole rubles without trailing kopecks. */
+function editableAmount(value: string): string {
+  return value.endsWith(".00") ? value.slice(0, -3) : value;
+}
 
 type Props = {
   account: Account;
@@ -94,6 +112,12 @@ export function UiV2IisAccountForms({ account, plannerPath }: Props) {
   const [benefitYear, setBenefitYear] = useState(String(new Date().getFullYear()));
   const [benefitStatus, setBenefitStatus] = useState<(typeof STATUS_OPTIONS)[number]>("planned");
   const [benefitAmount, setBenefitAmount] = useState("");
+  const [editing, setEditing] = useState<RowRef | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editTarget, setEditTarget] = useState(false);
+  const [editStatus, setEditStatus] = useState<(typeof STATUS_OPTIONS)[number]>("planned");
+  const [editReceivedAt, setEditReceivedAt] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<RowRef | null>(null);
   const inFlight = useRef(false);
   const generation = useRef(0);
 
@@ -301,7 +325,208 @@ export function UiV2IisAccountForms({ account, plannerPath }: Props) {
     );
   }
 
+  function startEdit(target: RowRef) {
+    setError(null);
+    setNotice(null);
+    setEditing(target);
+    setEditAmount(editableAmount(target.row.amount.amount));
+    if (target.kind === "contribution") {
+      setEditTarget(target.row.is_target_reached);
+    } else {
+      const status = STATUS_OPTIONS.find((option) => option === target.row.status) ?? "planned";
+      setEditStatus(status);
+      setEditReceivedAt(target.row.received_at ?? "");
+    }
+  }
+
+  // A row changed or removed elsewhere is never overwritten from a stale form.
+  const unchanged = (target: RowRef) => (before: Snapshot) =>
+    JSON.stringify(findRow(before, target)) === JSON.stringify(target.row)
+      ? null
+      : "Запись изменилась или удалена. Проверьте обновлённые данные перед сохранением.";
+
+  function saveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editing) return;
+    const target = editing;
+    const value = amount(editAmount);
+    if (value === null) {
+      setError("Укажите неотрицательную сумму с точностью до копеек.");
+      return;
+    }
+    const year = target.row.tax_year;
+    if (target.kind === "contribution") {
+      const reached = editTarget;
+      void runWrite(
+        unchanged(target),
+        () =>
+          updateIisContribution(account.id, target.row.id, {
+            amount: { amount: value, currency: "RUB" },
+            is_target_reached: reached,
+          }),
+        (next) =>
+          next.contributions.some(
+            (row) =>
+              row.id === target.row.id &&
+              row.amount.amount === value &&
+              row.is_target_reached === reached,
+          ),
+        `Взнос за ${year} год изменён и подтверждён повторным чтением.`,
+        () => setEditing(null),
+      );
+      return;
+    }
+    const status = editStatus;
+    const receivedAt = status === "received" ? editReceivedAt : "";
+    if (receivedAt && !validDate(receivedAt)) {
+      setError("Укажите существующую дату получения вычета.");
+      return;
+    }
+    void runWrite(
+      unchanged(target),
+      () =>
+        updateTaxBenefit(account.id, target.row.id, {
+          status,
+          amount: { amount: value, currency: "RUB" },
+          ...(receivedAt ? { received_at: receivedAt } : {}),
+        }),
+      (next) =>
+        next.benefits.some(
+          (row) =>
+            row.id === target.row.id &&
+            row.status === status &&
+            row.amount.amount === value &&
+            (!receivedAt || row.received_at === receivedAt),
+        ),
+      `Вычет за ${year} год изменён и подтверждён повторным чтением.`,
+      () => setEditing(null),
+    );
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    const target = pendingDelete;
+    setPendingDelete(null);
+    const year = target.row.tax_year;
+    void runWrite(
+      unchanged(target),
+      () =>
+        target.kind === "contribution"
+          ? deleteIisContribution(account.id, target.row.id)
+          : deleteTaxBenefit(account.id, target.row.id),
+      (next) => findRow(next, target) === undefined,
+      target.kind === "contribution"
+        ? `Взнос за ${year} год удалён.`
+        : `Вычет за ${year} год удалён.`,
+      () => {
+        if (editing?.kind === target.kind && editing.row.id === target.row.id) setEditing(null);
+      },
+    );
+  }
+
   const canWrite = account.status === "active" && !loading && !busy && !locked && snapshot !== null;
+
+  const isEditing = (kind: RowRef["kind"], id: number) =>
+    editing?.kind === kind && editing.row.id === id;
+
+  function rowActions(target: RowRef) {
+    const label = `${target.kind === "contribution" ? "взнос" : "вычет"} за ${target.row.tax_year}`;
+    return (
+      <span className={styles.rowActions}>
+        <button
+          aria-label={`Изменить ${label}`}
+          disabled={!canWrite}
+          onClick={() => startEdit(target)}
+          type="button"
+        >
+          Изменить
+        </button>
+        <button
+          aria-label={`Удалить ${label}`}
+          className={styles.danger}
+          disabled={!canWrite}
+          onClick={() => setPendingDelete(target)}
+          type="button"
+        >
+          Удалить
+        </button>
+      </span>
+    );
+  }
+
+  function editForm(target: RowRef) {
+    return (
+      <form
+        aria-label={`Изменить ${target.kind === "contribution" ? "взнос" : "вычет"} за ${target.row.tax_year}`}
+        className={`${styles.form} ${styles.editForm}`}
+        onSubmit={saveEdit}
+      >
+        {target.kind === "benefit" ? (
+          <label>
+            Статус вычета
+            <select
+              disabled={!canWrite}
+              onChange={(event) =>
+                setEditStatus(
+                  STATUS_OPTIONS.find((option) => option === event.target.value) ?? "planned",
+                )
+              }
+              value={editStatus}
+            >
+              {STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {labelOf(BENEFIT_STATUS_LABELS, status)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        <label>
+          Сумма, ₽
+          <input
+            disabled={!canWrite}
+            inputMode="decimal"
+            onChange={(event) => setEditAmount(event.target.value)}
+            required
+            value={editAmount}
+          />
+        </label>
+        {target.kind === "benefit" && editStatus === "received" ? (
+          <label>
+            Дата получения
+            <input
+              disabled={!canWrite}
+              onChange={(event) => setEditReceivedAt(event.target.value)}
+              type="date"
+              value={editReceivedAt}
+            />
+          </label>
+        ) : null}
+        {target.kind === "contribution" ? (
+          <label className={styles.checkbox}>
+            <input
+              checked={editTarget}
+              disabled={!canWrite}
+              onChange={(event) => setEditTarget(event.target.checked)}
+              type="checkbox"
+            />
+            Цель достигнута
+          </label>
+        ) : null}
+        <button disabled={!canWrite} type="submit">
+          Сохранить
+        </button>
+        <button
+          className={styles.secondary}
+          disabled={busy}
+          onClick={() => setEditing(null)}
+          type="button"
+        >
+          Отмена
+        </button>
+      </form>
+    );
+  }
 
   return (
     <section
@@ -387,8 +612,18 @@ export function UiV2IisAccountForms({ account, plannerPath }: Props) {
               <ul className={styles.rows}>
                 {snapshot.contributions.map((row) => (
                   <li key={row.id}>
-                    {row.tax_year}: {formatMoney(row.amount.amount)} ·{" "}
-                    {row.is_target_reached ? "цель достигнута" : "цель не достигнута"}
+                    <span className={styles.rowLine}>
+                      <span>
+                        {row.tax_year}: {formatMoney(row.amount.amount)} ·{" "}
+                        {row.is_target_reached ? "цель достигнута" : "цель не достигнута"}
+                      </span>
+                      {isEditing("contribution", row.id)
+                        ? null
+                        : rowActions({ kind: "contribution", row })}
+                    </span>
+                    {isEditing("contribution", row.id)
+                      ? editForm({ kind: "contribution", row })
+                      : null}
                   </li>
                 ))}
               </ul>
@@ -435,8 +670,16 @@ export function UiV2IisAccountForms({ account, plannerPath }: Props) {
               <ul className={styles.rows}>
                 {snapshot.benefits.map((row) => (
                   <li key={row.id}>
-                    {row.tax_year} · {labelOf(IIS_TYPE_LABELS, row.benefit_type)} ·{" "}
-                    {labelOf(BENEFIT_STATUS_LABELS, row.status)} · {formatMoney(row.amount.amount)}
+                    <span className={styles.rowLine}>
+                      <span>
+                        {row.tax_year} · {labelOf(IIS_TYPE_LABELS, row.benefit_type)} ·{" "}
+                        {labelOf(BENEFIT_STATUS_LABELS, row.status)} ·{" "}
+                        {formatMoney(row.amount.amount)}
+                        {row.received_at ? ` · получен ${row.received_at}` : ""}
+                      </span>
+                      {isEditing("benefit", row.id) ? null : rowActions({ kind: "benefit", row })}
+                    </span>
+                    {isEditing("benefit", row.id) ? editForm({ kind: "benefit", row }) : null}
                   </li>
                 ))}
               </ul>
@@ -497,6 +740,20 @@ export function UiV2IisAccountForms({ account, plannerPath }: Props) {
           </section>
         </div>
       ) : null}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={pendingDelete?.kind === "contribution" ? "Удалить взнос?" : "Удалить вычет?"}
+        description={
+          pendingDelete
+            ? `${pendingDelete.kind === "contribution" ? "Взнос" : "Вычет"} за ${pendingDelete.row.tax_year} год на ${formatMoney(pendingDelete.row.amount.amount)} будет удалён без возможности восстановления.`
+            : ""
+        }
+        confirmLabel="Удалить"
+        danger
+        busy={busy}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </section>
   );
 }

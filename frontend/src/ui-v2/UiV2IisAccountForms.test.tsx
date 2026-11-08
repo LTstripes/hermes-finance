@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,9 +8,11 @@ import { ApiClientError } from "../api/client";
 import {
   createIisContribution,
   createTaxBenefit,
+  deleteIisContribution,
   getIisProfile,
   listIisContributions,
   listTaxBenefits,
+  updateTaxBenefit,
   upsertIisProfile,
 } from "../api/iis";
 import { getTaxIisPlanner } from "../api/taxIisPlanner";
@@ -21,9 +23,13 @@ vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
 vi.mock("../api/iis", () => ({
   createIisContribution: vi.fn(),
   createTaxBenefit: vi.fn(),
+  deleteIisContribution: vi.fn(),
+  deleteTaxBenefit: vi.fn(),
   getIisProfile: vi.fn(),
   listIisContributions: vi.fn(),
   listTaxBenefits: vi.fn(),
+  updateIisContribution: vi.fn(),
+  updateTaxBenefit: vi.fn(),
   upsertIisProfile: vi.fn(),
 }));
 vi.mock("../api/taxIisPlanner", () => ({ getTaxIisPlanner: vi.fn() }));
@@ -48,6 +54,8 @@ const listBenefitsMock = vi.mocked(listTaxBenefits);
 const upsertProfileMock = vi.mocked(upsertIisProfile);
 const createContributionMock = vi.mocked(createIisContribution);
 const createBenefitMock = vi.mocked(createTaxBenefit);
+const updateBenefitMock = vi.mocked(updateTaxBenefit);
+const deleteContributionMock = vi.mocked(deleteIisContribution);
 const listAccountsMock = vi.mocked(listAccounts);
 const plannerMock = vi.mocked(getTaxIisPlanner);
 
@@ -223,6 +231,72 @@ describe("UiV2IisAccountForms", () => {
     );
     expect(await screen.findByText(/Вычет за 2030 год сохранён/)).toBeInTheDocument();
     expect(screen.getByText(/2030 · Тип А · Подано/)).toBeInTheDocument();
+  });
+
+  it("edits a deduction amount in place and confirms it by a fresh read", async () => {
+    benefits = [
+      {
+        id: 31,
+        account_id: account.id,
+        tax_year: 2030,
+        benefit_type: "type_a",
+        status: "planned",
+        amount: { amount: "500000.00", currency: "RUB" },
+        received_at: null,
+        notes: null,
+      },
+    ];
+    updateBenefitMock.mockImplementation(async (_id, benefitId, payload) => {
+      benefits = benefits.map((row) =>
+        row.id === benefitId
+          ? { ...row, status: payload.status ?? row.status, amount: payload.amount ?? row.amount }
+          : row,
+      );
+      return benefits[0];
+    });
+    const user = userEvent.setup();
+    renderForms();
+    await user.click(await screen.findByRole("button", { name: "Изменить вычет за 2030" }));
+    const form = screen.getByRole("form", { name: "Изменить вычет за 2030" });
+    const input = within(form).getByLabelText("Сумма, ₽");
+    expect(input).toHaveValue("500000");
+    await user.clear(input);
+    await user.type(input, "50000");
+    await user.click(within(form).getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(updateBenefitMock).toHaveBeenCalledWith(7, 31, {
+        status: "planned",
+        amount: { amount: "50000.00", currency: "RUB" },
+      }),
+    );
+    expect(await screen.findByText(/Вычет за 2030 год изменён/)).toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Изменить вычет за 2030" })).toBeNull();
+  });
+
+  it("deletes a contribution only after explicit confirmation", async () => {
+    contributions = [
+      {
+        id: 21,
+        account_id: account.id,
+        tax_year: 2030,
+        amount: { amount: "250000.00", currency: "RUB" },
+        is_target_reached: false,
+        notes: null,
+      },
+    ];
+    deleteContributionMock.mockImplementation(async () => {
+      contributions = [];
+    });
+    const user = userEvent.setup();
+    renderForms();
+    await user.click(await screen.findByRole("button", { name: "Удалить взнос за 2030" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(/будет удалён без возможности восстановления/)).toBeVisible();
+    expect(deleteContributionMock).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
+    await waitFor(() => expect(deleteContributionMock).toHaveBeenCalledWith(7, 21));
+    expect(await screen.findByText("Взнос за 2030 год удалён.")).toBeInTheDocument();
+    expect(screen.getByText("Взносов пока нет.")).toBeInTheDocument();
   });
 
   it("blocks writes when account identity changed before submit", async () => {

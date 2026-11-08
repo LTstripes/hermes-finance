@@ -137,3 +137,47 @@
     width: 100%;
   }
 }
+.rowLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.rowActions {
+  display: inline-flex;
+  gap: 6px;
+}
+.rowActions button {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rowActions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.rowActions .danger {
+  color: #852e24;
+}
+.editForm {
+  margin: 8px 0 4px;
+}
+.form .secondary {
+  background: white;
+  color: var(--accent);
+}
+.checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+.checkbox input {
+  width: auto;
+  min-height: 0;
+}
