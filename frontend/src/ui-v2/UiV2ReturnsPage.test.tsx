@@ -463,3 +463,62 @@ test("partial account and income subtotals are marked once, also for screen read
   const coupon = screen.getByRole("region", { name: "Полученные купоны" });
   expect(within(coupon).getByText("По известным выплатам, не полный итог")).toBeVisible();
 });
+test("a position shows the simple return on invested and annual XIRR instead of Modified Dietz", async () => {
+  const data = overallFixture();
+  const rate = (
+    method: "simple_return" | "xirr",
+    value: string | null,
+    reasons: string[] = [],
+  ) => ({
+    value,
+    status: "supported" as const,
+    reason_codes: reasons,
+    assumptions: [],
+    method,
+    annualized: method === "xirr",
+    invested_kopecks: "100000",
+    start_date: "2029-01-10",
+    end_date: "2030-05-31",
+    holding_days: 506,
+    weighted_holding_days: "506.00",
+  });
+  const template = data.instruments[1];
+  data.instruments = [
+    {
+      ...template,
+      isin: "RU000A0RATE1",
+      name: "Долгая бумага",
+      accounts: template.accounts.map((account) => ({
+        ...account,
+        rate: { ...account.rate, value: "15.72", method: "modified_dietz" },
+        simple_return: rate("simple_return", "0.1004"),
+        xirr: rate("xirr", "0.1212"),
+      })),
+    },
+    {
+      ...template,
+      isin: "RU000A0RATE2",
+      name: "Короткая бумага",
+      accounts: template.accounts.map((account) => ({
+        ...account,
+        simple_return: rate("simple_return", "0.2313"),
+        xirr: rate("xirr", null, ["short_holding"]),
+      })),
+    },
+  ];
+  install(data);
+  setup();
+  const section = await screen.findByRole("region", { name: "Доходность по инструментам (2)" });
+  const long = within(section).getByRole("row", { name: /Долгая бумага/ });
+  expect(long).toHaveTextContent("10,04%");
+  expect(long).toHaveTextContent("12,12% годовых");
+  expect(long).not.toHaveTextContent("1 572");
+  const short = within(section).getByRole("row", { name: /Короткая бумага/ });
+  expect(short).toHaveTextContent("23,13%");
+  expect(short).not.toHaveTextContent("годовых");
+  fireEvent.click(within(short).getAllByText(/23,13%/)[0]);
+  expect(within(short).getByText("На вложенное %")).toBeVisible();
+  expect(
+    within(short).getByText("Годовая не считается: деньги в среднем были в позиции меньше года"),
+  ).toBeVisible();
+});
