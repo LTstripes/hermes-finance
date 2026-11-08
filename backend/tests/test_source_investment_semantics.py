@@ -48,7 +48,7 @@ SEMANTIC_MODULES = (
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v14",
-    "ae6127069d0276e2c312158e3befc08af702eea3496170354bf3b87e845f5eda",
+    "a8ed7c91c01b4d268edfd794f9de61fb57885d4c7a99b428954669bea8b8d601",
 )
 
 
