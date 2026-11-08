@@ -2639,6 +2639,12 @@ changing proof operands, receipts, classifications or account/month economics.
 The clean projection and FIFO purchase services are included in the semantic-module digest guard.
 Independent financial review is required before release.
 
+The v17 revision accepts source-proven exchange issue codes and exact decimal
+quantity spellings in clean full-redemption cancellation nodes. Its read-only v16 compatibility
+edge recomputes the same live proof dependencies; proof derivation, operands,
+receipts and saved classifications remain unchanged. Earlier compatibility
+boundaries remain in force. Independent financial review is required before release.
+
 The read-only compatibility edge admits exactly the released 1.9.4 producing
 implementation (`a381dbf1`, package digest
 `0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81`)
@@ -7063,6 +7069,23 @@ Clean full-redemption recovery requires an explicit current registration-to-ISIN
 bridge to a bond and a current original-bound custody cancellation proof for every
 covering source. Exact native account, issue, cancellation date and negative
 quantity must agree with an observed full disappearance and positive RUB cash.
+A covering statement without a position row remains excluded from the quantity
+calculation, but its exact native cancellation node is still required. Issue
+identity comes from the exact `p_name` label plus CRLF plus ISIN, not the code in
+`comment_new`: the latter may be an exchange issue code. The current original-bound
+custody proof producing `cancellation_dates` has already validated every Trades3
+row, including the comment grammar `Аннулирование выпуска [A-Z0-9]{1,32}\.`.
+Retained attribute values are hashes; the clean reader therefore requires the
+`comment_new` attribute through the unchanged exact attribute set without comparing
+its digest with an ISIN-based comment. Exact account, transfer operation, NRD place,
+issue label, negative quantity and settlement date, no children and exactly one
+matching node remain mandatory independently in every covering statement.
+The quantity digest is compared against a finite set of spellings of the exact
+negative Decimal quantity: the integer part has no leading zeros and at most 18
+digits; an optional fractional part has 1 to 10 digits. Only trailing fractional
+zeros may be added or removed. A nonzero fractional part is preserved exactly;
+values requiring more than 10 fractional digits remain unsupported. There is no
+rounding or numeric tolerance, and a different value never matches.
 The complete native cancellation shape is retained; issuer-only coupon inference
 cannot establish redemption identity. A missing nominal may be recovered only
 from identified current purchases with established NKD basis, known NKD, positive

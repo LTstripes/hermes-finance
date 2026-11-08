@@ -55,6 +55,21 @@ def _face_from_purchases(events, isin, day):
     return next(iter(faces)) if len(faces) == 1 else None
 
 
+def _cancellation_quantity_digests(quantity):
+    """Exact spellings within the proven -integer[.fraction] cancellation grammar."""
+    if not quantity.is_finite() or quantity <= 0:
+        return frozenset()
+    whole, _, fraction = format(quantity, "f").partition(".")
+    fraction = fraction.rstrip("0")
+    if len(whole) > 18 or len(fraction) > 10:
+        return frozenset()
+    # No rounding or leading-zero guesses: only pad the exact fraction with zeros.
+    return frozenset(
+        digest("-" + whole + ("." + fraction + "0" * (places - len(fraction)) if places else ""))
+        for places in range(len(fraction), 11)
+    )
+
+
 def _cancelled_quantity(views, isin, account, day, cancellation_dates):
     """A complete observed disappearance plus the exact dated native cancellation."""
     quantities = set()
@@ -76,6 +91,7 @@ def _cancelled_quantity(views, isin, account, day, cancellation_dates):
     if len(quantities) != 1:
         return None
     quantity = next(iter(quantities))
+    quantity_digests = _cancellation_quantity_digests(quantity)
     for view in views:
         if not view["covered_from"] <= day.isoformat() <= view["covered_to"]:
             continue
@@ -92,13 +108,17 @@ def _cancelled_quantity(views, isin, account, day, cancellation_dates):
             if o.get("source_name")
         }
         names = {digest(label + separator + isin) for label in labels for separator in ("\r\n",)}
+        # Current cancellation_dates proves the original-bound Trades3 grammar,
+        # including "Аннулирование выпуска [A-Z0-9]{1,32}\." comments. The code
+        # may be an exchange issue code, not the ISIN; retained values are hashes.
+        # Require comment_new in the exact attribute set below, and bind the issue
+        # through p_name's exact label + CRLF + ISIN instead of guessing the code.
         matches = [
             node
             for node in nodes
             if (
                 node.get("acc_code") == digest(account)
                 and node.get("oper_type") == digest("Перевод")
-                and node.get("comment_new") == digest(f"Аннулирование выпуска {isin}.")
                 and node.get("p_name") in names
                 and node.get("place_name") == digest("НРД")
                 and not len(node)
@@ -117,7 +137,7 @@ def _cancelled_quantity(views, isin, account, day, cancellation_dates):
         ]
         if (
             len(matches) != 1
-            or matches[0].get("qty") != digest(str(-quantity))
+            or matches[0].get("qty") not in quantity_digests
             or matches[0].get("settlement_date") != digest(day.isoformat() + "T00:00:00")
         ):
             return None
