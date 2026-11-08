@@ -15,6 +15,26 @@ class CleanMetric(BaseModel):
     assumptions: tuple[str, ...]
 
 
+class CleanPositionRate(CleanMetric):
+    method: Literal["simple_return", "xirr"]
+    unit: Literal["fraction"]
+    annualized: bool
+    basis: Literal["statement_purchases_including_nkd", "dated_position_cash_flows_including_nkd"]
+    invested_kopecks: Annotated[str | None, Field(pattern=r"^[0-9]+$")]
+    start_date: date | None
+    end_date: date
+    holding_end_date: date | None
+    holding_days: int | None
+    date_basis: Literal["first_purchase_execution"]
+    for_position_comparison: Literal[True]
+
+
+class CleanDietzMetric(CleanMetric):
+    method: Literal["modified_dietz"]
+    annualized: Literal[False]
+    for_position_comparison: Literal[False]
+
+
 class CleanPurchase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,4 +71,6 @@ class CleanInstrument(BaseModel):
     valuation_and_trades: CleanMetric
     known_result: CleanMetric
     pnl: CleanMetric
-    modified_dietz: CleanMetric
+    modified_dietz: CleanDietzMetric | CleanMetric
+    simple_return: CleanPositionRate | None = None
+    xirr: CleanPositionRate | None = None

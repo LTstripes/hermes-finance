@@ -2633,6 +2633,12 @@ The v15 revision adds clean-only sale/NKD reconciliation with an exact read-only
 v14 compatibility edge. Proof derivation and its operands remain unchanged;
 the existing v13 and older compatibility checks retain their boundaries.
 
+The v16 revision adds clean position comparison rates only. Its exact read-only
+v15 compatibility edge recomputes the same live proof dependencies, without
+changing proof operands, receipts, classifications or account/month economics.
+The clean projection service is included in the semantic-module digest guard.
+Independent financial review is required before release.
+
 The read-only compatibility edge admits exactly the released 1.9.4 producing
 implementation (`a381dbf1`, package digest
 `0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81`)
@@ -6985,6 +6991,40 @@ an identified bond trade keeps the statement total, which already holds any NKD.
 a proved closed REPO pair the two legs may share an instant, since settlement orders
 them, and an execution time may prove that same-day incoming shares came before an
 outgoing leg. Saved decisions and receipts are not changed.
+
+Owner decision 2026-11-08 (position comparison, #1016): the clean Returns API
+exposes `simple_return` and `xirr` per instrument/source-account scope in the
+overall reader and the card's `clean` object. Both use Decimal-string fractional
+rates (`0.1` means 10%), with explicit method, annualization, basis,
+`invested_kopecks`, start/end dates, `holding_end_date` and `holding_days`.
+Simple return is full position `pnl / sum(BUY)` on the current statement basis
+including NKD where applicable, without reducing invested capital after sales.
+No denominator, zero invested capital or an unknown full result gives NULL with
+a reason, never zero or a ratio of a partial payout subtotal presented as total
+return. A provable zero opening quantity and value are required to establish
+inception; a truncated history cannot establish lifetime invested capital.
+
+The start is the first purchase execution date (`date_basis=first_purchase_execution`);
+missing execution dates leave holding duration and annual XIRR unknown, without
+hiding an independently known simple return. Cash uses the existing principal
+posting/settlement dates and each payout leg's actual posting date. Purchases
+are negative, sales/redemptions and received coupons/dividends positive. An open
+position adds its closing statement value on the closing date; a proved closed
+position adds no valuation. Its holding end is the last disposal execution date
+(redemption delivery/event date), while `end_date` is the last cash receipt date,
+so post-disposal payouts are retained. Otherwise both end dates are the closing
+valuation date. Holding duration is the date difference, not the age of the
+report. For fewer than 365 holding days XIRR is NULL/`short_holding`; at exactly
+365 days it is eligible. Incomplete position inputs preserve the existing
+blockers, and the unchanged `domain/xirr.py` solver preserves no-root/ambiguity
+reasons. Unavailable/UNKNOWN values use the existing `status=unavailable` and
+`value=null` representation. Each metric remains independently available.
+
+Position `modified_dietz` remains numerically compatible and is explicitly
+`for_position_comparison=false`, `annualized=false`; the legacy `rate` alias has
+the same restriction. Account monthly Dietz is unchanged. The API readers opt
+into these additive fields; the existing AI export projection and its shape
+remain unchanged pending its separately assigned consumer update.
 
 Clean coupon attribution uses the existing complete investment-report narrative
 grammar, including three-digit issue segments and `Биржевые облигации`. Exact

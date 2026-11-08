@@ -6,7 +6,13 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.clean_return_types import CleanInstrument, CleanPurchase
+from hermes_finance.api.clean_return_types import (
+    CleanDietzMetric,
+    CleanInstrument,
+    CleanMetric,
+    CleanPositionRate,
+    CleanPurchase,
+)
 from hermes_finance.api.returns_view import (
     DTO,
     AccountLink,
@@ -49,7 +55,12 @@ class SourceAccount(DTO):
     instrument_count: int
 
 
+class PositionDietzAlias(Metric):
+    for_position_comparison: Literal[False]
+
+
 class InstrumentAccount(Result):
+    rate: PositionDietzAlias | Metric
     period: Period | None
     scope: str
     label: str
@@ -58,11 +69,17 @@ class InstrumentAccount(Result):
     native_period: bool = False
 
 
+class CleanInstrumentAccount(InstrumentAccount):
+    simple_return: CleanPositionRate
+    xirr: CleanPositionRate
+    modified_dietz: CleanDietzMetric | CleanMetric
+
+
 class OverallInstrument(DTO):
     isin: str
     name: str
     kind: str | None
-    accounts: list[InstrumentAccount]
+    accounts: list[CleanInstrumentAccount | InstrumentAccount]
     reason_codes: list[str]
 
 
@@ -262,7 +279,7 @@ class CardSummary(DTO):
     costs: Metric
     taxes: Metric
     redemption: Metric
-    rate: Metric
+    rate: PositionDietzAlias | Metric
     partial: bool
     reason_codes: list[str]
 

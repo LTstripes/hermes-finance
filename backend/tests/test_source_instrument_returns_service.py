@@ -569,7 +569,14 @@ def test_clean_api_uses_saved_original_without_account_confirmation(db, fee):
     client = TestClient(create_app(database=db))
     with db.session_factory() as session:
         payload = jsonable_encoder(
-            read_clean_account(session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30), isin=ISIN)
+            read_clean_account(
+                session,
+                ACCOUNT,
+                date(2030, 3, 31),
+                date(2030, 4, 30),
+                isin=ISIN,
+                include_position_rates=True,
+            )
         )
     (row,) = payload["instruments"]
     assert row["buys"]["value"] == "100000"

@@ -10,6 +10,22 @@ from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 from hermes_finance.domain.instrument_return import InstrumentEvent, Metric
 from hermes_finance.domain.monthly_return_chain import calculate_interval_return
+from hermes_finance.domain.xirr import XirrCashFlow, calculate_xirr
+
+
+@dataclass(frozen=True)
+class PositionRate(Metric):
+    method: str = "simple_return"
+    unit: str = "fraction"
+    annualized: bool = False
+    basis: str = "statement_purchases_including_nkd"
+    invested_kopecks: int | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    holding_end_date: date | None = None
+    holding_days: int | None = None
+    date_basis: str = "first_purchase_execution"
+    for_position_comparison: bool = True
 
 
 @dataclass(frozen=True)
@@ -26,6 +42,94 @@ class CleanInstrumentReturn:
     known_result: Metric
     pnl: Metric
     modified_dietz: Metric
+    simple_return: PositionRate | None = None
+    xirr: PositionRate | None = None
+
+
+def _position_rates(
+    closing_date,
+    closing_clean,
+    buys,
+    pnl,
+    dated_flows,
+    purchases,
+    disposals,
+    *,
+    inception_proven,
+    position_closed,
+):
+    """Keep inception, denominator and annualization eligibility independent."""
+    invested = buys.value if inception_proven and not buys.reason_codes else None
+    start = (
+        min(purchases)
+        if inception_proven and invested is not None and purchases and all(purchases)
+        else None
+    )
+    holding_end = (
+        max(disposals)
+        if position_closed and disposals and all(disposals)
+        else (None if position_closed else closing_date)
+    )
+    days = (holding_end - start).days if start and holding_end and holding_end >= start else None
+    metadata = dict(
+        invested_kopecks=invested,
+        start_date=start,
+        end_date=max((flow[0] for flow in dated_flows), default=closing_date)
+        if position_closed
+        else closing_date,
+        holding_end_date=holding_end,
+        holding_days=days,
+        assumptions=pnl.assumptions,
+    )
+    base_reasons = list(pnl.reason_codes)
+    if not inception_proven:
+        base_reasons.append("position_inception_unproven")
+    if invested is None:
+        base_reasons.append("invested_amount_incomplete")
+    elif invested == 0:
+        base_reasons.append("zero_invested")
+    if pnl.value is None and not base_reasons:
+        base_reasons.append("position_result_unknown")
+    reasons = tuple(dict.fromkeys(base_reasons))
+    simple_value = None
+    if not reasons and pnl.value is not None:
+        with localcontext() as context:
+            context.prec = 60
+            context.rounding = ROUND_HALF_UP
+            simple_value = Decimal(pnl.value) / Decimal(invested)
+    simple = PositionRate(
+        simple_value,
+        pnl.status if simple_value is not None else "unavailable",
+        reasons,
+        **metadata,
+    )
+    xirr_reasons = list(reasons)
+    if start is None:
+        xirr_reasons.append("first_purchase_date_unknown")
+    if days is None:
+        xirr_reasons.append("holding_period_unknown")
+    elif days < 365:
+        xirr_reasons.append("short_holding")
+    if start and any(day < start for day, _, _ in dated_flows):
+        xirr_reasons.append("position_flows_before_first_purchase")
+    value = None
+    if not xirr_reasons:
+        flows = [XirrCashFlow(day, -amount) for day, amount, _ in dated_flows]
+        if not position_closed:
+            flows.append(XirrCashFlow(closing_date, closing_clean))
+        solved = calculate_xirr(flows)
+        value = solved.annualized_rate
+        xirr_reasons.extend(solved.reason_codes)
+    annual = PositionRate(
+        value,
+        pnl.status if value is not None else "unavailable",
+        tuple(dict.fromkeys(xirr_reasons)),
+        method="xirr",
+        annualized=True,
+        basis="dated_position_cash_flows_including_nkd",
+        **metadata,
+    )
+    return simple, annual
 
 
 def _priced_bond_principal(event: InstrumentEvent) -> int | None:
@@ -435,6 +539,9 @@ def calculate_clean_return(
     redemptions_complete: bool,
     valuation_complete: bool,
     result_assumptions: tuple[str, ...] = (),
+    include_position_rates: bool = True,
+    inception_proven: bool | None = None,
+    position_closed: bool = False,
 ) -> CleanInstrumentReturn:
     """Calculate from attributable current observations, preserving partial facts.
 
@@ -450,6 +557,8 @@ def calculate_clean_return(
     assumptions["DIVIDEND"].update(result_assumptions)
     dated_flows = []
     trade_days = []
+    purchases = []
+    disposals = []
     seen_events = set()
     seen_legs = set()
     trade_gap = not trades_complete
@@ -507,6 +616,8 @@ def calculate_clean_return(
                     payout_gap = True
                 continue
             kind = event.kind
+            if kind == "REDEMPTION":
+                disposals.append(event.depository_settlement_date or day)
             assumptions[kind].update(event.assumptions)
             for leg in legs:
                 if leg.ownership in seen_legs:
@@ -519,6 +630,7 @@ def calculate_clean_return(
         assumptions[kind].update(clean_trade_assumptions(event))
         dated_flows.append((day, flow, "confirmed"))
         trade_days.append(day)
+        (purchases if kind == "BUY" else disposals).append(event.execution_date)
 
     def available_status(used):
         if "source_nkd_conflict" in used:
@@ -658,6 +770,21 @@ def calculate_clean_return(
             () if value is not None else ("clean_valuation_incomplete",),
         )
 
+    simple, annual = (
+        _position_rates(
+            closing_date,
+            closing_clean,
+            buys,
+            pnl,
+            dated_flows,
+            purchases,
+            disposals,
+            inception_proven=opening_clean == 0 if inception_proven is None else inception_proven,
+            position_closed=position_closed,
+        )
+        if include_position_rates
+        else (None, None)
+    )
     return CleanInstrumentReturn(
         endpoint_metric(opening_clean),
         endpoint_metric(closing_clean),
@@ -671,4 +798,6 @@ def calculate_clean_return(
         known_result,
         pnl,
         rate,
+        simple,
+        annual,
     )

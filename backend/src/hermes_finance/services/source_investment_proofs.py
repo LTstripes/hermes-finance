@@ -36,8 +36,8 @@ VERSION = "source_return_investment_v1"
 # parsing, mybroker_return_structure, source_report_preview._money classification or
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
-SEMANTICS_REVISION = "source_investment_semantics_v15"
-_GIFT_COMPAT_REVISION = "source_investment_semantics_v15"
+SEMANTICS_REVISION = "source_investment_semantics_v16"
+_GIFT_COMPAT_REVISION = "source_investment_semantics_v16"
 _V3_COMPAT_CODE = "source_investment_semantics_v3"
 _GIFT_COMPAT_CODES = (
     "source_investment_semantics_v2",
@@ -331,7 +331,9 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
         # V13's sold-out position inference is also limited to the clean projection.
         # V14 changes only clean coupon/redemption operands, never proof derivation.
         # V15 reconciles separate sale NKD only in the clean projection.
+        # V16 adds clean position comparison rates without changing proof operands.
         codes = (
+            "source_investment_semantics_v15",
             "source_investment_semantics_v14",
             "source_investment_semantics_v13",
             "source_investment_semantics_v12",

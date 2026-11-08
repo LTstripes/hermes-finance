@@ -164,6 +164,252 @@ def calc(events, **kwargs):
     )
 
 
+def position_return(*, days=365, closed=False, payouts=(), changes=None, **coverage):
+    first = date(2028, 1, 2)
+    end = first + timedelta(days=days)
+    buy = replace(trade("BUY", 100000, 2000), execution_date=first, cash_settlement_date=first)
+    events = (replace(buy, **(changes or {})), *payouts)
+    if closed:
+        events += (replace(trade("SELL", 110000, 0), execution_date=end, cash_settlement_date=end),)
+    return calculate_clean_return(
+        first - timedelta(days=1),
+        end + timedelta(days=700) if closed else end,
+        0,
+        0 if closed else 110000,
+        events,
+        trades_complete=coverage.get("trades_complete", True),
+        payouts_complete=coverage.get("payouts_complete", True),
+        redemptions_complete=coverage.get("redemptions_complete", True),
+        valuation_complete=coverage.get("valuation_complete", True),
+        position_closed=closed,
+    )
+
+
+@pytest.mark.parametrize("days", [0, 1, 364, 365, 730])
+def test_position_simple_and_annual_return_have_independent_holding_gate(days):
+    result = position_return(days=days)
+    simple, annual = result.simple_return, result.xirr
+    assert simple.value == Decimal("0.1")
+    assert simple.invested_kopecks == 100000  # Retains the statement's NKD.
+    assert not simple.annualized and simple.for_position_comparison
+    assert simple.basis == "statement_purchases_including_nkd"
+    assert annual.holding_days == days
+    assert annual.start_date == date(2028, 1, 2)
+    assert annual.end_date == date(2028, 1, 2) + timedelta(days=days)
+    assert annual.annualized
+    if days < 365:
+        assert annual.value is None
+        assert annual.reason_codes == ("short_holding",)
+    else:
+        assert annual.status == "supported"
+        # Analytic single-purchase example, independent of solver invocation.
+        with localcontext() as context:
+            context.prec = 60
+            expected = Decimal("1.1") ** (Decimal(365) / Decimal(days)) - 1
+        assert abs(annual.value - expected) < Decimal("1e-25")
+
+
+@pytest.mark.parametrize("days", [30, 365, 730])
+def test_closed_position_uses_disposal_date_and_never_adds_terminal_value(days, monkeypatch):
+    from hermes_finance.domain import clean_instrument_return as domain
+    from hermes_finance.domain.xirr import calculate_xirr
+
+    observed = []
+
+    def solve(flows):
+        observed.extend(flows)
+        return calculate_xirr(flows)
+
+    monkeypatch.setattr(domain, "calculate_xirr", solve)
+    result = position_return(days=days, closed=True)
+    assert result.simple_return.value == Decimal("0.1")
+    assert result.xirr.holding_days == days  # The much later report is irrelevant.
+    if days < 365:
+        assert result.xirr.reason_codes == ("short_holding",)
+        assert not observed
+    else:
+        assert result.xirr.value is not None
+        assert [(f.event_date, f.amount_kopecks) for f in observed] == [
+            (date(2028, 1, 2), -100000),
+            (date(2028, 1, 2) + timedelta(days=days), 110000),
+        ]
+
+
+@pytest.mark.parametrize("kind", ["COUPON", "DIVIDEND"])
+def test_position_xirr_counts_actual_payout_cash_dates_once(kind):
+    day = date(2028, 1, 2) + timedelta(days=365)
+    paid = replace(
+        cash(kind, 10000),
+        event_date=day - timedelta(days=2),
+        cash_legs=(CashLeg(kind, day, 10000, -10000, (kind,), kind),),
+    )
+    result = position_return(payouts=(paid,))
+    assert result.simple_return.value == Decimal("0.2")
+    assert abs(result.xirr.value - Decimal("0.2")) < Decimal("1e-25")
+
+
+@pytest.mark.parametrize(
+    "coverage, reason",
+    [
+        ("trades_complete", "clean_trades_incomplete"),
+        ("payouts_complete", "paid_income_incomplete"),
+        ("redemptions_complete", "redemption_incomplete"),
+        ("valuation_complete", "clean_valuation_incomplete"),
+    ],
+)
+def test_incomplete_position_never_manufactures_total_percent_or_xirr(coverage, reason):
+    result = position_return(**{coverage: False})
+    assert result.xirr.value is result.simple_return.value is None
+    assert result.xirr.status == "unavailable"
+    assert reason in result.xirr.reason_codes
+    assert reason in result.simple_return.reason_codes
+
+
+def test_unknown_first_execution_keeps_known_simple_return():
+    result = position_return(changes={"execution_date": None})
+    assert result.simple_return.value == Decimal("0.1")
+    assert result.simple_return.start_date is None
+    assert result.xirr.value is result.xirr.holding_days is None
+    assert "first_purchase_date_unknown" in result.xirr.reason_codes
+
+
+def test_zero_invested_is_unknown_rate_instead_of_zero():
+    result = position_return(
+        changes={"native_trade_amount_kopecks": 0, "accrued_interest_kopecks": 0}
+    )
+    assert result.pnl.value == 110000
+    assert result.simple_return.invested_kopecks == 0
+    assert result.simple_return.value is result.xirr.value is None
+    assert "zero_invested" in result.simple_return.reason_codes
+    assert "zero_invested" in result.xirr.reason_codes
+
+
+def test_truncated_position_cannot_claim_lifetime_invested_or_holding():
+    result = calculate_clean_return(
+        START,
+        END,
+        100000,
+        110000,
+        (trade("BUY", 1000, 0),),
+        trades_complete=True,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=True,
+    )
+    assert result.pnl.value == 9000
+    assert result.simple_return.value is result.xirr.value is None
+    assert "position_inception_unproven" in result.simple_return.reason_codes
+    assert result.xirr.holding_days is None
+    assert result.simple_return.invested_kopecks is None
+
+
+@pytest.mark.parametrize("closing, expected", [(100000, "0"), (90000, "-0.1"), (0, None)])
+def test_zero_loss_and_no_root_are_distinct_position_returns(closing, expected):
+    first = date(2028, 1, 2)
+    result = calculate_clean_return(
+        first - timedelta(days=1),
+        first + timedelta(days=365),
+        0,
+        closing,
+        (replace(trade("BUY", 100000, 0), execution_date=first, cash_settlement_date=first),),
+        trades_complete=True,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=True,
+    )
+    if expected is not None:
+        assert result.simple_return.value == Decimal(expected)
+        assert abs(result.xirr.value - Decimal(expected)) < Decimal("1e-25")
+    else:
+        assert result.simple_return.value == Decimal(-1)
+        assert result.xirr.value is None
+        assert result.xirr.reason_codes == ("not_computable_xirr_no_valid_root",)
+
+
+def test_ambiguous_xirr_keeps_simple_return_on_all_purchases():
+    first = date(2028, 1, 2)
+    end = first + timedelta(days=730)
+    events = tuple(
+        replace(
+            trade(kind, amount, 0),
+            event_key=str(index),
+            execution_date=first + timedelta(days=days),
+            cash_settlement_date=first + timedelta(days=days),
+        )
+        for index, (kind, amount, days) in enumerate(
+            [("BUY", 100000, 0), ("SELL", 230000, 365), ("BUY", 132000, 730)]
+        )
+    )
+    result = calculate_clean_return(
+        first - timedelta(days=1),
+        end,
+        0,
+        0,
+        events,
+        trades_complete=True,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=True,
+    )
+    assert result.simple_return.invested_kopecks == 232000
+    assert abs(result.simple_return.value - Decimal(-2000) / Decimal(232000)) < Decimal("1e-28")
+    assert result.xirr.value is None
+    assert result.xirr.reason_codes == ("not_computable_xirr_root_ambiguity",)
+
+
+def test_full_redemption_and_later_coupon_keep_their_actual_dates(monkeypatch):
+    from hermes_finance.domain import clean_instrument_return as domain
+    from hermes_finance.domain.xirr import calculate_xirr
+
+    first = date(2028, 1, 2)
+    redeemed = first + timedelta(days=365)
+    payout = redeemed + timedelta(days=10)
+    observed = []
+
+    def solve(flows):
+        observed.extend(flows)
+        return calculate_xirr(flows)
+
+    monkeypatch.setattr(domain, "calculate_xirr", solve)
+    redemption = replace(
+        cash("REDEMPTION", 100000),
+        event_date=redeemed,
+        depository_settlement_date=redeemed,
+        cash_legs=(CashLeg("redemption", redeemed, 100000, -100000, ("r",), "r"),),
+    )
+    coupon = replace(
+        cash("COUPON", 10000),
+        event_date=payout,
+        cash_legs=(CashLeg("coupon", payout, 10000, -10000, ("c",), "c"),),
+    )
+    result = calculate_clean_return(
+        first - timedelta(days=1),
+        payout + timedelta(days=365),
+        0,
+        0,
+        (
+            replace(trade("BUY", 100000, 0), execution_date=first, cash_settlement_date=first),
+            redemption,
+            coupon,
+        ),
+        trades_complete=True,
+        payouts_complete=True,
+        redemptions_complete=True,
+        valuation_complete=True,
+        position_closed=True,
+    )
+    assert result.simple_return.value == Decimal("0.1")
+    assert result.xirr.holding_days == 365
+    assert result.xirr.holding_end_date == redeemed
+    assert result.xirr.end_date == payout
+    assert result.xirr.value is not None
+    assert [(f.event_date, f.amount_kopecks) for f in observed] == [
+        (first, -100000),
+        (redeemed, 100000),
+        (payout, 10000),
+    ]
+
+
 def test_trade_money_with_nkd_net_receipt_and_costs_excluded():
     result = calc(
         (trade("BUY", 102000, 2000), cash("DIVIDEND", 8700), cash("FEE", -900), cash("TAX", -1300))
