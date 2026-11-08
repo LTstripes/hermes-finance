@@ -9,81 +9,59 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- 1.13.0 is prepared on main for guarded publication with
+  [release notes](release-notes-1.13.0.md). Publication, the tag and the Stable
+  installation are recorded here only after their read-back.
 - [v1.12.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.12.0)
-  is published at `067b6be1a5d5957643d50e996ffda647ba9ac891` with
-  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42464520127)
-  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42465353065)
-  successful, with [release notes](release-notes-1.12.0.md). It ships redesign
-  stages 3–5, #1120–#1127 and #1133.
-- 1.12.0 is installed on the Owner computer on 2026-11-08 by backup-first OPS02,
-  then Prepare and Start: the Stable checkout tag and the running health version
-  read back as 1.12.0, and a pre-update SQLite backup exists in the update backup
-  directory. The guided wrapper stopped before OPS02 on Windows PowerShell 5.1 git
-  stderr ([#1138](https://github.com/LTstripes/hermes-finance/pull/1138) fixes it);
-  OPS02 itself was run directly with the same arguments. Detailed numeric Owner UAT
-  of 1.12.0 has not been performed and is not inferred from CI or snapshot checks.
-- The previous release [v1.11.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.11.0)
-  (`afd51ce9ca489d571ec4cc8ed0391eb05d45b43e`) shipped #1110, #1113 and redesign
-  stages 1–2; its pre-update backup is retained.
+  (`067b6be1a5d5957643d50e996ffda647ba9ac891`) is the installed Stable version since
+  2026-11-08 (backup-first OPS02, Prepare and Start; health read back 1.12.0). Its
+  pre-update backup is retained. Detailed numeric Owner UAT of 1.12.0 has not been
+  performed and is not inferred from CI or snapshot checks.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
-The 1.11.0 source proves each instrument from its own trades reconciled to
-statement quantities, so other issues' rows and unattributed account money no
-longer withhold its result; unattributed money adds one note. Bonds use one
-NKD-inclusive basis (Owner decision 2026-11-07, see C): trade totals with NKD,
-the statement position value and full coupons; fees and taxes stay excluded.
-Contradicting linked trade money, differing statement totals and ambiguous
-coupon links still withhold the result. A read-only snapshot check showed a full
-result for every open position; older closed positions of unknown type without
-a closing quantity remain without one. Stage 1 and 2 of the
-[#1079](https://github.com/LTstripes/hermes-finance/issues/1079) redesign ship
-the new tokens, shell, working-month plate and the Month summary and checklist.
-These are release-code capabilities, not proof of installed behavior or Owner
-acceptance.
+Changes since 1.12.0, prepared for 1.13.0:
 
-Changes since 1.11.0, shipped in 1.12.0:
+- [#1140](https://github.com/LTstripes/hermes-finance/pull/1140) attributes clean
+  coupons by exact issue identity before issuer text, keeps ambiguous payouts
+  unattributed, resolves extended dividend narratives by an explicit registration
+  bridge and recovers a full bond redemption only from a current custody
+  cancellation with exact quantity, nominal and cash (semantics v14).
+- [#1141](https://github.com/LTstripes/hermes-finance/pull/1141) reconciles a bond
+  sale with its separate NKD money only on an exact kopeck match; otherwise the sale
+  stays without a result (semantics v15).
+- [#1142](https://github.com/LTstripes/hermes-finance/pull/1142) adds per-position
+  simple return on invested and annual XIRR, published only for a capital-weighted
+  holding of at least 365 days (Owner decision on
+  [#1016](https://github.com/LTstripes/hermes-finance/issues/1016); semantics v16).
+  [#1144](https://github.com/LTstripes/hermes-finance/pull/1144) shows both rates on
+  Returns and the instrument card instead of the position Modified Dietz.
+- [#1143](https://github.com/LTstripes/hermes-finance/pull/1143) moves the AI export
+  to 3.2.0 with names, payments, per-ISIN summaries, labeled rates and position
+  rates; [#1139](https://github.com/LTstripes/hermes-finance/pull/1139) removed the
+  export formats the UI did not use.
+- [#1136](https://github.com/LTstripes/hermes-finance/pull/1136),
+  [#1137](https://github.com/LTstripes/hermes-finance/pull/1137) and
+  [#1138](https://github.com/LTstripes/hermes-finance/pull/1138) remove dead code and
+  fix the guided Stable updater on Windows PowerShell 5.1.
 
-- Redesign stages 3–5 of #1079: Home ([#1117](https://github.com/LTstripes/hermes-finance/pull/1117)),
-  Income and Capital ([#1116](https://github.com/LTstripes/hermes-finance/pull/1116)),
-  Returns and instrument details ([#1118](https://github.com/LTstripes/hermes-finance/pull/1118)).
-  Partial results remain marked; the component equality requires complete values.
-- [#1120](https://github.com/LTstripes/hermes-finance/pull/1120) resolves same-second
-  purchases and historical closed REPO only where execution/settlement evidence
-  proves the result. Ambiguous FIFO order remains unavailable.
-- [#1121](https://github.com/LTstripes/hermes-finance/pull/1121) adds version preparation
-  and exact-main release requests; [#1122](https://github.com/LTstripes/hermes-finance/pull/1122)
-  adds guided backup-first Stable updates with separate Start.
-- [#1123](https://github.com/LTstripes/hermes-finance/pull/1123) stabilizes browser CI
-  without relaxing assertions; [#1127](https://github.com/LTstripes/hermes-finance/pull/1127)
-  aligns Month tests with the current workspace and retains unique legacy coverage.
-- [#1124](https://github.com/LTstripes/hermes-finance/pull/1124) adds an Owner-local
-  read-only returns snapshot check; its private outputs stay outside Git/CI.
-- [#1125](https://github.com/LTstripes/hermes-finance/pull/1125) names accounts missing
-  capital snapshots; [#1126](https://github.com/LTstripes/hermes-finance/pull/1126)
-  reuses reads within a protected request snapshot, preserving proof/currentness rules.
-- [#1133](https://github.com/LTstripes/hermes-finance/pull/1133) infers sold-out positions
-  only from balanced trades and absence in the final statement; investment semantics
-  v13 retains v12 receipt compatibility. Its read-only copy check improved one closed
-  position while open positions were unchanged. Remaining incomplete trades, payouts,
-  redemptions and valuations still withhold full results.
-
-There are no new database migrations since 1.11.0. Green CI and earlier read-only
-copy checks do not establish Owner UAT of 1.12.0.
+Read-only copy checks: full position results 24 to 27 and purchases with a result
+236 to 239, with no open position degraded. A full bond redemption without a current
+custody cancellation proof and registration bridge remains unknown. There are no new
+database migrations since 1.12.0. Green CI and copy checks do not establish Owner UAT.
 
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Owner UAT of installed 1.12.0, including the redesign (#963, #1014, #711).
-   Continue #1079 only with the Owner's next accepted scope. Cleanup from audit
-   [#1135](https://github.com/LTstripes/hermes-finance/issues/1135) proceeds as
-   separate reviewed PRs.
-2. Apply the Owner's proportional verification rule: use an isolated Test or
-   manual acceptance when the change or an explicit accepted gate requires it;
-   state whether it was performed. Never infer UAT from green CI.
-3. Maintain distinct source-only observations, accepted financial facts and
-   CLOSED history. No financial Apply/Close or data repair is implied by release.
+1. Publish 1.13.0 through the guarded route, install it on Stable backup-first,
+   then Owner UAT of the Returns rates, the instrument card and the 3.2.0 export,
+   together with the pending 1.12.0 redesign UAT (#963, #1014, #711).
+2. Owner data actions that unlock remaining results: re-confirm the current source
+   reports where a stored cancellation proof is stale, add the missing registration
+   bridge, and fix catalogue types and duplicates.
+3. Apply the Owner's proportional verification rule and never infer UAT from green
+   CI. No financial Apply/Close or data repair is implied by release.
 
 <a id="s4"></a>
 ## 4. Evidence boundaries
