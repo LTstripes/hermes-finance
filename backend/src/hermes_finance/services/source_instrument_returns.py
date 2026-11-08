@@ -1547,6 +1547,9 @@ def read_instrument_returns(
             session, events, views, cancellation_dates
         )
         resolved_redemptions |= analytical_redemptions
+        from hermes_finance.services.clean_sale_nkd import reconcile_sale_nkd
+
+        events = reconcile_sale_nkd(session, events, views)
     from hermes_finance.services.source_monthly_internal_evidence import (
         apply_verified_compensations,
     )

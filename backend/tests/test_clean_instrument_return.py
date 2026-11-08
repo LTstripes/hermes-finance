@@ -1512,3 +1512,97 @@ def test_linked_trade_money_must_agree_with_total_and_price(event, amount):
     assert trade_amount_with_nkd(event) == amount
     result = calc((event,))
     assert (result.buys.value == amount) if amount else result.pnl.value is None
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "current",
+        "foreign_owner",
+        "partial_occurrences",
+        "partial_trades",
+        "stale",
+        "fingerprint",
+        "retired",
+        "wrong_account",
+    ],
+)
+def test_sale_nkd_reuses_only_complete_current_identical_owned_group(monkeypatch, case):
+    from hermes_finance.services import broker_money, source_return_evidence
+    from hermes_finance.services.clean_sale_nkd import _current_owned_cohort
+    from hermes_finance.statement_import.mybroker import digest
+
+    sales = [
+        replace(
+            trade("SELL", 103000, 2000), native_identity=f"native-{i}", native_source_account="a"
+        )
+        for i in range(2)
+    ]
+    natives = [
+        {
+            "ordinal": i,
+            "amount": "20",
+            "date": DAY.isoformat(),
+            "currency": "RUB",
+            "source_account": "a",
+        }
+        for i in range(2)
+    ]
+    view = {"id": 1}
+    refs = [f"money:1:money:{i}:synthetic" for i in range(2)]
+    rows = [SimpleNamespace(source_references=(ref,)) for ref in refs]
+    raw = {ref: (view, native) for ref, native in zip(refs, natives, strict=True)}
+    occurrences = [
+        {"import_id": 7, "section": "money", "ordinal": n["ordinal"], "row_fingerprint": digest(n)}
+        for n in natives
+    ]
+    gid = digest([7, "c" * 64])
+    identities = [sale.native_identity for sale in sales]
+    group = {
+        "group_id": gid,
+        "cohort_digest": "c" * 64,
+        "import_id": 7,
+        "trade_identities": identities + (["extra"] if case == "partial_trades" else []),
+        "occurrences": occurrences[:1] if case == "partial_occurrences" else occurrences,
+        "source_account": "other" if case == "wrong_account" else "a",
+        "date": DAY.isoformat(),
+        "currency": "RUB",
+        "native_total_basis": "includes_paid_nkd",
+        "signed_nkd_minor": 2000,
+    }
+    targets = [
+        {
+            "role": "trade",
+            "target_id": i,
+            "cash_proof": {"source_identity": identity, "cohort": {"group_id": gid}},
+        }
+        for i, identity in enumerate(identities)
+    ]
+    proof = {
+        "contract_version": broker_money.CONTRACT_V3,
+        "operation": "retire" if case == "retired" else "accept",
+        "statement_groups": [group],
+        "targets": targets,
+    }
+    receipt = SimpleNamespace(request_id="synthetic-current")
+    owned = {
+        ref: [
+            {
+                "role": "trade_group",
+                "target_id": "different" if case == "foreign_owner" else gid,
+                "row_fingerprint": "0" * 64 if case == "fingerprint" else digest(native),
+            }
+        ]
+        for ref, native in zip(refs, natives, strict=True)
+    }
+    monkeypatch.setattr(source_return_evidence, "bound_import", lambda *args: SimpleNamespace(id=7))
+    monkeypatch.setattr(broker_money, "receipts", lambda session: [(receipt, proof)])
+    monkeypatch.setattr(
+        broker_money,
+        "latest_proofs",
+        lambda session: {("trade", t["target_id"]): (receipt, proof, t) for t in targets},
+    )
+    monkeypatch.setattr(
+        broker_money, "proof_blockers", lambda *args: ["stale"] if case == "stale" else []
+    )
+    assert _current_owned_cohort(object(), sales, rows, raw, owned) is (case == "current")
