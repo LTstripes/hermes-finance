@@ -256,3 +256,7 @@
     box-shadow: -6px 0 10px rgba(19, 35, 52, 0.08);
   }
 }
+
+.iisPanel {
+  scroll-margin-top: 16px;
+}
