@@ -15,7 +15,7 @@ import {
 import { ApiClientError } from "../../api/client";
 import { getMonth } from "../../api/months";
 import { previewOriginalContext } from "../../api/mybrokerPreflight";
-import { listSourceIntakes } from "../../api/sourceIntake";
+import { listSourceIntakes, type SourceIntake } from "../../api/sourceIntake";
 import { BrokerMonthReview } from "./BrokerMonthReview";
 import { brokerOriginalSession } from "./brokerOriginalSession";
 
@@ -99,6 +99,34 @@ const preview: BrokerMonthPreview = {
   opening_date: "2029-12-31",
   ending_date: "2030-01-31",
 };
+const workspaceIntake: SourceIntake = {
+  contract_version: "source_intake_v1",
+  id: 1,
+  document_sha256: document.document_sha256,
+  generation: 1,
+  head_seq: 2,
+  manifest_digest: "c".repeat(64),
+  original_required: true,
+  covered_from: "2030-01-01",
+  covered_to: "2030-01-31",
+  state: {
+    account_id: 7,
+    reporting_month_id: 1,
+    default_enabled: true,
+    account_currency: null,
+    policy_revision: 1,
+    overrides: {},
+    instrument_decisions: [],
+    deferred_isins: [],
+  },
+  document,
+  proposals: [],
+  observations: [],
+  exceptions: [],
+  financial_authority: "none",
+  finance_link: null,
+  history: [],
+};
 function persisted(requestId: string, accountId = 7): BrokerMonthReadback {
   return {
     contract_version: "broker_month_v1",
@@ -150,16 +178,35 @@ beforeEach(() => {
     return result;
   });
 });
-function show(closed = false) {
+function show(closed = false, workspace = false) {
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={query}>
-      <BrokerMonthReview monthId={1} closed={closed} />
+      <BrokerMonthReview monthId={1} closed={closed} workspace={workspace} />
     </QueryClientProvider>,
   );
   return userEvent.setup();
+}
+function showWorkspace() {
+  const file = new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" });
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  vi.mocked(listSourceIntakes).mockResolvedValue([workspaceIntake]);
+  render(
+    <QueryClientProvider client={query}>
+      <BrokerMonthReview
+        monthId={1}
+        closed={false}
+        workspace
+        sourceAccount="synthetic"
+        intakeSelection={{ id: 1, file, snapshot: workspaceIntake }}
+      />
+    </QueryClientProvider>,
+  );
+  return { file, query, user: userEvent.setup() };
 }
 async function inspect(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("option", { name: "Synthetic broker" });
@@ -263,15 +310,34 @@ it("reinspection invalidates alias confirmation and stale Apply cannot claim suc
     screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   ).toBeDisabled();
 });
-it("acknowledged Apply retries only the same GET after a read failure", async () => {
+it("workspace uses the selected original and retries an acknowledged save only by GET", async () => {
+  vi.mocked(previewOriginalContext).mockResolvedValue({
+    coveredFrom: "2030-01-01",
+    coveredTo: "2030-01-31",
+    accountId: 7,
+  });
   vi.mocked(readBrokerMonth).mockRejectedValueOnce(new Error("Synthetic read failed"));
-  const user = show();
-  await inspect(user);
-  await user.click(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+  const { file, query, user } = showWorkspace();
+  await waitFor(() => expect(brokerOriginalSession(query).snapshot().file).toBe(file));
+  expect(screen.queryByLabelText("Оригинальный XML MyBroker")).not.toBeInTheDocument();
+  expect(previewBrokerMonth).not.toHaveBeenCalled();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
+  const save = await screen.findByRole("button", { name: "Сохранить данные месяца" });
+  expect(previewBrokerMonth).toHaveBeenCalledWith(
+    file,
+    { reporting_month_id: 1, account_id: 7 },
+    expect.any(AbortSignal),
   );
+  expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("7");
+  expect(save).toBeEnabled();
+  expect(screen.queryByRole("checkbox", { name: /Я подтверждаю/ })).not.toBeInTheDocument();
+  expect(applyBrokerMonth).not.toHaveBeenCalled();
+  expect(readBrokerMonth).not.toHaveBeenCalled();
+  await user.click(save);
   await screen.findByText("Synthetic read failed");
   expect(screen.queryByText(/Сохранённый результат подтверждён/)).not.toBeInTheDocument();
+  expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
   await user.click(screen.getByRole("button", { name: "Повторить чтение" }));
   await screen.findByText(/Сохранённый результат подтверждён/);
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
@@ -306,11 +372,12 @@ it("new original file invalidates the previous review", async () => {
 });
 it("CLOSED renders every persisted covered account and offers no writer", async () => {
   vi.mocked(listBrokerMonths).mockResolvedValue([persisted("a"), persisted("b", 8)]);
-  show(true);
+  show(true, true);
   await screen.findByText(/Счёт #7/);
   expect(screen.getByText(/Счёт #8/)).toBeVisible();
   expect(screen.queryByLabelText("Оригинальный XML MyBroker")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Проверить MyBroker" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Проверить изменения" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Сохранить данные месяца" })).not.toBeInTheDocument();
 });
 
 it("a refreshed source GET overrides earlier ready Apply readback", async () => {
@@ -465,28 +532,6 @@ async function upload(user: ReturnType<typeof userEvent.setup>, file = original(
   await screen.findByRole("option", { name: "Synthetic broker" });
   await user.upload(screen.getByLabelText("Оригинальный XML MyBroker"), file);
 }
-it("known original automatically uses ordinary Preview; can_apply is authoritative and Save remains explicit", async () => {
-  known();
-  const { user } = mounted();
-  const file = original();
-  await upload(user, file);
-  const save = await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
-  });
-  expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("7");
-  expect(previewBrokerMonth).toHaveBeenCalledWith(
-    file,
-    { reporting_month_id: 1, account_id: 7 },
-    expect.any(AbortSignal),
-  );
-  expect(save).toBeEnabled();
-  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-  expect(applyBrokerMonth).not.toHaveBeenCalled();
-  expect(readBrokerMonth).not.toHaveBeenCalled();
-
-  expect(save).toBeEnabled();
-  expect(applyBrokerMonth).not.toHaveBeenCalled();
-});
 it("ordinary can_apply=false cannot be bypassed by known account or review", async () => {
   known();
   vi.mocked(previewBrokerMonth).mockResolvedValue({
@@ -494,20 +539,18 @@ it("ordinary can_apply=false cannot be bypassed by known account or review", asy
     can_apply: false,
     conflicts: ["instrument_currency_unproven"],
   });
-  const { user } = mounted();
-  await upload(user);
+  const { user, query, file } = showWorkspace();
+  await waitFor(() => expect(brokerOriginalSession(query).snapshot().file).toBe(file));
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
   expect(
     await screen.findByRole("button", {
-      name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+      name: "Сохранить данные месяца",
     }),
-  ).toBeDisabled();
-  expect(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
   ).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 it.each(["wrong", "partial", "wide", "snapshot", "closed", "inactive", "empty"])(
-  "does not auto-select for %s context",
+  "workspace does not select an account for %s context",
   async (kind) => {
     known();
     if (["wrong", "partial", "wide"].includes(kind))
@@ -526,16 +569,19 @@ it.each(["wrong", "partial", "wide", "snapshot", "closed", "inactive", "empty"])
         status: kind === "closed" ? "closed" : "draft",
         source: "manual",
       });
-    const { user } = mounted();
+    const { user, query, file } = showWorkspace();
     await screen.findByRole("option", { name: "Synthetic broker" });
     if (kind === "empty") vi.mocked(listAccounts).mockResolvedValue([]);
     if (kind === "inactive")
       vi.mocked(listAccounts).mockResolvedValue([
         { id: 7, name: "Synthetic broker", status: "closed", account_type: "brokerage" },
       ] as Awaited<ReturnType<typeof listAccounts>>);
-    await upload(user);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Проверить MyBroker" })).toBeEnabled(),
+    await waitFor(() => expect(brokerOriginalSession(query).snapshot().file).toBe(file));
+    await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
+    await screen.findByText(
+      kind === "inactive" || kind === "empty"
+        ? /Точная привязка оригинала не подтверждена/
+        : /Период XML не совпадает с открытым DRAFT/,
     );
     expect(previewBrokerMonth).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("");
@@ -544,12 +590,13 @@ it.each(["wrong", "partial", "wide", "snapshot", "closed", "inactive", "empty"])
 );
 it("discovery error leaves manual selection and retry available", async () => {
   vi.mocked(previewOriginalContext).mockRejectedValue(new Error("Malformed discovery"));
-  const { user } = mounted();
-  await upload(user);
+  const { user, query, file } = showWorkspace();
+  await waitFor(() => expect(brokerOriginalSession(query).snapshot().file).toBe(file));
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
   await screen.findByText("Malformed discovery");
   await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
   await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   expect(previewBrokerMonth).toHaveBeenCalledTimes(1);
 });
@@ -640,7 +687,7 @@ it("mapping invalidation immediately drops both whole-account and alias consent"
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 
-it("upload before initial account list completes still reaches automatic ordinary Preview", async () => {
+it("workspace can check a selected original while the initial account list is pending", async () => {
   known();
   const initial = deferred<Awaited<ReturnType<typeof listAccounts>>>();
   const available = [
@@ -649,8 +696,9 @@ it("upload before initial account list completes still reaches automatic ordinar
   vi.mocked(listAccounts).mockReturnValueOnce(initial.promise).mockResolvedValue(available);
   const plan = deferred<Awaited<ReturnType<typeof previewOriginalContext>>>();
   vi.mocked(previewOriginalContext).mockReturnValueOnce(plan.promise);
-  const { user } = mounted();
-  await user.upload(screen.getByLabelText("Оригинальный XML MyBroker"), original());
+  const { user, query, file } = showWorkspace();
+  await waitFor(() => expect(brokerOriginalSession(query).snapshot().file).toBe(file));
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
   await act(async () => {
     initial.resolve(available);
   });
@@ -658,7 +706,7 @@ it("upload before initial account list completes still reaches automatic ordinar
     plan.resolve({ coveredFrom: "2030-01-01", coveredTo: "2030-01-31", accountId: 7 });
   });
   await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   expect(previewBrokerMonth).toHaveBeenCalledTimes(1);
 });
