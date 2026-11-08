@@ -330,8 +330,34 @@ def payout_attribution(
     if analytical_payouts is not None and saved["classification"] == "dividend":
         from hermes_finance.statement_import.investment_money import parse_investment_money_security
 
-        if parse_investment_money_security(saved["narrative"]) is not None:
-            return None, "clean_dividend_unattributed", ("unattributed_income",)
+        if _is_nkd(saved["operation"] + " " + saved["narrative"]):
+            return None, "clean_dividend_unattributed", ("payout_classification_conflict",)
+        security = parse_investment_money_security(saved["narrative"])
+        if security is not None:
+            if security.kind != "dividend":
+                return None, "clean_dividend_unattributed", ("payout_classification_conflict",)
+            legacy_isin = _attribute(saved["operation"] + " " + saved["narrative"], identities)
+            target, current_status = resolver.resolve(security)
+            instrument = resolver.instruments.get(target)
+            explicit_isin = resolver.reg_isins.get(security.reg_number)
+            from hermes_finance.services.source_return_evidence import _explicit_payout_conflict
+
+            if (
+                _explicit_payout_conflict(saved, security, legacy_isin)
+                or current_status == "unresolved_ambiguous"
+                or (explicit_isin is not None and explicit_isin != legacy_isin)
+                or (
+                    current_status == "linked"
+                    and (
+                        instrument is None
+                        or instrument.instrument_type != "stock"
+                        or instrument.isin != legacy_isin
+                    )
+                )
+            ):
+                return None, "clean_dividend_unattributed", ("unattributed_income",)
+            # An absent new bridge does not retire an already-known legacy
+            # dividend attribution. An explicit conflicting bridge still wins.
     if analytical_payouts is not None and saved["classification"] == "coupon":
         # A legacy text fallback may use exact issue identifiers, never an
         # issuer name. A coupon or accrued-interest row cannot belong to stock.
