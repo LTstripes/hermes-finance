@@ -4,7 +4,7 @@ import hashlib
 from collections import defaultdict
 from dataclasses import replace
 from datetime import datetime
-from decimal import ROUND_FLOOR, Decimal, localcontext
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal, localcontext
 
 from hermes_finance.domain.clean_instrument_return import (
     clean_trade_assumptions,
@@ -153,10 +153,18 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         analysis, clean, isin, instrument_type=instrument_type
     )
     return (
-        result
+        result[0]
         if result is not None
         else _observed_purchase_facts(analysis, isin, instrument_type=instrument_type)
     )
+
+
+def clean_weighted_holding_days(analysis, clean, isin, *, instrument_type):
+    """Use only the complete existing FIFO match, never observed-lot fallback."""
+    result = _fifo_purchase_price_contributions(
+        analysis, clean, isin, instrument_type=instrument_type
+    )
+    return result[1] if result is not None else None
 
 
 def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type):
@@ -378,6 +386,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                         "settlement": settlement,
                         "quantity": q,
                         "remaining": q,
+                        "quantity_days": Decimal(0),
                         "cost": amount,
                         "proceeds": 0,
                         "assumptions": set(clean_trade_assumptions(event)),
@@ -408,6 +417,9 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             )
             for (lot, part), share in zip(consumed, shares, strict=True):
                 lot["remaining"] -= part
+                with localcontext() as holding_context:
+                    holding_context.rounding = ROUND_HALF_UP
+                    lot["quantity_days"] += part * (day - lot["date"]).days
                 lot["assumptions"].update(clean_trade_assumptions(event))
                 lot["proceeds"] = (
                     lot["proceeds"] + share
@@ -510,4 +522,25 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             for row in results:
                 row["status"] = "partial"
                 row["reason_codes"] = sorted({*row["reason_codes"], "account_money_unattributed"})
-        return results
+        # Any uncertain order/quantity makes the position-wide duration unknown,
+        # even when some already closed purchase results remain available.
+        # Scope the new rounding policy after the unchanged purchase projection.
+        context.rounding = ROUND_HALF_UP
+        weighted_days = None
+        if (
+            ambiguous_at is None
+            and repo_barrier is None
+            and all(lot["cost"] is not None for lot in lots)
+        ):
+            invested = sum(lot["cost"] for lot in lots)
+            if invested > 0 and invested == clean.buys.value:
+                weighted_days = sum(
+                    Decimal(lot["cost"])
+                    * (
+                        lot["quantity_days"]
+                        + lot["remaining"] * (analysis.closing_date - lot["date"]).days
+                    )
+                    / lot["quantity"]
+                    for lot in lots
+                ) / Decimal(invested)
+        return results, weighted_days

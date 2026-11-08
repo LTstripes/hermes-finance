@@ -729,7 +729,7 @@ def read_clean_overall(session, *, include_instrument_details=False):
 
     with source_read_snapshot(session):
         legacy = read_overall(session, include_instrument_details=False)
-        clean = read_clean_overview(session)
+        clean = read_clean_overview(session, include_position_rates=True)
         indexed = {row["scope"]: row for row in legacy["source_accounts"]}
         instruments = {}
         conflicts = {
@@ -754,13 +754,16 @@ def read_clean_overall(session, *, include_instrument_details=False):
             reasons = list(value["reason_codes"]) + list(value["assumptions"])
             if value["status"] == "partial":
                 reasons.append("clean_partial_result")
-            return returns_view.metric(
+            result = returns_view.metric(
                 value["value"],
                 reasons=reasons,
                 method="modified_dietz" if rate else "clean_instrument_return_v1",
                 unit="fraction" if rate else "kopecks",
                 estimate=value["status"] != "supported",
             )
+            if rate:
+                result["for_position_comparison"] = False
+            return result
 
         def subtotal(items, name):
             values = [item[name] for item in items]
@@ -831,6 +834,11 @@ def read_clean_overall(session, *, include_instrument_details=False):
                             else item["known_result"]
                         ),
                         "rate": metric(item["modified_dietz"], rate=True),
+                        **{
+                            field: item[field]
+                            for field in ("simple_return", "xirr", "modified_dietz")
+                            if field in item
+                        },
                         "coupons": metric(item["coupons"]),
                         "dividends": metric(item["dividends"]),
                     }
@@ -1079,7 +1087,9 @@ def read_clean_instrument_card(session, isin):
 
     with source_read_snapshot(session):
         card = read_instrument_card(session, isin)
-        clean = read_clean_overview(session, isin=isin, include_purchases=True)
+        clean = read_clean_overview(
+            session, isin=isin, include_purchases=True, include_position_rates=True
+        )
         ai_refs = {
             account["scope"]: f"source-account-{index}"
             for index, account in enumerate(clean["accounts"], 1)
@@ -1199,6 +1209,7 @@ def read_clean_instrument_card(session, isin):
                     unit="fraction",
                     estimate=True,
                 )
+                card["summary"]["rate"]["for_position_comparison"] = False
         card["contract_version"] = "returns_instrument_card_v2"
         return card
 

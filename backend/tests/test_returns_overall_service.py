@@ -1128,6 +1128,57 @@ def test_clean_card_returns_no_sale_purchase_contributions_from_same_source(db):
     assert snapshot(db) == before
 
 
+def test_position_comparison_api_matches_card_without_changing_export_projection(db):
+    from test_source_instrument_returns_service import save
+
+    from hermes_finance.services.clean_instrument_return import (
+        clean_export_data,
+        read_clean_overview,
+    )
+
+    isin = "RU000A000000"
+    save(db, stock=("0", "1", "0", "120"), bond=None, trades=((isin, "1", "100", "0", "3"),))
+    before = snapshot(db)
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with db.session_factory() as value:
+            yield value
+
+    app.dependency_overrides[session_for_request] = session
+    with TestClient(app) as client:
+        response = client.get("/api/returns/overall")
+        assert response.status_code == 200, response.text
+        pair = next(row for row in response.json()["instruments"] if row["isin"] == isin)[
+            "accounts"
+        ][0]
+        response = client.get("/api/returns/instrument-card", params={"isin": isin})
+        assert response.status_code == 200, response.text
+        card = response.json()
+        clean = card["accounts"][0]["clean"]
+    for field in ("simple_return", "xirr", "modified_dietz"):
+        assert pair[field] == clean[field]
+    assert clean["simple_return"]["value"] == "0.2"
+    assert clean["simple_return"]["invested_kopecks"] == "10000"
+    assert clean["simple_return"]["start_date"] == "2030-04-15"
+    assert clean["simple_return"]["end_date"] == "2030-04-30"
+    assert clean["xirr"]["holding_days"] == 15
+    assert clean["xirr"]["weighted_holding_days"] == "15.00"
+    assert clean["xirr"]["eligibility_basis"] == "capital_weighted_holding_days"
+    assert clean["xirr"]["value"] is None
+    assert clean["xirr"]["reason_codes"] == ["short_holding"]
+    assert clean["modified_dietz"]["for_position_comparison"] is False
+    assert pair["rate"]["for_position_comparison"] is False
+    assert card["summary"]["rate"]["for_position_comparison"] is False
+    with db.session_factory() as value:
+        exported = clean_export_data(read_clean_overview(value))
+    old = exported["accounts"][0]["instruments"][0]
+    assert "simple_return" not in old and "xirr" not in old
+    assert set(old["modified_dietz"]) == {"value", "status", "reason_codes", "assumptions"}
+    assert snapshot(db) == before
+
+
 def test_clean_card_fifo_sale_matches_clean_instrument_result(db):
     from test_source_instrument_returns_service import save
 
