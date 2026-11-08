@@ -4522,3 +4522,281 @@ def test_closed_position_http_card_and_ai_export_match(db):
     assert account["purchases"][0]["price_result_kopecks"] == "2000"
     assert ai["purchases"][0]["price_result_kopecks"] == "2000"
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("wording", ["облигации", "Биржевые облигации"])
+@pytest.mark.parametrize(
+    "identity", ["issuer", "registration", "ambiguous", "two_bonds", "exact_second"]
+)
+def test_clean_coupon_variant_never_uses_same_issuer_stock(db, wording, identity):
+    from test_source_money_classifications_service import _security_mapping
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    registration = "4B02-123-99999-Z-001P"
+    narrative = f"погашение купона {registration} ({wording} ПАО Example) д.ф.15.04.30"
+
+    def labels(root):
+        root.find(".//m:Details[@ISIN1]", NS).set("active_name", "Example")
+        if identity in {"two_bonds", "exact_second"}:
+            node = root.findall(".//m:Details[@ISIN1]", NS)[1]
+            other = deepcopy(node)
+            other.set("ISIN1", "RU000A000002")
+            other.set("active_name", "Example series B")
+            next(p for p in root.iter() if node in list(p)).append(other)
+
+    save(db, extra=(("Перевод", narrative, "30"),), mutate=labels)
+    with db.session_factory() as session:
+        stock = Instrument(name="Example", instrument_type="stock", isin=ISIN)
+        bond = Instrument(name="Example series A", instrument_type="bond", isin=BOND)
+        session.add_all([stock, bond])
+        session.flush()
+        if identity in {"registration", "exact_second"}:
+            _security_mapping(session, bond, alias=registration, isin=BOND)
+        if identity == "ambiguous":
+            _security_mapping(session, bond, alias=registration, isin=ISIN)
+        if identity in {"two_bonds", "exact_second"}:
+            session.add(
+                Instrument(name="Example series B", instrument_type="bond", isin="RU000A000002")
+            )
+        session.commit()
+    before = snapshot(db)
+    with db.session_factory() as session:
+        legacy = read_instrument_returns(session, source_account=ACCOUNT)
+        clean = read_instrument_returns(session, source_account=ACCOUNT, clean_projection=True)
+        coupons = [
+            e for row in clean.instruments for e in row.analysis.events if e.kind == "COUPON"
+        ]
+        assert not any(e.isin == ISIN and e.counted for e in coupons)
+        if identity not in {"ambiguous", "two_bonds"}:
+            assert any(e.isin == BOND and e.counted for e in coupons)
+            result = read_clean_account(
+                session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30), isin=BOND
+            )
+            assert result["instruments"][0]["coupons"]["value"] == "3000"
+        else:
+            assert not any(e.counted for e in coupons)
+        # This task changes no legacy proof operands or source interpretation.
+        assert any(
+            e.isin == ISIN
+            for row in legacy.instruments
+            for e in row.analysis.events
+            if e.kind == "COUPON"
+        )
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("narrative", ["Купон Example", "Купон RU000A000001 Example"])
+def test_clean_legacy_coupon_needs_exact_bond_identity(db, narrative):
+
+    def labels(root):
+        root.find(".//m:Details[@ISIN1]", NS).set("active_name", "Example")
+
+    save(db, extra=(("Купон", narrative, "7"),), mutate=labels)
+    before = snapshot(db)
+    with db.session_factory() as session:
+        clean = read_instrument_returns(session, source_account=ACCOUNT, clean_projection=True)
+        events = {
+            e.event_key: e
+            for row in clean.instruments
+            for e in row.analysis.events
+            if e.kind == "COUPON"
+        }
+        events.update({e.event_key: e for e in clean.unresolved_events if e.kind == "COUPON"})
+        assert events
+        assert all(e.isin != ISIN for e in events.values())
+        if "RU000A000001" in narrative:
+            assert all(e.isin == BOND for e in events.values())
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "exact",
+        "amount",
+        "date",
+        "quantity",
+        "two_issues",
+        "face_conflict",
+        "missing_proof",
+        "missing_registration",
+    ],
+)
+def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monkeypatch, case):
+    from xml.etree import ElementTree as ET
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def purchase(root):
+        node = root.find(".//m:Details[@trade_no]", NS)
+        node.set("Price", "100")
+        node.attrib.pop("nominal", None)
+        for node in root.findall(".//m:Details[@ISIN1]", NS):
+            node.attrib.pop("nominal", None)
+
+    save(
+        db,
+        stock=None,
+        bond=("0", "2", "0", "2020"),
+        trades=((BOND, "2", "2060", "60", "0"),),
+        mutate=purchase,
+    )
+    if case == "face_conflict":
+        # One earlier purchase disagrees on the implied face despite valid cash.
+        save(
+            db,
+            3,
+            stock=None,
+            bond=("0", "1", "0", "1000"),
+            trades=((BOND, "1", "1050", "40", "0"),),
+            mutate=purchase,
+        )
+    narrative = (
+        'полное погашение номинала 4B02-09-99999-Z-001P (облигации АО "Synthetic") д.ф.15.05.30'
+    )
+    coupon = narrative.replace("полное погашение номинала", "погашение купона")
+
+    def cancellation(root):
+        for node in root.findall(".//m:Details[@ISIN1]", NS):
+            node.attrib.pop("nominal", None)
+        parent = root
+        for name in ["Trades3", "Report", "Tablix1", "Details_Collection"]:
+            child = parent.find(f"m:{name}", NS)
+            if child is None:
+                child = ET.SubElement(parent, "{MyBroker}" + name)
+            parent = child
+        ET.SubElement(
+            parent,
+            "{MyBroker}Details",
+            acc_code=ACCOUNT,
+            oper_type="Перевод",
+            comment_new=f"Аннулирование выпуска {BOND}.",
+            p_name=f"Synthetic bond\r\n{BOND}",
+            place_name="НРД",
+            settlement_time="10:00:00",
+            qty="-3" if case == "quantity" else "-2",
+            settlement_date="2030-05-16T00:00:00" if case == "date" else "2030-05-15T00:00:00",
+        )
+        if case == "two_issues":
+            from copy import deepcopy
+
+            node = root.find(".//m:Details[@ISIN1]", NS)
+            other = deepcopy(node)
+            other.set("ISIN1", "RU000A000002")
+            node_parent = next(p for p in root.iter() if node in list(p))
+            node_parent.append(other)
+
+    cancellation_id = save(
+        db,
+        5,
+        stock=None,
+        bond=("2", "0", "2020", "0"),
+        trades=(),
+        extra=(
+            ("Перевод", narrative, "2000.01" if case == "amount" else "2000"),
+            ("Перевод", coupon, "30"),
+        ),
+        mutate=cancellation,
+    )
+    with db.session_factory() as session:
+        target = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
+        session.add(target)
+        session.flush()
+        if case not in {"missing_registration", "two_issues"}:
+            from test_source_money_classifications_service import _security_mapping
+
+            _security_mapping(session, target, alias="4B02-09-99999-Z-001P", isin=BOND)
+        if case == "two_issues":
+            session.add(
+                Instrument(
+                    name="Synthetic second bond", instrument_type="bond", isin="RU000A000002"
+                )
+            )
+        session.commit()
+    # The unchanged custody-proof validator owns original-byte/tree/time grammar.
+    # Supply its verified boundary; the clean helper must still prove issue,
+    # date, quantity, face, amount, source eligibility and occurrence ownership.
+    from hermes_finance.services import source_return_proofs
+
+    verified_dates = {} if case == "missing_proof" else {cancellation_id: (date(2030, 5, 1),)}
+    monkeypatch.setattr(
+        source_return_proofs,
+        "resolve_proof",
+        lambda *args, **kwargs: (
+            verified_dates,
+            {"status": "current" if verified_dates else "absent"},
+        ),
+    )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        source = read_instrument_returns(
+            session, source_account=ACCOUNT, clean_projection=True, include_monthly_history=False
+        )
+        events = {e.event_key: e for row in source.instruments for e in row.analysis.events}
+        events.update({e.event_key: e for e in source.unresolved_events})
+        redemptions = [e for e in events.values() if e.kind == "REDEMPTION"]
+        if case == "exact":
+            assert len(redemptions) == 1
+            assert redemptions[0].quantity_delta == Decimal("-2")
+            assert redemptions[0].cash_legs[0].account_cash_kopecks == 200000
+            assert redemptions[0].classification == "unknown"
+            result = read_clean_account(
+                session, ACCOUNT, date(2030, 3, 31), date(2030, 5, 31), isin=BOND
+            )["instruments"][0]
+            assert result["redemption"]["value"] == "200000"
+        else:
+            assert not redemptions
+        legacy = read_instrument_returns(
+            session, source_account=ACCOUNT, include_monthly_history=False
+        )
+        assert not any(
+            e.kind == "REDEMPTION" for row in legacy.instruments for e in row.analysis.events
+        )
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "НКД по сделке",
+        "Накопленный купонный доход",
+        f"Перевод {ISIN}",
+        "Перевод 4B02-124-99999-Z-001P",
+    ],
+)
+def test_clean_coupon_analytical_link_rejects_operation_conflicts(db, operation):
+    from hermes_finance.persistence import Instrument
+
+    narrative = (
+        "погашение купона 4B02-123-99999-Z-001P (Биржевые облигации ОАО Example) д.ф.15.04.30"
+    )
+    save(db, extra=((operation, narrative, "30"),))
+    with db.session_factory() as session:
+        session.add_all(
+            [
+                Instrument(name="Example", instrument_type="stock", isin=ISIN),
+                Instrument(name="Example bond", instrument_type="bond", isin=BOND),
+            ]
+        )
+        for c in session.scalars(select(SourceMoneyClassification)):
+            if c.narrative == narrative:
+                c.classification, c.origin, c.status = "coupon", "user_choice", "confirmed"
+                c.instrument_link_status = "not_parsed"
+        session.commit()
+    before = snapshot(db)
+    with db.session_factory() as session:
+        result = read_instrument_returns(
+            session, source_account=ACCOUNT, clean_projection=True, include_monthly_history=False
+        )
+        events = {
+            e.event_key: e
+            for row in result.instruments
+            for e in row.analysis.events
+            if e.kind == "COUPON"
+        }
+        events.update({e.event_key: e for e in result.unresolved_events if e.kind == "COUPON"})
+        assert events and not any(e.counted for e in events.values())
+    assert snapshot(db) == before

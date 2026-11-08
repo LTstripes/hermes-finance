@@ -277,7 +277,7 @@ def payout_attribution(
         if proven is not None:
             return proven, "accepted_money", ()
     if (
-        status == "unresolved_no_match"
+        status in {"unresolved_no_match", "not_parsed"}
         and analytical_payouts
         and view is not None
         and raw is not None
@@ -321,6 +321,28 @@ def payout_attribution(
         if scope:
             return scope, "registration_scope", ("payout_link_missing",)
         return None, "persisted_link", ("payout_link_missing",)
+    if analytical_payouts is not None and saved["classification"] == "coupon":
+        # A legacy text fallback may use exact issue identifiers, never an
+        # issuer name. A coupon or accrued-interest row cannot belong to stock.
+        text = saved["operation"] + " " + saved["narrative"]
+        if _is_nkd(text):
+            return None, "clean_coupon_unattributed", ("payout_classification_conflict",)
+        from hermes_finance.statement_import.investment_money import parse_investment_money_security
+
+        if parse_investment_money_security(saved["narrative"]) is not None:
+            # A complete issue narrative rejected by analytical validation must
+            # not be revived by a different identifier in the operation text.
+            return None, "clean_coupon_unattributed", ("unattributed_income",)
+        exact = {
+            isin: {"identifiers": metadata["identifiers"], "names": ()}
+            for isin, metadata in identities.items()
+        }
+        isin = _attribute(text, exact)
+        kinds = set(identities.get(isin, {}).get("types", ()))
+        catalogue = {i.instrument_type for i in resolver.instruments.values() if i.isin == isin}
+        if isin and kinds | catalogue == {"bond"}:
+            return isin, "clean_exact_coupon_identity", ()
+        return None, "clean_coupon_unattributed", ("unattributed_income",)
     isin = _attribute(saved["operation"] + " " + saved["narrative"], identities)
     return isin, "legacy_text", () if isin else ("unattributed_income",)
 

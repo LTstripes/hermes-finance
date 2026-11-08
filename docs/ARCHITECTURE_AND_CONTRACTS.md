@@ -2624,6 +2624,11 @@ coupon attribution. It does not change investment-proof derivation. Read-only
 compatibility with v10 recomputes the same complete live dependencies and never
 rewrites a receipt; it requires independent financial review before release.
 
+The v14 revision changes only clean coupon attribution and full-redemption
+operands. Its read-only v13 compatibility edge recomputes every unchanged live
+proof dependency. It changes no proof derivation, saved classification, source
+identity mapping or receipt; independent financial review is required before release.
+
 The read-only compatibility edge admits exactly the released 1.9.4 producing
 implementation (`a381dbf1`, package digest
 `0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81`)
@@ -6976,6 +6981,28 @@ an identified bond trade keeps the statement total, which already holds any NKD.
 a proved closed REPO pair the two legs may share an instant, since settlement orders
 them, and an execution time may prove that same-day incoming shares came before an
 outgoing leg. Saved decisions and receipts are not changed.
+
+Clean coupon attribution uses the existing complete investment-report narrative
+grammar, including three-digit issue segments and `Биржевые облигации`. Exact
+ISIN or an explicit current registration bridge takes precedence over issuer
+matching. Legal-form prefixes are normalized for the existing unique-held-bond
+issuer fallback. A coupon never uses a stock or an issuer-name text fallback;
+an ambiguous or unknown issue remains unattributed. An NKD narrative cannot
+be promoted to coupon income by this fallback. Legacy/proof readers keep their
+existing grammar and interpretation.
+
+Clean full-redemption recovery requires an explicit current registration-to-ISIN
+bridge to a bond and a current original-bound custody cancellation proof for every
+covering source. Exact native account, issue, cancellation date and negative
+quantity must agree with an observed full disappearance and positive RUB cash.
+The complete native cancellation shape is retained; issuer-only coupon inference
+cannot establish redemption identity. A missing nominal may be recovered only
+from identified current purchases with established NKD basis, known NKD, positive
+percentage price and quantity: every purchase must reproduce one exact nominal
+and clean principal. Quantity times nominal must equal redemption cash without
+tolerance; conflicting purchases, other amortizations, ambiguous/owned cash or
+excluded sources retain UNKNOWN. The saved unknown classification and its
+assumption status remain unchanged; this produces no proof or financial receipt.
 
 The UI downloads only financial review `3.1.0` from
 `GET /api/export/ai-financial-review/json`, without a format selector. It includes the
