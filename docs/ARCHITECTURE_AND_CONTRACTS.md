@@ -6997,7 +6997,8 @@ exposes `simple_return` and `xirr` per instrument/source-account scope in the
 overall reader and the card's `clean` object. Both use Decimal-string fractional
 rates (`0.1` means 10%), with explicit method, annualization, basis,
 `invested_kopecks`, start/end dates, `holding_end_date`, calendar `holding_days`,
-Decimal-string `weighted_holding_days` and
+`weighted_holding_days` as a Decimal string rounded to 0.01 with ROUND_HALF_UP
+(eligibility compares the unrounded value) and
 `eligibility_basis=capital_weighted_holding_days`.
 Simple return is full position `pnl / sum(BUY)` on the current statement basis
 including NKD where applicable, without reducing invested capital after sales.
