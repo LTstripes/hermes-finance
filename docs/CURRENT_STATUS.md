@@ -9,24 +9,22 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
-- [v1.11.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.11.0)
-  is published at `afd51ce9ca489d571ec4cc8ed0391eb05d45b43e` with
-  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42372946792)
-  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42373803152)
-  successful. It ships [#1110](https://github.com/LTstripes/hermes-finance/pull/1110),
-  [#1113](https://github.com/LTstripes/hermes-finance/pull/1113) and redesign stages 1–2;
-  [#1115](https://github.com/LTstripes/hermes-finance/pull/1115) prepared the release.
-- 1.11.0 is installed on the Owner computer by backup-first OPS02 on 2026-11-07: the
-  Stable checkout tag and the running health version read back as 1.11.0, and a
-  pre-update SQLite backup exists in the update backup directory. The Owner reports
-  that the app works and the interface looks right after a first use; a detailed
-  numeric UAT of returns is not recorded and is not claimed.
-- 1.12.0 is prepared from canonical main
-  `d854f8a58178076a54e0e303abdb3efb27849e23` with
-  [release notes](release-notes-1.12.0.md). Redesign stages 3–5 and #1120–#1127,
-  #1133 are merged. Publication and Stable installation are pending; the last
-  verified installed release remains 1.11.0. Detailed numeric Owner UAT of 1.12.0
-  has not been performed and is not inferred from CI or earlier snapshot checks.
+- [v1.12.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.12.0)
+  is published at `067b6be1a5d5957643d50e996ffda647ba9ac891` with
+  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42464520127)
+  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42465353065)
+  successful, with [release notes](release-notes-1.12.0.md). It ships redesign
+  stages 3–5, #1120–#1127 and #1133.
+- 1.12.0 is installed on the Owner computer on 2026-11-08 by backup-first OPS02,
+  then Prepare and Start: the Stable checkout tag and the running health version
+  read back as 1.12.0, and a pre-update SQLite backup exists in the update backup
+  directory. The guided wrapper stopped before OPS02 on Windows PowerShell 5.1 git
+  stderr ([#1138](https://github.com/LTstripes/hermes-finance/pull/1138) fixes it);
+  OPS02 itself was run directly with the same arguments. Detailed numeric Owner UAT
+  of 1.12.0 has not been performed and is not inferred from CI or snapshot checks.
+- The previous release [v1.11.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.11.0)
+  (`afd51ce9ca489d571ec4cc8ed0391eb05d45b43e`) shipped #1110, #1113 and redesign
+  stages 1–2; its pre-update backup is retained.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
@@ -45,7 +43,7 @@ the new tokens, shell, working-month plate and the Month summary and checklist.
 These are release-code capabilities, not proof of installed behavior or Owner
 acceptance.
 
-Changes since 1.11.0, included in the prepared 1.12.0:
+Changes since 1.11.0, shipped in 1.12.0:
 
 - Redesign stages 3–5 of #1079: Home ([#1117](https://github.com/LTstripes/hermes-finance/pull/1117)),
   Income and Capital ([#1116](https://github.com/LTstripes/hermes-finance/pull/1116)),
@@ -71,17 +69,16 @@ Changes since 1.11.0, included in the prepared 1.12.0:
   position while open positions were unchanged. Remaining incomplete trades, payouts,
   redemptions and valuations still withhold full results.
 
-There are no new database migrations since 1.11.0. These merged capabilities and
-earlier read-only copy checks do not establish installed 1.12.0 behavior or Owner UAT.
+There are no new database migrations since 1.11.0. Green CI and earlier read-only
+copy checks do not establish Owner UAT of 1.12.0.
 
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Complete exact-candidate PR CI and exact-main push CI for 1.12.0, request guarded
-   publication, independently verify the immutable tag/release, then perform the
-   authorized backup-first Stable update and health/version readback. Record actual
-   publication and installation evidence separately. Continue #1079 only with the
-   Owner's next accepted scope; stages 3–5 and the two #1120 findings are integrated.
+1. Owner UAT of installed 1.12.0, including the redesign (#963, #1014, #711).
+   Continue #1079 only with the Owner's next accepted scope. Cleanup from audit
+   [#1135](https://github.com/LTstripes/hermes-finance/issues/1135) proceeds as
+   separate reviewed PRs.
 2. Apply the Owner's proportional verification rule: use an isolated Test or
    manual acceptance when the change or an explicit accepted gate requires it;
    state whether it was performed. Never infer UAT from green CI.

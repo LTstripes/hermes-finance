@@ -17,8 +17,17 @@ $ErrorActionPreference = "Stop"
 
 function Invoke-HermesGuidedGit {
     param([string]$Main, [string[]]$Arguments)
-    $output = & git --no-optional-locks -C $Main @Arguments 2>$null | Out-String
-    if ($LASTEXITCODE -ne 0) { throw "Main Git operation failed; no automatic recovery is attempted." }
+    # Windows PowerShell 5.1 turns redirected native stderr (for example the
+    # "From https://..." progress of git pull) into a terminating error under
+    # Stop. Only the exit code decides success; stderr is discarded unread.
+    $previous = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & git --no-optional-locks -C $Main @Arguments 2>$null | Out-String
+        $code = $LASTEXITCODE
+    }
+    finally { $ErrorActionPreference = $previous }
+    if ($code -ne 0) { throw "Main Git operation failed; no automatic recovery is attempted." }
     return $output.Trim()
 }
 
