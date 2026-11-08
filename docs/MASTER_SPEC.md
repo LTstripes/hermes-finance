@@ -850,8 +850,11 @@ Security names and account types (ИИС / Брокерский) accompany file-
 unmapped accounts are labelled explicitly without exposing account numbers.
 Closed positions, dated actual coupons/dividends/redemptions and gold histories
 and saved snapshots remain visible independently of current holdings. The ISIN
-summary reuses the backend card's totals, retaining each account's own dates.
-Missing combined purchases/sales remain unknown with their per-account values.
+summary projects ready backend metrics for a single source account, retaining
+each account's own dates. Missing combined purchases, sales, current value,
+redemptions, payouts and total result remain unknown with their per-account
+values. Source analyses are read in account batches, without loading every
+instrument card during export.
 Purchase percentages identify the simple price result on purchase cost, their
 dates and nonannualized basis. Position Modified Dietz is omitted; position XIRR
 and an unproved realized/unrealized split are not inferred. A proved closed

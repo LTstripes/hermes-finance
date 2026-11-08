@@ -103,6 +103,16 @@ def test_current_clean_returns_match_ordinary_overview_and_card(database, monkey
     assert card["accounts"][0]["clean"]["known_result"]["value"] == item["known_result"]["value"]
     assert card["accounts"][0]["ai_account_ref"] == clean["accounts"][0]["account_ref"]
     assert card["summary"]["payouts"]["value"] == item["payouts"]["value"]
+    summary = exported["isin_summary"][0]
+    for key, source in (
+        ("current_value", "reported_value"),
+        ("redemptions", "redemption"),
+        ("payouts", "payouts"),
+        ("total_result", "pnl"),
+        ("partial", "partial"),
+        ("reason_codes", "reason_codes"),
+    ):
+        assert summary[key] == card["summary"][source]
     assert json.loads(canonical_json(report))["sections"]["clean_returns"]["data"] == exported
     assert ACCOUNT not in canonical_json(report)
     with TestClient(create_app(database)) as client:
@@ -118,6 +128,178 @@ def test_current_clean_returns_match_ordinary_overview_and_card(database, monkey
         assert response.status_code == 200, response.text
         assert response.json()["sections"]["clean_returns"]["data"] == exported
     assert snapshot(database) == before
+
+
+def test_v32_export_does_not_read_individual_instrument_cards(database, monkeypatch):
+    from hermes_finance.services import ai_review_clean_returns as review
+
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+
+    def unexpected_card(*args, **kwargs):
+        pytest.fail("AI export must batch source reads, not load each ISIN card")
+
+    monkeypatch.setattr(review, "read_clean_instrument_card", unexpected_card, raising=False)
+    with database.session_factory() as session:
+        report = assemble_ai_financial_review(session, evaluated_on=date(2030, 2, 1))
+    assert report["sections"]["clean_returns"]["data"]["isin_summary"]
+
+
+@pytest.mark.parametrize("error", [ValueError, LookupError])
+def test_v32_missing_batch_detail_keeps_metrics_and_marks_receipts_unknown(
+    database, monkeypatch, error
+):
+    from hermes_finance.services import ai_review_clean_returns as review
+    from hermes_finance.services.clean_instrument_return import (
+        clean_export_data,
+        read_clean_overview,
+    )
+
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        create_reporting_month(session, year=2030, month=1, snapshot_date=END)
+        overview = read_clean_overview(session, include_purchases=True)
+
+    def unavailable(*args, **kwargs):
+        raise error("synthetic missing detail")
+
+    monkeypatch.setattr(review, "read_instrument_returns", unavailable)
+    before = snapshot(database)
+    with database.session_factory() as session:
+        report = assemble_ai_financial_review(session, evaluated_on=date(2030, 2, 1))
+    data = report["sections"]["clean_returns"]["data"]
+    item = data["accounts"][0]["instruments"][0]
+    assert item["actual_payments"] == []
+    assert item["payment_coverage"] == {
+        "status": "unknown",
+        "reason_codes": ["instrument_history_detail_unavailable"],
+    }
+    assert item["result_split"]["position_state"] == "unknown"
+    assert item["result_split"]["realized_result"]["value"] is None
+    assert item["result_split"]["unrealized_result"]["value"] is None
+    expected = clean_export_data(overview, include_purchases=True)["accounts"][0]["instruments"][0]
+    for key in ("pnl", "known_result", "buys", "sells", "payouts"):
+        assert item[key] == expected[key]
+    assert snapshot(database) == before
+
+
+@pytest.mark.parametrize("status", ["supported", "provisional", "partial", "unavailable"])
+@pytest.mark.parametrize("conflict", [False, True])
+def test_v32_single_isin_copies_large_ready_metrics_and_keeps_result_guards(status, conflict):
+    from hermes_finance.services import ai_review_clean_returns as review
+
+    def metric(value, *, state="supported"):
+        return dict(
+            value=value,
+            status=state,
+            reason_codes=[],
+            assumptions=["income_assumed"],
+        )
+
+    original = {
+        "pnl": metric(None if status == "unavailable" else "17", state=status),
+        "known_result": metric("17", state="partial"),
+        "closing_value": metric("900719925474099301"),
+        "redemption": metric("0"),
+        "payouts": metric(None, state="unknown"),
+    }
+    calls = []
+
+    def legacy_detail(scope, isin):
+        calls.append(scope)
+        assert isin == "RU000A000000"
+        return {"closing_quantity": None}
+
+    result = review._isin_totals(
+        [(None, {"isin": "RU000A000000"}, original, "source:synthetic")],
+        conflicts={"source:synthetic"} if conflict else set(),
+        legacy_detail=legacy_detail,
+    )
+    assert result["partial"] == (conflict or status not in {"supported", "provisional"})
+    assert result["reported_value"]["value"] == (None if conflict else "900719925474099301")
+    assert result["redemption"]["value"] == (None if conflict else "0")
+    assert result["pnl"]["value"] == (None if conflict else "17")
+    assert result["payouts"]["value"] is None
+    assert result["reported_value"]["estimate"] is not conflict
+    if conflict:
+        assert result["pnl"]["reason_codes"] == ["source_account_identity_mapping_conflict"]
+    elif result["partial"]:
+        assert result["pnl"]["reason_codes"] == ["clean_partial_result", "income_assumed"]
+        assert calls == ["source:synthetic"]
+    else:
+        assert result["pnl"]["reason_codes"] == ["income_assumed"]
+        assert not calls
+
+
+def test_v32_partial_summaries_reuse_one_index_and_keep_stale_history_excluded(
+    database, monkeypatch
+):
+    from hermes_finance.services import ai_review_clean_returns as review
+    from hermes_finance.services.clean_instrument_return import read_clean_overview
+    from hermes_finance.services.source_instrument_returns import read_instrument_returns
+
+    _save(database, monkeypatch)
+    with database.session_factory() as session:
+        overview = read_clean_overview(session, include_purchases=True)
+        overall = returns_overall.read_clean_overall(session)
+        account = overview["accounts"][0]
+        period = account["period"]
+        result = read_instrument_returns(
+            session,
+            source_account=account["scope"].removeprefix("source:"),
+            opening_date=period["start"],
+            closing_date=period["end"],
+            include_monthly_history=False,
+            available_period=True,
+            clean_projection=True,
+        )
+    item = account["result"]["instruments"][0]
+    assert item["pnl"]["value"] is None
+    items = [{**copy.deepcopy(item), "isin": f"RU{number:09d}0"} for number in range(37)]
+    account["result"]["instruments"] = items
+    overview["accounts"] = [account]
+    calls = []
+
+    def batch_read(session, **kwargs):
+        calls.append("batch")
+        assert kwargs["clean_projection"]  # Stale ordinary history must not be loaded.
+        assert "isin" not in kwargs
+        return SimpleNamespace(
+            instruments=[
+                SimpleNamespace(isin=row["isin"], analysis=result.instruments[0].analysis)
+                for row in items
+            ]
+        )
+
+    def index_read(session, **kwargs):
+        calls.append("index")
+        assert not kwargs["include_instrument_details"]
+        return (
+            [dict(scope=account["scope"], proof_status="stale")],
+            [
+                dict(
+                    isin=row["isin"],
+                    accounts=[dict(scope=account["scope"], period=period, native_period=False)],
+                )
+                for row in items
+            ],
+            {},
+        )
+
+    monkeypatch.setattr(review, "read_instrument_returns", batch_read)
+    monkeypatch.setattr(review, "_source_accounts", index_read)
+    data = review.review_clean_returns(
+        None, overview, overall, account_names={}, instrument_names={}
+    )
+    assert calls == ["batch", "index"]
+    assert len(data["isin_summary"]) == 37
+    for row in data["isin_summary"]:
+        assert row["partial"]
+        assert row["reason_codes"] == [
+            "known_instrument_accounts_only",
+            "instrument_accounts_missing_or_excluded",
+        ]
 
 
 def test_current_fifo_export_matches_card(database):
@@ -1199,7 +1381,10 @@ def test_event_cash_eligibility_at_both_boundaries_preserves_producer_result():
 
 
 @pytest.mark.parametrize("conflict", [False, True])
-def test_v32_names_receipts_closed_split_and_backend_isin_totals(monkeypatch, conflict):
+@pytest.mark.parametrize("instrument_count", [1, 37])
+def test_v32_names_receipts_closed_split_and_unknown_cross_account_totals(
+    monkeypatch, conflict, instrument_count
+):
     from hermes_finance.domain.instrument_return import CashLeg, InstrumentEvent
     from hermes_finance.services import ai_review_clean_returns as review
 
@@ -1207,15 +1392,6 @@ def test_v32_names_receipts_closed_split_and_backend_isin_totals(monkeypatch, co
 
     def metric(value):
         return dict(value=value, status="supported", reason_codes=[], assumptions=[])
-
-    def amount(value):
-        return dict(
-            value=value,
-            reason_codes=[],
-            method="known_clean_instruments",
-            unit="kopecks",
-            estimate=False,
-        )
 
     def event(key, kind, value, *, day=date(2030, 1, 15), **changes):
         return InstrumentEvent(
@@ -1239,9 +1415,8 @@ def test_v32_names_receipts_closed_split_and_backend_isin_totals(monkeypatch, co
         event("excluded", "COUPON", 8800, counted=False),
         event("outside", "COUPON", 7700, day=START),
     )
-    instruments = []
     accounts = []
-    card_accounts = []
+    analyses = {}
     sources = []
     for index, (kind, quantity) in enumerate((("iis", "0"), ("brokerage", "2")), 1):
         scope = f"source:private-native-{index}"
@@ -1287,13 +1462,17 @@ def test_v32_names_receipts_closed_split_and_backend_isin_totals(monkeypatch, co
         )
         item["pnl"] = metric("500")
         item["buys"] = metric("900719925474099300")
-        instruments.append(item)
+        items = [item]
+        for number in range(1, instrument_count):
+            duplicate = copy.deepcopy(item)
+            duplicate["isin"] = f"RU{number:09d}0"
+            items.append(duplicate)
         accounts.append(
             dict(
                 scope=scope,
                 label=f"ИИС private-native-{index}",
                 period=dict(start=START, end=END),
-                result=dict(instruments=[item], gaps=[]),
+                result=dict(instruments=items, gaps=[]),
             )
         )
         sources.append(
@@ -1301,29 +1480,31 @@ def test_v32_names_receipts_closed_split_and_backend_isin_totals(monkeypatch, co
                 scope=scope, account_link=dict(account_type=kind, status="linked", reason_codes=[])
             )
         )
-        card_accounts.append(
-            dict(
-                scope=scope,
-                detail=dict(
-                    closing_quantity=quantity,
-                    analysis=SimpleNamespace(opening_date=START, closing_date=END, events=events),
-                ),
-                exclusion_reason="source_account_identity_mapping_conflict" if conflict else None,
-            )
+        analyses[scope.removeprefix("source:")] = SimpleNamespace(
+            instruments=[
+                SimpleNamespace(
+                    isin=row["isin"],
+                    analysis=SimpleNamespace(
+                        opening_date=START,
+                        closing_date=END,
+                        closing=SimpleNamespace(quantity=Decimal(quantity)),
+                        events=events,
+                    ),
+                )
+                for row in items
+            ]
         )
-    summary = dict(
-        reported_value=amount("20000"),
-        redemption=amount("10000"),
-        payouts=amount("1000"),
-        pnl=amount(None if conflict else "1000"),
-        partial=conflict,
-        reason_codes=["source_account_identity_mapping_conflict"] if conflict else [],
-    )
-    monkeypatch.setattr(
-        review,
-        "read_clean_instrument_card",
-        lambda *_: dict(summary=summary, accounts=card_accounts),
-    )
+    calls = []
+
+    def batch_read(session, **kwargs):
+        calls.append(kwargs)
+        assert "isin" not in kwargs
+        assert kwargs["available_period"] and kwargs["clean_projection"]
+        assert not kwargs["include_monthly_history"]
+        assert (kwargs["opening_date"], kwargs["closing_date"]) == (START, END)
+        return analyses[kwargs["source_account"]]
+
+    monkeypatch.setattr(review, "read_instrument_returns", batch_read)
     overview = dict(contract_version="clean_returns_overview_v1", accounts=accounts)
     overall = dict(
         source_accounts=sources,
@@ -1344,6 +1525,8 @@ def test_v32_names_receipts_closed_split_and_backend_isin_totals(monkeypatch, co
     data = review.review_clean_returns(
         None, overview, overall, account_names={}, instrument_names={}
     )
+    assert len(calls) == 2  # Independent of the number of instruments.
+    assert len(data["isin_summary"]) == instrument_count
     assert overview == original
     assert [row["account_name"] for row in data["accounts"]] == ["ИИС", "Брокерский"]
     assert all(
@@ -1366,13 +1549,9 @@ def test_v32_names_receipts_closed_split_and_backend_isin_totals(monkeypatch, co
         assert row["date"] == "2030-01-15"
         assert row["account_name"] == "ИИС" and row["account_ref"] == "source-account-1"
     result = data["isin_summary"][0]
-    for key, source in (
-        ("current_value", "reported_value"),
-        ("total_result", "pnl"),
-        ("redemptions", "redemption"),
-        ("payouts", "payouts"),
-    ):
-        assert result[key] == summary[source]
+    for key in ("current_value", "total_result", "redemptions", "payouts"):
+        assert result[key]["value"] is None
+        assert result[key]["reason_codes"] == ["cross_account_clean_totals_not_provided"]
     assert result["invested"]["status"] == result["sales"]["status"] == "unknown"
     assert result["invested"]["value"] is None and result["partial"]
     assert result["accounts"][0]["invested"]["value"] == "900719925474099300"

@@ -5,8 +5,14 @@ from decimal import Decimal
 
 from fastapi.encoders import jsonable_encoder
 
+from hermes_finance.services import returns_view
 from hermes_finance.services.clean_instrument_return import clean_export_data
-from hermes_finance.services.returns_overall import read_clean_instrument_card
+from hermes_finance.services.returns_overall import (
+    _account_result_notes,
+    _accounts_have_full_result,
+    _source_accounts,
+)
+from hermes_finance.services.source_instrument_returns import read_instrument_returns
 
 
 def _unknown(reason):
@@ -73,11 +79,89 @@ def _payments(detail, *, isin, account_ref, account_name):
     return sorted(rows, key=lambda row: (row["date"], row["kind"], row["amount_kopecks"]))
 
 
+def _account_details(session, account, *, clean_projection=True, native_period=True):
+    """Read all exact-ISIN analyses together, using the clean card's reader flags."""
+    if not account["result"]["instruments"]:
+        return {}
+    period = account["period"]
+    try:
+        result = read_instrument_returns(
+            session,
+            source_account=account["scope"].removeprefix("source:"),
+            opening_date=period["start"],
+            closing_date=period["end"],
+            include_monthly_history=False,
+            available_period=native_period,
+            clean_projection=clean_projection,
+        )
+    except (ValueError, LookupError):
+        return {}
+    return {
+        row.isin: {
+            "analysis": row.analysis,
+            "closing_quantity": None
+            if row.analysis.closing.quantity is None
+            else str(row.analysis.closing.quantity),
+        }
+        for row in result.instruments
+        if row.analysis is not None
+    }
+
+
+def _isin_totals(rows, *, conflicts, legacy_detail):
+    """Copy one account's ready metrics; never recompute cross-account totals."""
+    if len(rows) != 1:
+        reason = "cross_account_clean_totals_not_provided"
+        return {
+            **{
+                key: returns_view.metric(reasons=(reason,), estimate=False)
+                for key in ("reported_value", "redemption", "payouts", "pnl")
+            },
+            "partial": True,
+            "reason_codes": [reason],
+        }
+    _, item, original, scope = rows[0]
+    accounts = [{"scope": scope, "clean": original}]
+    whole = _accounts_have_full_result(accounts, conflicts)
+    notes = _account_result_notes(accounts)
+
+    def copied(field):
+        if scope in conflicts:
+            return returns_view.metric(
+                reasons=("source_account_identity_mapping_conflict",), estimate=False
+            )
+        value = original[field]["value"]
+        complete = whole and value is not None
+        return returns_view.metric(
+            None if value is None else int(value),
+            reasons=notes if complete else ("clean_partial_result", *notes),
+            method="known_clean_instruments",
+            estimate=not complete or bool(notes),
+        )
+
+    reasons = ["known_instrument_accounts_only"]
+    if not whole:
+        # The card retains its ordinary endpoint's coverage notes when its clean
+        # result is partial, including stale/unavailable ordinary history. Reuse
+        # its source index and batch details by account/period, never by ISIN.
+        detail = None if scope in conflicts else legacy_detail(scope, item["isin"])
+        if scope in conflicts or detail is None or detail["closing_quantity"] is None:
+            reasons.append("instrument_accounts_missing_or_excluded")
+    return {
+        "reported_value": copied("closing_value"),
+        "redemption": copied("redemption"),
+        "payouts": copied("payouts"),
+        "pnl": copied("known_result"),
+        "partial": not whole,
+        "reason_codes": notes if whole else reasons,
+    }
+
+
 def review_clean_returns(session, overview, overall, *, account_names, instrument_names):
     """Project names, dated receipts and existing guarded exact-ISIN summaries.
 
-    The source card owns cross-account totals and their exclusion rules. It has
-    no multi-account buys/sells aggregate; those fields stay explicitly unknown.
+    Single-account summaries copy ready clean metrics with the card's result
+    guards. Cross-account totals stay unknown rather than adding a second sum.
     """
     conflicts = {
         row["id"]
@@ -97,9 +181,43 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
         "gold": "Gold histories and saved snapshots can overlap; snapshots are not extra profit. Clean gold split remains unknown.",
     }
     sources = {row["scope"]: row for row in overall["source_accounts"]}
-    cards = {}
+    raw_accounts = {row["scope"]: row for row in overview["accounts"]}
+    legacy_index = None
+    legacy_sources = {}
+    legacy_batches = {}
+
+    def legacy_detail(scope, isin):
+        nonlocal legacy_index
+        if legacy_index is None:
+            sources, instruments, _ = _source_accounts(
+                session, include_instrument_details=False, defer_history_proof_xirr=True
+            )
+            legacy_sources.update((row["scope"], row) for row in sources)
+            legacy_index = {
+                (row["scope"], instrument["isin"]): row
+                for instrument in instruments
+                for row in instrument["accounts"]
+            }
+        indexed = legacy_index.get((scope, isin))
+        if not indexed or not indexed.get("period"):
+            return None
+        native = indexed.get("native_period", False)
+        if legacy_sources[scope]["proof_status"] != "current" and not native:
+            return None
+        period = indexed["period"]
+        key = (scope, period["start"], period["end"], native)
+        if key not in legacy_batches:
+            legacy_batches[key] = _account_details(
+                session,
+                {**raw_accounts[scope], "period": period},
+                clean_projection=False,
+                native_period=native,
+            )
+        return legacy_batches[key].get(isin)
+
     entries = {}
     for raw, account in zip(overview["accounts"], data["accounts"], strict=True):
+        account_details = _account_details(session, raw)
         link = sources.get(raw["scope"], {}).get("account_link") or {}
         account["account_name"] = {
             "iis": "ИИС",
@@ -115,12 +233,7 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
             item["name"] = original["name"] or isin
             # This metric is not a position comparison measure.
             item.pop("modified_dietz")
-            if isin not in cards:
-                cards[isin] = read_clean_instrument_card(session, isin)
-            card_account = next(
-                (row for row in cards[isin]["accounts"] if row["scope"] == raw["scope"]), None
-            )
-            detail = card_account.get("detail") if card_account else None
+            detail = account_details.get(isin)
             item["result_split"] = _split(item, detail, conflicted=raw["scope"] in conflicts)
             item["actual_payments"] = _payments(
                 detail,
@@ -145,16 +258,12 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
                     "annualized": False,
                     "unit": "fraction",
                 }
-            entries.setdefault(isin, []).append((account, item))
+            entries.setdefault(isin, []).append((account, item, original, raw["scope"]))
 
     summaries = []
     for isin, rows in sorted(entries.items()):
-        summary = cards[isin]["summary"]
+        summary = _isin_totals(rows, conflicts=conflicts, legacy_detail=legacy_detail)
         single = len(rows) == 1
-        single = single and not any(
-            row.get("exclusion_reason") == "source_account_identity_mapping_conflict"
-            for row in cards[isin]["accounts"]
-        )
         summaries.append(
             {
                 "isin": isin,
@@ -169,7 +278,7 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
                         "invested": item["buys"],
                         "sales": item["sells"],
                     }
-                    for account, item in rows
+                    for account, item, _, _ in rows
                 ],
                 "invested": deepcopy(rows[0][1]["buys"])
                 if single

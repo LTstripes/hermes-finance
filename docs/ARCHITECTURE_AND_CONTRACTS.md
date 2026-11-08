@@ -14363,23 +14363,31 @@ presentation; it does not advance any producer calculation revision.
   Otherwise split is `unknown` with NULL amounts. No FIFO-derived split is added.
 - `actual_payments[]` projects dated cash legs of current, counted, exact-ISIN
   COUPON/DIVIDEND/REDEMPTION events within `(opening_date, closing_date]` from the
-  ordinary clean card detail. Each row has `date`, integer `amount_kopecks`,
+  ordinary clean card's source-analysis reader, batched once per source account
+  in the same read snapshot. Each row has `date`, integer `amount_kopecks`,
   `kind`, file-local `account_ref`, `account_name`, allowlisted provider `source`,
   reasons and assumptions. Equal operations retain multiplicity; raw event
   keys, native references and paths are excluded. Missing details produce empty
   rows with unknown coverage. Observed chronology is marked partial, never a
   complete payment ledger; redemption remains principal, separate from income.
-- `isin_summary[]` copies the guarded `returns_instrument_card_v2` summary's
-  current value, redemptions, payouts and known total result, including its
-  unknown values, estimates and period/identity exclusions. The per-account
-  rows retain their own dates, purchases and sales. For one nonconflicting
-  source account its purchases/sales are also projected as the summary fields.
+- `isin_summary[]` projects the `returns_instrument_card_v2` summary contract
+  from ready clean metrics for a single source account, retaining unknown
+  values, estimates and identity exclusions. No instrument cards are fetched
+  per ISIN. Partial-result coverage may additionally read the ordinary source
+  index once and endpoint analyses in account/period batches; it never promotes
+  clean-only quantity recovery to ordinary endpoint coverage. The per-account
+  rows retain their own dates, purchases and sales. For one nonconflicting source
+  account its purchases/sales are also projected as the summary fields.
   `invested_basis=observed_period_purchases_with_nkd_excluding_fees` clarifies
   that purchases are not the acquisition cost of pre-existing opening holdings.
   The backend has no combined clean purchases/sales contract: multiple accounts
   yield `status=unknown`, NULL and explicit reasons for those two fields, never
   an exporter-side aggregate. Summary partialness includes those missing fields.
-  No combined rate or realized/unrealized split is invented.
+  Cross-account current value, redemptions, payouts and total result also stay
+  NULL with `cross_account_clean_totals_not_provided`; the exporter neither
+  repeats the backend's summation nor loads expensive cards to obtain them.
+  Account rows remain available, including their payments and results. No
+  combined rate or realized/unrealized split is invented.
 - Position Modified Dietz is omitted from this generated representation and its
   units. It is not a comparison metric for positions. Any future Modified Dietz
   projection is restricted to backend account calendar-month totals. Position
