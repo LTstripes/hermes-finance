@@ -7,7 +7,7 @@ Explained components are known subtotals; missing facts stay in unexplained.
 import logging
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -19,17 +19,27 @@ from hermes_finance.database import (
     snapshot_read_result,
 )
 from hermes_finance.domain.liquid_capital import LiquidCapitalResult
-from hermes_finance.domain.monthly_summary import MonthlyCapitalChange, explain_capital_change
+from hermes_finance.domain.monthly_summary import (
+    CapitalChangeHint,
+    CapitalChangeItem,
+    MonthlyCapitalChange,
+    capital_change_component,
+    explain_capital_change,
+    explain_capital_flow,
+)
 from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
     Account,
     AccountPerformanceScopeMembership,
     CashBalance,
+    Debt,
     ExternalFlow,
     HistoricalOwnerFlow,
+    Instrument,
     PositionSnapshot,
     ReportingMonth,
 )
+from hermes_finance.services.cash_balance import cash_balance_for_month
 from hermes_finance.services.external_flows import classify_external_flow
 from hermes_finance.services.passive_income import passive_income_for_month
 from hermes_finance.services.portfolio_source_coverage import portfolio_source_coverage_for_months
@@ -191,6 +201,135 @@ def _investment_result(session, accounts, current, previous, liquid, previous_li
     return total
 
 
+def _investment_market_change(session, accounts, current, previous, liquid, previous_liquid):
+    """Account value change after known funding, less payouts already in Month flow.
+
+    A missing account never poisons a separately proven account contribution.
+    Assumed funding is insufficient for this explanation even if Returns exposes
+    a provisional estimate. Deposits are entirely represented by monthly flow.
+    """
+    before = _account_values(session, previous.id, previous_liquid)
+    after = _account_values(session, current.id, liquid)
+    income = passive_income_for_month(session, current.id)
+    items = []
+    with source_read_snapshot(session):
+        canonical = _source_scopes(session)
+        linked = {}
+        for native in sorted(set(canonical.values())):
+            link = account_link(session, native, canonical)
+            if link["status"] == "linked":
+                linked.setdefault(link["financial_account_id"], []).append(native)
+        for account in accounts:
+            if not account.include_in_capital or account.account_type not in {"brokerage", "iis"}:
+                continue
+            amount = None
+            reasons = ()
+            natives = linked.get(account.id, [])
+            if len(natives) != 1:
+                reasons = ("capital_investment_account_result_unavailable",)
+            else:
+                row = read_monthly_result(
+                    session,
+                    source_account=natives[0],
+                    opening_date=previous.snapshot_date,
+                    closing_date=current.snapshot_date,
+                )
+                if (
+                    row is None
+                    or row.opening_kopecks is None
+                    or row.closing_kopecks is None
+                    or row.opening_kopecks != before.get(account.id)
+                    or row.closing_kopecks != after.get(account.id)
+                ):
+                    reasons = ("capital_investment_endpoints_unproven",)
+                elif (
+                    row.growth_kopecks is None
+                    or row.contributions_kopecks is None
+                    or row.withdrawals_kopecks is None
+                    or row.assumptions_used
+                ):
+                    reasons = ("capital_investment_flows_unproven",)
+                else:
+                    payouts_in_flow = sum(
+                        source.amount.kopecks
+                        for source in income.sources
+                        if source.source_type == "investment_cash_flow"
+                        and source.account_id == account.id
+                    )
+                    amount = RubleAmount(row.growth_kopecks - payouts_in_flow)
+                    if row.approximate:
+                        reasons = ("capital_investment_source_estimate",)
+            items.append(CapitalChangeItem(account.id, None, amount, reasons))
+    return capital_change_component(tuple(items))
+
+
+def _gold_revaluation(session, accounts, current, previous):
+    """Match physical gold by account/instrument, never by name or total weight.
+
+    Gold held inside brokerage/IIS is already within that account's result.
+    Quantity changes have no accepted transaction-history adapter here.
+    """
+    account_ids = [
+        account.id
+        for account in accounts
+        if account.include_in_capital and account.account_type not in {"brokerage", "iis"}
+    ]
+    endpoints = {previous.id: {}, current.id: {}}
+    gold_keys = set()
+    for position, instrument in session.execute(
+        select(PositionSnapshot, Instrument)
+        .join(Instrument, PositionSnapshot.instrument_id == Instrument.id)
+        .where(
+            PositionSnapshot.reporting_month_id.in_(endpoints),
+            PositionSnapshot.account_id.in_(account_ids),
+        )
+    ):
+        kind = position.historical_instrument_type or instrument.instrument_type
+        key = (position.account_id, position.instrument_id)
+        endpoints[position.reporting_month_id][key] = (position, kind, instrument.currency)
+        if kind == "gold":
+            gold_keys.add(key)
+    items = []
+    for account_id, instrument_id in sorted(gold_keys):
+        key = (account_id, instrument_id)
+        before = endpoints[previous.id].get(key)
+        after = endpoints[current.id].get(key)
+        amount = None
+        reasons = ()
+        if before is None or after is None:
+            reasons = ("capital_gold_endpoints_unproven",)
+        elif before[1:] != ("gold", "RUB") or after[1:] != ("gold", "RUB"):
+            reasons = ("capital_gold_scope_unproven",)
+        elif (
+            before[0].market_value_kopecks is None
+            or after[0].market_value_kopecks is None
+            or before[0].price_date > previous.snapshot_date
+            or after[0].price_date > current.snapshot_date
+        ):
+            reasons = ("capital_gold_endpoints_unproven",)
+        elif before[0].quantity != after[0].quantity:
+            reasons = ("capital_gold_quantity_changed_history_unproven",)
+        else:
+            amount = RubleAmount(after[0].market_value_kopecks - before[0].market_value_kopecks)
+        items.append(CapitalChangeItem(account_id, instrument_id, amount, reasons))
+    return capital_change_component(tuple(items))
+
+
+def _context_hints(session, current, previous, expenses):
+    def card_debt(month_id):
+        return session.scalar(
+            select(func.coalesce(func.sum(Debt.current_balance_kopecks), 0)).where(
+                Debt.reporting_month_id == month_id,
+                Debt.debt_type == "credit_card",
+                Debt.include_in_liquid_capital.is_(True),
+            )
+        )
+
+    growth = card_debt(current.id) - card_debt(previous.id)
+    # Exact kopeck comparison: no hidden materiality threshold or spending inference.
+    return (CapitalChangeHint(RubleAmount(growth), expenses),) if growth > expenses.kopecks else ()
+
+
 @coherent_read_operation
 def monthly_capital_change(
     session: Session,
@@ -240,6 +379,8 @@ def _monthly_capital_change(
     start, end = current.period_start, current.period_end
     reasons = set()
     breakdown = None
+    flow_breakdown = None
+    context_hints = ()
     if previous is None or previous_liquid is None:
         reasons.add("capital_previous_month_unavailable")
     elif previous.period_end != start - timedelta(days=1):
@@ -285,6 +426,27 @@ def _monthly_capital_change(
                     - liquid.total_debts_included.kopecks
                 ),
             )
+            cash = cash_balance_for_month(session, current.id)
+            flow_breakdown = explain_capital_flow(
+                start=previous_liquid.liquid_capital_net,
+                end=liquid.liquid_capital_net,
+                monthly_flow=RubleAmount(
+                    cash.total.kopecks + cash.breakdown.saving_allocations.kopecks
+                ),
+                investment_market_change=_investment_market_change(
+                    session, accounts, current, previous, liquid, previous_liquid
+                ),
+                physical_gold_revaluation=_gold_revaluation(session, accounts, current, previous),
+            )
+            context_hints = _context_hints(
+                session,
+                current,
+                previous,
+                RubleAmount(
+                    cash.breakdown.mandatory_expenses.kopecks
+                    + cash.breakdown.other_expenses.kopecks
+                ),
+            )
     return MonthlyCapitalChange(
         reporting_month_id=current.id,
         previous_reporting_month_id=previous.id if previous else None,
@@ -292,4 +454,6 @@ def _monthly_capital_change(
         period_end=end,
         breakdown=breakdown,
         reason_codes=tuple(sorted(reasons)),
+        flow_breakdown=flow_breakdown,
+        context_hints=context_hints,
     )

@@ -152,3 +152,74 @@ class MonthlyCapitalChange:
     period_end: date
     breakdown: CapitalChangeBreakdown | None
     reason_codes: tuple[str, ...]
+    flow_breakdown: CapitalFlowBreakdown | None = None
+    context_hints: tuple[CapitalChangeHint, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CapitalChangeItem:
+    account_id: int
+    instrument_id: int | None
+    amount: RubleAmount | None
+    reason_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CapitalChangeComponent:
+    amount: RubleAmount | None
+    known_subtotal: RubleAmount
+    items: tuple[CapitalChangeItem, ...]
+    reason_codes: tuple[str, ...]
+
+
+def capital_change_component(items: tuple[CapitalChangeItem, ...]) -> CapitalChangeComponent:
+    """Keep a partial component NULL without discarding its known items."""
+    subtotal = RubleAmount(sum(item.amount.kopecks for item in items if item.amount is not None))
+    return CapitalChangeComponent(
+        amount=subtotal if all(item.amount is not None for item in items) else None,
+        known_subtotal=subtotal,
+        items=items,
+        reason_codes=tuple(sorted({code for item in items for code in item.reason_codes})),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CapitalChangeHint:
+    card_debt_growth: RubleAmount
+    recorded_expenses: RubleAmount
+    reason_code: str = "card_debt_growth_exceeds_recorded_expenses"
+
+
+@dataclass(frozen=True, slots=True)
+class CapitalFlowBreakdown:
+    start: RubleAmount
+    monthly_flow: RubleAmount
+    investment_market_change: CapitalChangeComponent
+    physical_gold_revaluation: CapitalChangeComponent
+    unexplained: RubleAmount
+    end: RubleAmount
+
+
+def explain_capital_flow(
+    *,
+    start: RubleAmount,
+    end: RubleAmount,
+    monthly_flow: RubleAmount,
+    investment_market_change: CapitalChangeComponent,
+    physical_gold_revaluation: CapitalChangeComponent,
+) -> CapitalFlowBreakdown:
+    """Reconcile known contributions; unknown items remain explicitly unallocated."""
+    return CapitalFlowBreakdown(
+        start=start,
+        end=end,
+        monthly_flow=monthly_flow,
+        investment_market_change=investment_market_change,
+        physical_gold_revaluation=physical_gold_revaluation,
+        unexplained=RubleAmount(
+            end.kopecks
+            - start.kopecks
+            - monthly_flow.kopecks
+            - investment_market_change.known_subtotal.kopecks
+            - physical_gold_revaluation.known_subtotal.kopecks
+        ),
+    )

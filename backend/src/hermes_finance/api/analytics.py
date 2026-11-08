@@ -119,6 +119,44 @@ class CapitalChangeAmountsOut(BaseModel):
     end: MoneyValue
 
 
+class CapitalChangeItemOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: int
+    instrument_id: int | None
+    amount: MoneyValue | None
+    reason_codes: list[str]
+
+
+class CapitalChangeComponentOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: MoneyValue | None
+    known_subtotal: MoneyValue
+    items: list[CapitalChangeItemOut]
+    reason_codes: list[str]
+
+
+class CapitalFlowBreakdownOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    basis: Literal["monthly_flow_v1"] = "monthly_flow_v1"
+    start: MoneyValue
+    monthly_flow: MoneyValue
+    investment_market_change: CapitalChangeComponentOut
+    physical_gold_revaluation: CapitalChangeComponentOut
+    unexplained: MoneyValue
+    end: MoneyValue
+
+
+class CapitalChangeHintOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason_code: Literal["card_debt_growth_exceeds_recorded_expenses"]
+    card_debt_growth: MoneyValue
+    recorded_expenses: MoneyValue
+
+
 class MonthlyCapitalChangeOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -129,11 +167,31 @@ class MonthlyCapitalChangeOut(BaseModel):
     component_basis: Literal["known_subtotals"] = "known_subtotals"
     breakdown: CapitalChangeAmountsOut | None
     reason_codes: list[str]
+    flow_breakdown: CapitalFlowBreakdownOut | None = None
+    context_hints: list[CapitalChangeHintOut]
 
 
 def capital_change_to_out(result: MonthlyCapitalChange | None) -> MonthlyCapitalChangeOut | None:
     if result is None:
         return None
+
+    def component_out(component):
+        return CapitalChangeComponentOut(
+            amount=_money(component.amount) if component.amount is not None else None,
+            known_subtotal=_money(component.known_subtotal),
+            items=[
+                CapitalChangeItemOut(
+                    account_id=item.account_id,
+                    instrument_id=item.instrument_id,
+                    amount=_money(item.amount) if item.amount is not None else None,
+                    reason_codes=list(item.reason_codes),
+                )
+                for item in component.items
+            ],
+            reason_codes=list(component.reason_codes),
+        )
+
+    flow = result.flow_breakdown
     return MonthlyCapitalChangeOut(
         reporting_month_id=result.reporting_month_id,
         previous_reporting_month_id=result.previous_reporting_month_id,
@@ -157,6 +215,26 @@ def capital_change_to_out(result: MonthlyCapitalChange | None) -> MonthlyCapital
             else None
         ),
         reason_codes=list(result.reason_codes),
+        flow_breakdown=(
+            CapitalFlowBreakdownOut(
+                start=_money(flow.start),
+                end=_money(flow.end),
+                monthly_flow=_money(flow.monthly_flow),
+                investment_market_change=component_out(flow.investment_market_change),
+                physical_gold_revaluation=component_out(flow.physical_gold_revaluation),
+                unexplained=_money(flow.unexplained),
+            )
+            if flow is not None
+            else None
+        ),
+        context_hints=[
+            CapitalChangeHintOut(
+                reason_code=hint.reason_code,
+                card_debt_growth=_money(hint.card_debt_growth),
+                recorded_expenses=_money(hint.recorded_expenses),
+            )
+            for hint in result.context_hints
+        ],
     )
 
 
