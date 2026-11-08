@@ -2629,6 +2629,10 @@ operands. Its read-only v13 compatibility edge recomputes every unchanged live
 proof dependency. It changes no proof derivation, saved classification, source
 identity mapping or receipt; independent financial review is required before release.
 
+The v15 revision adds clean-only sale/NKD reconciliation with an exact read-only
+v14 compatibility edge. Proof derivation and its operands remain unchanged;
+the existing v13 and older compatibility checks retain their boundaries.
+
 The read-only compatibility edge admits exactly the released 1.9.4 producing
 implementation (`a381dbf1`, package digest
 `0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81`)
@@ -7011,6 +7015,31 @@ and clean principal. Quantity times nominal must equal redemption cash without
 tolerance; conflicting purchases, other amortizations, ambiguous/owned cash or
 excluded sources retain UNKNOWN. The saved unknown classification and its
 assumption status remain unchanged; this produces no proof or financial receipt.
+
+For the clean projection only, a settled ordinary bond sale may reconcile its
+linked positive principal with separate explicitly worded positive NKD Money.
+Provider, exact native account, issue, original-source membership, RUB currency,
+cash settlement and delivery must agree. Known positive native NKD and the
+established NKD-inclusive trade total must reconcile exactly in integer kopecks;
+unknown components are never replaced with zero. Linked commission date, sign
+and amount must also agree before a generic cash-conflict reason can be removed.
+Unmatched, conflicting or excluded NKD remains unresolved. An already-owned row
+is reusable only as evidence for its own complete, currently effective statement
+cohort: exact owner group ID, raw fingerprints, complete occurrence membership
+and native trade identities must agree, and unchanged Money proof validators
+must confirm the same receipt is current. Foreign, partial or stale ownership
+never establishes reconciliation. No new owner or financial fact is created.
+
+Several sales of one issue on the same settlement day reconcile at cohort scope:
+sum of principals plus sum of NKD equals sum of native dirty totals, and printed
+per-trade principal/NKD amounts must agree independently. One cash occurrence
+is consumed at most once. A single sale can retain its actual NKD leg; for multiple
+sales the separate NKD rows remain cohort evidence, without an invented individual
+row allocation. Native per-trade totals still supply the clean result and FIFO
+proceeds. Saved events, ownership, strict SELL authority and proof readers are unchanged.
+An observed split principal without a proven matching NKD cohort retains
+`sale_nkd_reconciliation_unproven`; an independently priced bond fallback cannot
+silently revive that failed reconciliation.
 
 The UI downloads only financial review `3.1.0` from
 `GET /api/export/ai-financial-review/json`, without a format selector. It includes the

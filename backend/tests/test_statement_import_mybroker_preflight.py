@@ -1867,6 +1867,7 @@ def test_v10_retains_v9_legacy_interval_fixture(kind, expected):
         "source_investment_semantics_v9",
         "source_investment_semantics_v10",
         "source_investment_semantics_v13",
+        "source_investment_semantics_v14",
     ],
 )
 def test_clean_projection_reads_unchanged_old_receipt_without_writes(

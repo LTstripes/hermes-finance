@@ -4802,6 +4802,146 @@ def test_clean_coupon_analytical_link_rejects_operation_conflicts(db, operation)
     assert snapshot(db) == before
 
 
+@pytest.mark.parametrize("count", [1, 2])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "exact",
+        "amount",
+        "date",
+        "direction",
+        "currency",
+        "account",
+        "issue",
+        "not_nkd",
+        "missing",
+        "zero",
+        "owned",
+        "commission",
+    ],
+)
+def test_clean_bond_sale_reconciles_separate_nkd_without_guessing(db, monkeypatch, count, case):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    def money_and_trades(root):
+        trade_date(15, price="101")(root)
+        for index, node in enumerate(root.findall(".//m:Details[@trade_no]", NS)):
+            node.set("p_name", "Synthetic bond")
+            node.set("db_time", f"15.04.2030 {10 + index}:00:00")
+            _add_money(root, f"Расчеты по сделке 1000000000{index + 1}", "principal", "1010")
+            if case == "commission":
+                _add_money(root, f"Комиссия по сделке 1000000000{index + 1}", "commission", "-2")
+        if case == "missing":
+            return
+        amount = Decimal(20 * count)
+        if case == "amount":
+            amount += Decimal("0.01")
+        if case == "direction":
+            amount = -amount
+        if case == "zero":
+            amount = Decimal(0)
+        row = _add_money(
+            root,
+            "Перевод" if case == "not_nkd" else "НКД по сделке",
+            "с Other bond" if case == "issue" else "с Synthetic bond",
+            str(amount),
+            day="2030-04-16" if case == "date" else "2030-04-15",
+        )
+        if case == "currency":
+            row.find(".//m:p_code[@volume]", NS).set("p_code", "USD")
+        if case == "account":
+            row.find(".//m:Textbox11", NS).set("acc_code", "7654321-000")
+
+    save(
+        db,
+        stock=None,
+        bond=(str(count), "0", str(1010 * count), "0"),
+        trades=((BOND, "-1", "1030", "20", "1" if case == "commission" else "0"),) * count,
+        mutate=money_and_trades,
+    )
+    if case.startswith("owned"):
+        from datetime import UTC, datetime
+
+        from hermes_finance.persistence import MyBrokerImport
+        from hermes_finance.services import broker_money_ownership, source_return_evidence
+        from hermes_finance.services.source_instrument_returns import _selected_sources
+
+        with db.session_factory() as session:
+            selected, _ = _selected_sources(session, ACCOUNT)
+            view = selected[0][1]
+            imported = MyBrokerImport(
+                document_sha256=view["document_sha256"],
+                covered_from=date(2030, 4, 1),
+                covered_to=date(2030, 4, 30),
+                parser_version=view["document"]["parser"],
+                confirmation_digest="a" * 64,
+                normalized_json=json.dumps(view["document"]),
+                mappings_json="{}",
+                accepted_at=datetime.now(UTC),
+            )
+            session.add(imported)
+            session.commit()
+        monkeypatch.setattr(source_return_evidence, "_source_allows_payout", lambda *args: True)
+
+        monkeypatch.setattr(
+            broker_money_ownership,
+            "owners",
+            lambda session, occurrences: [
+                {"key": [o["import_id"], o["section"], o["ordinal"]], "role": "trade_group"}
+                for o in occurrences
+            ],
+        )
+    before = snapshot(db)
+    with db.session_factory() as session:
+        account_result = read_clean_account(
+            session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30), isin=BOND
+        )
+        result = next(
+            (r for r in account_result["instruments"] if r["isin"] == BOND),
+            {"pnl": {"value": None}},
+        )
+        source = read_instrument_returns(
+            session, source_account=ACCOUNT, clean_projection=True, include_monthly_history=False
+        )
+        events = {e.event_key: e for row in source.instruments for e in row.analysis.events}
+        sales = [e for e in events.values() if e.kind == "SELL"]
+        if case == "exact":
+            assert result["sells"]["value"] == str(103000 * count)
+            assert result["pnl"]["value"] == str(2000 * count)
+            assert all(e.counted and not e.reason_codes for e in sales)
+            assert {e.attribution_basis for e in sales} == {
+                "analytical_sale_nkd" if count == 1 else "analytical_sale_nkd_group"
+            }
+            if count == 2:
+                assert not any(
+                    leg.role == "nkd" and not leg.ownership.startswith("trade:")
+                    for e in sales
+                    for leg in e.cash_legs
+                )
+            else:
+                assert (
+                    sum(
+                        leg.account_cash_kopecks
+                        for e in sales
+                        for leg in e.cash_legs
+                        if leg.role == "nkd"
+                    )
+                    == 2000
+                )
+        else:
+            assert result["pnl"]["value"] is None
+        legacy = read_instrument_returns(
+            session, source_account=ACCOUNT, include_monthly_history=False
+        )
+        assert all(
+            "trade_money_cash_conflict" in e.reason_codes
+            for row in legacy.instruments
+            for e in row.analysis.events
+            if e.kind == "SELL"
+        )
+    assert snapshot(db) == before
+
+
 @pytest.mark.parametrize(
     "issuer,period",
     [
