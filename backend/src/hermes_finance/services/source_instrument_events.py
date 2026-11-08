@@ -284,7 +284,13 @@ def payout_attribution(
     ):
         reference = source_reference(view["id"], raw)
         if isin := analytical_payouts.get(reference):
-            return isin, "analytical_coupon_mapping", ()
+            return (
+                isin,
+                "analytical_coupon_mapping"
+                if saved["classification"] == "coupon"
+                else "analytical_dividend_mapping",
+                (),
+            )
     if status == "linked":
         security = parse_money_security(saved["narrative"])
         if (
@@ -321,6 +327,11 @@ def payout_attribution(
         if scope:
             return scope, "registration_scope", ("payout_link_missing",)
         return None, "persisted_link", ("payout_link_missing",)
+    if analytical_payouts is not None and saved["classification"] == "dividend":
+        from hermes_finance.statement_import.investment_money import parse_investment_money_security
+
+        if parse_investment_money_security(saved["narrative"]) is not None:
+            return None, "clean_dividend_unattributed", ("unattributed_income",)
     if analytical_payouts is not None and saved["classification"] == "coupon":
         # A legacy text fallback may use exact issue identifiers, never an
         # issuer name. A coupon or accrued-interest row cannot belong to stock.
@@ -495,6 +506,7 @@ def read_events(
                             "accepted_money",
                             "current_source_proof",
                             "analytical_coupon_mapping",
+                            "analytical_dividend_mapping",
                         }:
                             metadata["types"].add(
                                 "bond" if flow.classification == "coupon" else "stock"

@@ -2624,7 +2624,7 @@ coupon attribution. It does not change investment-proof derivation. Read-only
 compatibility with v10 recomputes the same complete live dependencies and never
 rewrites a receipt; it requires independent financial review before release.
 
-The v14 revision changes only clean coupon attribution and full-redemption
+The v14 revision changes only clean payout attribution and full-redemption
 operands. Its read-only v13 compatibility edge recomputes every unchanged live
 proof dependency. It changes no proof derivation, saved classification, source
 identity mapping or receipt; independent financial review is required before release.
@@ -6994,6 +6994,12 @@ issuer fallback. A coupon never uses a stock or an issuer-name text fallback;
 an ambiguous or unknown issue remains unattributed. An NKD narrative cannot
 be promoted to coupon income by this fallback. Legacy/proof readers keep their
 existing grammar and interpretation.
+
+The same clean-only validation can recover complete investment dividend variants
+with an explicit current registration bridge to stock, including supported
+legal forms and quarterly periods. Dividends never use the coupon issuer
+fallback. Missing, conflicting or wrong-type bridges leave those complete
+narratives unattributed; a name match cannot revive a rejected identity.
 
 Clean full-redemption recovery requires an explicit current registration-to-ISIN
 bridge to a bond and a current original-bound custody cancellation proof for every

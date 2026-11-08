@@ -4940,3 +4940,68 @@ def test_clean_bond_sale_reconciles_separate_nkd_without_guessing(db, monkeypatc
             if e.kind == "SELL"
         )
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "issuer,period",
+    [
+        ('МКПАО "Example"', "2029"),
+        ('ПАО МКК "Example"', "2029"),
+        ('ПАО МКК "Example"', "1 кв 2030"),
+    ],
+)
+@pytest.mark.parametrize("mapping", ["exact", "missing", "wrong_type", "conflict"])
+def test_clean_extended_dividend_requires_exact_registration(db, issuer, period, mapping):
+    from test_source_money_classifications_service import _security_mapping
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    registration = "1-01-99999-Z"
+    narrative = (
+        f"Дивиденды за {period} г. по акциям {issuer} ({registration}). (Удержан налог 13 руб.)"
+    )
+
+    def label(root):
+        root.find(".//m:Details[@ISIN1]", NS).set("active_name", "Example")
+
+    save(db, bond=None, trades=(), extra=(("Перевод", narrative, "87"),), mutate=label)
+    with db.session_factory() as session:
+        target = Instrument(name="Example", instrument_type="stock", isin=ISIN)
+        bond = Instrument(name="Example bond", instrument_type="bond", isin=BOND)
+        session.add_all([target, bond])
+        session.flush()
+        if mapping != "missing":
+            chosen = bond if mapping == "wrong_type" else target
+            _security_mapping(
+                session,
+                chosen,
+                alias=registration,
+                isin=BOND if mapping == "conflict" else chosen.isin,
+            )
+        session.commit()
+    before = snapshot(db)
+    with db.session_factory() as session:
+        source = read_instrument_returns(
+            session, source_account=ACCOUNT, clean_projection=True, include_monthly_history=False
+        )
+        events = {
+            e.event_key: e
+            for row in source.instruments
+            for e in row.analysis.events
+            if e.kind == "DIVIDEND"
+        }
+        events.update({e.event_key: e for e in source.unresolved_events if e.kind == "DIVIDEND"})
+        assert events
+        assert (
+            all(e.counted and e.isin == ISIN for e in events.values())
+            if mapping == "exact"
+            else not any(e.counted for e in events.values())
+        )
+        if mapping == "exact":
+            row = read_clean_account(
+                session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30), isin=ISIN
+            )["instruments"][0]
+            assert row["dividends"]["value"] == "8700"
+            assert all(e.persisted_link_status == "not_parsed" for e in events.values())
+    assert snapshot(db) == before

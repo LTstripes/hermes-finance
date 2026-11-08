@@ -133,7 +133,7 @@ def _issuer_bond_in_account(resolver, security, status, selected, account, day):
 
 
 def analytical_coupon_links(session, selected, native_scope, *, historical_evidence=None):
-    """Resolve old coupon rows for this read without changing saved decisions.
+    """Resolve legacy payouts for this clean read without changing saved decisions.
 
     Every covering original must contain the same occurrence multiplicity and
     account-bound source facts. A current explicit issue mapping identifies the
@@ -161,7 +161,7 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
     if any(original is None for original, _, _ in selected):
         return {}
     if not any(
-        choice.get("classification") == "coupon"
+        choice.get("classification") in {"coupon", "dividend"}
         and choice.get("instrument_link_status") in {"unresolved_no_match", "not_parsed"}
         for _, view, error in selected
         if view is not None and not error
@@ -222,18 +222,22 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
         if any(_is_nkd(c["operation"] + " " + c["narrative"]) for _, _, _, c, _ in members):
             continue
         security = parse_money_security(first["narrative"])
-        if security is None or security.kind != "coupon":
+        if security is None or security.kind != first.get("classification"):
             continue
         target, status = resolver.resolve(security)
         instrument = resolver.instruments.get(target)
-        issuer_match = _issuer_bond_in_account(resolver, security, status, selected, account, day)
+        issuer_match = (
+            _issuer_bond_in_account(resolver, security, status, selected, account, day)
+            if security.kind == "coupon"
+            else None
+        )
         if issuer_match is not None:
             target, instrument = issuer_match
         else:
             if (
                 status != "linked"
                 or instrument is None
-                or instrument.instrument_type != "bond"
+                or instrument.instrument_type != ("bond" if security.kind == "coupon" else "stock")
                 or not instrument.isin
             ):
                 continue
@@ -292,7 +296,7 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
                 or choice.get("amount_kopecks") is None
                 or choice["amount_kopecks"] <= 0
                 or str(choice.get("date")) != day
-                or choice.get("classification") != "coupon"
+                or choice.get("classification") != security.kind
                 or choice.get("origin") not in {"default_rule", "user_choice"}
                 or choice.get("status") != first.get("status")
                 or (
