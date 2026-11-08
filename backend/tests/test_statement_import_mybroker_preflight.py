@@ -1624,7 +1624,6 @@ def test_current_receipt_clean_overview_card_income_and_ai_agree(current_bond_re
             session,
             generated_at=datetime(2030, 2, 1, tzinfo=UTC),
             evaluated_on=date(2030, 2, 1),
-            format_version="3.1.0",
         )
     validate_ai_financial_review(ai)
     summary = next(row for row in overview["instruments"] if row["isin"] == ISIN)
@@ -2704,7 +2703,6 @@ def test_saved_proof_repo_custody_readback(database, monkeypatch, safe, card_fir
                 session,
                 generated_at=datetime(2030, 2, 1, tzinfo=UTC),
                 evaluated_on=date(2030, 2, 1),
-                format_version="3.1.0",
             )
             result = read_clean_account(
                 session,
@@ -3627,7 +3625,7 @@ def test_clean_current_pdf_identical_coupon_occurrences_are_preserved(current_bo
             assert clean["pnl"]["value"] == "7000"
     with TestClient(create_app(database=database)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
-        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+        ai = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == ai.status_code == 200
     account = card.json()["accounts"][0]
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]

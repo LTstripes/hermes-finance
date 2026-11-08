@@ -26,7 +26,7 @@ from hermes_finance.services.reporting_months import close_reporting_month, crea
 pytestmark = [pytest.mark.import_export, pytest.mark.ci_integrations]
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.schema.json"
+SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_financial_review.v3_1.schema.json"
 GENERATED_AT = "2038-06-01T12:00:00+03:00"
 LINKED_PAIR_ERROR_CODE = "linked_pair_read_model_unavailable"
 
@@ -124,7 +124,7 @@ def _linked_pair(
 
 def _report(client: TestClient) -> dict[str, Any]:
     response = client.get(
-        "/api/export/ai-financial-review",
+        "/api/export/ai-financial-review/json",
         params={"generated_at": GENERATED_AT},
     )
     assert response.status_code == 200, response.text
@@ -180,7 +180,7 @@ def test_linked_pairs_surface_canonical_balances_and_counting_semantics(
     payload = _report(client)
     current = payload["sections"]["current_capital"]["data"]
     linked_pairs = current["linked_pairs"]
-    assert payload["schema_version"] == "1.6.0"
+    assert payload["schema_version"] == "3.1.0"
     assert "linked_pair_read_model" in payload["provenance_summary"]["financial_sources"]
     assert len(linked_pairs) == len(specs)
     assert [item["ref"] for item in linked_pairs] == sorted(item["ref"] for item in linked_pairs)
@@ -452,7 +452,7 @@ def test_invalid_canonical_linked_pair_fails_whole_report_closed(
     failing_client = TestClient(client.app, raise_server_exceptions=False)
     try:
         response = failing_client.get(
-            "/api/export/ai-financial-review",
+            "/api/export/ai-financial-review/json",
             params={"generated_at": GENERATED_AT},
         )
     finally:

@@ -200,7 +200,6 @@ def test_clean_ui_and_ai_use_current_exact_investment_proof_with_fee_mismatch(db
             session,
             generated_at=datetime(2030, 2, 1, tzinfo=UTC),
             evaluated_on=date(2030, 2, 1),
-            format_version="3.0.0",
         )
         ai_row = ai["sections"]["clean_returns"]["data"]["accounts"][0]["instruments"][0]
         assert ai_row["pnl"]["value"] == "10000"
@@ -330,9 +329,7 @@ def test_backup_copy_stale_proof_preserves_observed_clean_components(db, monkeyp
         assert row["pnl"]["value"] == "10000", row
         with TestClient(create_app(copied)) as client:
             response = client.get("/api/returns/instrument-card", params={"isin": "RU000A000000"})
-            ai = client.get(
-                "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
-            )
+            ai = client.get("/api/export/ai-financial-review/json")
         assert response.status_code == 200
         assert ai.status_code == 200
         account = response.json()["accounts"][0]

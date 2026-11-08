@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
@@ -54,17 +54,18 @@ def _export_response(
 
 
 @router.post("/ai-analysis-bundle")
-@router.post("/ai-analysis-bundle/json")
 def export_ai_analysis_bundle_json(
-    media: str = Query(default="json", pattern="^(json|markdown)$"),
+    request: Request,
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
     generated_at: datetime | None = Query(default=None),
     session: Session = Depends(session_for_request),
 ) -> Response:
     try:
+        if "media" in request.query_params:
+            raise HTTPException(422, "Choose the JSON or Markdown endpoint; omit media.")
         return _export_response(
             session,
-            media=media,
+            media="json",
             forecast_version=forecast_version,
             generated_at=generated_at,
         )
@@ -74,11 +75,14 @@ def export_ai_analysis_bundle_json(
 
 @router.post("/ai-analysis-bundle/markdown")
 def export_ai_analysis_bundle_markdown(
+    request: Request,
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
     generated_at: datetime | None = Query(default=None),
     session: Session = Depends(session_for_request),
 ) -> Response:
     try:
+        if "media" in request.query_params:
+            raise HTTPException(422, "Choose the JSON or Markdown endpoint; omit media.")
         return _export_response(
             session,
             media="markdown",

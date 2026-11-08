@@ -1538,9 +1538,7 @@ def test_fifo_reader_open_repo_after_closed_purchase_preserves_closed_result(
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
-        report = client.get(
-            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
-        )
+        report = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == report.status_code == 200
     account = card.json()["accounts"][0]
     exported = report.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -1806,7 +1804,7 @@ def test_unexplained_closing_quantity_prevents_false_closed_purchase(db):
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
-        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+        ai = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == ai.status_code == 200
     account = card.json()["accounts"][0]
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -1858,7 +1856,7 @@ def test_unclassified_money_preserves_independent_purchase_facts(db):
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
-        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+        ai = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == ai.status_code == 200
     account = card.json()["accounts"][0]
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -1911,7 +1909,7 @@ def test_purchase_facts_keep_execution_before_period_when_settled_inside(db, ins
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
-        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+        ai = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == ai.status_code == 200
     account = card.json()["accounts"][0]
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -1972,7 +1970,7 @@ def test_missing_repo_overlap_preserves_independent_purchase_facts(db):
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
-        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+        ai = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == ai.status_code == 200
     account = card.json()["accounts"][0]
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -2102,7 +2100,7 @@ def test_late_repo_conflict_preserves_only_proven_closed_prefix(db, conflict):
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
-        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+        ai = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == ai.status_code == 200
     account = card.json()["accounts"][0]
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -3074,7 +3072,7 @@ def test_bond_purchase_reports_face_value_assumption_in_card_and_ai(db, missing_
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": BOND})
-        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+        ai = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == ai.status_code == 200
     account = card.json()["accounts"][0]
     exported = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -3627,9 +3625,7 @@ def test_clean_bond_retains_only_independently_proved_principal(db, case):
         if case == "nkd_leg_conflict":
             with TestClient(create_app(database=db)) as client:
                 card = client.get("/api/returns/instrument-card", params={"isin": BOND})
-                ai = client.get(
-                    "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
-                )
+                ai = client.get("/api/export/ai-financial-review/json")
             assert card.status_code == ai.status_code == 200
             account = card.json()["accounts"][0]
             export = ai.json()["sections"]["clean_returns"]["data"]["accounts"][0]
@@ -3944,7 +3940,7 @@ def test_clean_combined_sources_reach_overview_card_income_and_ai(db, cost_diffe
         overview = client.get("/api/returns/overall?include_instrument_summaries=true")
         card = client.get("/api/returns/instrument-card", params={"isin": BOND})
         income = client.get("/api/returns/income", params={"kind": "coupon"})
-        ai = client.get("/api/export/ai-financial-review/json", params={"format_version": "3.1.0"})
+        ai = client.get("/api/export/ai-financial-review/json")
     assert overview.status_code == card.status_code == income.status_code == ai.status_code == 200
     summary = next(row for row in overview.json()["instruments"] if row["isin"] == BOND)
     account = card.json()["accounts"][0]
@@ -4441,7 +4437,8 @@ def test_closed_position_matches_overview_card_and_ai_export(db):
         overview = returns_overall.read_clean_overall(session, include_instrument_details=True)
         card = returns_overall.read_clean_instrument_card(session, ISIN)
         export = assemble_ai_financial_review(
-            session, evaluated_on=date(2030, 5, 1), format_version="3.1.0"
+            session,
+            evaluated_on=date(2030, 5, 1),
         )
     validate_ai_financial_review(export)
     overview_row = next(row for row in overview["instruments"] if row["isin"] == ISIN)
@@ -4516,9 +4513,7 @@ def test_closed_position_http_card_and_ai_export_match(db):
     before = snapshot(db)
     with TestClient(create_app(db)) as client:
         card = client.get("/api/returns/instrument-card", params={"isin": ISIN})
-        export = client.get(
-            "/api/export/ai-financial-review/json", params={"format_version": "3.1.0"}
-        )
+        export = client.get("/api/export/ai-financial-review/json")
     assert card.status_code == export.status_code == 200
     account = card.json()["accounts"][0]
     ai = export.json()["sections"]["clean_returns"]["data"]["accounts"][0]["instruments"][0]

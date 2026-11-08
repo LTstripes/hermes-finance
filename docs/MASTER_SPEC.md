@@ -841,17 +841,22 @@ Keep actual, forecast and hypothetical values visibly separate. Passive-income g
 
 Scenario Lab freezes its base and supports only the accepted single-shock families and explicit applicability evidence. Currency tags alone do not authorize FX translation; issuer exposure cannot be guessed from names. Account WHAT-IF uses finite named assumptions under C7. Instrument WHAT-IF is the supported fixed-holding stock scenario; editing prose does not enable bonds or changing-quantity total return.
 
-The recommended AI JSON includes provisional source returns with explicit dates,
-methods, limitations, sold instruments and a reading guide. Full-history source
-intervals, the selected month and available monthly history remain separate;
-[C10](ARCHITECTURE_AND_CONTRACTS.md#c10-ai_financial_review-1-2-composition-boundary)
-owns the exact units, source authority and privacy contract.
+The recommended AI JSON is one full-history financial review in format `3.1.0`,
+served only by `GET /api/export/ai-financial-review/json`. It includes the same
+source-scoped clean returns and FIFO purchase details as the current Returns UI,
+with each account's own dates, units, coverage and limitations. It has no version
+or concise/full selector and introduces no second financial calculation.
+[C7](ARCHITECTURE_AND_CONTRACTS.md#c7) owns the source-return meaning and
+[C10](ARCHITECTURE_AND_CONTRACTS.md#c10-ai_financial_review-1) owns the export contract.
 
-The recommended AI JSON download uses the versioned referenced format (C10):
-repeated source payloads are stored once with typed links; periods, occurrences,
-provenance and availability remain explicit. It is still one full-history file,
-without a concise/full selector or a second financial calculation. Legacy API
-consumers retain the v1 format through the documented compatibility route.
+By the Owner decision of 2026-11-08, Hermes UI is the sole API consumer; external
+clients and scripts do not use these AI exports. Older financial-review generation
+and its unsuffixed GET are retired. The technical AI Analysis Bundle retains only
+its JSON and Markdown `1.4.0` buttons, using `POST /api/export/ai-analysis-bundle`
+and `POST /api/export/ai-analysis-bundle/markdown`. Its `/json` alias and query
+format selector are retired. Retired selectors return an explicit 4xx error.
+Schemas and v2 reference expansion remain available to read and validate already
+saved files; historical file compatibility does not enable old-format generation.
 
 Markdown, JSON, AI analysis bundle, financial review and portfolio review package retain decimal precision, units, nullable values, coverage, reason codes and independent format versions. AI analysis bundle format is `1.4.0`, independent of app release version. Consumer limitations travel with the values; an export incapable of representing partial coverage must not assert complete capital or exact returns. C10 contains the full human-readable contracts; the retained machine schemas/examples remain at their existing paths.
 

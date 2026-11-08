@@ -160,7 +160,7 @@ def test_clean_overview_gold_ignores_fees_without_changing_receipt(source, fee_u
     assert history["total_result"]["value"] == "950000"
     assert history["realized_result"]["value"] is None
     assert history["unrealized_result"]["value"] is None
-    report = assemble_ai_financial_review(session, format_version="3.0.0")
+    report = assemble_ai_financial_review(session)
     exported = report["sections"]["clean_returns"]["data"]["gold"][0]
     assert exported["total_result"] == history["total_result"]
     assert exported["valuation_date"] == history["valuation_date"]

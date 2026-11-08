@@ -238,7 +238,7 @@ describe("UI v2 Data files", () => {
     );
     expect(request).toBeDefined();
     const url = new NativeURL(String(request?.[0]), "http://localhost");
-    expect([...url.searchParams.entries()]).toEqual([["format_version", "3.1.0"]]);
+    expect([...url.searchParams.entries()]).toEqual([]);
     expect(calls.some(({ method }) => method !== "GET")).toBe(false);
   });
 
