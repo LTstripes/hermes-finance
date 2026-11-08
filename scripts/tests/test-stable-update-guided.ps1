@@ -38,6 +38,15 @@ Write-Selector $valid
 $realMain = ${function:Assert-HermesGuidedMain}
 $realPort = ${function:Assert-HermesGuidedPortFree}
 
+# Real git: successful commands that write stderr (as git pull does) must not
+# throw under Stop in Windows PowerShell 5.1; a failing command still refuses.
+$probe = Join-Path $root 'git-probe'
+New-Item -ItemType Directory -Path $probe | Out-Null
+$null = Invoke-HermesGuidedGit $probe @('init', '-q')
+$null = Invoke-HermesGuidedGit $probe @('checkout', '-b', 'stderr-probe')
+Check ((Invoke-HermesGuidedGit $probe @('symbolic-ref', '--short', 'HEAD')) -ceq 'stderr-probe') 'stderr on success is not an error'
+Reject { Invoke-HermesGuidedGit $probe @('rev-parse', '--verify', 'refs/heads/missing-probe') } 'Main Git operation failed*'
+
 $script:dirty = $false; $script:branch = 'main'; $script:origin = 'https://github.com/LTstripes/hermes-finance.git'
 $script:ahead = $false; $script:gitCalls = @(); $script:answers = @(); $script:prompts = 0
 function Invoke-HermesGuidedGit {
