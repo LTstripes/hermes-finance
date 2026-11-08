@@ -1540,6 +1540,13 @@ def read_instrument_returns(
     from hermes_finance.services.source_redemption_evidence import apply_verified_redemptions
 
     events, resolved_redemptions = apply_verified_redemptions(events, redemption_evidence)
+    if clean_projection:
+        from hermes_finance.services.clean_redemption import apply_clean_redemptions
+
+        events, analytical_redemptions = apply_clean_redemptions(
+            session, events, views, cancellation_dates
+        )
+        resolved_redemptions |= analytical_redemptions
     from hermes_finance.services.source_monthly_internal_evidence import (
         apply_verified_compensations,
     )

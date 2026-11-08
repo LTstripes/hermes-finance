@@ -98,7 +98,14 @@ def _issuer_bond_in_account(resolver, security, status, selected, account, day):
     """
     if status != "unresolved_no_match":
         return None
-    issuer = re.sub(r"^(?:ПАО|АО|ООО)\s*", "", security.issuer_name, flags=re.IGNORECASE)
+    # An explicit registration bridge is stronger than the issuer, even when
+    # its target is absent or unusable in the current catalogue.
+    registration = getattr(security, "reg_number", None)
+    if registration in getattr(resolver, "reg_isins", {}) or registration in getattr(
+        resolver, "mapping_targets", {}
+    ):
+        return None
+    issuer = re.sub(r"^(?:МКПАО|ПАО|ОАО|АО|ООО)\s*", "", security.issuer_name, flags=re.IGNORECASE)
     issuer = " ".join(issuer.strip('"«» ').casefold().split())
     held = {
         trade["core"].get("isin")
@@ -125,8 +132,21 @@ def _issuer_bond_in_account(resolver, security, status, selected, account, day):
     return matches[0] if issuer and len(matches) == 1 else None
 
 
+def _explicit_payout_conflict(saved, security, isin):
+    """A complete payout cannot name a different explicit issue in either field."""
+    from hermes_finance.statement_import.investment_money import _REG
+
+    text = (saved["operation"] + " " + saved["narrative"]).upper()
+    explicit_isins = set(re.findall(r"(?<!\w)[A-Z]{2}[A-Z0-9]{9}[0-9](?!\w)", text))
+    explicit_regs = set(re.findall(rf"(?<!\w){_REG}(?!\w)", text))
+    return bool(
+        (explicit_isins and explicit_isins != {isin})
+        or (explicit_regs and explicit_regs != {security.reg_number})
+    )
+
+
 def analytical_coupon_links(session, selected, native_scope, *, historical_evidence=None):
-    """Resolve old coupon rows for this read without changing saved decisions.
+    """Resolve legacy payouts for this clean read without changing saved decisions.
 
     Every covering original must contain the same occurrence multiplicity and
     account-bound source facts. A current explicit issue mapping identifies the
@@ -135,13 +155,15 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
     """
     from collections import Counter, defaultdict
 
-    from hermes_finance.domain.money_security import parse_money_security
     from hermes_finance.persistence import BrokerIdentityMapping
     from hermes_finance.services.broker_money_ownership import owners
     from hermes_finance.services.broker_statement_provisional import _minor
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
-    from hermes_finance.services.source_money_classifications import source_reference
+    from hermes_finance.services.source_money_classifications import _is_nkd, source_reference
     from hermes_finance.services.source_monthly_returns import _native_scope
+    from hermes_finance.statement_import.investment_money import (
+        parse_investment_money_security as parse_money_security,
+    )
     from hermes_finance.statement_import.money import normalize_currency
 
     if not selected or native_scope is None or len(native_scope) != 1:
@@ -149,8 +171,8 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
     if any(original is None for original, _, _ in selected):
         return {}
     if not any(
-        choice.get("classification") == "coupon"
-        and choice.get("instrument_link_status") == "unresolved_no_match"
+        choice.get("classification") in {"coupon", "dividend"}
+        and choice.get("instrument_link_status") in {"unresolved_no_match", "not_parsed"}
         for _, view, error in selected
         if view is not None and not error
         for choice in view["money_classifications"]
@@ -190,7 +212,8 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
     result = {}
     for (day, _), members in groups.items():
         if not any(
-            c.get("instrument_link_status") == "unresolved_no_match" for _, _, _, c, _ in members
+            c.get("instrument_link_status") in {"unresolved_no_match", "not_parsed"}
+            for _, _, _, c, _ in members
         ):
             continue
         # Existing historical evidence, including a conflict tombstone, has
@@ -206,19 +229,25 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
         if len(covering) > 1 and len({row.get("last_update") for _, _, row, _, _ in members}) != 1:
             continue
         first = members[0][3]
+        if any(_is_nkd(c["operation"] + " " + c["narrative"]) for _, _, _, c, _ in members):
+            continue
         security = parse_money_security(first["narrative"])
-        if security is None or security.kind != "coupon":
+        if security is None or security.kind != first.get("classification"):
             continue
         target, status = resolver.resolve(security)
         instrument = resolver.instruments.get(target)
-        issuer_match = _issuer_bond_in_account(resolver, security, status, selected, account, day)
+        issuer_match = (
+            _issuer_bond_in_account(resolver, security, status, selected, account, day)
+            if security.kind == "coupon"
+            else None
+        )
         if issuer_match is not None:
             target, instrument = issuer_match
         else:
             if (
                 status != "linked"
                 or instrument is None
-                or instrument.instrument_type != "bond"
+                or instrument.instrument_type != ("bond" if security.kind == "coupon" else "stock")
                 or not instrument.isin
             ):
                 continue
@@ -264,7 +293,8 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
                 else None
             )
             if (
-                row.get("source_account") != account
+                _explicit_payout_conflict(choice, security, instrument.isin)
+                or row.get("source_account") != account
                 or not view["covered_from"] <= day <= view["covered_to"]
                 or normalize_currency(row.get("currency")) != "RUB"
                 or normalize_currency(choice.get("currency")) != "RUB"
@@ -272,14 +302,22 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
                 or choice.get("amount_kopecks") is None
                 or choice["amount_kopecks"] <= 0
                 or str(choice.get("date")) != day
-                or choice.get("classification") != "coupon"
+                or choice.get("classification") != security.kind
                 or choice.get("origin") not in {"default_rule", "user_choice"}
                 or choice.get("status") != first.get("status")
-                or choice.get("security_reg_number") != security.reg_number
-                or choice.get("security_issuer") != security.issuer_name
+                or (
+                    choice.get("instrument_link_status") == "unresolved_no_match"
+                    and (
+                        choice.get("security_reg_number") != security.reg_number
+                        or choice.get("security_issuer") != security.issuer_name
+                    )
+                )
+                or choice.get("security_reg_number") not in (None, security.reg_number)
+                or choice.get("security_issuer") not in (None, security.issuer_name)
                 or not (
                     (
-                        choice.get("instrument_link_status") == "unresolved_no_match"
+                        choice.get("instrument_link_status")
+                        in {"unresolved_no_match", "not_parsed"}
                         and choice.get("instrument_id") is None
                     )
                     or (
