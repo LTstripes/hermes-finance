@@ -4628,6 +4628,17 @@ def test_clean_legacy_coupon_needs_exact_bond_identity(db, narrative):
         "face_conflict",
         "missing_proof",
         "missing_registration",
+        "exchange_code",
+        "exchange_code_without_proof",
+        "foreign_p_name",
+        "duplicate_cancellation",
+        "quantity_padded",
+        "quantity_above",
+        "quantity_below",
+        "wide_without_position",
+        "wide_bad_label",
+        "wide_duplicate",
+        "wide_missing_proof",
     ],
 )
 def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monkeypatch, case):
@@ -4665,7 +4676,7 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
     )
     coupon = narrative.replace("полное погашение номинала", "погашение купона")
 
-    def cancellation(root):
+    def cancellation(root, *, wide=False):
         for node in root.findall(".//m:Details[@ISIN1]", NS):
             node.attrib.pop("nominal", None)
         parent = root
@@ -4683,12 +4694,28 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
             p_name=f"Synthetic bond\r\n{BOND}",
             place_name="НРД",
             settlement_time="10:00:00",
-            qty="-3" if case == "quantity" else "-2",
+            qty={
+                "quantity_padded": "-2.0000000000",
+                "quantity_above": "-2.0000000001",
+                "quantity_below": "-1.9999999999",
+            }.get(case, "-3" if case == "quantity" else "-2"),
             settlement_date="2030-05-16T00:00:00" if case == "date" else "2030-05-15T00:00:00",
         )
+        if case in {
+            "exchange_code",
+            "exchange_code_without_proof",
+            "foreign_p_name",
+            "duplicate_cancellation",
+            "quantity_padded",
+            "quantity_above",
+            "quantity_below",
+        } or case.startswith("wide_"):
+            parent[-1].set("comment_new", "Аннулирование выпуска SYNTHETIC07.")
+        if case == "foreign_p_name" or (wide and case == "wide_bad_label"):
+            parent[-1].set("p_name", "Foreign synthetic bond\r\nRU000A000002")
+        if case == "duplicate_cancellation" or (wide and case == "wide_duplicate"):
+            parent.append(deepcopy(parent[-1]))
         if case == "two_issues":
-            from copy import deepcopy
-
             node = root.find(".//m:Details[@ISIN1]", NS)
             other = deepcopy(node)
             other.set("ISIN1", "RU000A000002")
@@ -4707,6 +4734,27 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
         ),
         mutate=cancellation,
     )
+    long_id = None
+    if case.startswith("wide_"):
+
+        def long_statement(root):
+            purchase(root)
+            cancellation(root, wide=True)
+            root.find(".//m:Details[@trade_no]", NS).set("p_name", "Synthetic bond")
+            for node in root.findall(".//m:settlement_date[@settlement_date]", NS):
+                node.set("settlement_date", "2030-05-15T00:00:00")
+
+        long_id = save(
+            db,
+            4,
+            end_month=5,
+            marker="wide-redemption",
+            stock=None,
+            bond=None,
+            trades=((BOND, "2", "2060", "60", "0"),),
+            extra=(("Перевод", narrative, "2000"), ("Перевод", coupon, "30")),
+            mutate=long_statement,
+        )
     with db.session_factory() as session:
         target = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
         session.add(target)
@@ -4727,7 +4775,13 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
     # date, quantity, face, amount, source eligibility and occurrence ownership.
     from hermes_finance.services import source_return_proofs
 
-    verified_dates = {} if case == "missing_proof" else {cancellation_id: (date(2030, 5, 1),)}
+    verified_dates = (
+        {}
+        if case in {"missing_proof", "exchange_code_without_proof"}
+        else {cancellation_id: (date(2030, 5, 1),)}
+    )
+    if long_id is not None and case != "wide_missing_proof":
+        verified_dates[long_id] = (date(2030, 5, 1),)
     monkeypatch.setattr(
         source_return_proofs,
         "resolve_proof",
@@ -4744,7 +4798,7 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
         events = {e.event_key: e for row in source.instruments for e in row.analysis.events}
         events.update({e.event_key: e for e in source.unresolved_events})
         redemptions = [e for e in events.values() if e.kind == "REDEMPTION"]
-        if case == "exact":
+        if case in {"exact", "exchange_code", "wide_without_position", "quantity_padded"}:
             assert len(redemptions) == 1
             assert redemptions[0].quantity_delta == Decimal("-2")
             assert redemptions[0].cash_legs[0].account_cash_kopecks == 200000
@@ -4755,6 +4809,9 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
             assert result["redemption"]["value"] == "200000"
         else:
             assert not redemptions
+            assert any(
+                "redemption_amortization_unsupported" in e.reason_codes for e in events.values()
+            )
         legacy = read_instrument_returns(
             session, source_account=ACCOUNT, include_monthly_history=False
         )
@@ -4762,6 +4819,33 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
             e.kind == "REDEMPTION" for row in legacy.instruments for e in row.analysis.events
         )
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
+    "quantity,native,expected",
+    [
+        ("37", "-37", True),
+        ("37", "-37.0000000000", True),
+        ("37", "-37.0000000001", False),
+        ("37", "-36.9999999999", False),
+        ("2.5", "-2.5", True),
+        ("2.5000", "-2.5000000000", True),
+        ("2.5", "-2", False),
+        ("2.5", "-2.5000000001", False),
+        ("2", "-02", False),
+        ("2", "-2.00000000000", False),
+        ("999999999999999999", "-999999999999999999.0000000000", True),
+        ("1000000000000000000", "-1000000000000000000", False),
+        ("0.00000000001", "-0.00000000001", False),
+        ("0", "-0", False),
+        ("NaN", "-NaN", False),
+    ],
+)
+def test_clean_cancellation_quantity_digest_has_no_numeric_tolerance(quantity, native, expected):
+    from hermes_finance.services.clean_redemption import _cancellation_quantity_digests
+    from hermes_finance.statement_import.mybroker import digest
+
+    assert (digest(native) in _cancellation_quantity_digests(Decimal(quantity))) == expected
 
 
 @pytest.mark.parametrize(
