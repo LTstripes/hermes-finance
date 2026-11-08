@@ -33,13 +33,16 @@ def _current_owned_cohort(session, sales, rows, raw, owned):
             claim = owned.get(ref, ())
             if not claim:
                 continue
+            # Reaffirmations repeat the same permanent group claim in the
+            # receipt journal. They are one owner, not extra cash occurrences.
+            claims = {(c["role"], c["target_id"], c["row_fingerprint"]) for c in claim}
             if (
-                len(claim) != 1
-                or claim[0]["role"] != "trade_group"
-                or claim[0]["row_fingerprint"] != digest(native)
+                len(claims) != 1
+                or next(iter(claims))[0] != "trade_group"
+                or next(iter(claims))[2] != digest(native)
             ):
                 return False
-            group_ids.add(claim[0]["target_id"])
+            group_ids.add(next(iter(claims))[1])
     if len(group_ids) != 1:
         return False
     group_id = next(iter(group_ids))

@@ -1518,6 +1518,8 @@ def test_linked_trade_money_must_agree_with_total_and_price(event, amount):
     "case",
     [
         "current",
+        "reaffirmed",
+        "mixed_owner",
         "foreign_owner",
         "partial_occurrences",
         "partial_trades",
@@ -1595,6 +1597,16 @@ def test_sale_nkd_reuses_only_complete_current_identical_owned_group(monkeypatch
         ]
         for ref, native in zip(refs, natives, strict=True)
     }
+    if case == "reaffirmed":
+        owned = {ref: claim * 3 for ref, claim in owned.items()}
+    if case == "mixed_owner":
+        owned[refs[0]].append(
+            {
+                "role": "trade_group",
+                "target_id": "other-group",
+                "row_fingerprint": digest(natives[0]),
+            }
+        )
     monkeypatch.setattr(source_return_evidence, "bound_import", lambda *args: SimpleNamespace(id=7))
     monkeypatch.setattr(broker_money, "receipts", lambda session: [(receipt, proof)])
     monkeypatch.setattr(
@@ -1605,4 +1617,6 @@ def test_sale_nkd_reuses_only_complete_current_identical_owned_group(monkeypatch
     monkeypatch.setattr(
         broker_money, "proof_blockers", lambda *args: ["stale"] if case == "stale" else []
     )
-    assert _current_owned_cohort(object(), sales, rows, raw, owned) is (case == "current")
+    assert _current_owned_cohort(object(), sales, rows, raw, owned) is (
+        case in {"current", "reaffirmed"}
+    )
