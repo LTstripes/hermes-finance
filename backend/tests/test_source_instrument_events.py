@@ -4811,7 +4811,10 @@ def test_clean_coupon_analytical_link_rejects_operation_conflicts(db, operation)
     ],
 )
 @pytest.mark.parametrize("mapping", ["exact", "missing", "wrong_type", "conflict"])
-def test_clean_extended_dividend_requires_exact_registration(db, issuer, period, mapping):
+@pytest.mark.parametrize("known_name", [False, True])
+def test_clean_extended_dividend_requires_exact_registration(
+    db, issuer, period, mapping, known_name
+):
     from test_source_money_classifications_service import _security_mapping
 
     from hermes_finance.persistence import Instrument
@@ -4823,7 +4826,9 @@ def test_clean_extended_dividend_requires_exact_registration(db, issuer, period,
     )
 
     def label(root):
-        root.find(".//m:Details[@ISIN1]", NS).set("active_name", "Example")
+        root.find(".//m:Details[@ISIN1]", NS).set(
+            "active_name", "Example" if known_name else "Listed Example shares"
+        )
 
     save(db, bond=None, trades=(), extra=(("Перевод", narrative, "87"),), mutate=label)
     with db.session_factory() as session:
@@ -4855,7 +4860,7 @@ def test_clean_extended_dividend_requires_exact_registration(db, issuer, period,
         assert events
         assert (
             all(e.counted and e.isin == ISIN for e in events.values())
-            if mapping == "exact"
+            if mapping == "exact" or (mapping == "missing" and known_name)
             else not any(e.counted for e in events.values())
         )
         if mapping == "exact":
@@ -4865,3 +4870,44 @@ def test_clean_extended_dividend_requires_exact_registration(db, issuer, period,
             assert row["dividends"]["value"] == "8700"
             assert all(e.persisted_link_status == "not_parsed" for e in events.values())
     assert snapshot(db) == before
+
+
+@pytest.mark.parametrize("case", ["nkd", "coupon", "registration", "isin"])
+def test_clean_dividend_fallback_rejects_nkd_and_coupon_identity(db, case):
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+    from hermes_finance.services.source_instrument_events import payout_attribution
+
+    with db.session_factory() as session:
+        session.add(Instrument(name="Example", instrument_type="stock", isin=ISIN))
+        session.commit()
+        resolver = MoneyInstrumentResolver(session)
+        narrative = (
+            'Дивиденды за 1 кв 2030 г. по акциям ПАО МКК "Example" (1-01-99999-Z). (Удержан налог 13 руб.)'
+            if case != "coupon"
+            else "погашение купона 4B02-123-99999-Z-001P (облигации ПАО Example) д.ф.15.04.30"
+        )
+        saved = {
+            "classification": "dividend",
+            "instrument_link_status": "not_parsed",
+            "operation": "НКД по сделке"
+            if case == "nkd"
+            else "Перевод 1-01-99998-Z"
+            if case == "registration"
+            else "Перевод RU000A000002"
+            if case == "isin"
+            else "Перевод",
+            "narrative": narrative,
+        }
+        isin, _, reasons = payout_attribution(
+            saved,
+            resolver,
+            {ISIN: {"identifiers": {ISIN}, "names": {"Example"}, "types": {"stock"}}},
+            analytical_payouts={},
+        )
+    assert isin is None
+    assert reasons == (
+        ("payout_classification_conflict",)
+        if case in {"nkd", "coupon"}
+        else ("unattributed_income",)
+    )

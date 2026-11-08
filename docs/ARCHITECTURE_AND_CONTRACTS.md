@@ -6994,8 +6994,10 @@ existing grammar and interpretation.
 The same clean-only validation can recover complete investment dividend variants
 with an explicit current registration bridge to stock, including supported
 legal forms and quarterly periods. Dividends never use the coupon issuer
-fallback. Missing, conflicting or wrong-type bridges leave those complete
-narratives unattributed; a name match cannot revive a rejected identity.
+fallback. The additional bridge does not retire an existing legacy dividend
+attribution when no explicit identity contradicts it. Conflicting or wrong-type
+bridges cannot be overridden by a name match; a missing bridge alone creates no
+new attribution.
 
 Clean full-redemption recovery requires an explicit current registration-to-ISIN
 bridge to a bond and a current original-bound custody cancellation proof for every

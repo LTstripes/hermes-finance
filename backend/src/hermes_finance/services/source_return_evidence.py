@@ -132,6 +132,19 @@ def _issuer_bond_in_account(resolver, security, status, selected, account, day):
     return matches[0] if issuer and len(matches) == 1 else None
 
 
+def _explicit_payout_conflict(saved, security, isin):
+    """A complete payout cannot name a different explicit issue in either field."""
+    from hermes_finance.statement_import.investment_money import _REG
+
+    text = (saved["operation"] + " " + saved["narrative"]).upper()
+    explicit_isins = set(re.findall(r"(?<!\w)[A-Z]{2}[A-Z0-9]{9}[0-9](?!\w)", text))
+    explicit_regs = set(re.findall(rf"(?<!\w){_REG}(?!\w)", text))
+    return bool(
+        (explicit_isins and explicit_isins != {isin})
+        or (explicit_regs and explicit_regs != {security.reg_number})
+    )
+
+
 def analytical_coupon_links(session, selected, native_scope, *, historical_evidence=None):
     """Resolve legacy payouts for this clean read without changing saved decisions.
 
@@ -148,9 +161,6 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
     from hermes_finance.services.source_money_classifications import _is_nkd, source_reference
     from hermes_finance.services.source_monthly_returns import _native_scope
-    from hermes_finance.statement_import.investment_money import (
-        _REG,
-    )
     from hermes_finance.statement_import.investment_money import (
         parse_investment_money_security as parse_money_security,
     )
@@ -276,9 +286,6 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
                 continue
         valid = True
         for _, view, row, choice, ref in members:
-            text = (choice["operation"] + " " + choice["narrative"]).upper()
-            explicit_isins = set(re.findall(r"(?<!\w)[A-Z]{2}[A-Z0-9]{9}[0-9](?!\w)", text))
-            explicit_regs = set(re.findall(rf"(?<!\w){_REG}(?!\w)", text))
             source = bound_import(session, view)
             occurrence = (
                 {"import_id": source.id, "section": "money", "ordinal": row["ordinal"]}
@@ -286,8 +293,7 @@ def analytical_coupon_links(session, selected, native_scope, *, historical_evide
                 else None
             )
             if (
-                (explicit_isins and explicit_isins != {instrument.isin})
-                or (explicit_regs and explicit_regs != {security.reg_number})
+                _explicit_payout_conflict(choice, security, instrument.isin)
                 or row.get("source_account") != account
                 or not view["covered_from"] <= day <= view["covered_to"]
                 or normalize_currency(row.get("currency")) != "RUB"
