@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, replace
 from datetime import timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from hermes_finance.domain.clean_instrument_return import (
     calculate_clean_return,
@@ -184,7 +184,7 @@ def clean_gold_metric(observed, *, current=True):
     return metric(value, reasons=reasons, method="clean_gold_history", estimate=bool(reasons))
 
 
-def project_clean_analysis(analysis, isin, *, instrument_type=None):
+def project_clean_analysis(analysis, isin, *, instrument_type=None, include_position_rates=True):
     """Do not change or attest the events, the account bridge, or source receipts."""
     ignored_cost_reasons = {"unallocated_instrument_cost", "native_commission_unavailable"}
     if getattr(analysis.coverage, "unresolved_cost_only", False):
@@ -272,6 +272,8 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
     own_payout_reasons = instrument_scoped_reasons(analysis, isin, payout_reasons)
     # An unattributed account row may be a payout of this bond, so the result
     # stays visible and carries one note instead of being withheld.
+    from hermes_finance.services.clean_purchase_returns import clean_weighted_holding_days
+
     clean = calculate_clean_return(
         analysis.opening_date,
         analysis.closing_date,
@@ -282,6 +284,12 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
         payouts_complete=payouts_known or (quantity_reconciled and not own_payout_reasons),
         redemptions_complete=clean_complete("quantity"),
         valuation_complete=opening is not None and closing is not None,
+        include_position_rates=include_position_rates,
+        holding_period_resolver=lambda operands: clean_weighted_holding_days(
+            analysis, operands, isin, instrument_type=instrument_type
+        ),
+        inception_proven=opening == 0 and analysis.opening.quantity == 0,
+        position_closed=analysis.closing.quantity == 0,
         result_assumptions=("account_money_unattributed",)
         if _has_unattributed_payout_gap(analysis, payout_reasons - own_payout_reasons)
         or has_unidentified_trade_money(analysis)
@@ -329,6 +337,8 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None):
             known_result=known,
             pnl=unavailable(clean.pnl),
             modified_dietz=unavailable(clean.modified_dietz),
+            simple_return=unavailable(clean.simple_return) if clean.simple_return else None,
+            xirr=unavailable(clean.xirr) if clean.xirr else None,
         )
     return clean
 
@@ -390,7 +400,16 @@ def _clean_quantity_reconciled(analysis, events, isin):
         return holding == q1
 
 
-def read_clean_account(session, source_account, start, end, *, isin=None, include_purchases=False):
+def read_clean_account(
+    session,
+    source_account,
+    start,
+    end,
+    *,
+    isin=None,
+    include_purchases=False,
+    include_position_rates=False,
+):
     """Return one exact source scope and period without saving an attestation."""
     from hermes_finance.services.returns_view import _catalogue_names, _display_name
     from hermes_finance.services.source_instrument_returns import read_instrument_returns
@@ -432,8 +451,16 @@ def read_clean_account(session, source_account, start, end, *, isin=None, includ
             analysis, purchase_analysis = clean_and_purchase_repo_projections(
                 analysis, views, row.isin, allow_pair=allow_pair
             )
-        clean = project_clean_analysis(analysis, row.isin, instrument_type=row.instrument_type)
+        clean = project_clean_analysis(
+            analysis,
+            row.isin,
+            instrument_type=row.instrument_type,
+            include_position_rates=include_position_rates,
+        )
         metrics = asdict(clean)
+        if not include_position_rates:
+            metrics.pop("simple_return")
+            metrics.pop("xirr")
         for metric in metrics.values():
             value = metric["value"]
             metric["value"] = (
@@ -442,6 +469,21 @@ def read_clean_account(session, source_account, start, end, *, isin=None, includ
                 else format(value, "f")
                 if isinstance(value, Decimal)
                 else str(value)
+            )
+            if "invested_kopecks" in metric:
+                value = metric["invested_kopecks"]
+                metric["invested_kopecks"] = None if value is None else str(value)
+                days = metric["weighted_holding_days"]
+                metric["weighted_holding_days"] = (
+                    None
+                    if days is None
+                    else format(days.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
+                )
+        if include_position_rates:
+            metrics["modified_dietz"].update(
+                method="modified_dietz",
+                annualized=False,
+                for_position_comparison=False,
             )
         item = {
             "isin": row.isin,
@@ -472,7 +514,13 @@ def read_clean_account(session, source_account, start, end, *, isin=None, includ
     }
 
 
-def read_clean_overview(session, *, isin=None, include_purchases=False):
+def read_clean_overview(
+    session,
+    *,
+    isin=None,
+    include_purchases=False,
+    include_position_rates=False,
+):
     """Read each source account's outer saved period in one source snapshot."""
     from hermes_finance.services.returns_view import _accounts, _source_scopes
     from hermes_finance.services.source_monthly_returns import (
@@ -497,7 +545,13 @@ def read_clean_overview(session, *, isin=None, include_purchases=False):
                     "label": labels.get(f"source:{account}", account),
                     "period": {"start": start, "end": end},
                     "result": read_clean_account(
-                        session, account, start, end, isin=isin, include_purchases=include_purchases
+                        session,
+                        account,
+                        start,
+                        end,
+                        isin=isin,
+                        include_purchases=include_purchases,
+                        include_position_rates=include_position_rates,
                     ),
                 }
             )
