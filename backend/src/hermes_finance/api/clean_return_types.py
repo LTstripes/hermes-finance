@@ -25,6 +25,8 @@ class CleanPositionRate(CleanMetric):
     end_date: date
     holding_end_date: date | None
     holding_days: int | None
+    weighted_holding_days: Annotated[str | None, Field(pattern=r"^[0-9]+(?:\.[0-9]+)?$")]
+    eligibility_basis: Literal["capital_weighted_holding_days"]
     date_basis: Literal["first_purchase_execution"]
     for_position_comparison: Literal[True]
 

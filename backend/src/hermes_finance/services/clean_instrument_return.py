@@ -272,6 +272,8 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None, include_posi
     own_payout_reasons = instrument_scoped_reasons(analysis, isin, payout_reasons)
     # An unattributed account row may be a payout of this bond, so the result
     # stays visible and carries one note instead of being withheld.
+    from hermes_finance.services.clean_purchase_returns import clean_weighted_holding_days
+
     clean = calculate_clean_return(
         analysis.opening_date,
         analysis.closing_date,
@@ -283,6 +285,9 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None, include_posi
         redemptions_complete=clean_complete("quantity"),
         valuation_complete=opening is not None and closing is not None,
         include_position_rates=include_position_rates,
+        holding_period_resolver=lambda operands: clean_weighted_holding_days(
+            analysis, operands, isin, instrument_type=instrument_type
+        ),
         inception_proven=opening == 0 and analysis.opening.quantity == 0,
         position_closed=analysis.closing.quantity == 0,
         result_assumptions=("account_money_unattributed",)
@@ -468,6 +473,8 @@ def read_clean_account(
             if "invested_kopecks" in metric:
                 value = metric["invested_kopecks"]
                 metric["invested_kopecks"] = None if value is None else str(value)
+                days = metric["weighted_holding_days"]
+                metric["weighted_holding_days"] = None if days is None else format(days, "f")
         if include_position_rates:
             metrics["modified_dietz"].update(
                 method="modified_dietz",

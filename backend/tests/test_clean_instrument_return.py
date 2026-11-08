@@ -182,6 +182,7 @@ def position_return(*, days=365, closed=False, payouts=(), changes=None, **cover
         redemptions_complete=coverage.get("redemptions_complete", True),
         valuation_complete=coverage.get("valuation_complete", True),
         position_closed=closed,
+        weighted_holding_days=Decimal(days),  # Synthetic complete single-lot match.
     )
 
 
@@ -194,6 +195,8 @@ def test_position_simple_and_annual_return_have_independent_holding_gate(days):
     assert not simple.annualized and simple.for_position_comparison
     assert simple.basis == "statement_purchases_including_nkd"
     assert annual.holding_days == days
+    assert annual.weighted_holding_days == days
+    assert annual.eligibility_basis == "capital_weighted_holding_days"
     assert annual.start_date == date(2028, 1, 2)
     assert annual.end_date == date(2028, 1, 2) + timedelta(days=days)
     assert annual.annualized
@@ -316,6 +319,7 @@ def test_zero_loss_and_no_root_are_distinct_position_returns(closing, expected):
         payouts_complete=True,
         redemptions_complete=True,
         valuation_complete=True,
+        weighted_holding_days=Decimal(365),
     )
     if expected is not None:
         assert result.simple_return.value == Decimal(expected)
@@ -328,7 +332,7 @@ def test_zero_loss_and_no_root_are_distinct_position_returns(closing, expected):
 
 def test_ambiguous_xirr_keeps_simple_return_on_all_purchases():
     first = date(2028, 1, 2)
-    end = first + timedelta(days=730)
+    end = first + timedelta(days=2190)
     events = tuple(
         replace(
             trade(kind, amount, 0),
@@ -337,7 +341,7 @@ def test_ambiguous_xirr_keeps_simple_return_on_all_purchases():
             cash_settlement_date=first + timedelta(days=days),
         )
         for index, (kind, amount, days) in enumerate(
-            [("BUY", 100000, 0), ("SELL", 230000, 365), ("BUY", 132000, 730)]
+            [("BUY", 100000, 0), ("SELL", 230000, 1095), ("BUY", 132000, 2190)]
         )
     )
     result = calculate_clean_return(
@@ -350,6 +354,7 @@ def test_ambiguous_xirr_keeps_simple_return_on_all_purchases():
         payouts_complete=True,
         redemptions_complete=True,
         valuation_complete=True,
+        weighted_holding_days=Decimal(100000) * 1095 / Decimal(232000),
     )
     assert result.simple_return.invested_kopecks == 232000
     assert abs(result.simple_return.value - Decimal(-2000) / Decimal(232000)) < Decimal("1e-28")
@@ -397,6 +402,7 @@ def test_full_redemption_and_later_coupon_keep_their_actual_dates(monkeypatch):
         redemptions_complete=True,
         valuation_complete=True,
         position_closed=True,
+        weighted_holding_days=Decimal(365),
     )
     assert result.simple_return.value == Decimal("0.1")
     assert result.xirr.holding_days == 365
@@ -731,6 +737,166 @@ def test_two_purchases_show_different_price_results_without_costs_or_payouts():
     rows = case([buy("a", 10000, "1", date(2030, 1, 10)), buy("b", 20000, "1", date(2030, 1, 11))])
     assert [r["price_result_kopecks"] for r in rows] == ["5000", "-5000"]
     assert [r["cost_kopecks"] for r in rows] == ["10000", "20000"]
+
+
+def holding_analysis(events, *, days=600, quantity="1", closing=120000):
+    first = date(2028, 1, 2)
+    start, end = first - timedelta(days=1), first + timedelta(days=days)
+    return SimpleNamespace(
+        opening_date=start,
+        closing_date=end,
+        opening=Endpoint(start, Decimal(0), 0, 0, 0, "dirty"),
+        closing=Endpoint(end, Decimal(quantity), closing, closing, 0, "dirty"),
+        events=tuple(events),
+        coverage={name: Coverage(True) for name in ("events", "quantity", "payouts")},
+    )
+
+
+def test_token_early_purchase_cannot_make_recent_capital_eligible_for_xirr():
+    first = date(2028, 1, 2)
+    analysis = holding_analysis(
+        [buy("early", 10000, "1", first), buy("large", 990000, "99", first + timedelta(days=320))],
+        days=400,
+        quantity="100",
+        closing=1100000,
+    )
+    result = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    assert result.simple_return.value == Decimal("0.1")
+    assert result.xirr.holding_days == 400
+    assert result.xirr.weighted_holding_days == Decimal("83.2")
+    assert result.xirr.value is None
+    assert result.xirr.reason_codes == ("short_holding",)
+
+
+def test_fifo_holding_projection_does_not_repeat_interval_solver(monkeypatch):
+    from hermes_finance.domain import clean_instrument_return as domain
+
+    calculate = domain.calculate_interval_return
+    calls = []
+
+    def observed(*args):
+        calls.append(args[:2])
+        return calculate(*args)
+
+    monkeypatch.setattr(domain, "calculate_interval_return", observed)
+    analysis = holding_analysis([buy("lot", 100000, "1", date(2028, 1, 2))])
+    project_clean_analysis(analysis, ISIN, instrument_type="stock", include_position_rates=False)
+    baseline = list(calls)
+    calls.clear()
+    result = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    assert result.xirr.weighted_holding_days == 600
+    assert result.xirr.value is not None
+    assert calls == baseline
+
+
+@pytest.mark.parametrize("days", [364, 365, 730])
+def test_complete_long_lot_is_eligible_at_exactly_365_weighted_days(days):
+    analysis = holding_analysis([buy("lot", 100000, "1", date(2028, 1, 2))], days=days)
+    result = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    assert result.simple_return.value == Decimal("0.2")
+    assert result.xirr.weighted_holding_days == days
+    assert (result.xirr.value is not None) == (days >= 365)
+
+
+def test_partial_fifo_sales_weight_each_disposed_part_and_open_remainder():
+    first = date(2028, 1, 2)
+    events = [
+        buy("lot", 120000, "4", first),
+        replace(buy("sale1", 40000, "-1", first + timedelta(days=100)), kind="SELL"),
+        replace(buy("sale2", 40000, "-1", first + timedelta(days=200)), kind="SELL"),
+    ]
+    analysis = holding_analysis(events, quantity="2", closing=80000)
+    result = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    assert result.xirr.holding_days == 600
+    assert result.xirr.weighted_holding_days == Decimal(375)  # (100 + 200 + 2*600)/4
+    assert result.xirr.value is not None
+    purchases = clean_purchase_price_contributions(analysis, result, ISIN, instrument_type="stock")
+    assert purchases[0]["remaining_quantity"] == "2"
+    assert purchases[0]["cost_kopecks"] == "120000"
+    assert purchases[0]["sale_proceeds_kopecks"] == "80000"
+
+
+def test_holding_weights_include_nkd_and_do_not_round_fractional_days_to_threshold():
+    first = date(2028, 1, 2)
+    events = [
+        replace(buy("early", 100000, "1", first), accrued_interest_kopecks=900000),
+        buy("late", 9000000, "9", first + timedelta(days=1)),
+    ]
+    analysis = holding_analysis(events, days=365, quantity="10", closing=11000000)
+    result = project_clean_analysis(analysis, ISIN, instrument_type="bond")
+    assert result.simple_return.invested_kopecks == 10000000
+    assert result.simple_return.value == Decimal("0.1")
+    assert result.xirr.weighted_holding_days == Decimal("364.1")
+    assert result.xirr.reason_codes == ("short_holding",)
+
+
+def test_sale_crossing_lots_uses_each_purchase_cost_and_its_own_remaining_quantity():
+    first = date(2028, 1, 2)
+    analysis = holding_analysis(
+        [
+            buy("early", 100000, "2", first),
+            buy("late", 300000, "2", first + timedelta(days=100)),
+            replace(buy("sale", 330000, "-3", first + timedelta(days=200)), kind="SELL"),
+        ],
+        quantity="1",
+        closing=180000,
+    )
+    result = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    # Early lot: 200 days. Late lot: half 100 days, half 500 days.
+    assert result.xirr.weighted_holding_days == Decimal(275)
+    assert result.simple_return.invested_kopecks == 400000
+    assert result.simple_return.value == Decimal("0.275")
+    assert result.xirr.reason_codes == ("short_holding",)
+
+
+@pytest.mark.parametrize("days", [100, 365])
+def test_fifo_closed_position_does_not_age_until_report_end(days):
+    first = date(2028, 1, 2)
+    analysis = holding_analysis(
+        [
+            buy("lot", 100000, "1", first),
+            replace(buy("sale", 120000, "-1", first + timedelta(days=days)), kind="SELL"),
+        ],
+        quantity="0",
+        closing=0,
+    )
+    result = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    assert result.xirr.holding_days == days
+    assert result.xirr.weighted_holding_days == days
+    assert result.xirr.holding_end_date == first + timedelta(days=days)
+    assert (result.xirr.value is not None) == (days >= 365)
+
+
+@pytest.mark.parametrize("gap", ["no_delivery", "ambiguous_order", "redemption"])
+def test_no_complete_fifo_keeps_simple_return_and_withholds_holding_period(gap):
+    first = date(2028, 1, 2)
+    events = [buy("lot", 100000, "2", first)]
+    quantity = "2"
+    if gap == "no_delivery":
+        events[0] = replace(events[0], depository_settlement_date=None)
+    elif gap == "ambiguous_order":
+        events.append(replace(buy("sale", 60000, "-1", first), kind="SELL"))
+        quantity = "1"
+    else:
+        day = first + timedelta(days=400)
+        events.append(
+            replace(
+                cash("REDEMPTION", 100000),
+                isin=ISIN,
+                event_date=day,
+                depository_settlement_date=day,
+                quantity_delta=Decimal(-2),
+                cash_legs=(CashLeg("redemption", day, 100000, -100000, ("r",), "r"),),
+            )
+        )
+        quantity = "0"
+    analysis = holding_analysis(events, quantity=quantity, closing=0 if quantity == "0" else 120000)
+    result = project_clean_analysis(analysis, ISIN, instrument_type="stock")
+    assert result.simple_return.value is not None
+    assert result.xirr.holding_days >= 365
+    assert result.xirr.weighted_holding_days is None
+    assert result.xirr.value is None
+    assert result.xirr.reason_codes == ("holding_period_unknown",)
 
 
 def test_fifo_partial_sale_uses_original_cost_and_matches_instrument_price_result():

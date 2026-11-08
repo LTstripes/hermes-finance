@@ -4,7 +4,8 @@ The caller supplies clean endpoint values and coverage for the selected scope.
 Account cash balances and the historical cash-economic calculation are separate.
 """
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
@@ -24,6 +25,8 @@ class PositionRate(Metric):
     end_date: date | None = None
     holding_end_date: date | None = None
     holding_days: int | None = None
+    weighted_holding_days: Decimal | None = None
+    eligibility_basis: str = "capital_weighted_holding_days"
     date_basis: str = "first_purchase_execution"
     for_position_comparison: bool = True
 
@@ -57,6 +60,7 @@ def _position_rates(
     *,
     inception_proven,
     position_closed,
+    weighted_holding_days,
 ):
     """Keep inception, denominator and annualization eligibility independent."""
     invested = buys.value if inception_proven and not buys.reason_codes else None
@@ -79,6 +83,7 @@ def _position_rates(
         else closing_date,
         holding_end_date=holding_end,
         holding_days=days,
+        weighted_holding_days=weighted_holding_days,
         assumptions=pnl.assumptions,
     )
     base_reasons = list(pnl.reason_codes)
@@ -106,9 +111,9 @@ def _position_rates(
     xirr_reasons = list(reasons)
     if start is None:
         xirr_reasons.append("first_purchase_date_unknown")
-    if days is None:
+    if days is None or weighted_holding_days is None:
         xirr_reasons.append("holding_period_unknown")
-    elif days < 365:
+    elif weighted_holding_days < 365:
         xirr_reasons.append("short_holding")
     if start and any(day < start for day, _, _ in dated_flows):
         xirr_reasons.append("position_flows_before_first_purchase")
@@ -542,6 +547,8 @@ def calculate_clean_return(
     include_position_rates: bool = True,
     inception_proven: bool | None = None,
     position_closed: bool = False,
+    weighted_holding_days: Decimal | None = None,
+    holding_period_resolver: Callable[[CleanInstrumentReturn], Decimal | None] | None = None,
 ) -> CleanInstrumentReturn:
     """Calculate from attributable current observations, preserving partial facts.
 
@@ -770,22 +777,7 @@ def calculate_clean_return(
             () if value is not None else ("clean_valuation_incomplete",),
         )
 
-    simple, annual = (
-        _position_rates(
-            closing_date,
-            closing_clean,
-            buys,
-            pnl,
-            dated_flows,
-            purchases,
-            disposals,
-            inception_proven=opening_clean == 0 if inception_proven is None else inception_proven,
-            position_closed=position_closed,
-        )
-        if include_position_rates
-        else (None, None)
-    )
-    return CleanInstrumentReturn(
+    clean = CleanInstrumentReturn(
         endpoint_metric(opening_clean),
         endpoint_metric(closing_clean),
         buys,
@@ -798,6 +790,23 @@ def calculate_clean_return(
         known_result,
         pnl,
         rate,
-        simple,
-        annual,
     )
+    if not include_position_rates:
+        return clean
+    # FIFO consumes the established clean operands without repeating the
+    # interval-return calculation or its numerical solver.
+    if holding_period_resolver is not None:
+        weighted_holding_days = holding_period_resolver(clean)
+    simple, annual = _position_rates(
+        closing_date,
+        closing_clean,
+        buys,
+        pnl,
+        dated_flows,
+        purchases,
+        disposals,
+        inception_proven=opening_clean == 0 if inception_proven is None else inception_proven,
+        position_closed=position_closed,
+        weighted_holding_days=weighted_holding_days,
+    )
+    return replace(clean, simple_return=simple, xirr=annual)

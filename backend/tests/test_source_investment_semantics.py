@@ -18,6 +18,7 @@ SEMANTIC_MODULES = (
     "domain/xirr_roots.py",
     "services/clean_closed_position.py",
     "services/clean_instrument_return.py",
+    "services/clean_purchase_returns.py",
     "services/clean_redemption.py",
     "services/clean_sale_nkd.py",
     "services/mybroker_money_candidates.py",
@@ -50,7 +51,7 @@ SEMANTIC_MODULES = (
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v16",
-    "a0964f670b38fb8e37111a9a8de4ad6ba1a9a416cb14cd21bedbe5b67eed30c6",
+    "de321892f1685cd037876b8a74a42bdc5e86faccc2bd2062c346163dec6e376f",
 )
 
 

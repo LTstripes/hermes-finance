@@ -2636,7 +2636,7 @@ the existing v13 and older compatibility checks retain their boundaries.
 The v16 revision adds clean position comparison rates only. Its exact read-only
 v15 compatibility edge recomputes the same live proof dependencies, without
 changing proof operands, receipts, classifications or account/month economics.
-The clean projection service is included in the semantic-module digest guard.
+The clean projection and FIFO purchase services are included in the semantic-module digest guard.
 Independent financial review is required before release.
 
 The read-only compatibility edge admits exactly the released 1.9.4 producing
@@ -6996,7 +6996,9 @@ Owner decision 2026-11-08 (position comparison, #1016): the clean Returns API
 exposes `simple_return` and `xirr` per instrument/source-account scope in the
 overall reader and the card's `clean` object. Both use Decimal-string fractional
 rates (`0.1` means 10%), with explicit method, annualization, basis,
-`invested_kopecks`, start/end dates, `holding_end_date` and `holding_days`.
+`invested_kopecks`, start/end dates, `holding_end_date`, calendar `holding_days`,
+Decimal-string `weighted_holding_days` and
+`eligibility_basis=capital_weighted_holding_days`.
 Simple return is full position `pnl / sum(BUY)` on the current statement basis
 including NKD where applicable, without reducing invested capital after sales.
 No denominator, zero invested capital or an unknown full result gives NULL with
@@ -7014,8 +7016,21 @@ position adds no valuation. Its holding end is the last disposal execution date
 (redemption delivery/event date), while `end_date` is the last cash receipt date,
 so post-disposal payouts are retained. Otherwise both end dates are the closing
 valuation date. Holding duration is the date difference, not the age of the
-report. For fewer than 365 holding days XIRR is NULL/`short_holding`; at exactly
-365 days it is eligible. Incomplete position inputs preserve the existing
+report. The calendar duration remains descriptive; the 365-day eligibility
+threshold uses the capital-weighted holding period (Owner update 2026-11-08).
+Each purchase is weighted by its original statement cost including NKD, the same
+basis as invested capital. Each FIFO-disposed part is held from purchase execution
+to disposal execution (redemption delivery/event date); an open remainder is held
+to the period closing date. Partial disposals split the purchase cost in proportion
+to quantity, without rounding the parts to kopecks. The weighted period is
+`sum(part_cost * held_days) / sum(purchase_cost)` in Decimal, without rounding
+days before comparison. Below 365 it gives NULL/`short_holding`; exactly 365 is
+eligible. Only the existing complete FIFO match establishes this measure. Missing
+or incomplete FIFO (including redemption histories unsupported by that matcher)
+gives NULL `weighted_holding_days` and XIRR reason `holding_period_unknown`;
+observed purchase facts and the first purchase date cannot substitute for it.
+Simple return remains independent and retains its existing availability rules.
+Incomplete position inputs preserve the existing
 blockers, and the unchanged `domain/xirr.py` solver preserves no-root/ambiguity
 reasons. Unavailable/UNKNOWN values use the existing `status=unavailable` and
 `value=null` representation. Each metric remains independently available.
