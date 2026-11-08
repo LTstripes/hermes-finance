@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router";
 
 import type { ReportingMonth } from "../api/types";
 import { formatDate, formatMonth } from "../lib/format";
@@ -99,13 +98,5 @@ export function UiV2ReportContext({
       ) : null}
       {children}
     </div>
-  );
-}
-
-export function UiV2BackLink({ to, label }: { to: string; label: string }) {
-  return (
-    <Link className={styles.contextLink} to={to}>
-      {label}
-    </Link>
   );
 }

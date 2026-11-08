@@ -14127,7 +14127,8 @@ later staged UAT work does not change this contract.
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Recommended download schema version:** `2.0.0` (legacy API default `1.5.0` retained)
+**Recommended download:** see [C7](#c7) for the current UI format. Supported API
+versions and defaults are specified below.
 
 **Normative schemas:** [`v2`](schemas/ai_financial_review.v2.schema.json) and
 [`legacy v1.4/v1.5`](schemas/ai_financial_review.schema.json)
@@ -14485,10 +14486,11 @@ adds optional month-local linked-pair fields to `current_capital` and
 report, including empty arrays. It changes no capital formula or counting
 semantics. The generated canonical v1.3 instance validates strictly.
 
-Version `2.0.0` changes only the source-analysis representation. The recommended
-UI download explicitly requests `format_version=2.0.0`; both existing GET routes
-retain the v1.5 default and accept an explicit v1.5 request. Unsupported format
-versions fail before assembly. The other bundle/package formats are unchanged.
+Version `2.0.0` changes only the source-analysis representation. The current UI
+requests `format_version=3.1.0` as described in [C7](#c7). Both existing GET routes
+default to `1.6.0` and accept `1.5.0`, `1.6.0`, `2.0.0`, `2.1.0`, `3.0.0` and
+`3.1.0`. Unsupported format versions fail before assembly. The other
+bundle/package formats are unchanged.
 
 `source_payloads` stores exact already-allowlisted instrument metadata, endpoints,
 result blocks (metrics/components/coverage/reasons/assumptions) and interval-masked

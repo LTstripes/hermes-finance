@@ -1,3 +1,4 @@
+import { triggerDownload } from "../lib/download";
 import { useState } from "react";
 
 import { formatApiError } from "../api/client";
@@ -50,18 +51,6 @@ function packageSummary(packageData: PortfolioReviewPackage): string[] {
   const warnings = packageData.warnings.length;
   if (warnings > 0) summary.push(`${warnings} предупреждений`);
   return summary;
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.style.display = "none";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
 }
 
 export function PortfolioReviewPackagePanel() {

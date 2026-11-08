@@ -1,4 +1,4 @@
-import { apiMultipart, apiRequest } from "./client";
+import { apiMultipart } from "./client";
 
 export type StatementMapping = {
   account_mappings: { hermes_account_id: number; provider_account_ref: string }[];
@@ -100,13 +100,6 @@ export type StatementRetractResult = {
   investment_cash_flow_id: number | null;
   revision_id: number;
 };
-
-export function retractStatementEvent(eventId: number, signal?: AbortSignal) {
-  return apiRequest<StatementRetractResult>(
-    `/api/statement-import/applied-events/${eventId}/retract`,
-    { method: "POST", signal },
-  );
-}
 
 export type StatementApplyItem = {
   action: string;

@@ -171,28 +171,3 @@ export function cardOperations(accounts: InstrumentCard["accounts"]): CardOperat
     )
     .sort((a, b) => b.date.localeCompare(a.date) || a.key.localeCompare(b.key));
 }
-
-/** Only geometry uses Number, after the exact monetary ratio is bounded. */
-export function contributionWidth(value: string, maximum: bigint): number {
-  if (!integer(value) || maximum <= 0n) return 0;
-  const amount = BigInt(value);
-  const magnitude = amount < 0n ? -amount : amount;
-  return Number((magnitude * 10000n) / maximum) / 100;
-}
-
-export function cardContributions(summary: InstrumentCard["summary"]) {
-  return [
-    { label: "Стоимость и сделки", metric: summary.valuation_and_trades, subtract: false },
-    { label: "Купоны", metric: summary.coupons, subtract: false },
-    { label: "Дивиденды", metric: summary.dividends, subtract: false },
-    { label: "Погашения", metric: summary.redemption, subtract: false },
-    { label: "Комиссии", metric: summary.costs, subtract: true },
-    { label: "Учтённые налоги", metric: summary.taxes, subtract: true },
-  ]
-    .filter((row) => nonzeroAmount(row.metric))
-    .map((row) => ({
-      ...row,
-      // Display the already-authoritative cost as an outgoing contribution, once.
-      value: String(BigInt(row.metric.value as string) * (row.subtract ? -1n : 1n)),
-    }));
-}

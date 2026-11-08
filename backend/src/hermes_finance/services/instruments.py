@@ -429,12 +429,6 @@ def get_instrument_cleanup(session: Session, instrument_id: int) -> InstrumentCl
     return _build_instrument_cleanup(session, get_instrument(session, instrument_id))
 
 
-def inspect_instrument_cleanup(session: Session, instrument_id: int) -> InstrumentCleanupResult:
-    """Compatibility alias for callers that name the operation as an inspection."""
-
-    return get_instrument_cleanup(session, instrument_id)
-
-
 def list_instruments(session: Session) -> list[Instrument]:
     return list(session.scalars(select(Instrument).order_by(Instrument.name, Instrument.id)))
 

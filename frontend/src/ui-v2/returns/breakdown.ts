@@ -1,6 +1,4 @@
 import type { InstrumentAnalysis, InstrumentMetric } from "../../api/sourceReturns";
-import type { InstrumentCard } from "./cards";
-import { cardHasCompleteBreakdown } from "./cardPresentation";
 import type { Metric } from "./model";
 
 export type ReturnBreakdown = {
@@ -81,14 +79,4 @@ export function analysisBreakdown(
   };
   value.complete = complete;
   return value;
-}
-
-export function instrumentBreakdown(card: InstrumentCard) {
-  return analysisBreakdown(
-    card.accounts.flatMap((account) =>
-      account.included && account.detail ? [account.detail.analysis] : [],
-    ),
-    card.summary.pnl,
-    cardHasCompleteBreakdown(card),
-  );
 }

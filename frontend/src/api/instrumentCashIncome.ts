@@ -1,5 +1,3 @@
-import { apiRequest } from "./client";
-
 export type PayoutScope = { accountId: number; instrumentId: number; t0: string; t1: string };
 export type KnownPayouts = {
   method: "known-booked-net-payouts";
@@ -37,15 +35,3 @@ export type KnownPayouts = {
     reason_codes: string[];
   }[];
 };
-
-export function getKnownPayouts(scope: PayoutScope, signal?: AbortSignal): Promise<KnownPayouts> {
-  const query = new URLSearchParams({
-    account_id: String(scope.accountId),
-    t0: scope.t0,
-    t1: scope.t1,
-  });
-  return apiRequest<KnownPayouts>(`/api/instruments/${scope.instrumentId}/cash-income?${query}`, {
-    method: "GET",
-    signal,
-  });
-}

@@ -2,15 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createAccount, deleteAccount, listAccounts, updateAccount } from "../api/accounts";
-import {
-  confirmBrokerIdentityMapping,
-  listBrokerIdentityMappings,
-  remapBrokerIdentityMapping,
-  revokeBrokerIdentityMapping,
-} from "../api/brokerIdentityMappings";
 import { discoverInstrumentMapping, getInstrumentMapping } from "../api/instrumentMappings";
 import { listMonths } from "../api/months";
 import { deleteInstrument, getInstrumentCleanup, listInstruments } from "../api/instruments";
@@ -23,13 +17,6 @@ vi.mock("../api/accounts", () => ({
   deleteAccount: vi.fn(),
   listAccounts: vi.fn(),
   updateAccount: vi.fn(),
-}));
-
-vi.mock("../api/brokerIdentityMappings", () => ({
-  confirmBrokerIdentityMapping: vi.fn(),
-  listBrokerIdentityMappings: vi.fn(),
-  remapBrokerIdentityMapping: vi.fn(),
-  revokeBrokerIdentityMapping: vi.fn(),
 }));
 
 vi.mock("../api/instrumentMappings", () => ({
@@ -136,10 +123,8 @@ const getInstrumentCleanupMock = vi.mocked(getInstrumentCleanup);
 const getInstrumentMappingMock = vi.mocked(getInstrumentMapping);
 const discoverInstrumentMappingMock = vi.mocked(discoverInstrumentMapping);
 const listMonthsMock = vi.mocked(listMonths);
-const listBrokerMappingsMock = vi.mocked(listBrokerIdentityMappings);
-const confirmBrokerMappingMock = vi.mocked(confirmBrokerIdentityMapping);
-const remapBrokerMappingMock = vi.mocked(remapBrokerIdentityMapping);
-const revokeBrokerMappingMock = vi.mocked(revokeBrokerIdentityMapping);
+
+const brokerFetchMock = vi.fn();
 
 function renderPage(path = "/v2/data/catalogs") {
   const queryClient = new QueryClient({
@@ -155,8 +140,11 @@ function renderPage(path = "/v2/data/catalogs") {
 }
 
 describe("UiV2DataCatalogsPage", () => {
+  afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     vi.clearAllMocks();
+    brokerFetchMock.mockImplementation(async () => new Response(JSON.stringify([])));
+    vi.stubGlobal("fetch", brokerFetchMock);
     listMonthsMock.mockResolvedValue([
       {
         id: 12,
@@ -181,10 +169,6 @@ describe("UiV2DataCatalogsPage", () => {
       candidates: [],
       rejected: [],
     });
-    listBrokerMappingsMock.mockResolvedValue([]);
-    confirmBrokerMappingMock.mockResolvedValue(brokerMapping());
-    remapBrokerMappingMock.mockResolvedValue(brokerMapping());
-    revokeBrokerMappingMock.mockResolvedValue(brokerMapping());
   });
 
   it("renders native catalog semantics without probing a provider", async () => {
@@ -280,14 +264,14 @@ describe("UiV2DataCatalogsPage", () => {
   });
 
   it("reads historical broker mappings without offering mutations", async () => {
-    listBrokerMappingsMock.mockResolvedValue([brokerMapping()]);
+    brokerFetchMock.mockImplementation(async () => new Response(JSON.stringify([brokerMapping()])));
     const user = userEvent.setup();
     renderPage();
 
     await user.click(await screen.findByRole("tab", { name: /Постоянные сопоставления/ }));
     expect(await screen.findByText("SYN-CATALOG-ACCOUNT-001")).toBeInTheDocument();
-    expect(confirmBrokerMappingMock).not.toHaveBeenCalled();
-    expect(remapBrokerMappingMock).not.toHaveBeenCalled();
-    expect(revokeBrokerMappingMock).not.toHaveBeenCalled();
+    expect(brokerFetchMock.mock.calls.map(([url, options]) => [url, options.method])).toEqual([
+      ["/api/broker-identity-mappings", "GET"],
+    ]);
   });
 });

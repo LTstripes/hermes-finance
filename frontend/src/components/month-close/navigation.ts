@@ -1,4 +1,4 @@
-import type { GuidedCloseActionId, GuidedCloseStepId } from "../../api/monthCloseWorkflow";
+import type { GuidedCloseStepId } from "../../api/monthCloseWorkflow";
 
 const STEP_IDS = new Set<GuidedCloseStepId>([
   "month_setup",
@@ -70,39 +70,4 @@ export function withSelectedReturnMonth(params: URLSearchParams, monthId: number
   next.set("month", String(monthId));
   if (parseMonthlyCloseReturnContext(params)) next.set("monthId", String(monthId));
   return next;
-}
-
-const ACTION_PATHS: Record<GuidedCloseActionId, (monthId: number) => string> = {
-  open_month: (monthId) => `/v2/data/months/${monthId}`,
-  set_snapshot_date: (monthId) => `/v2/data/months/${monthId}?section=general`,
-  open_quote_preview: (monthId) => `/v2/data/months/${monthId}?section=positions#month-quotes`,
-  choose_statement_file: (monthId) => `/v2/data/payouts?month=${monthId}#statement-import`,
-  open_payout_batch_preview: (monthId) => `/v2/data/payouts?month=${monthId}`,
-  open_freshness: (monthId) => `/v2/data?month=${monthId}`,
-  open_final_review: (monthId) =>
-    monthlyCloseReturnPath({
-      monthId,
-      origin: "monthly-close-v2",
-      step: "final_review_close",
-    }),
-  confirm_close: (monthId) =>
-    monthlyCloseReturnPath({
-      monthId,
-      origin: "monthly-close-v2",
-      step: "final_review_close",
-    }),
-  open_cash_flow_ladder: (monthId) => `/v2/data/payouts?month=${monthId}`,
-  clone_next_month: (monthId) => `/v2/data/months?month=${monthId}`,
-};
-
-export function routeForGuidedAction(
-  actionId: GuidedCloseActionId,
-  monthId: number,
-  step: GuidedCloseStepId,
-  origin: MonthlyCloseOrigin = "monthly-close-v2",
-): string {
-  if (actionId === "open_final_review" || actionId === "confirm_close") {
-    return ACTION_PATHS[actionId](monthId);
-  }
-  return withMonthlyCloseReturn(ACTION_PATHS[actionId](monthId), monthId, step, origin);
 }

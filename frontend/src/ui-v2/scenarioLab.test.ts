@@ -1,5 +1,6 @@
+import { triggerDownload } from "../lib/download";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isAtLeast, isWithinRange, normalizeDecimalInput, triggerDownload } from "./scenarioLab";
+import { isAtLeast, isWithinRange, normalizeDecimalInput } from "./scenarioLab";
 
 afterEach(() => {
   vi.restoreAllMocks();
