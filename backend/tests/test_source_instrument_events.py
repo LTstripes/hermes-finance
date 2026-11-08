@@ -4782,6 +4782,8 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
     )
     if long_id is not None and case != "wide_missing_proof":
         verified_dates[long_id] = (date(2030, 5, 1),)
+    # After full redemption the issue is absent, rather than printed as zero.
+    save(db, 6, stock=None, bond=None, trades=())
     monkeypatch.setattr(
         source_return_proofs,
         "resolve_proof",
@@ -4804,9 +4806,25 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
             assert redemptions[0].cash_legs[0].account_cash_kopecks == 200000
             assert redemptions[0].classification == "unknown"
             result = read_clean_account(
-                session, ACCOUNT, date(2030, 3, 31), date(2030, 5, 31), isin=BOND
+                session, ACCOUNT, date(2030, 3, 31), date(2030, 6, 30), isin=BOND
             )["instruments"][0]
             assert result["redemption"]["value"] == "200000"
+            assert result["redemption"]["status"] == "supported"
+            assert result["opening_value"]["value"] == result["closing_value"]["value"] == "0"
+            assert result["buys"]["value"] == "206000"
+            assert result["buys"]["status"] == result["sells"]["status"] == "supported"
+            assert result["sells"]["value"] == "0"
+            if case == "wide_without_position":
+                # This fixture's overlapping coupon has a different posting
+                # date; closing the inventory must not invent its attribution.
+                assert result["coupons"]["value"] == "0"
+                assert result["pnl"]["value"] == "-6000"
+                assert result["pnl"]["status"] == "provisional"
+                assert "account_money_unattributed" in result["pnl"]["assumptions"]
+            else:
+                assert result["coupons"]["value"] == "3000"
+                assert result["pnl"]["value"] == "-3000"
+                assert result["pnl"]["status"] in {"supported", "provisional"}
         else:
             assert not redemptions
             assert any(

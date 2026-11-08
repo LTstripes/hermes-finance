@@ -551,6 +551,190 @@ def test_projection_keeps_foreign_redemption_and_account_cost_outside_security()
     )
 
 
+@pytest.mark.parametrize(
+    "case",
+    [
+        "exact",
+        "quantity_above",
+        "quantity_below",
+        "uncounted_trade",
+        "coupon_gap",
+        "account_custody_gap",
+        "own_custody_gap",
+        "intermediate_conflict",
+        "unproved_redemption",
+        "stale_redemption",
+        "positive_redemption_quantity",
+        "same_day_purchase",
+        "present_in_latest",
+    ],
+)
+def test_full_redemption_closes_only_an_exact_proven_inventory(monkeypatch, case):
+    from hermes_finance.services import source_instrument_events
+    from hermes_finance.services.clean_closed_position import infer_closed_position
+
+    isin = "ZZ0000000011"
+    redeemed, end = date(2030, 2, 16), date(2030, 3, 31)
+    buy = replace(
+        trade("BUY", 200000, 0),
+        quantity_delta=Decimal(2),
+        execution_date=DAY,
+        trade_time=f"{DAY}T10:00:00",
+        depository_settlement_date=DAY,
+    )
+    redemption = replace(
+        cash("REDEMPTION", 200000),
+        event_date=redeemed,
+        depository_settlement_date=redeemed,
+        quantity_delta=Decimal("-2.0000000001")
+        if case == "quantity_above"
+        else Decimal("-1.9999999999")
+        if case == "quantity_below"
+        else Decimal(2)
+        if case == "positive_redemption_quantity"
+        else Decimal(-2),
+        attribution_basis=None if case == "unproved_redemption" else "analytical_full_redemption",
+        current=case != "stale_redemption",
+        cash_legs=(CashLeg("redemption", redeemed, 200000, -200000, ("r",), "r"),),
+    )
+    if case == "same_day_purchase":
+        buy = replace(
+            buy,
+            event_date=redeemed,
+            execution_date=redeemed,
+            trade_time=f"{redeemed}T10:00:00",
+            cash_settlement_date=redeemed,
+            depository_settlement_date=redeemed,
+        )
+    events = [buy, redemption, replace(cash("COUPON", 2500), event_key="paid-coupon")]
+    if case == "uncounted_trade":
+        events.append(
+            replace(
+                buy,
+                event_key="unaccounted-buy",
+                counted=False,
+                native_trade_amount_kopecks=None,
+                reason_codes=("trade_components_missing",),
+            )
+        )
+    if case == "coupon_gap":
+        events.append(
+            replace(
+                cash("COUPON", 3000),
+                counted=False,
+                reason_codes=("payout_link_unresolved_no_match",),
+            )
+        )
+    if case == "own_custody_gap":
+        events.append(
+            replace(
+                cash("UNRESOLVED", 3000),
+                counted=False,
+                reason_codes=("custody_cancellation_unresolved",),
+            )
+        )
+    endpoint_reasons = ("bond_valuation_basis_unknown", "missing_endpoint")
+    monkeypatch.setattr(
+        source_instrument_events,
+        "endpoint",
+        lambda views, isin, day, kind, **kw: Endpoint(
+            day, None, None, None, None, "reported_unknown", reason_codes=endpoint_reasons
+        ),
+    )
+    views = [
+        {
+            "id": index,
+            "covered_from": first,
+            "covered_to": last,
+            "document": {
+                "endpoint_basis": {
+                    "beginning_value": "previous_day_eod",
+                    "ending_value": "covered_to_eod",
+                },
+                "positions": positions,
+            },
+        }
+        for index, (first, last, positions) in enumerate(
+            [
+                (
+                    "2030-01-02",
+                    "2030-01-31",
+                    [
+                        {
+                            "isin": isin,
+                            "beginning_actual_quantity": "0",
+                            "actual_quantity": "3"
+                            if case == "intermediate_conflict"
+                            else "0"
+                            if case == "same_day_purchase"
+                            else "2",
+                        }
+                    ],
+                ),
+                (
+                    "2030-02-01",
+                    "2030-02-28",
+                    [
+                        {
+                            "isin": isin,
+                            "beginning_actual_quantity": "0"
+                            if case == "same_day_purchase"
+                            else "2",
+                            "actual_quantity": "0",
+                        }
+                    ],
+                ),
+                (
+                    "2030-03-01",
+                    "2030-03-31",
+                    [{"isin": isin}] if case == "present_in_latest" else [],
+                ),
+            ],
+            1,
+        )
+    ]
+    original = source_instrument_events.analyse(
+        views,
+        isin,
+        "bond",
+        START,
+        end,
+        tuple(events),
+        (),
+        (
+            SimpleNamespace(
+                code="custody_cancellation_unresolved", isin=None, month=redeemed.replace(day=1)
+            ),
+        )
+        if case in {"account_custody_gap", "own_custody_gap"}
+        else (),
+    )
+    analysis = infer_closed_position(original, views, isin, "bond")
+    result = project_clean_analysis(analysis, isin, instrument_type="bond")
+    if case in {"exact", "coupon_gap", "account_custody_gap"}:
+        assert analysis.opening.quantity == analysis.closing.quantity == 0
+        assert result.opening_value.value == result.closing_value.value == 0
+        assert result.buys.value == result.redemption.value == 200000
+        assert result.buys.status == result.redemption.status == "supported"
+        assert result.sells.value == 0 and result.sells.status == "supported"
+        if case != "coupon_gap":
+            assert result.pnl.value == 2500
+            assert result.pnl.status == (
+                "provisional" if case == "account_custody_gap" else "supported"
+            )
+            if case == "account_custody_gap":
+                assert "account_money_unattributed" in result.pnl.assumptions
+        else:
+            assert result.pnl.value is None
+            assert result.coupons.value == 2500 and result.coupons.status == "partial"
+            assert "paid_income_incomplete" in result.pnl.reason_codes
+            assert not analysis.coverage["payouts"].complete
+    else:
+        assert analysis is original
+        assert result.closing_value.value is None
+        assert result.pnl.value is None
+
+
 @pytest.mark.parametrize("role", ["commission", "nkd"])
 def test_outside_trade_with_cost_leg_inside_does_not_break_clean_quantity(role, monkeypatch):
     from hermes_finance.services import source_instrument_events

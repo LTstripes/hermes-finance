@@ -2645,6 +2645,12 @@ edge recomputes the same live proof dependencies; proof derivation, operands,
 receipts and saved classifications remain unchanged. Earlier compatibility
 boundaries remain in force. Independent financial review is required before release.
 
+The v18 revision extends clean closed-position inference to an already recognized
+`analytical_full_redemption`. Its exact read-only v17 compatibility edge recomputes
+the unchanged live proof dependencies; proof derivation, operands, receipts and
+saved classifications remain unchanged. Earlier compatibility boundaries remain
+in force. Independent financial review is required before release.
+
 The read-only compatibility edge admits exactly the released 1.9.4 producing
 implementation (`a381dbf1`, package digest
 `0ed93cadf12fe53bbc1a51bf7d29b7ba583b25962539412efa1802db254d7a81`)
@@ -6858,15 +6864,27 @@ unknown; a demonstrably empty position is zero. Known results and components
 are labelled partial when coverage is incomplete, rather than promoted to full
 return. Rates remain unavailable when their operands are incomplete.
 
-For the clean instrument result only, a sold-out position may be inferred as
+For the clean instrument result only, a sold-out or fully redeemed position may be inferred as
 quantity and value zero at the latest statement boundary when the whole saved
 source span is covered, every latest statement omits that ISIN, and its current,
-identified ordinary buys and sales balance exactly from zero without a negative
-holding or ambiguous trade order. Explicit intermediate quantities must agree
-with the dated trade inventory. A missing opening zero may be inferred from the
+identified ordinary buys minus sales minus recognized full-redemption quantity
+balance exactly from zero without a negative holding or ambiguous order. Only
+current, counted bond `REDEMPTION` events with attribution basis
+`analytical_full_redemption`, an exact negative quantity and a positive redemption
+cash leg on the cancellation settlement day qualify. Each full redemption must
+exhaust the remaining quantity exactly; no tolerance is used. Without an intraday
+cancellation time, same-day purchases cannot fund that redemption. Explicit
+intermediate quantities must agree with the dated trade and redemption inventory.
+An account-wide `custody_cancellation_unresolved` left by a covering statement
+without a position row does not prevent this inference after recognized full
+redemption and exact inventory reconciliation. An unresolved cancellation event
+attributed to this issue still blocks it; account reconciliation is unchanged.
+A missing opening zero may be inferred from the
 same evidence; a nonzero or contradictory observed opening is not replaced.
 Source gaps, conflicting positions or trades, unresolved ownership, and this
-security's REPO or redemptions prevent the inference. Type comes from unambiguous
+security's REPO or other redemptions prevent the inference. Independent trade
+and payout gaps still limit their components and the total; zero endpoint inference
+does not declare them complete. Type comes from unambiguous
 source evidence or the exact-ISIN catalogue when the source has no type. A
 positive MyBroker trade NKD on an identified, settled ordinary trade supplies
 bond type evidence; a blank or zero NKD does not establish type. A conflict

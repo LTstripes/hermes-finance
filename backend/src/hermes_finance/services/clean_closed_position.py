@@ -1,4 +1,4 @@
-"""Narrow, read-only inference for a sold-out security's clean return."""
+"""Narrow, read-only inference for a disposed security's clean return."""
 
 from collections import defaultdict
 from dataclasses import replace
@@ -10,12 +10,15 @@ from hermes_finance.domain.instrument_return import Coverage
 
 
 def infer_closed_position(analysis, views, isin, kind):
-    """Use balanced ordinary trades and absence in the last dated statement.
+    """Use balanced trades/full redemption and absence in the last statement.
 
     This applies only to the whole available source span. Explicit intermediate
     quantities, source gaps and current proof conflicts must still agree.
     """
-    from hermes_finance.services.clean_instrument_return import _clean_quantity_reconciled
+    from hermes_finance.services.clean_instrument_return import (
+        _clean_quantity_reconciled,
+        instrument_scoped_reasons,
+    )
     from hermes_finance.services.source_instrument_returns import _SOURCE_GAPS, _minor, _quantity
 
     if not views or kind not in {"stock", "bond"}:
@@ -28,6 +31,28 @@ def infer_closed_position(analysis, views, isin, kind):
     latest = [v for v in views if date.fromisoformat(v["covered_to"]) == end]
     if any(
         any(row["isin"] == isin for row in view["document"].get("positions", ())) for view in latest
+    ):
+        return analysis
+
+    redemptions = [e for e in analysis.events if e.isin == isin and e.kind == "REDEMPTION"]
+    if redemptions and (
+        kind != "bond"
+        or any(
+            e.attribution_basis != "analytical_full_redemption"
+            or not e.current
+            or not e.counted
+            or e.reason_codes
+            or e.quantity_delta is None
+            or not e.quantity_delta.is_finite()
+            or e.quantity_delta >= 0
+            or e.event_date is None
+            or e.depository_settlement_date != e.event_date
+            or len(e.cash_legs) != 1
+            or e.cash_legs[0].role != "redemption"
+            or e.cash_legs[0].date != e.event_date
+            or e.cash_legs[0].account_cash_kopecks <= 0
+            for e in redemptions
+        )
     ):
         return analysis
 
@@ -45,6 +70,12 @@ def infer_closed_position(analysis, views, isin, kind):
         "pdf_position_date_missing",
         "pdf_position_date_invalid",
     }
+    if redemptions and not instrument_scoped_reasons(
+        analysis, isin, {"custody_cancellation_unresolved"}
+    ):
+        # A covering source without a position row retains the account gap.
+        # The recognized event and exact inventory below prove this issue only.
+        blockers.discard("custody_cancellation_unresolved")
     reasons = set(analysis.reason_codes)
     for coverage in analysis.coverage.values():
         reasons.update(coverage.reason_codes)
@@ -76,7 +107,8 @@ def infer_closed_position(analysis, views, isin, kind):
 
     trades = [e for e in analysis.events if e.isin == isin and e.kind in {"BUY", "SELL"}]
     if (
-        {e.kind for e in trades} != {"BUY", "SELL"}
+        not any(e.kind == "BUY" for e in trades)
+        or not (redemptions or any(e.kind == "SELL" for e in trades))
         or any(
             "repo_trade_unsupported" in e.reason_codes
             or e.execution_date is None
@@ -86,7 +118,6 @@ def infer_closed_position(analysis, views, isin, kind):
             or e.execution_date > e.depository_settlement_date
             for e in trades
         )
-        or any(e.isin == isin and e.kind == "REDEMPTION" for e in analysis.events)
     ):
         return analysis
 
@@ -110,8 +141,8 @@ def infer_closed_position(analysis, views, isin, kind):
     if not _clean_quantity_reconciled(candidate, own_events, isin):
         return analysis
 
-    # Every explicit source position at an intermediate boundary must match
-    # the same dated trade inventory, even when the outer quantities net to 0.
+    # Every explicit intermediate quantity must match the same dated inventory,
+    # including redemption, even when the outer quantities net to 0.
     with localcontext() as context:
         context.prec = 200
         moments = defaultdict(list)
@@ -123,12 +154,19 @@ def infer_closed_position(analysis, views, isin, kind):
             if instant.tzinfo is not None or instant.date() != trade.execution_date:
                 return analysis
             moments[instant].append(trade)
+        for redemption in redemptions:
+            # Cancellation has a date, not an established intraday order. It
+            # cannot consume a purchase made later that day.
+            instant = datetime.combine(redemption.depository_settlement_date, datetime.min.time())
+            moments[instant].append(redemption)
         held = Decimal(0)
         for instant in sorted(moments):
             group = moments[instant]
             # If trades share an instant, every possible ordering must be safe.
-            held += sum((e.quantity_delta for e in group if e.kind == "SELL"), Decimal(0))
-            if held < 0:
+            held += sum(
+                (e.quantity_delta for e in group if e.kind in {"SELL", "REDEMPTION"}), Decimal(0)
+            )
+            if held < 0 or (any(e.kind == "REDEMPTION" for e in group) and held != 0):
                 return analysis
             held += sum((e.quantity_delta for e in group if e.kind == "BUY"), Decimal(0))
         for view in views:
@@ -144,7 +182,11 @@ def infer_closed_position(analysis, views, isin, kind):
                 if not rows or not start <= boundary <= end:
                     continue
                 predicted = sum(
-                    (e.quantity_delta for e in trades if e.depository_settlement_date <= boundary),
+                    (
+                        e.quantity_delta
+                        for e in (*trades, *redemptions)
+                        if e.depository_settlement_date <= boundary
+                    ),
                     Decimal(0),
                 )
                 row = rows[0]
