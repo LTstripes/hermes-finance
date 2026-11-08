@@ -176,7 +176,7 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
     data["reading_guide"] = {
         "scope": "Current available history; every account keeps its own dates. Invested means observed-period purchases with NKD, excluding fees; it is not acquisition cost of opening holdings.",
         "counting": "ISIN summaries, account rows, purchases and payments explain the same result; do not add them together. Redemption is principal, not coupon/dividend income.",
-        "rates": "Purchase return_fraction is simple price result on purchase cost, excludes payouts and is not annualized. Fractions use 1 = 100%, 0.1 = 10%. Position Modified Dietz is omitted; only account calendar-month totals may use it. Position XIRR is not available from the backend.",
+        "rates": "Purchase return_fraction is simple price result on purchase cost, excludes payouts and is not annualized. Fractions use 1 = 100%, 0.1 = 10%. Position Modified Dietz is omitted; only account calendar-month totals may use it. Position simple_return is the whole position result on invested purchases, not annualized; position xirr is annualized and published only when the capital-weighted holding period is at least 365 days, otherwise null with a reason.",
         "split": "Realized/unrealized split is unknown unless the backend proves a closed position with a known result. Do not infer a split from sales or FIFO lots.",
         "gold": "Gold histories and saved snapshots can overlap; snapshots are not extra profit. Clean gold split remains unknown.",
     }

@@ -7320,6 +7320,12 @@
         },
         "payment_coverage": {
           "$ref": "#/$defs/ReviewPaymentCoverage"
+        },
+        "simple_return": {
+          "$ref": "#/$defs/CleanPositionRate"
+        },
+        "xirr": {
+          "$ref": "#/$defs/CleanPositionRate"
         }
       },
       "required": [
@@ -7342,7 +7348,9 @@
         "purchases",
         "result_split",
         "actual_payments",
-        "payment_coverage"
+        "payment_coverage",
+        "simple_return",
+        "xirr"
       ],
       "title": "CleanInstrument",
       "type": "object"
@@ -8074,6 +8082,156 @@
           "const": "saved_snapshot"
         }
       }
+    },
+    "CleanPositionRate": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "provisional",
+            "partial",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "method": {
+          "enum": [
+            "simple_return",
+            "xirr"
+          ],
+          "type": "string"
+        },
+        "unit": {
+          "const": "fraction"
+        },
+        "annualized": {
+          "type": "boolean"
+        },
+        "basis": {
+          "enum": [
+            "statement_purchases_including_nkd",
+            "dated_position_cash_flows_including_nkd"
+          ],
+          "type": "string"
+        },
+        "invested_kopecks": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "holding_end_date": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "holding_days": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weighted_holding_days": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eligibility_basis": {
+          "const": "capital_weighted_holding_days"
+        },
+        "date_basis": {
+          "const": "first_purchase_execution"
+        },
+        "for_position_comparison": {
+          "const": true
+        }
+      },
+      "required": [
+        "value",
+        "status",
+        "reason_codes",
+        "assumptions",
+        "method",
+        "unit",
+        "annualized",
+        "basis",
+        "invested_kopecks",
+        "start_date",
+        "end_date",
+        "holding_end_date",
+        "holding_days",
+        "weighted_holding_days",
+        "eligibility_basis",
+        "date_basis",
+        "for_position_comparison"
+      ],
+      "title": "CleanPositionRate",
+      "type": "object"
     }
   }
 }

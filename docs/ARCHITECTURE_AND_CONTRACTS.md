@@ -14446,8 +14446,10 @@ presentation; it does not advance any producer calculation revision.
   combined rate or realized/unrealized split is invented.
 - Position Modified Dietz is omitted from this generated representation and its
   units. It is not a comparison metric for positions. Any future Modified Dietz
-  projection is restricted to backend account calendar-month totals. Position
-  XIRR remains unavailable and is not implemented here. Each existing FIFO
+  projection is restricted to backend account calendar-month totals. Each clean
+  instrument row copies the backend `simple_return` and `xirr` position rates
+  unchanged, with their method, basis, dates, calendar and capital-weighted
+  holding days and eligibility basis; the export computes neither. Each existing FIFO
   `return_fraction` has `return_context`: `method=simple_on_invested`, a readable
   label, the producer's purchase-cost base in kopecks, purchase start date,
   account closing end date, `annualized=false`, and `unit=fraction` (1 = 100%).

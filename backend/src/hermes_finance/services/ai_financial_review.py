@@ -1933,7 +1933,7 @@ def assemble_ai_financial_review(
         clean_overall = read_clean_overall(session)
         clean_data = review_clean_returns(
             session,
-            read_clean_overview(session, include_purchases=True),
+            read_clean_overview(session, include_purchases=True, include_position_rates=True),
             clean_overall,
             account_names={row.id: row.name for row in list_accounts(session)},
             instrument_names={row.id: row.name for row in list_instruments(session)},

@@ -159,7 +159,7 @@ def test_v32_missing_batch_detail_keeps_metrics_and_marks_receipts_unknown(
     _save(database, monkeypatch)
     with database.session_factory() as session:
         create_reporting_month(session, year=2030, month=1, snapshot_date=END)
-        overview = read_clean_overview(session, include_purchases=True)
+        overview = read_clean_overview(session, include_purchases=True, include_position_rates=True)
 
     def unavailable(*args, **kwargs):
         raise error("synthetic missing detail")
@@ -241,7 +241,7 @@ def test_v32_partial_summaries_reuse_one_index_and_keep_stale_history_excluded(
 
     _save(database, monkeypatch)
     with database.session_factory() as session:
-        overview = read_clean_overview(session, include_purchases=True)
+        overview = read_clean_overview(session, include_purchases=True, include_position_rates=True)
         overall = returns_overall.read_clean_overall(session)
         account = overview["accounts"][0]
         period = account["period"]
@@ -1462,6 +1462,28 @@ def test_v32_names_receipts_closed_split_and_unknown_cross_account_totals(
         )
         item["pnl"] = metric("500")
         item["buys"] = metric("900719925474099300")
+        for method in ("simple_return", "xirr"):
+            item[method] = dict(
+                value=None,
+                status="unavailable",
+                reason_codes=["short_holding"],
+                assumptions=[],
+                method=method,
+                unit="fraction",
+                annualized=method == "xirr",
+                basis="statement_purchases_including_nkd"
+                if method == "simple_return"
+                else "dated_position_cash_flows_including_nkd",
+                invested_kopecks="900719925474099300",
+                start_date="2030-01-02",
+                end_date="2030-01-31",
+                holding_end_date="2030-01-31",
+                holding_days=29,
+                weighted_holding_days="29.00",
+                eligibility_basis="capital_weighted_holding_days",
+                date_basis="first_purchase_execution",
+                for_position_comparison=True,
+            )
         items = [item]
         for number in range(1, instrument_count):
             duplicate = copy.deepcopy(item)
