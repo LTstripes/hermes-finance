@@ -13,7 +13,10 @@ import { listPositions } from "../api/positions";
 import { listProperties } from "../api/properties";
 import { getRiskAllocation } from "../api/riskAllocation";
 import type {
+  CapitalChangeComponent,
+  CapitalChangeHint,
   CapitalCompositionPoint,
+  CapitalFlowBreakdown,
   ClosedReportComparison,
   DashboardMortgage,
   MoneyValue,
@@ -31,7 +34,7 @@ import { ASSET_CLASS_LABELS } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
 import { CLASS_COLORS } from "./assetClasses";
 import { AccountAllocation, ClassAllocation, TopPositions } from "./CapitalAllocationSheet";
-import { CapitalBridgeChart } from "./CapitalBridgeChart";
+import { type BridgeStep, CapitalBridgeChart } from "./CapitalBridgeChart";
 import { CapitalDraftValuation } from "./CapitalDraftValuation";
 import { ClosedReportTitle } from "./ClosedReportTitle";
 import {
@@ -317,6 +320,16 @@ function CapitalChange({ comparison }: { comparison: ClosedReportComparison | un
     change.previous_reporting_month_id !== (comparison?.previous?.reporting_month_id ?? null)
   )
     return null;
+  const flow = change.flow_breakdown;
+  if (flow) {
+    return (
+      <CapitalFlowChange
+        eyebrow={formatMonth(comparison.current.year, comparison.current.month)}
+        flow={flow}
+        hints={change.context_hints ?? []}
+      />
+    );
+  }
   const breakdown = change.breakdown;
   return (
     <SheetSection
@@ -369,6 +382,79 @@ function CapitalChange({ comparison }: { comparison: ClosedReportComparison | un
           Для объяснения нужны данные на конец этого и предыдущего календарного месяца.
         </p>
       )}
+    </SheetSection>
+  );
+}
+
+/** A partial component shows its proven part; a fully unknown one stays in the residual. */
+function componentStep(label: string, component: CapitalChangeComponent): BridgeStep | null {
+  if (component.amount) return { label, amount: component.amount, kind: "change" };
+  if (component.items.some((item) => item.amount !== null))
+    return {
+      label: `${label} (известная часть)`,
+      amount: component.known_subtotal,
+      kind: "change",
+    };
+  return null;
+}
+
+function CapitalFlowChange({
+  eyebrow,
+  flow,
+  hints,
+}: {
+  eyebrow: string;
+  flow: CapitalFlowBreakdown;
+  hints: CapitalChangeHint[];
+}) {
+  const market = componentStep("Рынок: брокерский и ИИС", flow.investment_market_change);
+  const gold = componentStep("Переоценка золота", flow.physical_gold_revaluation);
+  const unknown = [
+    flow.investment_market_change.amount ? null : "изменение стоимости брокерского счёта и ИИС",
+    flow.physical_gold_revaluation.amount || flow.physical_gold_revaluation.items.length === 0
+      ? null
+      : "переоценка золота",
+  ].filter((text): text is string => text !== null);
+  const steps: BridgeStep[] = [
+    { label: "Начало месяца", amount: flow.start, kind: "level" },
+    { label: "Доходы минус расходы", amount: flow.monthly_flow, kind: "change" },
+    ...(market ? [market] : []),
+    ...(gold ? [gold] : []),
+    {
+      label: "Необъяснённый остаток",
+      amount: flow.unexplained,
+      kind: "change",
+      testId: "capital-unexplained",
+    },
+    { label: "Конец месяца", amount: flow.end, kind: "level" },
+  ];
+  return (
+    <SheetSection
+      eyebrow={eyebrow}
+      help={
+        <HelpTip label="Как читать изменение капитала">
+          Доходы минус расходы — по записям месяца, до откладывания: откладывание остаётся внутри
+          капитала. Проценты, купоны и дивиденды входят сюда один раз. Покупка по кредитке — это
+          расход, а погашение кредитки со своего счёта не меняет капитал. Всё, что не подтверждено,
+          остаётся в необъяснённом остатке.
+        </HelpTip>
+      }
+      id="capital-change-title"
+      title="Как изменился капитал за месяц"
+    >
+      <CapitalBridgeChart steps={steps} />
+      {unknown.length > 0 ? (
+        <p className={sheet.gapNote}>
+          Пока не подтверждено и входит в необъяснённый остаток: {unknown.join(", ")}.
+        </p>
+      ) : null}
+      {hints.map((hint) => (
+        <p className={sheet.gapNote} data-testid="capital-card-hint" key={hint.reason_code}>
+          Долг по кредитке вырос на {whole(hint.card_debt_growth)}, а расходов за месяц внесено{" "}
+          {whole(hint.recorded_expenses)}. Если это покупки, внесите их в расходы месяца — тогда
+          остаток уменьшится.
+        </p>
+      ))}
     </SheetSection>
   );
 }
