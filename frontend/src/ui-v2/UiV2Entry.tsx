@@ -4,8 +4,6 @@ import { ReturnsMonthRedirect } from "./returns/ReturnsMonthRedirect";
 import { validIsin } from "./returns/navigation";
 import { readDisplayNames } from "./returns/dashboard";
 
-import type { DataAppSection } from "./monthSelection";
-
 const UiV2PayoutForecastPage = lazy(() => import("./UiV2PayoutForecastPage"));
 
 const UiV2Page = lazy(() => import("./UiV2Page"));
@@ -24,7 +22,6 @@ const UiV2MonthEditorPage = lazy(() => import("./UiV2MonthEditorPage"));
 const UiV2DataCatalogsPage = lazy(() => import("./UiV2DataCatalogsPage"));
 const UiV2DataFilesPage = lazy(() => import("./UiV2DataFilesPage"));
 const UiV2DataAppPage = lazy(() => import("./UiV2DataAppPage"));
-const UiV2DataPlaceholderPage = lazy(() => import("./UiV2DataPlaceholderPage"));
 const UiV2IncomePage = lazy(() => import("./UiV2IncomePage"));
 const UiV2GoalsPage = lazy(() => import("./UiV2GoalsPage"));
 const UiV2TaxIisPage = lazy(() => import("./UiV2TaxIisPage"));
@@ -195,18 +192,6 @@ export function UiV2DataAppEntry() {
   return (
     <SuspenseFrame>
       <UiV2DataAppPage />
-    </SuspenseFrame>
-  );
-}
-
-export function UiV2DataPlaceholderEntry({
-  section,
-}: {
-  section: Exclude<DataAppSection, "sources" | "months" | "payouts" | "source-intake">;
-}) {
-  return (
-    <SuspenseFrame>
-      <UiV2DataPlaceholderPage section={section} />
     </SuspenseFrame>
   );
 }

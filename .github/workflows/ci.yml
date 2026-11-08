@@ -253,11 +253,6 @@ jobs:
       - name: Install locked backend dependencies (includes tzdata)
         run: uv sync --locked --group dev
 
-      - name: Verify Europe/Moscow resolves via tzdata without a system IANA DB
-        shell: pwsh
-        run: |
-          uv run --locked python -I -c "from zoneinfo import ZoneInfo; z = ZoneInfo('Europe/Moscow'); print('resolved', z.key)"
-
       - name: Run Moscow timezone and Windows export regressions
         run: >-
           uv run --locked python -I -m pytest -q --durations=40

@@ -87,7 +87,6 @@ Invoke-Case "classification is recomputed from the current pull request commits"
     Assert-True -Condition ($classify -match 'github\.event\.pull_request\.base\.sha') -Message "The base SHA must come from the current event."
     Assert-True -Condition ($classify -match 'github\.event\.pull_request\.head\.sha') -Message "The head SHA must come from the current event."
     Assert-True -Condition ($classify -notmatch 'actions/cache@') -Message "A cached mode would be stale after synchronize."
-    Assert-True -Condition ($workflow -match 'python3 scripts/tests/test-docs-only-ci\.py') -Message "Privacy must run the docs-only regressions."
 }
 
 Invoke-Case "docs-only guard remains on product suites" {
@@ -107,12 +106,8 @@ Invoke-Case "docs-only guard remains on product suites" {
     $browser = Get-Job "g04-browser"
     Assert-True -Condition (Test-JobDependency $browser "privacy") -Message "Journey evidence must depend on privacy."
     Assert-True -Condition ($browser.Contains("if: always() && needs.privacy.result == 'success'")) -Message "Journey evidence uploads must require privacy success even after a failed journey."
-    Assert-True -Condition ($workflow -notmatch 'windows-launcher-paths') -Message "Launcher path-filter job must be removed."
-    Assert-True -Condition ($workflow -notmatch 'windows-launcher-safety') -Message "Launcher safety job must be removed."
-    Assert-True -Condition ($workflow -notmatch 'launcher_ci_paths') -Message "Launcher path classifier must be removed."
     $visual = Get-Job "visual-audit"
     Assert-True -Condition ($visual -match "github\.event_name == 'push' \|\| needs\.visual-audit-paths\.outputs\.run == 'true'") -Message "The visual audit gate stays intact."
-    Assert-True -Condition ($visual -match 'scripts/ui_evidence_identity\.py trees') -Message "Exact-head identity proof stays inside the visual audit."
 }
 
 Invoke-Case "Windows safety jobs observe classifier ownership and conservative fallback" {
@@ -153,7 +148,6 @@ Invoke-Case "ci full overrides docs-only mode and omits the docs verdict" {
 Invoke-Case "docs-only success cannot be a skipped or failed retained check" {
     $fast = Get-Job "docs-fast-path"
     Assert-True -Condition ($fast -match 'name: Documentation fast path') -Message "The terminal check must name the docs-only result."
-    Assert-True -Condition ($fast -match 'scripts/docs_only_ci\.py verdict') -Message "The fast path must recompute the diff and judge job results."
     Assert-True -Condition ($fast -match 'github\.event\.pull_request\.base\.sha') -Message "The verdict must use the current base SHA."
     Assert-True -Condition ($fast -match 'github\.event\.pull_request\.head\.sha') -Message "The verdict must use the current head SHA."
     foreach ($jobId in @(

@@ -1,9 +1,10 @@
+import { triggerDownload } from "../lib/download";
 import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { type UseQueryResult, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { createBackup, listBackups, restoreBackup } from "../api/backups";
-import { ApiClientError, type ApiDownload, formatApiError } from "../api/client";
+import { ApiClientError, formatApiError } from "../api/client";
 import {
   downloadAiAnalysisBundleJson,
   downloadAiAnalysisBundleMarkdown,
@@ -43,18 +44,6 @@ const CONFIRMED_RESTORE_FAILURE_CODES = new Set([
   "not_found",
   "unprocessable",
 ]);
-
-function triggerDownload(file: ApiDownload) {
-  const url = URL.createObjectURL(file.blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = file.filename;
-  anchor.style.display = "none";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
 
 function prependUnique(items: BackupMetadata[], item: BackupMetadata): BackupMetadata[] {
   return [item, ...items.filter((current) => current.id !== item.id)];
@@ -309,7 +298,7 @@ export default function UiV2DataFilesPage() {
         format === "markdown"
           ? await downloadMarkdownReport(selectedMonth.id)
           : await downloadJsonReport(selectedMonth.id);
-      triggerDownload(file);
+      triggerDownload(file.blob, file.filename);
       setDownloadSuccess(`Файл ${file.filename} скачан.`);
     } catch (error) {
       setDownloadError(formatApiError(error));
@@ -324,7 +313,7 @@ export default function UiV2DataFilesPage() {
     setDownloadSuccess(null);
     try {
       const file = await downloadAiFinancialReviewJson();
-      triggerDownload(file);
+      triggerDownload(file.blob, file.filename);
       setDownloadSuccess(`Файл ${file.filename} скачан.`);
     } catch (error) {
       setDownloadError(formatApiError(error));
@@ -342,7 +331,7 @@ export default function UiV2DataFilesPage() {
         format === "markdown"
           ? await downloadAiAnalysisBundleMarkdown()
           : await downloadAiAnalysisBundleJson();
-      triggerDownload(file);
+      triggerDownload(file.blob, file.filename);
       setDownloadSuccess(`Файл ${file.filename} скачан.`);
     } catch (error) {
       setDownloadError(formatApiError(error));

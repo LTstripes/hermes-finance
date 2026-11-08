@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  confirmBrokerIdentityMapping,
-  listEffectiveBrokerIdentityMappings,
-  remapBrokerIdentityMapping,
-} from "./brokerIdentityMappings";
+import { confirmBrokerIdentityMapping, listBrokerIdentityMappings } from "./brokerIdentityMappings";
 
 function jsonOk(body: unknown) {
   return {
@@ -36,14 +32,15 @@ describe("broker identity mapping API helpers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("lists only effective mappings from the registry response", async () => {
+  it("lists the complete registry including historical mappings", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(jsonOk([mapping, { ...mapping, mapping_id: 8, status: "superseded" }]));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(listEffectiveBrokerIdentityMappings("synthetic_broker")).resolves.toEqual([
+    await expect(listBrokerIdentityMappings("synthetic_broker")).resolves.toEqual([
       mapping,
+      { ...mapping, mapping_id: 8, status: "superseded" },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/broker-identity-mappings?provider=synthetic_broker",
@@ -72,21 +69,6 @@ describe("broker identity mapping API helpers", () => {
           provider_identity: "SYN-ACCOUNT-NEW",
           hermes_target_id: 4,
         }),
-      }),
-    );
-  });
-
-  it("posts remap to the history-preserving registry endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonOk({ ...mapping, mapping_id: 9 }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await remapBrokerIdentityMapping(7, { hermes_target_id: 4 });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/broker-identity-mappings/7/remap",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ hermes_target_id: 4 }),
       }),
     );
   });

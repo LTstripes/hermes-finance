@@ -243,24 +243,3 @@ export function formatMonthKey(
   }
   return formatMonth(Number(m[1]), Number(m[2]), options);
 }
-
-/** Ratio like coverage 0.68 → "0,68×" */
-export function formatRatio(
-  value: string | number | null | undefined,
-  options: { digits?: 1 | 2; empty?: string } = {},
-): string {
-  const { digits = 2, empty = "—" } = options;
-  if (value == null || value === "") {
-    return empty;
-  }
-  const raw = String(value).trim().replace(/\s/g, "").replace(",", ".");
-  if (!/^-?\d+(\.\d+)?$/.test(raw)) {
-    return empty;
-  }
-  const negative = raw.startsWith("-");
-  const unsigned = negative ? raw.slice(1) : raw;
-  const [intPart, frac = ""] = unsigned.split(".");
-  const fracDigits = frac.padEnd(digits, "0").slice(0, digits);
-  const body = `${intPart},${fracDigits}`;
-  return `${negative ? "−" : ""}${body}×`;
-}

@@ -3,11 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import {
-  performanceAttributionUnavailableMessage,
-  portfolioTwrrUnavailableMessage,
-  portfolioXirrUnavailableMessage,
-} from "./performanceMessages";
+import { performanceAttributionUnavailableMessage } from "./performanceMessages";
 import { reasonCopy, UNAVAILABLE_REASON } from "./reasonCopy";
 
 // Read the API-owned enum vocabulary, so newly added codes fail this contract test.
@@ -46,8 +42,6 @@ describe("reason copy API contract", () => {
     "uses a neutral fallback for %s",
     (code) => {
       expect(reasonCopy(code)).toEqual({ message: UNAVAILABLE_REASON, action: null });
-      expect(portfolioXirrUnavailableMessage([code])).toBe(UNAVAILABLE_REASON);
-      expect(portfolioTwrrUnavailableMessage([code])).toBe(UNAVAILABLE_REASON);
       expect(performanceAttributionUnavailableMessage([code])).toBe(UNAVAILABLE_REASON);
     },
   );

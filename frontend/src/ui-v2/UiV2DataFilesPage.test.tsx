@@ -114,13 +114,17 @@ function setup({
     }
     if (method === "POST" && /\/export\/(markdown|json)$/.test(url.pathname)) {
       const suffix = url.pathname.endsWith("/json") ? "json" : "md";
-      return downloadResponse(`finance_data_2031-08.${suffix}`);
+      return downloadResponse(
+        `${suffix === "md" ? "finance_report" : "finance_data"}_2031-08.${suffix}`,
+      );
     }
     if (method === "GET" && url.pathname === "/api/export/ai-financial-review/json") {
       return downloadResponse("hermes-ai-financial-review.json");
     }
-    if (method === "GET" && /\/api\/export\/ai-analysis-bundle(\/markdown)?$/.test(url.pathname)) {
-      return downloadResponse("hermes-ai-analysis-bundle.json");
+    if (method === "POST" && /\/api\/export\/ai-analysis-bundle(\/markdown)?$/.test(url.pathname)) {
+      return downloadResponse(
+        `hermes-ai-analysis-bundle.${url.pathname.endsWith("/markdown") ? "md" : "json"}`,
+      );
     }
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
   });
@@ -148,6 +152,33 @@ afterEach(() => {
 });
 
 describe("UI v2 Data files", () => {
+  it.each([
+    ["Скачать пакет анализа (JSON)", "/api/export/ai-analysis-bundle", "json"],
+    ["Скачать Markdown-компаньон", "/api/export/ai-analysis-bundle/markdown", "md"],
+  ])("downloads technical bundle with POST: %s", async (label, path, extension) => {
+    const user = userEvent.setup();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    vi.stubGlobal("URL", {
+      ...NativeURL,
+      createObjectURL: vi.fn(() => "blob:bundle"),
+      revokeObjectURL: vi.fn(),
+    });
+    const { calls, mount } = setup();
+    mount();
+    await user.click(await screen.findByText("Дополнительные / технические выгрузки"));
+    await user.click(screen.getByRole("button", { name: label }));
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    expect(calls.filter((call) => call.path.includes("ai-analysis-bundle"))).toEqual([
+      { method: "POST", path, body: undefined },
+    ]);
+    expect(anchorClick.mock.instances[0]).toHaveAttribute(
+      "download",
+      `hermes-ai-analysis-bundle.${extension}`,
+    );
+  });
+
   it("keeps read-only exports and mutating backups in separate surfaces", async () => {
     const { calls, mount } = setup();
     mount();
@@ -183,6 +214,7 @@ describe("UI v2 Data files", () => {
     await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
     expect(calls.at(-1)).toMatchObject({ method: "POST", path: "/api/months/12/export/markdown" });
     expect(await screen.findByRole("status")).toHaveTextContent(/скачан/i);
+    expect(anchorClick.mock.instances[0]).toHaveAttribute("download", "finance_report_2031-08.md");
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:month-export");
   });

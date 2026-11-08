@@ -33,13 +33,10 @@ from hermes_finance.services.applied_payouts import (
     clear_applied_payout_reconciliation,
     compute_applied_total_kopecks,
     create_applied_payout,
-    delete_applied_payout_revision,
     get_applied_payout_by_identity,
     get_applied_payout_reconciliation,
     list_applied_payout_revisions,
-    overwrite_applied_payout_revision,
     set_applied_payout_reconciliation,
-    update_applied_payout_revision,
 )
 from hermes_finance.services.expected_cash_flows import (
     create_expected_cash_flow,
@@ -742,18 +739,12 @@ def test_deleting_applied_payout_cannot_erase_revisions(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
-def test_append_only_revision_helpers_refuse_overwrite(tmp_path: Path) -> None:
+def test_append_refuses_second_apply_and_preserves_original_revision(tmp_path: Path) -> None:
     session, database = session_for(tmp_path)
     try:
         month_id, account_id, _second, instrument_id, snapshot_id = build_environment(session)
         payout = create_payout(session, month_id, account_id, instrument_id, snapshot_id)
         first = list_applied_payout_revisions(session, payout.id)[0]
-        with pytest.raises(AppliedPayoutRevisionError, match="append-only"):
-            update_applied_payout_revision(session, first.id, payment_date=date(2030, 7, 1))
-        with pytest.raises(AppliedPayoutRevisionError, match="append-only"):
-            overwrite_applied_payout_revision(session, first.id)
-        with pytest.raises(AppliedPayoutRevisionError, match="append-only"):
-            delete_applied_payout_revision(session, first.id)
         with pytest.raises(AppliedPayoutRevisionError, match="first apply"):
             append_applied_payout_revision(
                 session,

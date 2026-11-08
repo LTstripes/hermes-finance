@@ -53,15 +53,3 @@ export function isAtLeast(value: string | null, min: number): boolean {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= min;
 }
-
-export function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.style.display = "none";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}

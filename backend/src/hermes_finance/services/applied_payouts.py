@@ -509,18 +509,6 @@ def append_applied_payout_revision(
     return revision
 
 
-def update_applied_payout_revision(*_args: object, **_kwargs: object) -> None:
-    raise AppliedPayoutRevisionError("applied payout revisions are append-only")
-
-
-def overwrite_applied_payout_revision(*_args: object, **_kwargs: object) -> None:
-    raise AppliedPayoutRevisionError("applied payout revisions are append-only")
-
-
-def delete_applied_payout_revision(*_args: object, **_kwargs: object) -> None:
-    raise AppliedPayoutRevisionError("applied payout revisions are append-only")
-
-
 def set_applied_payout_reconciliation(
     session: Session,
     applied_payout_id: int,

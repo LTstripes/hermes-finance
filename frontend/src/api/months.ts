@@ -1,7 +1,6 @@
 import { apiRequest } from "./client";
 import type {
   CloseReadiness,
-  HealthResponse,
   IntentionalEmptyCloseCommand,
   IntentionalEmptyCloseReceipt,
   MonthWorkingStatus,
@@ -10,10 +9,6 @@ import type {
   ReportingMonthCreate,
   ReportingMonthUpdate,
 } from "./types";
-
-export function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
-  return apiRequest<HealthResponse>("/api/health", { method: "GET", signal });
-}
 
 export function getMonthWorkingStatus(signal?: AbortSignal): Promise<MonthWorkingStatus> {
   return apiRequest<MonthWorkingStatus>("/api/months/working-status", { method: "GET", signal });

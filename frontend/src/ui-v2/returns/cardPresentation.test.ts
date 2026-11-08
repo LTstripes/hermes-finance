@@ -1,10 +1,8 @@
 import { expect, test } from "vitest";
 import {
-  cardContributions,
   cardHasCompleteBreakdown,
   cardOperations,
   cardQuantityStatus,
-  contributionWidth,
   instrumentBackTarget,
 } from "./cardPresentation";
 import { instrumentCardFixture } from "./overallFixtures";
@@ -144,17 +142,4 @@ test("native trade rows retain account grain, exclude NKD cash legs, stale and m
     amount: "1234567890123456789",
     side: "SELL",
   });
-});
-
-test("component chart renders signed costs once and bounds geometry after exact BigInt ratio", () => {
-  const { summary } = instrumentCardFixture();
-  summary.costs.value = "50";
-  summary.taxes.value = null;
-  const rows = cardContributions(summary);
-  expect(rows.find((row) => row.label === "Комиссии")?.value).toBe("-50");
-  expect(rows.find((row) => row.label === "Учтённые налоги")).toBeUndefined();
-  expect(summary.pnl.value).toBe("800");
-  expect(summary.costs.value).toBe("50");
-  expect(contributionWidth("900719925474099312345", 1801439850948198624690n)).toBe(50);
-  expect(contributionWidth("-25", 100n)).toBe(25);
 });

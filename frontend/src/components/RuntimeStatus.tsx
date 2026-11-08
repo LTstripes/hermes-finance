@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router";
 
 import { getHealth } from "../api/health";
 import { Badge, Button, DataValue, Panel } from "./ui";
@@ -34,35 +33,6 @@ function useRuntimeHealth(): [RuntimeState, () => void] {
   }, [attempt]);
 
   return [state, retry];
-}
-
-export function RuntimeStatusBanner() {
-  const [state] = useRuntimeHealth();
-
-  if (state.kind === "checking") return null;
-
-  if (state.kind === "connected") {
-    return (
-      <span className="sr-only" role="status">
-        Приложение подключено
-      </span>
-    );
-  }
-
-  return (
-    <div className="runtime-alert" role="alert">
-      <div className="runtime-alert__inner">
-        <span aria-hidden="true" className="runtime-alert__dot" />
-        <div>
-          <strong>Локальное приложение недоступно</strong>
-          <span>Проверь, что Hermes Finance запущен, или открой диагностику.</span>
-        </div>
-        <Link className="runtime-alert__link" to="/settings#diagnostics">
-          Диагностика →
-        </Link>
-      </div>
-    </div>
-  );
 }
 
 export function DiagnosticsPanel() {

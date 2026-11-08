@@ -1,3 +1,4 @@
+import { triggerDownload } from "../lib/download";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
@@ -14,13 +15,7 @@ import {
 import type { ReportingMonth } from "../api/types";
 import { formatDate, formatMonth } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
-import {
-  isAtLeast,
-  isWithinRange,
-  normalizeDecimalInput,
-  SCENARIO_OPTIONS,
-  triggerDownload,
-} from "./scenarioLab";
+import { isAtLeast, isWithinRange, normalizeDecimalInput, SCENARIO_OPTIONS } from "./scenarioLab";
 import { ScenarioLabResult } from "./ScenarioLabResult";
 import { resolveMonthSelection, sortReportingMonths } from "./monthSelection";
 import sharedStyles from "./UiV2Page.module.css";

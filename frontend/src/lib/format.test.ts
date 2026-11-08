@@ -9,7 +9,6 @@ import {
   formatMonthKey,
   formatPercent,
   formatQuantity,
-  formatRatio,
 } from "./format";
 
 describe("formatMoney", () => {
@@ -65,13 +64,6 @@ describe("formatMonth", () => {
     expect(formatMonth(2026, 7)).toBe("Июль\u00a02026");
     expect(formatMonthKey("2026-05")).toBe("Май\u00a02026");
     expect(formatMonthKey("bad")).toBe("—");
-  });
-});
-
-describe("formatRatio", () => {
-  it("formats coverage multipliers", () => {
-    expect(formatRatio("0.68")).toBe("0,68×");
-    expect(formatRatio(1)).toBe("1,00×");
   });
 });
 
