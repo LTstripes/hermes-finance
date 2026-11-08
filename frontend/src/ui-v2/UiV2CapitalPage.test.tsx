@@ -935,6 +935,66 @@ it("shows the unexplained residual separately from other capital changes", async
   expect(screen.getByText("Внешние внесения и изъятия")).toBeVisible();
 });
 
+it("explains the month through income minus expenses and flags unrecorded card spending", async () => {
+  const { state, mount } = setup();
+  const rub = (amount: string) => ({ amount, currency: "RUB" });
+  state.comparison.capital_change = {
+    reporting_month_id: uiV2CapitalMonthId,
+    previous_reporting_month_id: uiV2CapitalPreviousMonthId,
+    period_start: "2026-04-01",
+    period_end: "2026-04-30",
+    component_basis: "known_subtotals",
+    breakdown: {
+      start: rub("1000.00"),
+      external_net: rub("0.00"),
+      investment_result: rub("0.00"),
+      other_changes: rub("-300.00"),
+      unexplained: rub("222.00"),
+      end: rub("922.00"),
+    },
+    reason_codes: [],
+    flow_breakdown: {
+      basis: "monthly_flow_v1",
+      start: rub("1000.00"),
+      monthly_flow: rub("200.00"),
+      investment_market_change: {
+        amount: null,
+        known_subtotal: rub("0.00"),
+        items: [{ account_id: 1, instrument_id: null, amount: null, reason_codes: ["x"] }],
+        reason_codes: ["x"],
+      },
+      physical_gold_revaluation: {
+        amount: rub("-30.00"),
+        known_subtotal: rub("-30.00"),
+        items: [{ account_id: 2, instrument_id: 3, amount: rub("-30.00"), reason_codes: [] }],
+        reason_codes: [],
+      },
+      unexplained: rub("-248.00"),
+      end: rub("922.00"),
+    },
+    context_hints: [
+      {
+        reason_code: "card_debt_growth_exceeds_recorded_expenses",
+        card_debt_growth: rub("300.00"),
+        recorded_expenses: rub("50.00"),
+      },
+    ],
+  };
+  mount();
+  const residual = await screen.findByTestId("capital-unexplained");
+  expect(residual).toHaveTextContent("−248 ₽");
+  expect(screen.getByText("Доходы минус расходы")).toBeVisible();
+  expect(screen.getByText("Переоценка золота")).toBeVisible();
+  expect(screen.queryByText("Прочие изменения")).toBeNull();
+  expect(screen.queryByText("Рынок: брокерский и ИИС")).toBeNull();
+  expect(
+    screen.getByText(/не подтверждено и входит в необъяснённый остаток: изменение стоимости/),
+  ).toBeVisible();
+  expect(screen.getByTestId("capital-card-hint")).toHaveTextContent(
+    /Долг по кредитке вырос на 300 ₽, а расходов за месяц внесено 50 ₽/,
+  );
+});
+
 it("does not render a capital explanation for another month", async () => {
   const { state, mount } = setup();
   state.comparison.capital_change = {

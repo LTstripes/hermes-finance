@@ -692,6 +692,38 @@ export type MonthlyCapitalChange = {
     end: MoneyValue;
   } | null;
   reason_codes: string[];
+  /** Additive bridge through the month's flow; absent on older servers. */
+  flow_breakdown?: CapitalFlowBreakdown | null;
+  context_hints?: CapitalChangeHint[];
+};
+
+export type CapitalChangeComponent = {
+  /** Null when any item is unknown; known_subtotal keeps the proven part. */
+  amount: MoneyValue | null;
+  known_subtotal: MoneyValue;
+  items: {
+    account_id: number;
+    instrument_id: number | null;
+    amount: MoneyValue | null;
+    reason_codes: string[];
+  }[];
+  reason_codes: string[];
+};
+
+export type CapitalFlowBreakdown = {
+  basis: "monthly_flow_v1";
+  start: MoneyValue;
+  monthly_flow: MoneyValue;
+  investment_market_change: CapitalChangeComponent;
+  physical_gold_revaluation: CapitalChangeComponent;
+  unexplained: MoneyValue;
+  end: MoneyValue;
+};
+
+export type CapitalChangeHint = {
+  reason_code: "card_debt_growth_exceeds_recorded_expenses";
+  card_debt_growth: MoneyValue;
+  recorded_expenses: MoneyValue;
 };
 
 export type ClosedReportComparison = {
