@@ -35,7 +35,7 @@ def download_ai_financial_review_json(
 ) -> Response:
     try:
         if "format_version" in request.query_params:
-            raise HTTPException(422, "AI financial review exports only 3.1.0; omit format_version.")
+            raise HTTPException(422, "AI financial review exports only 3.2.0; omit format_version.")
         report = assemble_ai_financial_review(
             session,
             forecast_version=forecast_version,

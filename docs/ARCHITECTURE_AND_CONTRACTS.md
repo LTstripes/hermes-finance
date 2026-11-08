@@ -14245,9 +14245,9 @@ It must:
 ### Financial review composition and consumer constraints
 
 **Current generation:** one read-only JSON download,
-`GET /api/export/ai-financial-review/json`, emitting only `3.1.0`.
+`GET /api/export/ai-financial-review/json`, emitting only `3.2.0`.
 The UI sends no `format_version`. That retired query parameter returns `422`
-(including an explicit `3.1.0`), with guidance that only `3.1.0` is generated and
+(including an explicit `3.2.0`), with guidance that only `3.2.0` is generated and
 the parameter must be omitted. Validation occurs before assembly. The unsuffixed
 `GET /api/export/ai-financial-review` is removed. `forecast_version` and
 `generated_at` retain their existing validation; responses retain attachment
@@ -14256,8 +14256,9 @@ No migration, provider refresh, cloud upload, LLM call or persisted export is ad
 
 **Schema name:** `hermes.finance.ai_financial_review`
 
-**Generated schema:** [`3.1.0`](schemas/ai_financial_review.v3_1.schema.json).
-Historical [`v3`](schemas/ai_financial_review.v3.schema.json),
+**Generated schema:** [`3.2.0`](schemas/ai_financial_review.v3_2.schema.json).
+Historical [`3.1.0`](schemas/ai_financial_review.v3_1.schema.json),
+[`v3`](schemas/ai_financial_review.v3.schema.json),
 [`v2`](schemas/ai_financial_review.v2.schema.json) and
 [`v1`](schemas/ai_financial_review.schema.json) schemas and synthetic fixtures
 remain unchanged for reading and validating previously saved files. They do not
@@ -14398,6 +14399,76 @@ NULL for cross-boundary events; dates remain explanatory. This projects the
 existing economics' eligibility and does not calculate another return.
 Current generation uses `clean_returns` instead; reading historical files does
 not upload, call a provider or write financial data.
+
+#### Clean-return export presentation 3.2.0
+
+`ai_review_clean_returns` is an export-only adapter. The underlying clean-return,
+FIFO, source-event and card producers and investment semantic modules are
+unchanged. Embedded `clean_returns.schema_version=1.2.0` identifies this AI
+presentation; it does not advance any producer calculation revision.
+
+- `accounts[].account_name` uses the existing explicit account link's type:
+  `ИИС`, `Брокерский`, or `Счёт не сопоставлен`. Mapping status/reasons remain
+  explicit. `source-account-N` remains an opaque join ref, never a display name.
+  Instrument names come from the existing source/catalogue display reader,
+  falling back to the exact ISIN rather than NULL. Native numbers are excluded.
+- Every source position remains present, including sold/redeemed instruments.
+  `result_split.position_state` comes from the backend closing quantity. Only
+  zero quantity with supported/provisional non-NULL clean P&L and no identity
+  conflict permits `status=known`, with that result realized and zero unrealized.
+  Otherwise split is `unknown` with NULL amounts. No FIFO-derived split is added.
+- `actual_payments[]` projects dated cash legs of current, counted, exact-ISIN
+  COUPON/DIVIDEND/REDEMPTION events within `(opening_date, closing_date]` from the
+  ordinary clean card's source-analysis reader, batched once per source account
+  in the same read snapshot. Each row has `date`, integer `amount_kopecks`,
+  `kind`, file-local `account_ref`, `account_name`, allowlisted provider `source`,
+  reasons and assumptions. Equal operations retain multiplicity; raw event
+  keys, native references and paths are excluded. Missing details produce empty
+  rows with unknown coverage. Observed chronology is marked partial, never a
+  complete payment ledger; redemption remains principal, separate from income.
+- `isin_summary[]` projects the `returns_instrument_card_v2` summary contract
+  from ready clean metrics for a single source account, retaining unknown
+  values, estimates and identity exclusions. No instrument cards are fetched
+  per ISIN. Partial-result coverage may additionally read the ordinary source
+  index once and endpoint analyses in account/period batches; it never promotes
+  clean-only quantity recovery to ordinary endpoint coverage. The per-account
+  rows retain their own dates, purchases and sales. For one nonconflicting source
+  account its purchases/sales are also projected as the summary fields.
+  `invested_basis=observed_period_purchases_with_nkd_excluding_fees` clarifies
+  that purchases are not the acquisition cost of pre-existing opening holdings.
+  The backend has no combined clean purchases/sales contract: multiple accounts
+  yield `status=unknown`, NULL and explicit reasons for those two fields, never
+  an exporter-side aggregate. Summary partialness includes those missing fields.
+  Cross-account current value, redemptions, payouts and total result also stay
+  NULL with `cross_account_clean_totals_not_provided`; the exporter neither
+  repeats the backend's summation nor loads expensive cards to obtain them.
+  Account rows remain available, including their payments and results. No
+  combined rate or realized/unrealized split is invented.
+- Position Modified Dietz is omitted from this generated representation and its
+  units. It is not a comparison metric for positions. Any future Modified Dietz
+  projection is restricted to backend account calendar-month totals. Each clean
+  instrument row copies the backend `simple_return` and `xirr` position rates
+  unchanged, with their method, basis, dates, calendar and capital-weighted
+  holding days and eligibility basis; the export computes neither. Each existing FIFO
+  `return_fraction` has `return_context`: `method=simple_on_invested`, a readable
+  label, the producer's purchase-cost base in kopecks, purchase start date,
+  account closing end date, `annualized=false`, and `unit=fraction` (1 = 100%).
+  It describes sales plus remaining value minus purchase cost, divided by that
+  cost, excluding payouts; it is not XIRR or Modified Dietz. No rate is computed.
+- Gold histories retain their clean producer result and gain names and unknown
+  split. `gold_snapshots[]` exposes existing saved gold quantities, valuation
+  dates, market values and cost bases, also when no dated gold history exists.
+  Histories and snapshots may overlap and are not additive. Snapshot amounts
+  are not promoted to whole-history return or a new clean split.
+- `current_portfolio.positions[].cost_basis_state` is `known` only when the
+  existing cost-basis money metric has a value, including explicit zero;
+  otherwise it is `unknown`. The original metric remains NULL/unavailable and
+  the exporter does not reconstruct acquisition cost.
+
+The reading guide warns against adding summaries, account rows, purchases and
+payments together. Historical 3.0/3.1 schemas, v1/v2 schemas/fixtures and typed v2
+reference validation/expansion remain available for saved files. Generation
+still has one endpoint, no version selector and no frontend changes.
 
 #### Saved v1/v2 available-history Returns
 
@@ -14575,7 +14646,7 @@ The required sections are:
 - `hermes.finance.portfolio_review_package` `1.1.0`.
 
 Saved v1/v2 performance sections record builder identities `R08-02`, `R08-03`
-and `PERF04A/1`. They remain historical source contracts. Current `3.1.0` marks
+and `PERF04A/1`. They remain historical source contracts. Current `3.2.0` marks
 this section unavailable and exposes the distinct clean-return producer under
 `clean_returns`; it introduces no second calculation.
 
@@ -14617,7 +14688,8 @@ arrays. The saved canonical v1.3 instance continues to validate strictly.
 
 Version `2.0.0` changed only the source-analysis representation. By the Owner
 decision of 2026-11-08, generation of `1.5.0`, `1.6.0`, `2.0.0`, `2.1.0` and
-`3.0.0` is removed. Only `3.1.0` is generated through the single JSON download
+`3.0.0` is removed. Generation of `3.1.0` is superseded by `3.2.0` while its
+saved-file schema stays unchanged. Only `3.2.0` is generated through the single JSON download
 above; there is no version negotiation or fallback. Bundle/package formats
 are unchanged. The following v2 rules remain the saved-file reading contract.
 

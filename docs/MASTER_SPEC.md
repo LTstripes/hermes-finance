@@ -841,11 +841,25 @@ Keep actual, forecast and hypothetical values visibly separate. Passive-income g
 
 Scenario Lab freezes its base and supports only the accepted single-shock families and explicit applicability evidence. Currency tags alone do not authorize FX translation; issuer exposure cannot be guessed from names. Account WHAT-IF uses finite named assumptions under C7. Instrument WHAT-IF is the supported fixed-holding stock scenario; editing prose does not enable bonds or changing-quantity total return.
 
-The recommended AI JSON is one full-history financial review in format `3.1.0`,
+The recommended AI JSON is one full-history financial review in format `3.2.0`,
 served only by `GET /api/export/ai-financial-review/json`. It includes the same
 source-scoped clean returns and FIFO purchase details as the current Returns UI,
 with each account's own dates, units, coverage and limitations. It has no version
 or concise/full selector and introduces no second financial calculation.
+Security names and account types (ИИС / Брокерский) accompany file-local refs;
+unmapped accounts are labelled explicitly without exposing account numbers.
+Closed positions, dated actual coupons/dividends/redemptions and gold histories
+and saved snapshots remain visible independently of current holdings. The ISIN
+summary projects ready backend metrics for a single source account, retaining
+each account's own dates. Missing combined purchases, sales, current value,
+redemptions, payouts and total result remain unknown with their per-account
+values. Source analyses are read in account batches, without loading every
+instrument card during export.
+Purchase percentages identify the simple price result on purchase cost, their
+dates and nonannualized basis. Position Modified Dietz is omitted; position XIRR
+and an unproved realized/unrealized split are not inferred. A proved closed
+position with a supported result carries its realized result. Unknown portfolio
+cost basis stays unknown, while an explicit zero stays zero.
 [C7](ARCHITECTURE_AND_CONTRACTS.md#c7) owns the source-return meaning and
 [C10](ARCHITECTURE_AND_CONTRACTS.md#c10-ai_financial_review-1) owns the export contract.
 

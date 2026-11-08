@@ -84,8 +84,8 @@ from hermes_finance.services.risk_allocation import DEFAULT_TOP_N
 from hermes_finance.services.source_monthly_returns import source_read_snapshot
 
 SCHEMA_NAME = "hermes.finance.ai_financial_review"
-SCHEMA_VERSION = "3.1.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/3.1.0/schema.json"
+SCHEMA_VERSION = "3.2.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-financial-review/3.2.0/schema.json"
 ORDERING_CONTRACT = "periods_then_refs_then_semantic_keys_are_sorted_as_defined_by_contract"
 TEXT_POLICY = "owner_text_is_context_only_and_is_never_parsed_into_authoritative_values"
 RESULT_RULE = "without_tax_benefit_plus_received_tax_benefits_only"
@@ -152,7 +152,9 @@ class AiFinancialReviewValidationError(RuntimeError):
 
 def _schema_path(version: str = SCHEMA_VERSION) -> Path:
     filename = (
-        "ai_financial_review.v3_1.schema.json"
+        "ai_financial_review.v3_2.schema.json"
+        if version == "3.2.0"
+        else "ai_financial_review.v3_1.schema.json"
         if version == "3.1.0"
         else "ai_financial_review.v3.schema.json"
         if version == "3.0.0"
@@ -911,6 +913,12 @@ def _portfolio_data(
                 "market_price_per_unit": item.get("market_price_per_unit"),
                 "market_value": item.get("market_value"),
                 "cost_basis": item.get("cost_basis"),
+                "cost_basis_state": (
+                    "known"
+                    if isinstance(item.get("cost_basis"), Mapping)
+                    and item["cost_basis"].get("value") is not None
+                    else "unknown"
+                ),
                 "unrealized_result": item.get("unrealized_result"),
                 "accrued_interest": item.get("accrued_interest"),
                 "price_date": item.get("price_date"),
@@ -1918,23 +1926,17 @@ def assemble_ai_financial_review(
     }
 
     with source_read_snapshot(session):
-        from hermes_finance.services.clean_instrument_return import (
-            clean_export_data,
-            read_clean_overview,
-        )
+        from hermes_finance.services.ai_review_clean_returns import review_clean_returns
+        from hermes_finance.services.clean_instrument_return import read_clean_overview
         from hermes_finance.services.returns_overall import read_clean_overall
 
         clean_overall = read_clean_overall(session)
-        conflicts = {
-            component["id"]
-            for component in clean_overall["mixed_result"]["components"]
-            if component.get("exclusion_reason") == "source_account_identity_mapping_conflict"
-        }
-        clean_data = clean_export_data(
-            read_clean_overview(session, include_purchases=True),
-            gold=clean_overall["gold"],
-            include_purchases=True,
-            purchase_conflicts=conflicts,
+        clean_data = review_clean_returns(
+            session,
+            read_clean_overview(session, include_purchases=True, include_position_rates=True),
+            clean_overall,
+            account_names={row.id: row.name for row in list_accounts(session)},
+            instrument_names={row.id: row.name for row in list_instruments(session)},
         )
         sections["source_returns"] = _section(
             status="unavailable", reasons=("superseded_by_clean_returns",), data=None

@@ -40,7 +40,7 @@ from hermes_finance.services.instruments import create_instrument
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_analysis_bundle.schema.json"
 FINANCIAL_REVIEW_SCHEMA_PATH = (
-    REPO_ROOT / "docs" / "schemas" / "ai_financial_review.v3_1.schema.json"
+    REPO_ROOT / "docs" / "schemas" / "ai_financial_review.v3_2.schema.json"
 )
 PORTFOLIO_REVIEW_SCHEMA_PATH = (
     REPO_ROOT / "docs" / "schemas" / "portfolio_review_package.schema.json"
@@ -1472,7 +1472,7 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     payload = json.loads(response.content.decode("utf-8"))
     _financial_review_validator().validate(payload)
     assert payload["schema_name"] == "hermes.finance.ai_financial_review"
-    assert payload["schema_version"] == "3.1.0"
+    assert payload["schema_version"] == "3.2.0"
     assert response.headers["content-type"] == "application/json; charset=utf-8"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["metadata"]["source_contracts"] == [
@@ -2578,7 +2578,7 @@ def test_financial_review_rejects_retired_version_selector_before_assembly(
             "/api/export/ai-financial-review/json", params={"format_version": version}
         )
     assert response.status_code == 422, response.text
-    assert "only 3.1.0; omit format_version" in response.json()["error"]["message"]
+    assert "only 3.2.0; omit format_version" in response.json()["error"]["message"]
     assert "content-disposition" not in response.headers
     assert _table_counts(database) == before
 
