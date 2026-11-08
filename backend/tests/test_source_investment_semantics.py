@@ -16,6 +16,7 @@ SEMANTIC_MODULES = (
     "domain/source_money_classifications.py",
     "domain/xirr.py",
     "domain/xirr_roots.py",
+    "services/clean_closed_position.py",
     "services/mybroker_money_candidates.py",
     "services/source_investment_proofs.py",
     "services/source_account_history.py",
@@ -45,8 +46,8 @@ SEMANTIC_MODULES = (
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v12",
-    "62895a4ddbde45b1d0d255ce44ab5204d7d5a44d94bcb88562eb9536cf714d7e",
+    "source_investment_semantics_v13",
+    "ff43c24b26f07b656514adb2f76706c87c7381c1a834d1cb71c18391390a8b85",
 )
 
 
