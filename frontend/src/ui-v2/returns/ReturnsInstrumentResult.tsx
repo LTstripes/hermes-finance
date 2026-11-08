@@ -1,4 +1,5 @@
 import type { InstrumentAnalysis } from "../../api/sourceReturns";
+import { type PositionRate, positionRateMetric } from "./cards";
 import styles from "./InstrumentResult.module.css";
 import { displayMetric, type Metric, unavailable } from "./model";
 import { Explanation, MissingMetricNote, Value, visibleReturnReasons } from "./ReturnsInfo";
@@ -19,14 +20,24 @@ export function ReturnsInstrumentResult({
   analysis,
   reasonCodes = [],
   showMissingNote = true,
+  positionRates,
 }: {
   result: { pnl: Metric; rate: Metric; conditional_pnl?: Metric; conditional_rate?: Metric } | null;
   analysis?: InstrumentAnalysis<string>;
   reasonCodes?: string[];
   showMissingNote?: boolean;
+  /** Clean position rates replace the period Modified Dietz for a position (#1016). */
+  positionRates?: { simple: PositionRate; xirr: PositionRate | null } | null;
 }) {
   const originalPnl = result?.pnl ?? unavailable;
-  const originalRate = result?.rate ?? { ...unavailable, unit: "fraction" as const };
+  const originalRate = positionRates
+    ? positionRateMetric(positionRates.simple)
+    : (result?.rate ?? { ...unavailable, unit: "fraction" as const });
+  const annual =
+    positionRates?.xirr && positionRates.xirr.value !== null
+      ? positionRateMetric(positionRates.xirr)
+      : null;
+  const shortHolding = !!positionRates?.xirr?.reason_codes.includes("short_holding");
   const pnl = { ...originalPnl, reason_codes: visibleReturnReasons(originalPnl.reason_codes) };
   const rate = { ...originalRate, reason_codes: visibleReturnReasons(originalRate.reason_codes) };
   const reasons = visibleReturnReasons([
@@ -64,14 +75,25 @@ export function ReturnsInstrumentResult({
           </dd>
         </div>
         <div>
-          <dt>Доходность %</dt>
+          <dt>{positionRates ? "На вложенное %" : "Доходность %"}</dt>
           <dd>
-            <Value metric={rate} label="Доходность инструмента" />
+            <Value metric={rate} label="Доходность инструмента" signed={!!positionRates} />
           </dd>
         </div>
+        {annual && (
+          <div>
+            <dt>Годовая %</dt>
+            <dd>
+              <Value metric={annual} label="Годовая доходность" signed />
+            </dd>
+          </div>
+        )}
       </dl>
       {showMissingNote && <MissingMetricNote metrics={[pnl, rate]} />}
       {rate.method === "modified_dietz" && <small>Modified Dietz · за период, не годовая</small>}
+      {positionRates && !annual && shortHolding && rate.value !== null && (
+        <small>Годовая не считается: деньги в среднем были в позиции меньше года</small>
+      )}
       {pnl.value === null && observedPayouts.length > 0 && (
         <div>
           <p>Найденные выплаты — данные могут быть неполными</p>

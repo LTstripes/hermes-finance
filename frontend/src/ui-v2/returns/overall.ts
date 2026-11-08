@@ -1,4 +1,5 @@
 import { apiRequest } from "../../api/client";
+import type { PositionRate } from "./cards";
 import type { AccountLink, Metric, Period, Result } from "./model";
 
 export type OverallAccount = {
@@ -25,6 +26,8 @@ export type OverallInstrumentAccount = Pick<
 > & {
   canonical_account_id?: number | null;
   details_loaded: boolean;
+  simple_return?: PositionRate;
+  xirr?: PositionRate;
   native_period?: boolean;
   period: Period | null;
   scope: string;

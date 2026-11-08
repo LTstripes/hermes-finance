@@ -452,15 +452,18 @@ provenance/caveats, a column of account/period codes, or empty blocks. Show know
 zero and missing data distinctly; omit irrelevant zero coupon rows for stocks.
 Explain a material incompleteness once in plain language, with an actionable
 detail only where necessary. Different-method percentages are secondary and
-retain method and exact dates; Modified Dietz is a period return, not annualized.
-For a sold position its weighted capital can be small over a long reporting
-window; do not silently crop that window or substitute another denominator.
+retain method and exact dates. A position is compared by its simple return on
+invested purchases (not annualized) and, when the capital-weighted holding period
+is at least 365 days, by its annual XIRR (owner decision on #1016). A shorter
+holding shows no annual figure and says so once. Position Modified Dietz is not
+shown; Modified Dietz stays an account period return, not annualized.
 
 All exact ISIN groups, including sold instruments and separate account contexts,
 remain reachable from Returns. Entering an instrument opens its own exact-ISIN page
 over all available account histories; individual account periods, rates and
 local gaps remain visible through the existing detail presentation. The instrument list
-shows each account's RUB result and period percentage on a compact summary row.
+shows each account's RUB result, simple return and, when eligible, annual XIRR on a
+compact summary row.
 Account dates, explanation and assumptions expand on demand;
 unavailable values show a dash and a short review reason. The shared instrument
 card also exposes the calculation's assumptions briefly, with expandable details. The default
@@ -856,8 +859,9 @@ redemptions, payouts and total result remain unknown with their per-account
 values. Source analyses are read in account batches, without loading every
 instrument card during export.
 Purchase percentages identify the simple price result on purchase cost, their
-dates and nonannualized basis. Position Modified Dietz is omitted; position XIRR
-and an unproved realized/unrealized split are not inferred. A proved closed
+dates and nonannualized basis. Position Modified Dietz is omitted; position simple
+return and XIRR are copied from the backend, and an unproved realized/unrealized
+split is not inferred. A proved closed
 position with a supported result carries its realized result. Unknown portfolio
 cost basis stays unknown, while an explicit zero stays zero.
 [C7](ARCHITECTURE_AND_CONTRACTS.md#c7) owns the source-return meaning and

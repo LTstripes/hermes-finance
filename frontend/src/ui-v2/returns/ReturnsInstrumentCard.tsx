@@ -6,7 +6,13 @@ import { reasonCopy } from "../../lib/reasonCopy";
 import sheet from "../ReportSheet.module.css";
 import { money, rate } from "../SourceInstrumentDetail";
 import { cardOperations, cardQuantityStatus, nonzeroAmount } from "./cardPresentation";
-import { cleanMetric, getInstrumentCard, type InstrumentCard, selectCardScope } from "./cards";
+import {
+  cleanMetric,
+  getInstrumentCard,
+  type InstrumentCard,
+  positionRateMetric,
+  selectCardScope,
+} from "./cards";
 import styles from "./InstrumentCard.module.css";
 import resultStyles from "./InstrumentResult.module.css";
 import {
@@ -178,6 +184,19 @@ export function ReturnsInstrumentCard({
   const summaryMetrics = data
     ? [data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl]
     : [];
+  // Positions are compared by the simple return on invested and, after a capital-weighted
+  // year, by annual XIRR (#1016). There is no combined rate across accounts.
+  const onlyClean = data?.accounts.length === 1 ? data.accounts[0].clean : null;
+  const simpleRate =
+    onlyClean?.simple_return && onlyClean.simple_return.value !== null
+      ? positionRateMetric(onlyClean.simple_return)
+      : null;
+  const annualRate =
+    onlyClean?.xirr && onlyClean.xirr.value !== null ? positionRateMetric(onlyClean.xirr) : null;
+  const ratesPerAccount =
+    !!data &&
+    data.accounts.length > 1 &&
+    data.accounts.some((account) => account.clean?.simple_return?.value != null);
   // Equality is drawn only for a complete bridge: all three values known, none partial
   // (one producer-owned account set), and the parts adding up to the total exactly.
   // Matching numbers alone do not prove that parts and total cover the same data.
@@ -251,26 +270,30 @@ export function ReturnsInstrumentCard({
                     !visibleReturnReasons(data.summary.pnl.reason_codes).length && (
                       <span className={styles.estimate}>Оценка</span>
                     )}
-                  {data.summary.rate.value !== null && (
-                    <span className={sheet.delta} data-tone={tone(data.summary.rate)}>
-                      {displaySignedRate(data.summary.rate)}
+                  {simpleRate && (
+                    <span className={sheet.delta} data-tone={tone(simpleRate)}>
+                      {displaySignedRate(simpleRate)}
                     </span>
                   )}
-                  {data.summary.rate.value !== null ? (
+                  {simpleRate && (
                     <span className={sheet.muted}>
-                      за период, не годовая{" "}
+                      на вложенное
+                      {annualRate ? ` · ${displaySignedRate(annualRate)} годовых` : ""}{" "}
                       <Info label="Процент">
                         <p>
-                          Modified Dietz учитывает суммы и даты покупок и продаж за указанный
-                          период. Это не годовая ставка и не прибыль, делённая на сумму покупок.
+                          Процент на вложенное — итог позиции, делённый на сумму покупок. Он не
+                          пересчитан на год.
+                        </p>
+                        <p>
+                          Годовая доходность (XIRR) учитывает даты и суммы покупок, продаж и выплат.
+                          Её показываем, когда деньги в среднем пролежали в позиции не меньше года,
+                          иначе годовой процент вводит в заблуждение.
                         </p>
                       </Info>
                     </span>
-                  ) : (
-                    data.accounts.length > 1 &&
-                    data.accounts.some((a) => a.clean?.modified_dietz.value != null) && (
-                      <span className={sheet.muted}>Процент — по каждому счёту ниже</span>
-                    )
+                  )}
+                  {ratesPerAccount && (
+                    <span className={sheet.muted}>Процент — по каждому счёту ниже</span>
                   )}
                 </div>
                 {partialTotal && (
@@ -590,6 +613,14 @@ export function ReturnsInstrumentCard({
                                   ),
                                   rate: cleanMetric(account.clean.modified_dietz, true),
                                 }}
+                                positionRates={
+                                  account.clean.simple_return
+                                    ? {
+                                        simple: account.clean.simple_return,
+                                        xirr: account.clean.xirr ?? null,
+                                      }
+                                    : null
+                                }
                                 reasonCodes={account.reason_codes.filter(
                                   (code) => !shownCaveats.has(code),
                                 )}
@@ -641,14 +672,14 @@ export function ReturnsInstrumentCard({
                   Номера счетов в отчёте AI относятся к текущему составу счетов.
                 </p>
               )}
-              {data.accounts.some((account) => account.clean?.modified_dietz.value != null) && (
+              {data.accounts.some((account) => account.clean?.simple_return?.value != null) && (
                 <details className={styles.details}>
                   <summary>Как читать процент</summary>
                   <p>
-                    Modified Dietz учитывает суммы и даты покупок и продаж за указанный период. Если
-                    позицию уже продали, длинный период и небольшой взвешенный капитал могут дать
-                    высокий процент даже при умеренной прибыли в рублях. Это не годовая ставка и не
-                    прибыль, делённая на сумму покупок.
+                    «На вложенное» — итог позиции, делённый на сумму покупок за доступную историю,
+                    без пересчёта на год. «Годовая» — XIRR по датам покупок, продаж и выплат. Она
+                    появляется, когда деньги в среднем пролежали в позиции не меньше года: для
+                    короткого срока годовой процент получается обманчиво большим.
                   </p>
                 </details>
               )}

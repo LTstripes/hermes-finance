@@ -3,6 +3,7 @@ import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "r
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
 import sheet from "./ReportSheet.module.css";
+import { positionRateMetric } from "./returns/cards";
 import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
@@ -526,7 +527,12 @@ export default function UiV2ReturnsPage() {
                                               )}
                                             </strong>{" "}
                                             <span className={layout.rate}>
-                                              · {displayMetric(a.rate)}
+                                              ·{" "}
+                                              {a.simple_return
+                                                ? displayMetric(positionRateMetric(a.simple_return))
+                                                : displayMetric(a.rate)}
+                                              {a.xirr?.value != null &&
+                                                ` · ${displayMetric(positionRateMetric(a.xirr))} годовых`}
                                             </span>
                                           </>
                                         ) : (
@@ -536,6 +542,11 @@ export default function UiV2ReturnsPage() {
                                       <ReturnsInstrumentResult
                                         showMissingNote={false}
                                         result={a.resultAvailable ? a : null}
+                                        positionRates={
+                                          a.resultAvailable && a.simple_return
+                                            ? { simple: a.simple_return, xirr: a.xirr ?? null }
+                                            : null
+                                        }
                                         reasonCodes={
                                           a.resultAvailable
                                             ? r.reason_codes
@@ -554,7 +565,14 @@ export default function UiV2ReturnsPage() {
                                       />
                                     </details>
                                     {a.resultAvailable && (
-                                      <MissingMetricNote metrics={[a.pnl, a.rate]} />
+                                      <MissingMetricNote
+                                        metrics={[
+                                          a.pnl,
+                                          a.simple_return
+                                            ? positionRateMetric(a.simple_return)
+                                            : a.rate,
+                                        ]}
+                                      />
                                     )}
                                   </section>
                                 ))}

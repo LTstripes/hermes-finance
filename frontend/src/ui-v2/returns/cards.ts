@@ -26,7 +26,24 @@ export type CleanInstrument = {
   known_result: InstrumentMetric<string>;
   pnl: InstrumentMetric<string>;
   modified_dietz: InstrumentMetric<string>;
+  simple_return?: PositionRate;
+  xirr?: PositionRate;
 };
+
+/** A server position rate: simple on invested, or annual XIRR (fraction, 0.1 = 10%). */
+export type PositionRate = InstrumentMetric<string> & {
+  method: "simple_return" | "xirr";
+  annualized: boolean;
+  invested_kopecks: string | null;
+  start_date: string | null;
+  end_date: string;
+  holding_days: number | null;
+  weighted_holding_days: string | null;
+};
+
+export function positionRateMetric(rate: PositionRate): Metric {
+  return { ...cleanMetric(rate, true), method: rate.method };
+}
 
 export function cleanMetric(value: InstrumentMetric<string>, rate = false): Metric {
   return {
