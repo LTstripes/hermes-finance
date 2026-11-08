@@ -178,16 +178,8 @@ beforeEach(() => {
     return result;
   });
 });
-function show(closed = false, workspace = false) {
-  const query = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  render(
-    <QueryClientProvider client={query}>
-      <BrokerMonthReview monthId={1} closed={closed} workspace={workspace} />
-    </QueryClientProvider>,
-  );
-  return userEvent.setup();
+function show(closed = false) {
+  return mounted(closed).user;
 }
 function showWorkspace() {
   const file = new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" });
@@ -200,7 +192,6 @@ function showWorkspace() {
       <BrokerMonthReview
         monthId={1}
         closed={false}
-        workspace
         sourceAccount="synthetic"
         intakeSelection={{ id: 1, file, snapshot: workspaceIntake }}
       />
@@ -210,13 +201,13 @@ function showWorkspace() {
 }
 async function inspect(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("option", { name: "Synthetic broker" });
-  await user.upload(
-    screen.getByLabelText("Оригинальный XML MyBroker"),
+  await selectOriginal(
+    user,
     new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
   );
   await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
   await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   await user.click(screen.getByText("Полный состав источника и привязки"));
 }
@@ -224,10 +215,12 @@ it("one explicit summary button saves partial source-DRAFT and confirms only aft
   const user = show();
   await inspect(user);
   const apply = screen.getByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   expect(apply).toBeEnabled();
-  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("checkbox", { name: /Я подтверждаю|Разрешаю автоматический поиск/ }),
+  ).not.toBeInTheDocument();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
   expect(screen.getByRole("table", { name: "Привязки исходных счетов" })).toHaveTextContent(
     "Существующая",
@@ -276,7 +269,7 @@ it("discloses every new alias and sends the exact batch decision only after expl
   ])
     expect(table).toHaveTextContent(alias);
   const apply = screen.getByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   expect(apply).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
@@ -296,19 +289,15 @@ it("reinspection invalidates alias confirmation and stale Apply cannot claim suc
   const user = show();
   await inspect(user);
   await user.click(screen.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }));
-  await user.click(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Сохранить данные месяца" }));
   await screen.findByText(/Источник или привязки изменились/);
   expect(readBrokerMonth).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
   await screen.findByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ });
   expect(
     screen.getByRole("checkbox", { name: /Я подтверждаю, что все новые aliases/ }),
   ).not.toBeChecked();
-  expect(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Сохранить данные месяца" })).toBeDisabled();
 });
 it("workspace uses the selected original and retries an acknowledged save only by GET", async () => {
   vi.mocked(previewOriginalContext).mockResolvedValue({
@@ -350,9 +339,7 @@ it("rejects independent readback from another account", async () => {
   const user = show();
   await inspect(user);
 
-  await user.click(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Сохранить данные месяца" }));
   await screen.findByText(/Независимое чтение не подтвердило/);
   expect(screen.queryByText(/Сохранённый результат подтверждён/)).not.toBeInTheDocument();
 });
@@ -360,19 +347,16 @@ it("new original file invalidates the previous review", async () => {
   const user = show();
   await inspect(user);
 
-  await user.upload(
-    screen.getByLabelText("Оригинальный XML MyBroker"),
-    new File(["<changed/>"], "changed.xml", { type: "application/xml" }),
-  );
-  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  await selectOriginal(user, new File(["<changed/>"], "changed.xml", { type: "application/xml" }));
   expect(
-    screen.queryByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
+    screen.queryByRole("checkbox", { name: /Я подтверждаю|Разрешаю автоматический поиск/ }),
   ).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Сохранить данные месяца" })).not.toBeInTheDocument();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 it("CLOSED renders every persisted covered account and offers no writer", async () => {
   vi.mocked(listBrokerMonths).mockResolvedValue([persisted("a"), persisted("b", 8)]);
-  show(true, true);
+  show(true);
   await screen.findByText(/Счёт #7/);
   expect(screen.getByText(/Счёт #8/)).toBeVisible();
   expect(screen.queryByLabelText("Оригинальный XML MyBroker")).not.toBeInTheDocument();
@@ -404,16 +388,14 @@ it("a refreshed source GET overrides earlier ready Apply readback", async () => 
   });
   const user = show();
   await screen.findByRole("option", { name: "Synthetic broker" });
-  await user.upload(
-    screen.getByLabelText("Оригинальный XML MyBroker"),
+  await selectOriginal(
+    user,
     new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
   );
   await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
-  await screen.findByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" });
+  await screen.findByRole("button", { name: "Сохранить данные месяца" });
 
-  await user.click(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Сохранить данные месяца" }));
   await screen.findByText(/Черновик неполный; замечания сохранены/);
   expect(screen.queryByText(/Брокерский компонент готов к общей проверке/)).not.toBeInTheDocument();
 });
@@ -450,16 +432,14 @@ it.each([true, false])(
     });
     const user = show();
     await screen.findByRole("option", { name: "Synthetic broker" });
-    await user.upload(
-      screen.getByLabelText("Оригинальный XML MyBroker"),
+    await selectOriginal(
+      user,
       new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),
     );
     await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "7");
-    await screen.findByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" });
+    await screen.findByRole("button", { name: "Сохранить данные месяца" });
 
-    await user.click(
-      screen.getByRole("button", { name: "Подтвердить сводку и сохранить source-DRAFT" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Сохранить данные месяца" }));
     await screen.findByText(/Сохранённый источник месяца/);
     expect(screen.getByText(/Черновик неполный; замечания сохранены/)).toBeVisible();
     expect(
@@ -468,20 +448,47 @@ it.each([true, false])(
   },
 );
 
-function mounted() {
+const originalSelections = new WeakMap<ReturnType<typeof userEvent.setup>, (file: File) => void>();
+function mounted(initialClosed = false) {
   const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const node = (id: number, closed = false) => (
+  let selection: { id: number; file: File; snapshot: SourceIntake } | null = null;
+  let selectionId = 0;
+  let monthId = 1;
+  let closed = initialClosed;
+  const node = () => (
     <QueryClientProvider client={query}>
-      <BrokerMonthReview monthId={id} closed={closed} />
+      <BrokerMonthReview
+        key={selectionId}
+        monthId={monthId}
+        closed={closed}
+        intakeSelection={selection}
+      />
     </QueryClientProvider>
   );
-  const view = render(node(1));
+  const view = render(node());
+  const user = userEvent.setup();
+  originalSelections.set(user, (file) => {
+    selectionId++;
+    selection = { id: selectionId, file, snapshot: { ...workspaceIntake, id: selectionId } };
+    view.rerender(node());
+  });
   return {
     ...view,
     query,
-    user: userEvent.setup(),
-    change: (id: number, closed = false) => view.rerender(node(id, closed)),
+    user,
+    change: (id: number, nextClosed = false) => {
+      monthId = id;
+      closed = nextClosed;
+      selection = null;
+      view.rerender(node());
+    },
   };
+}
+async function selectOriginal(user: ReturnType<typeof userEvent.setup>, file: File) {
+  const select = originalSelections.get(user);
+  if (!select) throw new Error("Missing workspace selection fixture");
+  await act(async () => select(file));
+  expect(screen.queryByLabelText("Оригинальный XML MyBroker")).not.toBeInTheDocument();
 }
 it("keeps Preview through unchanged background reads but retires it when month facts change", async () => {
   const { query, user } = mounted();
@@ -491,8 +498,7 @@ it("keeps Preview through unchanged background reads but retires it when month f
     queryFn: async () => ({ generated_at: "old", evidence: "A" }),
   });
   await inspect(user);
-  const save = () =>
-    screen.queryByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" });
+  const save = () => screen.queryByRole("button", { name: "Сохранить данные месяца" });
   expect(save()).toBeEnabled();
   await act(async () => {
     await query.fetchQuery({
@@ -530,7 +536,8 @@ function deferred<T>() {
 }
 async function upload(user: ReturnType<typeof userEvent.setup>, file = original()) {
   await screen.findByRole("option", { name: "Synthetic broker" });
-  await user.upload(screen.getByLabelText("Оригинальный XML MyBroker"), file);
+  await selectOriginal(user, file);
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
 }
 it("ordinary can_apply=false cannot be bypassed by known account or review", async () => {
   known();
@@ -609,11 +616,11 @@ it.each(["success", "error"])("file A→B→A rejects late discovery %s", async 
   await upload(user, a);
   await upload(user, original("b.xml"));
   await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   await upload(user, a);
   await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
 
   await act(async () => {
@@ -623,9 +630,7 @@ it.each(["success", "error"])("file A→B→A rejects late discovery %s", async 
   });
   expect(screen.getByLabelText("Брокерский счёт")).toHaveValue("7");
   expect(screen.queryByText("late-error")).not.toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  ).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Сохранить данные месяца" })).toBeEnabled();
   expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
 });
 it.each(["file", "account", "month", "closed", "unmount", "mappings"])(
@@ -641,7 +646,7 @@ it.each(["file", "account", "month", "closed", "unmount", "mappings"])(
     if (kind === "file") {
       await upload(user, original("b.xml"));
       await screen.findByRole("button", {
-        name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+        name: "Сохранить данные месяца",
       });
     }
     if (kind === "account") await user.selectOptions(screen.getByLabelText("Брокерский счёт"), "");
@@ -662,7 +667,7 @@ it.each(["file", "account", "month", "closed", "unmount", "mappings"])(
     if (kind !== "file")
       expect(
         screen.queryByRole("button", {
-          name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+          name: "Сохранить данные месяца",
         }),
       ).not.toBeInTheDocument();
     expect(applyBrokerMonth).not.toHaveBeenCalled();
@@ -677,13 +682,16 @@ it("mapping invalidation immediately drops both whole-account and alias consent"
   const { user, query } = mounted();
   await upload(user);
   await screen.findByRole("checkbox", { name: /Я подтверждаю/ });
-  for (const checkbox of screen.getAllByRole("checkbox")) await user.click(checkbox);
+  for (const checkbox of screen.getAllByRole("checkbox", { name: /Я подтверждаю/ }))
+    await user.click(checkbox);
   await act(async () => {
     query.setQueryData(["broker-identity-mappings"], ["A"]);
     query.setQueryData(["broker-identity-mappings"], ["B"]);
     query.setQueryData(["broker-identity-mappings"], ["A"]);
   });
-  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("checkbox", { name: /Я подтверждаю|Разрешаю автоматический поиск/ }),
+  ).not.toBeInTheDocument();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 
@@ -720,16 +728,14 @@ it("late ordinary Preview error after selecting another original cannot replace 
   await waitFor(() => expect(previewBrokerMonth).toHaveBeenCalledTimes(1));
   await upload(user, original("b.xml"));
   await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
 
   await act(async () => {
     late.reject(new Error("old-original-error"));
   });
   expect(screen.queryByText("old-original-error")).not.toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  ).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Сохранить данные месяца" })).toBeEnabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 
@@ -797,9 +803,7 @@ it("unknown reasons stay neutral with raw codes in details and do not invent an 
   await user.click(within(summary).getByText("Технические причины Preview"));
   for (const code of ["future_unknown", "__proto__"])
     expect(within(summary).getByText(code)).toBeVisible();
-  expect(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  ).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Сохранить данные месяца" })).toBeEnabled();
   expect(summary).toHaveTextContent("Покрытие счёта, себестоимость, налоги и НКД не подтверждены");
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
@@ -845,10 +849,10 @@ it("missing currency and source conflict give next actions without an enable/ign
   expect(summary).toHaveTextContent("RUB автоматически не назначается");
   expect(summary).toHaveTextContent("RU000A000777");
   expect(summary).toHaveTextContent("Пересекающиеся источники противоречат друг другу");
-  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  ).toBeDisabled();
+    screen.queryByRole("checkbox", { name: /Я подтверждаю|Разрешаю автоматический поиск/ }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Сохранить данные месяца" })).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 it("acknowledged source retains the exact reviewed alias batch without asking for a second write consent", async () => {
@@ -859,14 +863,10 @@ it("acknowledged source retains the exact reviewed alias batch without asking fo
   const { user } = mounted();
   await upload(user);
   await user.click(await screen.findByRole("checkbox", { name: /Я подтверждаю/ }));
-  await user.click(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Сохранить данные месяца" }));
   await screen.findByText("Synthetic GET failed");
   expect(screen.queryByRole("checkbox", { name: /Я подтверждаю/ })).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("button", { name: /сохранить неполный source-DRAFT/ }),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Сохранить данные месяца/ })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Повторить чтение" }));
   await screen.findByText(/Сохранённый результат подтверждён/);
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
@@ -879,7 +879,7 @@ it("a double click while saving cannot submit a second financial intent", async 
   const { user } = mounted();
   await upload(user);
   const save = await screen.findByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   await user.dblClick(save);
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
@@ -933,10 +933,10 @@ it("a supported new instrument plan is disclosed without a new per-ISIN decision
   expect(summary).toHaveTextContent("Инструменты каталога: переиспользуются 0; новых решений 1");
   await user.click(within(summary).getByText("Инструменты и контроль количества"));
   expect(summary).toHaveTextContent("Планируется новый инструмент по доказательствам Preview");
-  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  ).toBeEnabled();
+    screen.queryByRole("checkbox", { name: /Я подтверждаю|Разрешаю автоматический поиск/ }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Сохранить данные месяца" })).toBeEnabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 
@@ -1055,7 +1055,7 @@ it("unmount/remount keeps exact original and acknowledged recovery; reload uses 
   const { user, query, unmount } = mounted();
   const file = original();
   await upload(user, file);
-  await user.click(await screen.findByRole("button", { name: /Подтвердить сводку и сохранить/ }));
+  await user.click(await screen.findByRole("button", { name: /Сохранить данные месяца/ }));
   await screen.findByText("offline");
   unmount();
   render(
@@ -1085,9 +1085,9 @@ it("catalogue mutation while unmounted retains File but drops proof; returning r
     </QueryClientProvider>,
   );
   expect(brokerOriginalSession(query).snapshot().file).toBe(file);
-  expect(screen.queryByRole("button", { name: /Подтвердить сводку/ })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
-  await screen.findByRole("button", { name: /Подтвердить сводку/ });
+  expect(screen.queryByRole("button", { name: /Сохранить данные месяца/ })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
+  await screen.findByRole("button", { name: /Сохранить данные месяца/ });
   expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
@@ -1181,10 +1181,10 @@ it("explicit Preview after a confirmed source Save displays the fresh summary in
   known();
   const { user } = mounted();
   await upload(user);
-  await user.click(await screen.findByRole("button", { name: /Подтвердить сводку и сохранить/ }));
+  await user.click(await screen.findByRole("button", { name: /Сохранить данные месяца/ }));
   await screen.findByText(/Сохранённый результат подтверждён/);
   expect(screen.queryByRole("region", { name: "Сводка исходного DRAFT" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Проверить MyBroker" }));
+  await user.click(screen.getByRole("button", { name: "Проверить изменения" }));
   await screen.findByRole("region", { name: "Сводка исходного DRAFT" });
   expect(previewBrokerMonth).toHaveBeenCalledTimes(2);
   expect(applyBrokerMonth).toHaveBeenCalledTimes(1);
@@ -1294,7 +1294,7 @@ it("source inbox shows 12 matched and one pending; one consent, explicit decisio
   await inspect(user);
   expect(screen.getByText(/MATCHED — 12; PENDING REVIEW — 1/)).toBeInTheDocument();
   const save = screen.getByRole("button", {
-    name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+    name: "Сохранить данные месяца",
   });
   expect(save).toBeDisabled();
   expect(lookupPublicIdentities).not.toHaveBeenCalled();
@@ -1326,7 +1326,7 @@ it("source inbox shows 12 matched and one pending; one consent, explicit decisio
   expect(lookupPublicIdentities).toHaveBeenCalledTimes(1);
   await user.click(
     await screen.findByRole("button", {
-      name: "Подтвердить сводку и сохранить неполный source-DRAFT",
+      name: "Сохранить данные месяца",
     }),
   );
   await waitFor(() => expect(applyBrokerMonth).toHaveBeenCalled());
@@ -1352,9 +1352,7 @@ it("source inbox refresh recovers failed public lookup and preserves original wi
   await screen.findByRole("option", { name: /Создать: Synthetic official bond/ });
   expect(lookupPublicIdentities).toHaveBeenCalledTimes(2);
   expect(screen.getByRole("checkbox", { name: /Разрешаю автоматический поиск/ })).toBeChecked();
-  expect(
-    screen.getByRole("button", { name: "Подтвердить сводку и сохранить неполный source-DRAFT" }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Сохранить данные месяца" })).toBeDisabled();
   expect(applyBrokerMonth).not.toHaveBeenCalled();
 });
 

@@ -195,7 +195,6 @@ export function BrokerMonthReview({
   intakeSelection,
   scopeBlocked = false,
   sourceAccount,
-  workspace = false,
   onDirtyChange,
 }: {
   monthId: number;
@@ -206,7 +205,6 @@ export function BrokerMonthReview({
     snapshot?: SourceIntake;
     preserveDraft?: boolean;
   } | null;
-  workspace?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   scopeBlocked?: boolean;
   sourceAccount?: string | null;
@@ -449,7 +447,7 @@ export function BrokerMonthReview({
   return (
     <Panel title="Месяц из MyBroker" label="Исходный отчёт">
       <div className={styles.stack}>
-        <details open={!workspace}>
+        <details>
           <summary>Подробнее о проверке выписки</summary>
           <p>
             Выбери оригинальный XML: для известного счёта и точного месяца Preview появится
@@ -463,24 +461,6 @@ export function BrokerMonthReview({
         </details>
         {!readOnly ? (
           <>
-            {!workspace && (
-              <label className={styles.field}>
-                Оригинальный XML MyBroker{" "}
-                <input
-                  aria-label="Оригинальный XML MyBroker"
-                  type="file"
-                  accept=".xml"
-                  key={`${monthId}:${original.epoch}`}
-                  disabled={original.busy || Boolean(original.pending) || journalPending}
-                  onChange={(e) => {
-                    const original = e.target.files?.[0] ?? null;
-                    session.select(original, monthId, "");
-                    invalidateReview();
-                    if (original) void inspect(original, "");
-                  }}
-                />
-              </label>
-            )}
             <label className={styles.field}>
               Брокерский счёт{" "}
               <select
@@ -511,7 +491,7 @@ export function BrokerMonthReview({
               onClick={() => void inspect()}
               disabled={!file || busy || original.pending != null || journalPending}
             >
-              {busy ? "Проверяем…" : workspace ? "Проверить изменения" : "Проверить MyBroker"}
+              {busy ? "Проверяем…" : "Проверить изменения"}
             </Button>
           </>
         ) : (
@@ -609,13 +589,7 @@ export function BrokerMonthReview({
                 (preview.account_bindings.length > 0 && !bindingsReviewed)
               }
             >
-              {preview.bookkeeping_ready
-                ? workspace
-                  ? "Сохранить данные месяца"
-                  : "Подтвердить сводку и сохранить source-DRAFT"
-                : workspace
-                  ? "Сохранить данные месяца"
-                  : "Подтвердить сводку и сохранить неполный source-DRAFT"}
+              Сохранить данные месяца
             </Button>
             <details>
               <summary>Полный состав источника и привязки</summary>

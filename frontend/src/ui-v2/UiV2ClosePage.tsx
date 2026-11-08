@@ -411,11 +411,7 @@ export default function UiV2ClosePage() {
                       ))}
                     <details>
                       <summary>Подробнее об итогах и проверках</summary>
-                      <FinalMonthReview
-                        workspace
-                        origin="monthly-close-v2"
-                        review={workflow.final_review}
-                      />
+                      <FinalMonthReview review={workflow.final_review} />
                     </details>
                   </>
                 ) : workflowReady ? (
@@ -494,7 +490,7 @@ export default function UiV2ClosePage() {
         }
         onDiscard={(destination) => {
           const withinMonth = destination?.split("?")[0] === "/v2/close";
-          // External navigation unmounts the workspace itself. Avoid an
+          // External navigation unmounts the itself. Avoid an
           // intermediate remount that could retire the retained File first.
           if (!destination || withinMonth) setDiscardVersion((value) => value + 1);
           setEditorNavigation({ dirty: false, pending: false });

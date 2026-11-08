@@ -594,7 +594,6 @@ export function UiV2MonthSources({
                     : account
               }
               intakeSelection={review.selection}
-              workspace
               onDirtyChange={reportDirty}
             />
           )}

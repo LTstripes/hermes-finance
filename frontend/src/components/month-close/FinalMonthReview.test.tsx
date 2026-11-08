@@ -172,7 +172,7 @@ describe("FinalMonthReview", () => {
   it("renders backend KPIs, all manual cards, unavailable data and separated future cash flows", () => {
     render(
       <MemoryRouter>
-        <FinalMonthReviewView workspace review={review()} />
+        <FinalMonthReviewView review={review()} />
       </MemoryRouter>,
     );
 
@@ -237,7 +237,7 @@ describe("FinalMonthReview", () => {
 
     render(
       <MemoryRouter>
-        <FinalMonthReviewView workspace review={empty} />
+        <FinalMonthReviewView review={empty} />
       </MemoryRouter>,
     );
 
@@ -246,11 +246,11 @@ describe("FinalMonthReview", () => {
     ).toBeGreaterThanOrEqual(5);
   });
 
-  it("keeps workspace correction links on drafts and hides edits on a closed review", () => {
+  it("keeps correction links on drafts and hides edits on a closed review", () => {
     const draft = review();
     const { rerender } = render(
       <MemoryRouter>
-        <FinalMonthReviewView workspace review={draft} />
+        <FinalMonthReviewView review={draft} />
       </MemoryRouter>,
     );
     const links = screen
@@ -270,7 +270,6 @@ describe("FinalMonthReview", () => {
     rerender(
       <MemoryRouter>
         <FinalMonthReviewView
-          workspace
           review={{ ...draft, month_header: { ...draft.month_header, status: "closed" } }}
         />
       </MemoryRouter>,
@@ -295,7 +294,7 @@ describe("FinalMonthReview", () => {
     };
     render(
       <MemoryRouter>
-        <FinalMonthReviewView workspace review={data} />
+        <FinalMonthReviewView review={data} />
       </MemoryRouter>,
     );
 
