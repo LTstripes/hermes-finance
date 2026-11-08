@@ -148,11 +148,16 @@ export default function UiV2DataCatalogsPage() {
     else next.set("tab", nextTab);
     setParams(next);
   }
+  // The IIS forms render below both account tables; bring them into view on request,
+  // otherwise the button looks inert on a long list.
+  const iisPanel = useRef<HTMLDivElement>(null);
+  const [iisScrollRequest, setIisScrollRequest] = useState(0);
   function selectIisAccount(id: number) {
     const next = new URLSearchParams(params);
     next.delete("tab");
     next.set("account", String(id));
     setParams(next);
+    setIisScrollRequest((value) => value + 1);
   }
   const plannerParams = new URLSearchParams(params);
   plannerParams.delete("tab");
@@ -181,6 +186,14 @@ export default function UiV2DataCatalogsPage() {
   const [instrumentCleanupLoading, setInstrumentCleanupLoading] = useState(false);
   const [instrumentCleanupError, setInstrumentCleanupError] = useState<string | null>(null);
   const cleanupRequestId = useRef(0);
+  const scrolledIisRequest = useRef(0);
+  useEffect(() => {
+    // The URL update renders the panel after the click, so wait until it exists.
+    if (iisScrollRequest === scrolledIisRequest.current || accountsLoading) return;
+    if (accountId === null || !iisPanel.current) return;
+    scrolledIisRequest.current = iisScrollRequest;
+    iisPanel.current.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  });
 
   const loadAccounts = useCallback(async (signal?: AbortSignal) => {
     setAccountsLoading(true);
@@ -718,11 +731,13 @@ export default function UiV2DataCatalogsPage() {
           </UiV2Notice>
         ) : accountId !== null && !accountsLoading && !accountsError ? (
           selectedIisAccount?.account_type === "iis" && selectedIisAccount.status === "active" ? (
-            <UiV2IisAccountForms
-              account={selectedIisAccount}
-              key={selectedIisAccount.id}
-              plannerPath={plannerPath}
-            />
+            <div ref={iisPanel} className={styles.iisPanel}>
+              <UiV2IisAccountForms
+                account={selectedIisAccount}
+                key={selectedIisAccount.id}
+                plannerPath={plannerPath}
+              />
+            </div>
           ) : (
             <UiV2Notice title="Счёт ИИС недоступен">
               Активный счёт ИИС с этим идентификатором не найден.

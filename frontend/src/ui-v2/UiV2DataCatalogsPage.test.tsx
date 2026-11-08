@@ -274,4 +274,17 @@ describe("UiV2DataCatalogsPage", () => {
       ["/api/broker-identity-mappings", "GET"],
     ]);
   });
+  it("scrolls the IIS forms into view when Данные ИИС is pressed", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    listAccountsMock.mockResolvedValue([
+      { ...account, id: 7, name: "Синтетический ИИС", account_type: "iis" },
+      hiddenAccount,
+    ]);
+    renderPage();
+    const button = await screen.findByRole("button", { name: "Данные ИИС" });
+    await userEvent.click(button);
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView.mock.calls[0][0]).toEqual({ behavior: "smooth", block: "start" });
+  });
 });
