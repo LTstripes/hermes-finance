@@ -319,7 +319,6 @@ function Preparation({
   const [selected, setSelected] = useState("");
   const query = useQuery({
     queryKey: ["class-preparation", assetClass, start, end],
-    refetchOnWindowFocus: true,
     queryFn: async ({ signal }) => {
       const [result, coverages, months, accounts, instruments] = await Promise.all([
         getClassReturns(assetClass, start, end, signal),

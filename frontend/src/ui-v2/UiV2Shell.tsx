@@ -1,5 +1,9 @@
-import type { ReactNode } from "react";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect } from "react";
 import { Link, useLocation } from "react-router";
+import { subscribeApiWrites } from "../api/client";
+import { Button } from "../components/ui";
+import { queryKeys } from "../queryClient";
 
 import { UiV2BackToTop } from "./UiV2BackToTop";
 import { UiV2MonthPlate } from "./UiV2MonthPlate";
@@ -66,6 +70,7 @@ export function UiV2Shell({
   busy = false,
   children,
   header,
+  showRefresh = true,
   sidebarExtra,
 }: {
   /** Explicit section for contextual routes outside a native section. */
@@ -73,9 +78,43 @@ export function UiV2Shell({
   busy?: boolean;
   children: ReactNode;
   header: ReactNode;
+  /** Pages with a native refresh action keep that single control. */
+  showRefresh?: boolean;
   sidebarExtra?: ReactNode;
 }) {
   const { pathname } = useLocation();
+  const queryClient = useQueryClient();
+  const fetching = useIsFetching();
+  useEffect(
+    () =>
+      subscribeApiWrites(({ pathname }) => {
+        // Source commands own ACK -> GET and the subsequent catalogue refresh.
+        // Invalidating these dependencies at transport completion retires the
+        // source session before it can consume its own ACK (including lost ACKs).
+        const sourceWrite =
+          pathname.startsWith("/api/broker-months") ||
+          /^\/api\/months\/\d+\/broker-sources$/.test(pathname);
+        const sourceDependencies = ["accounts", "instruments", "broker-identity-mappings"];
+        const predicate = sourceWrite
+          ? (query: { queryKey: readonly unknown[] }) =>
+              !sourceDependencies.includes(String(query.queryKey[0]))
+          : undefined;
+        // Retire saved projections without interrupting mounted forms or their
+        // independent writer readbacks. An inactive pre-write response must not
+        // make an obsolete cache entry reusable on the next navigation.
+        void queryClient.cancelQueries({ type: "inactive" });
+        void queryClient.invalidateQueries({ refetchType: "none", predicate });
+        // The plate has no writer readback of its own. Restore owns its full
+        // refresh; backup creation changes no financial facts or month status.
+        if (pathname.startsWith("/api/backups")) return;
+        void queryClient.refetchQueries({
+          queryKey: queryKeys.monthWorkingStatus,
+          exact: true,
+          type: "active",
+        });
+      }),
+    [queryClient],
+  );
   const current =
     NATIVE_SECTIONS.find((section) =>
       section.id === "home"
@@ -121,7 +160,18 @@ export function UiV2Shell({
       </aside>
       <div className={styles.workspace}>
         <main aria-busy={busy} className={styles.main} id="v2-main" tabIndex={-1}>
-          <header className={styles.header}>{header}</header>
+          <header className={styles.header}>
+            {header}
+            {showRefresh ? (
+              <Button
+                type="button"
+                disabled={busy || fetching > 0}
+                onClick={() => void queryClient.invalidateQueries()}
+              >
+                Обновить
+              </Button>
+            ) : null}
+          </header>
           {children}
         </main>
         <UiV2BackToTop targetId="v2-main" />

@@ -56,7 +56,6 @@ function AccountPerformanceRow({
   const readinessQuery = useQuery({
     queryKey: queryKeys.performanceReadiness(start, end, "account", accountId),
     queryFn: ({ signal }) => getPerformanceReadiness(start, end, "account", accountId, signal),
-    refetchOnWindowFocus: true,
   });
   const data = readinessQuery.data ?? null;
   const fresh = isReadinessFresh(data, {
@@ -410,12 +409,10 @@ export default function ReturnsPerformanceDiagnostics() {
     enabled: !classesView,
     queryKey: queryKeys.accounts,
     queryFn: ({ signal }) => listAccounts(signal),
-    refetchOnWindowFocus: true,
   });
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
 
   const accounts = accountsQuery.data;
@@ -446,7 +443,6 @@ export default function ReturnsPerformanceDiagnostics() {
         context?.accountId ?? null,
         signal,
       ),
-    refetchOnWindowFocus: true,
   });
 
   const attributionQuery = useQuery({
@@ -454,7 +450,6 @@ export default function ReturnsPerformanceDiagnostics() {
     queryKey: queryKeys.performanceAttribution(context?.start ?? null, context?.end ?? null),
     queryFn: ({ signal }) =>
       getPerformanceAttribution(context?.start as string, context?.end as string, signal),
-    refetchOnWindowFocus: true,
   });
 
   const closedSnapshots = useMemo(() => {

@@ -513,6 +513,7 @@ export function GoalsWorkspace({
       `/v2/income${selectedMonthIdForView === null ? "" : `?month=${selectedMonthIdForView}`}`;
     return (
       <UiV2Shell
+        showRefresh={false}
         active="income"
         busy={goalsLoading || summaryLoading}
         header={

@@ -16,6 +16,7 @@ import type {
 import { formatDate, formatMonth, formatPercent } from "../../lib/format";
 import { eventLabel as ownerEventLabel, PRINCIPAL_REPAYMENT_LABEL } from "../../ui-v2/uiV2Copy";
 import { Badge, DataValue, MoneyAmount, Panel } from "../ui";
+import { closeOwnerCopy, closeOwnerFindings } from "./ownerCopy";
 
 const MANUAL_CARD_ORDER = [
   "cash",
@@ -256,8 +257,17 @@ function WindowSummary({ window }: { window: UpcomingEventsWindow }) {
 }
 
 function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
+  const findings = closeOwnerFindings(review.close_readiness.items);
+  const codesFor = (message: string) =>
+    [
+      ...new Set(
+        review.close_readiness.items
+          .filter((item) => closeOwnerCopy(item.message).trim() === closeOwnerCopy(message).trim())
+          .map((item) => item.code),
+      ),
+    ].join(", ");
   const itemsBySeverity = (severity: CloseReadinessItem["severity"]) =>
-    review.close_readiness.items.filter((item) => item.severity === severity);
+    findings.filter((item) => item.severity === severity);
 
   return (
     <Panel label="Проверки" title="Готовность, свежесть и источники">
@@ -283,9 +293,9 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
         <div className="final-review__details-stack">
           <section>
             <h3>Готовность к закрытию</h3>
-            {review.close_readiness.items.length > 0 ? (
+            {findings.length > 0 ? (
               <ul className="final-review__diagnostic-list">
-                {review.close_readiness.items.map((item) => (
+                {findings.map((item) => (
                   <li key={`${item.severity}:${item.code}:${item.message}`}>
                     <Badge
                       tone={
@@ -309,7 +319,7 @@ function ReadinessDetails({ review }: { review: FinalMonthReviewModel }) {
                         Заполнить остатки этого месяца
                       </Link>
                     ) : null}
-                    <code>{item.code}</code>
+                    <code>{codesFor(item.message)}</code>
                   </li>
                 ))}
               </ul>
@@ -422,7 +432,7 @@ function Attention({
     <Panel label="Требует внимания" title="Что проверить перед закрытием">
       {review.manual_attention.length > 0 ? (
         <ul className="final-review__attention-list">
-          {review.manual_attention.map((item) => {
+          {closeOwnerFindings(review.manual_attention).map((item) => {
             const card = review.manual_review_cards.find(
               (candidate) => candidate.id === item.card_id,
             );

@@ -53,7 +53,7 @@ export default function UiV2ReturnsPage() {
   const query = useQuery({
     queryKey: ["returns", "overall", "summaries"],
     queryFn: ({ signal }) => getOverall(signal, true),
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   const data = !query.isFetching && !query.isError ? query.data : undefined;
   const scope =
@@ -179,6 +179,7 @@ export default function UiV2ReturnsPage() {
   return (
     <div className={styles.page}>
       <UiV2Shell
+        showRefresh={false}
         active="returns"
         busy={query.isFetching}
         header={

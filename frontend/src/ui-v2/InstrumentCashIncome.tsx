@@ -80,7 +80,6 @@ export function InstrumentCashIncome({
     staleTime: 0,
     gcTime: 0,
     retry: false,
-    refetchOnWindowFocus: true,
   });
   const response =
     open && matching && !result.isFetching && !result.isError ? result.data?.response : null;

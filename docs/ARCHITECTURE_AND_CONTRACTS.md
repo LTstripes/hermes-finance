@@ -65,6 +65,13 @@ SQLite соответствует однопользовательской ло�
 
 Frontend отвечает за ввод, отображение и пользовательские состояния, но не дублирует финансовые формулы backend.
 
+Browser focus, visibility, reconnect and navigation reuse saved query results;
+writes (including uncertain acknowledgements) cancel older reads and invalidate
+cached projections. Explicit Refresh rereads the current query view; pages with
+native loading controls retain those actions. Close still checks current
+identity/status and revalidates financial authority under the reserved writer,
+followed by independent GET recovery/readback.
+
 
 <a id="c1-0001-architecture-19-почему-excel-не-является-базой"></a>
 #### Почему Excel не является базой
@@ -6606,6 +6613,11 @@ selection parameters, and invalid dates fail closed; responses are no-store.
 Composite Returns reads reuse verified source views only inside their existing
 coherent snapshot. Each consumer receives a copy; success and failure both
 discard the memo before another request. There is no TTL or persisted cache.
+Close readiness also reuses the Money receipt inventory and broker-month findings
+only within its protected SQL snapshot. The inventory stores plain evidence and
+receipt identities, never cached ORM instances. Writers and ordinary sessions
+recompute; no financial guard, reason code or authority changes. Presentation may
+collapse identical issue text, retaining all diagnostic reasons in the response.
 Accepted account/portfolio validation does not read unrelated source journals.
 The overview and instrument-detail adapters request selected-interval analysis
 without unused instrument monthly/all-time projections; the ordinary source

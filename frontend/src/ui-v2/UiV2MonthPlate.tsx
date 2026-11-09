@@ -17,7 +17,6 @@ export function UiV2MonthPlate() {
   const statusQuery = useQuery({
     queryKey: queryKeys.monthWorkingStatus,
     queryFn: ({ signal }) => getMonthWorkingStatus(signal),
-    refetchOnWindowFocus: true,
   });
   const ariaCurrent = pathname.startsWith("/v2/close") ? "page" : undefined;
   const status = statusQuery.data;

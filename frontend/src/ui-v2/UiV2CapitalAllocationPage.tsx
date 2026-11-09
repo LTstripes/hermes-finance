@@ -293,7 +293,6 @@ export default function UiV2CapitalAllocationPage() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const monthsReady = isQueryReady(monthsQuery);
   const month = monthsReady ? selectedMonth(monthValues, monthsQuery.data ?? []) : null;
@@ -304,7 +303,6 @@ export default function UiV2CapitalAllocationPage() {
       if (!month) throw new Error("No reporting month selected");
       return getRiskAllocation(month.id, TOP_N, "v1", signal);
     },
-    refetchOnWindowFocus: true,
   });
   const riskReady = isQueryReady(riskQuery);
   const data =

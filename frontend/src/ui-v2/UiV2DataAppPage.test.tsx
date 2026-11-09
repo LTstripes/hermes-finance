@@ -1,3 +1,5 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../queryClient";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -58,13 +60,15 @@ function taxConfig(overrides: Partial<TaxBracketYearConfig> = {}): TaxBracketYea
 
 function renderPage(path = "/v2/data/app") {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="v2/data/app" element={<UiV2DataAppPage />} />
-        <Route path="v2/income" element={<h1>Доход и планы</h1>} />
-        <Route path="goals" element={<h1>Цели</h1>} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={createQueryClient()}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="v2/data/app" element={<UiV2DataAppPage />} />
+          <Route path="v2/income" element={<h1>Доход и планы</h1>} />
+          <Route path="goals" element={<h1>Цели</h1>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

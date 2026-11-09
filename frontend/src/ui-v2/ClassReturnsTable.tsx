@@ -124,7 +124,6 @@ function ClassRow({
   const query = useQuery({
     queryKey: queryKeys.classReturns(assetClass, start, end),
     queryFn: ({ signal }) => getClassReturns(assetClass, start, end, signal),
-    refetchOnWindowFocus: true,
   });
   const ready = isQueryReady(query);
   const row =

@@ -78,14 +78,12 @@ export default function UiV2ReportsPage() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const latestClosed = useMemo(() => latestClosedMonth(monthsQuery.data ?? []), [monthsQuery.data]);
   const compositionQuery = useQuery({
     enabled: latestClosed !== null,
     queryKey: queryKeys.capitalComposition,
     queryFn: ({ signal }) => getCapitalComposition(signal),
-    refetchOnWindowFocus: true,
   });
 
   const monthsReady = isQueryReady(monthsQuery);

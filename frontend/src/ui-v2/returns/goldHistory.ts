@@ -1,4 +1,4 @@
-import { ApiClientError } from "../../api/client";
+import { ApiClientError, notifyApiWrite } from "../../api/client";
 import type { Metric } from "./model";
 import { canonicalId } from "./navigation";
 export const GOLD_VERSION = "owner_manual_gold_history_v1" as const;
@@ -112,10 +112,11 @@ export type GoldReceipt = {
 };
 const base = "/api/owner-manual-gold-history";
 async function request<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  let response: Response;
+  const method = body === undefined ? "GET" : "POST";
+  let response: Response | undefined;
   try {
     response = await fetch(path, {
-      method: body === undefined ? "GET" : "POST",
+      method,
       headers: {
         Accept: "application/json",
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
@@ -129,6 +130,8 @@ async function request<T>(path: string, body?: unknown, signal?: AbortSignal): P
       message: error instanceof Error ? error.message : "Network failure",
       details: [],
     });
+  } finally {
+    if (!response || response.ok || response.status >= 500) notifyApiWrite(path, method);
   }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {

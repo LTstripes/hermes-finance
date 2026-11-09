@@ -105,7 +105,6 @@ export function UiV2MonthSources({
   const list = useQuery({
     queryKey: ["source-intakes", month.id, "month-overview"],
     queryFn: ({ signal }) => listAllSourceIntakes(signal),
-    refetchOnWindowFocus: true,
   });
   const sourceForReview = useCallback(
     (id: number, fallback?: SourceIntake) => {

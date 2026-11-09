@@ -121,14 +121,6 @@ export function useMonthCloseLifecycle(
     queryClient,
   ]);
 
-  useEffect(() => {
-    function refetchOnFocus() {
-      void refetch();
-    }
-    window.addEventListener("focus", refetchOnFocus);
-    return () => window.removeEventListener("focus", refetchOnFocus);
-  }, [refetch]);
-
   async function refetchAuthoritativeWorkflow(): Promise<MonthCloseWorkflow> {
     if (monthId === null) throw new Error("Месяц для действия не выбран.");
     const result = await refetch();

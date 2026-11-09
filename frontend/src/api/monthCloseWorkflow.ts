@@ -323,6 +323,5 @@ export function useMonthCloseWorkflow(
       ? queryKeys.monthCloseWorkflowWithChecklist(monthId)
       : queryKeys.monthCloseWorkflow(monthId),
     queryFn: ({ signal }) => getMonthCloseWorkflow(monthId as number, signal, { includeChecklist }),
-    refetchOnWindowFocus: true,
   });
 }

@@ -17,7 +17,6 @@ function DraftSources({ month, accounts }: { month: ReportingMonth; accounts: Ac
   const query = useQuery({
     queryKey: ["broker-months", month.id],
     queryFn: ({ signal }) => listBrokerMonths(month.id, signal),
-    refetchOnWindowFocus: true,
   });
   const eligible = accounts.filter(
     (a) => a.status === "active" && ["brokerage", "iis"].includes(a.account_type),

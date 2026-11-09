@@ -67,7 +67,6 @@ export default function UiV2MonthsPage() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const selection = resolveMonthSelection(params.getAll("month"), months);

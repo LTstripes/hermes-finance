@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
+from test_statement_import_mybroker import database as database
 
 from hermes_finance.api import month_close_workflow as workflow_api
 from hermes_finance.database import create_database
@@ -101,6 +102,122 @@ def session_for(tmp_path: Path):
     database = create_database(tmp_path / "close-readiness.db")
     Base.metadata.create_all(database.engine)
     return database.session_factory(), database
+
+
+def test_money_receipts_memo_is_owned_snapshot_only_and_writer_reads_are_fresh(
+    tmp_path, monkeypatch
+):
+    from unittest.mock import Mock
+
+    from hermes_finance.database import coherent_read_snapshot
+    from hermes_finance.services import broker_money
+
+    session, database = session_for(tmp_path)
+    try:
+        rows = Mock(return_value=[("synthetic-receipt", '{"targets": ["synthetic"]}')])
+        monkeypatch.setattr(broker_money, "_receipt_rows", rows)
+        # This test exercises the plain evidence memo independently of an ORM receipt.
+        with coherent_read_snapshot(session):
+            first = broker_money.receipts(session)
+            first[0][1]["targets"].append("caller-edit")
+            assert broker_money.receipts(session)[0][1]["targets"] == ["synthetic"]
+            assert rows.call_count == 1
+        with coherent_read_snapshot(session):
+            assert broker_money.receipts(session)[0][1]["targets"] == ["synthetic"]
+            assert rows.call_count == 2
+        broker_money.receipts(session)
+        broker_money.receipts(session)
+        assert rows.call_count == 4
+        with pytest.raises(RuntimeError), coherent_read_snapshot(session):
+            broker_money.receipts(session)
+            raise RuntimeError("synthetic failed read")
+        with coherent_read_snapshot(session):
+            broker_money.receipts(session)
+        assert rows.call_count == 6
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_close_findings_reused_inside_snapshot_and_recomputed_after_it(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from hermes_finance.database import coherent_read_snapshot
+    from hermes_finance.services import broker_months
+
+    session, database = session_for(tmp_path)
+    try:
+        build = Mock(return_value=(("synthetic", "Synthetic finding"),))
+        monkeypatch.setattr(broker_months, "_broker_month_close_blockers", build)
+        with coherent_read_snapshot(session):
+            assert broker_months.broker_month_close_blockers(session, 1) == build.return_value
+            assert broker_months.broker_month_close_blockers(session, 1) == build.return_value
+            assert build.call_count == 1
+            broker_months.broker_month_close_blockers(session, 2)
+            assert build.call_count == 2
+        build.return_value = (("changed", "Changed finding"),)
+        with coherent_read_snapshot(session):
+            assert broker_months.broker_month_close_blockers(session, 1) == build.return_value
+        broker_months.broker_month_close_blockers(session, 1)
+        assert build.call_count == 4
+    finally:
+        session.close()
+        database.engine.dispose()
+
+
+def test_broker_close_copy_names_the_account_and_keeps_every_underlying_reason(monkeypatch):
+    from hermes_finance.services import actual_payouts, broker_months, source_intake
+
+    codes = ["4_Transfers_unsupported", "5_UFSR_unsupported", "unparsed_source_rows"]
+    monkeypatch.setattr(actual_payouts, "close_blockers", lambda *_: ())
+    monkeypatch.setattr(source_intake, "scoped_status", lambda *_: {"reason_codes": []})
+    monkeypatch.setattr(broker_months, "_readiness", lambda *_: codes)
+    session = SimpleNamespace(
+        scalars=lambda *_: [SimpleNamespace(account_id=42)],
+        get=lambda *_: SimpleNamespace(name="Synthetic broker"),
+    )
+    findings = broker_months._broker_month_close_blockers(session, 1)
+    assert [code for code, _ in findings] == codes
+    assert len({message for _, message in findings}) == 1
+    assert all(message.startswith("Synthetic broker:") for _, message in findings)
+    assert all("Брокерские выписки" in message for _, message in findings)
+    assert all("#42" not in message for _, message in findings)
+
+
+def test_close_workflow_receipt_reuse_preserves_full_response(database, monkeypatch):
+    from test_statement_import_mybroker import FILENAME
+    from test_statement_import_mybroker_endpoints import _money_apply, _money_decide, _money_setup
+
+    from hermes_finance import database as database_module
+
+    try:
+        client, xml, intent, bond, _ = _money_setup(database)
+        with database.session_factory() as writer:
+            originals = [(FILENAME, xml)]
+            reviewed = _money_decide(writer, intent, originals, bond)
+            _money_apply(writer, reviewed, originals)
+        client.app.state.freshness_generated_at = lambda: FETCHED_AT
+        url = f"/api/months/{intent.reporting_month_id}/close-workflow?include_checklist=true"
+        cached = client.get(url)
+        assert cached.status_code == 200, cached.text
+        original = database_module.snapshot_read_result
+
+        def without_receipt_reuse(session, namespace, key, build):
+            if namespace in {
+                "broker_money_receipts",
+                "broker_receipt_readiness",
+                "broker_account_readiness",
+                "broker_month_close_findings",
+            }:
+                return build()
+            return original(session, namespace, key, build)
+
+        monkeypatch.setattr(database_module, "snapshot_read_result", without_receipt_reuse)
+        uncached = client.get(url)
+        assert uncached.status_code == 200, uncached.text
+        assert cached.json() == uncached.json()
+    finally:
+        database.engine.dispose()
 
 
 def _codes(result) -> list[str]:

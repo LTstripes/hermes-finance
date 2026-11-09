@@ -29,7 +29,7 @@ export default function BrokerStatementReturnDiagnostics({
     queryKey: ["statement-return-sources", account],
     enabled: Boolean(account),
     queryFn: ({ signal }) => listStatementSources(Number(account), signal),
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   const selected = sources.data?.find(
     (s) => s.account_id === Number(account) && s.request_id === request,
@@ -38,7 +38,7 @@ export default function BrokerStatementReturnDiagnostics({
     queryKey: ["statement-return", account, request],
     enabled: Boolean(selected),
     queryFn: ({ signal }) => getStatementReturn(Number(account), request, signal),
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
     retry: false,
   });
   const candidate = result.data;

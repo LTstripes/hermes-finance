@@ -22,7 +22,6 @@ export default function UiV2DataSourcesPage() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const monthsReady = isQueryReady(monthsQuery);
@@ -33,12 +32,10 @@ export default function UiV2DataSourcesPage() {
     enabled: monthId !== null,
     queryKey: queryKeys.freshnessProvenance(monthId),
     queryFn: ({ signal }) => getFreshnessProvenance(monthId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const capabilitiesQuery = useQuery({
     queryKey: queryKeys.providerCapabilities,
     queryFn: ({ signal }) => listProviderCapabilities(signal),
-    refetchOnWindowFocus: true,
   });
 
   // Exact reporting_month.id only — year/month coincidence is not identity.

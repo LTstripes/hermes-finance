@@ -228,16 +228,20 @@ function expectReset() {
   expect(screen.queryByText(/Условно:/)).not.toBeInTheDocument();
   for (const c of screen.getAllByRole("checkbox")) expect(c).not.toBeChecked();
 }
-async function focusRefresh() {
+async function explicitRefresh(client: ReturnType<typeof createQueryClient>) {
   await act(async () => {
     focusManager.setFocused(false);
     focusManager.setFocused(true);
   });
+  expect(getInstrumentObservations).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ["instrument-observations-and-payouts"] });
+  });
   await waitFor(() => expect(getInstrumentObservations).toHaveBeenCalledTimes(2));
 }
 
-it("focus refresh retracts payouts before late A; only an explicit new evaluation may return", async () => {
-  await mountWithEvidence();
+it("explicit refresh retracts payouts before late A; only an explicit new evaluation may return", async () => {
+  const client = await mountWithEvidence();
   chooseAll();
   const a = deferred<InstrumentWhatIfResult>();
   let requestA!: WhatIfRequest;
@@ -250,7 +254,7 @@ it("focus refresh retracts payouts before late A; only an explicit new evaluatio
   await waitFor(() => expect(evaluateInstrumentWhatIf).toHaveBeenCalledOnce());
   const b = deferred<InstrumentObservations>();
   vi.mocked(getInstrumentObservations).mockReturnValueOnce(b.promise);
-  await focusRefresh();
+  await explicitRefresh(client);
   expect(
     screen.queryByRole("region", { name: "Условный результат бумаги" }),
   ).not.toBeInTheDocument();
@@ -289,7 +293,7 @@ it("focus refresh retracts payouts before late A; only an explicit new evaluatio
 });
 
 it.each(["revised proof", "identical evidence", "failure"])(
-  "hides shown A as focus B starts and never restores it after %s",
+  "hides shown A as explicit refresh B starts and never restores it after %s",
   async (outcome) => {
     const client = await mountWithEvidence();
     chooseAll();
@@ -297,10 +301,10 @@ it.each(["revised proof", "identical evidence", "failure"])(
     await screen.findByText("Условно: +50,00 ₽ / +5% за период");
     const b = deferred<InstrumentObservations>();
     vi.mocked(getInstrumentObservations).mockReturnValueOnce(b.promise);
-    await focusRefresh();
+    await explicitRefresh(client);
     await waitFor(() => expect(screen.queryByText(/Условно:/)).not.toBeInTheDocument());
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    // Focus must not automatically evaluate the hypothetical query as it is being invalidated.
+    // Rereading evidence must not automatically evaluate the hypothetical query.
     expect(evaluateInstrumentWhatIf).toHaveBeenCalledOnce();
     const revised = parentEvidence();
     if (outcome === "revised proof") {

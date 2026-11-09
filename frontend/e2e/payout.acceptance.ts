@@ -1,7 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { PayoutCalendarMonth } from "../src/api/payouts";
 
+async function openForecastDetails(page: Page) {
+  await page.getByRole("button", { name: "Подробности", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Подробности прогноза" })).toBeVisible();
+}
+
 async function selectWithManual(page: Page, manualId: number, decision = "count_manual") {
+  await openForecastDetails(page);
   await page.getByRole("button", { name: "Проверить все позиции T-Invest" }).click();
   await expect(page.getByText(/Возможный ручной дубль/)).toBeVisible();
   await page.getByRole("button", { name: "Развернуть всё" }).click();
@@ -44,6 +50,7 @@ test("individual Apply confirms through the real API and reload never submits", 
   await page.goto(`/v2/data/payouts?month=${month.id}`);
   await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
   expect(posts).toEqual([]);
+  await openForecastDetails(page);
   await page.getByRole("button", { name: "Проверить выплаты T-Invest" }).click();
   await expect(page.getByText("Новая", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Применить выбранные \(1\)/ }).click();
@@ -142,7 +149,7 @@ test("real provider failure keeps earlier confirmation and stops the frozen bulk
   await page.goto("/v2/data/payouts?month=4");
   await selectWithManual(page, 4);
   await confirmBulk(page, 2);
-  await expect(page.getByText(/REJECTED_NO_WRITE/)).toBeVisible();
+  await expect(page.getByText(/Отклонено без сохранения · версия/)).toBeVisible();
   await expect(page.getByText(/Подтверждено: 1 из 2/)).toBeVisible();
   expect(posts).toHaveLength(2);
   const calendar = await (
@@ -176,14 +183,14 @@ test("committed response loss never retries; reload needs fresh preview and expl
   await page.goto("/v2/data/payouts?month=5");
   await selectWithManual(page, 5);
   await confirmBulk(page, 2);
-  await expect(page.getByText(/UNKNOWN/)).toBeVisible();
-  await expect(page.getByText(/NOT_SENT/)).toBeVisible();
+  await expect(page.getByText(/Результат неизвестен · версия/)).toBeVisible();
+  await expect(page.getByText(/Запрос не отправлен · версия/)).toBeVisible();
   expect(posts).toHaveLength(1);
   await page.reload();
   await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
   expect(posts).toHaveLength(1);
   await selectWithManual(page, 5);
-  await expect(page.getByText(/ALREADY_PRESENT/).first()).toBeVisible();
+  await expect(page.getByText("Уже сохранено; повторно не отправляется.").first()).toBeVisible();
   expect(posts).toHaveLength(1);
   await confirmBulk(page, 1);
   await expect(page.getByText(/Подтверждено: 1 из 1/)).toBeVisible();
@@ -204,7 +211,8 @@ for (const width of [1366]) {
     );
     await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
     expect(posts).toEqual([]);
-    await expect(page.getByLabel("PDF отчёта Alfa")).toHaveCount(0);
+    await expect(page.getByLabel("PDF отчёта Alfa")).toBeHidden();
+    await openForecastDetails(page);
     await page.getByRole("button", { name: "Проверить все позиции T-Invest" }).click();
     await expect(page.getByText(/Возможный ручной дубль/)).toBeVisible();
     await expect(page.locator(`#payout-group-${positionId}`)).toBeHidden();
@@ -244,8 +252,9 @@ for (const width of [1366]) {
     await page.reload();
     await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
     expect(posts.filter((url) => url.endsWith("/payout-apply"))).toHaveLength(2);
+    await openForecastDetails(page);
     await page.getByRole("button", { name: "Проверить все позиции T-Invest" }).click();
-    await expect(page.getByText(/ALREADY_PRESENT/).first()).toBeVisible();
+    await expect(page.getByText("Уже сохранено; повторно не отправляется.").first()).toBeVisible();
     await expect(page.getByText("Выбрано событий: 0")).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Применить выбранные", exact: true }),

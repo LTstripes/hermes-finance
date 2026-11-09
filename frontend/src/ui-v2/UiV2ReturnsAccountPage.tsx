@@ -272,7 +272,7 @@ export default function UiV2ReturnsAccountPage() {
   const context = useQuery({
     queryKey: ["returns", "context"],
     queryFn: ({ signal }) => getContext(signal),
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   const scope = params.get("scope") ?? "";
   const period = { start: params.get("start") ?? "", end: params.get("end") ?? "" };
@@ -313,7 +313,7 @@ export default function UiV2ReturnsAccountPage() {
     queryFn: ({ signal }) => getOverview(scope, period, signal),
     // Refresh the same selection once; display still waits for current context.
     enabled: selectionValid && !context.isError,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   const busy = context.isFetching || (selectionValid && overview.isFetching);
   const error = context.isError || (selectionValid && overview.isError);
@@ -339,6 +339,7 @@ export default function UiV2ReturnsAccountPage() {
   return (
     <div className={styles.page}>
       <UiV2Shell
+        showRefresh={false}
         active="returns"
         busy={busy}
         header={

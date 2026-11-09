@@ -420,7 +420,6 @@ export default function UiV2ReportPage() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const monthsReady = isQueryReady(monthsQuery);
   const months = monthsQuery.data ?? [];
@@ -437,43 +436,36 @@ export default function UiV2ReportPage() {
     enabled: isOlder,
     queryKey: queryKeys.capitalComposition,
     queryFn: ({ signal }) => getCapitalComposition(signal),
-    refetchOnWindowFocus: true,
   });
   const riskQuery = useQuery({
     enabled: isOlder,
     queryKey: queryKeys.riskAllocation(targetMonthId, 5),
     queryFn: ({ signal }) => getRiskAllocation(targetMonthId as number, 5, "v1", signal),
-    refetchOnWindowFocus: true,
   });
   const cashQuery = useQuery({
     enabled: isOlder,
     queryKey: queryKeys.cashBalances(targetMonthId),
     queryFn: ({ signal }) => listCashBalances(targetMonthId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const depositsQuery = useQuery({
     enabled: isOlder,
     queryKey: queryKeys.deposits(targetMonthId),
     queryFn: ({ signal }) => listDeposits(targetMonthId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const positionsQuery = useQuery({
     enabled: isOlder,
     queryKey: queryKeys.positions(targetMonthId),
     queryFn: ({ signal }) => listPositions(targetMonthId as number, undefined, signal),
-    refetchOnWindowFocus: true,
   });
   const accountsQuery = useQuery({
     enabled: isOlder,
     queryKey: queryKeys.accounts,
     queryFn: ({ signal }) => listAccounts(signal),
-    refetchOnWindowFocus: true,
   });
   const instrumentsQuery = useQuery({
     enabled: isOlder,
     queryKey: queryKeys.instruments,
     queryFn: ({ signal }) => listInstruments({}, signal),
-    refetchOnWindowFocus: true,
   });
 
   const compositionReady = isQueryReady(compositionQuery);

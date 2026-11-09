@@ -46,8 +46,7 @@ export function InstrumentTrades({
       return getKnownTrades(request.scope, signal);
     },
     enabled: request !== null,
-    staleTime: 0,
-    gcTime: 0,
+    staleTime: 5 * 60 * 1000,
     retry: false,
   });
   const data = request && !result.isFetching && !result.isError ? result.data : null;

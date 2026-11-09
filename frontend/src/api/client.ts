@@ -1,5 +1,30 @@
 import type { ApiErrorBody, ApiErrorResponse } from "./types";
 
+type ApiWrite = { pathname: string; method: string };
+const writeListeners = new Set<(write: ApiWrite) => void>();
+
+export function subscribeApiWrites(listener: (write: ApiWrite) => void): () => void {
+  writeListeners.add(listener);
+  return () => {
+    writeListeners.delete(listener);
+  };
+}
+
+/** Shared by transports with a domain-specific response/error protocol. */
+export function notifyApiWrite(path: string, method = "GET") {
+  if (["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())) return;
+  // These POST readers create no saved facts. A preview must not invalidate
+  // its own evidence or another form's consent.
+  const pathname = path.split("?")[0];
+  if (
+    /\/(?:[^/]*(?:preview|prepare|inspect|lookup|search|probe)|scenario-lab|broker-statement-what-if|broker-statement-provisional|ai-analysis-bundle|export)(?:\/|$)/.test(
+      pathname,
+    )
+  )
+    return;
+  for (const listener of writeListeners) listener({ pathname, method: method.toUpperCase() });
+}
+
 export class ApiClientError extends Error {
   readonly status: number;
   readonly code: string;
@@ -64,7 +89,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     init.body = JSON.stringify(body);
   }
 
-  let response: Response;
+  let response: Response | undefined;
   try {
     response = await fetch(path, init);
   } catch (cause) {
@@ -73,6 +98,10 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       message: cause instanceof Error ? cause.message : "Network request failed",
       details: [],
     });
+  } finally {
+    // Even a lost ACK can have committed. Retire cached reads without replaying
+    // the write; existing independent GET recovery remains authoritative.
+    if (!response || response.ok || response.status >= 500) notifyApiWrite(path, init.method);
   }
 
   if (response.status === 204) {
@@ -104,7 +133,7 @@ export async function apiMultipart<T>(
   form: FormData,
   signal?: AbortSignal,
 ): Promise<T> {
-  let response: Response;
+  let response: Response | undefined;
   try {
     response = await fetch(path, {
       method: "POST",
@@ -118,6 +147,8 @@ export async function apiMultipart<T>(
       message: cause instanceof Error ? cause.message : "Network request failed",
       details: [],
     });
+  } finally {
+    if (!response || response.ok || response.status >= 500) notifyApiWrite(path, "POST");
   }
   if (response.status === 204) return undefined as T;
   const payload = await parseJsonSafe(response);

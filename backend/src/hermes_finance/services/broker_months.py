@@ -860,6 +860,17 @@ def _uncached_account_readiness(session, month_id, account_id):
 
 def broker_month_close_blockers(session, month_id):
     """Retained source findings for advisory readiness, including CLOSED history."""
+    from hermes_finance.database import snapshot_read_result
+
+    return snapshot_read_result(
+        session,
+        "broker_month_close_findings",
+        month_id,
+        lambda: _broker_month_close_blockers(session, month_id),
+    )
+
+
+def _broker_month_close_blockers(session, month_id):
     from hermes_finance.services.actual_payouts import close_blockers
 
     result = list(close_blockers(session, month_id))
@@ -882,8 +893,26 @@ def broker_month_close_blockers(session, month_id):
                 "canonical_trade_projection_changed": "связь сделки с источником требует сверки",
                 "optional_evidence_unsupported": "дополнительный документ требует подтверждённого чтения",
                 "existing_flow_reconciliation_required": "существующие денежные события требуют сверки с источником",
-            }.get(code, "доказательства источника требуют сверки в разделе MyBroker")
-            pair = (code, f"MyBroker счёт #{receipt.account_id}: {explanation}.")
+                "4_Transfers_unsupported": "в сохранённой проверке выписки остались неразобранные разделы",
+                "5_UFSR_unsupported": "в сохранённой проверке выписки остались неразобранные разделы",
+                "unparsed_source_rows": "в сохранённой проверке выписки остались неразобранные разделы",
+                "commission_basis_unresolved": "не подтверждено, включена ли комиссия в сумму сделки",
+                "settlement_principal_unresolved": "не подтверждена сумма расчёта по сделке",
+                "trade_material_conflict": "данные одной сделки в выписках расходятся",
+                "reconciliation_required": "данные выписки требуют сверки с сохранёнными операциями",
+                "money_database_incarnation_changed": "денежное подтверждение относится к другому файлу базы",
+                "money_database_incarnation_unavailable": "не удалось проверить привязку денежного подтверждения к базе",
+            }.get(code, "подтверждение данных выписки требует проверки")
+            account = session.get(Account, receipt.account_id)
+            label = (
+                account.name
+                if account is not None and account.name
+                else f"Счёт №{receipt.account_id}"
+            )
+            pair = (
+                code,
+                f"{label}: {explanation}. Проверь подробности в разделе «Месяц → Брокерские выписки».",
+            )
             if pair not in result:
                 result.append(pair)
     return tuple(result)
