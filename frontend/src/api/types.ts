@@ -719,7 +719,9 @@ export type CapitalFlowBreakdown = {
   monthly_flow: MoneyValue;
   investment_market_change: CapitalChangeComponent;
   physical_gold_revaluation: CapitalChangeComponent;
+  investment_valuation_difference?: CapitalChangeComponent;
   unexplained: MoneyValue;
+  unexplained_hint?: string | null;
   end: MoneyValue;
 };
 

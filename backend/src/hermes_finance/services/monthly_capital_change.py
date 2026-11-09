@@ -201,25 +201,15 @@ def _investment_result(session, accounts, current, previous, liquid, previous_li
     return total
 
 
-def _investment_unavailable_hint(row, before, after, previous, current):
+def _investment_unavailable_hint(row, before, after):
     """Explain independent blockers together without relaxing the eligibility gates."""
     if row is None:
         return "Нужна выписка с оценками счёта на обе границы месяца."
     hints = []
     if row.opening_kopecks is None or row.closing_kopecks is None:
         hints.append("В выписках не подтверждены оценки счёта на обе границы месяца")
-    mismatched_dates = [
-        day.strftime("%d.%m.%Y")
-        for saved, source, day in (
-            (before, row.opening_kopecks, previous.snapshot_date),
-            (after, row.closing_kopecks, current.snapshot_date),
-        )
-        if source is not None and source != saved
-    ]
-    if mismatched_dates:
-        hints.append(
-            "Сверьте позиции и деньги в капитале с выписками на " + ", ".join(mismatched_dates)
-        )
+    if before is None or after is None:
+        hints.append("В капитале нет оценки счёта на обе границы месяца")
     if {
         "4_Transfers_unsupported",
         "5_UFSR_unsupported",
@@ -254,6 +244,7 @@ def _investment_market_change(session, accounts, current, previous, liquid, prev
     after = _account_values(session, current.id, liquid)
     income = passive_income_for_month(session, current.id)
     items = []
+    valuation_items = []
     with source_read_snapshot(session):
         canonical = _source_scopes(session)
         linked = {}
@@ -265,6 +256,7 @@ def _investment_market_change(session, accounts, current, previous, liquid, prev
             if not account.include_in_capital or account.account_type not in {"brokerage", "iis"}:
                 continue
             amount = None
+            valuation_difference = None
             reasons = ()
             hint = None
             source_reasons = ()
@@ -284,8 +276,8 @@ def _investment_market_change(session, accounts, current, previous, liquid, prev
                     row is None
                     or row.opening_kopecks is None
                     or row.closing_kopecks is None
-                    or row.opening_kopecks != before.get(account.id)
-                    or row.closing_kopecks != after.get(account.id)
+                    or before.get(account.id) is None
+                    or after.get(account.id) is None
                 ):
                     reasons = ("capital_investment_endpoints_unproven",)
                 elif (
@@ -303,14 +295,23 @@ def _investment_market_change(session, accounts, current, previous, liquid, prev
                         and source.account_id == account.id
                     )
                     amount = RubleAmount(row.growth_kopecks - payouts_in_flow)
+                    valuation_difference = RubleAmount(
+                        (row.opening_kopecks - before[account.id])
+                        - (row.closing_kopecks - after[account.id])
+                    )
                     if row.approximate:
                         reasons = ("capital_investment_source_estimate",)
                 if amount is None:
                     hint = _investment_unavailable_hint(
-                        row, before.get(account.id), after.get(account.id), previous, current
+                        row, before.get(account.id), after.get(account.id)
                     )
             items.append(CapitalChangeItem(account.id, None, amount, reasons, hint, source_reasons))
-    return capital_change_component(tuple(items))
+            valuation_items.append(
+                CapitalChangeItem(
+                    account.id, None, valuation_difference, reasons, hint, source_reasons
+                )
+            )
+    return capital_change_component(tuple(items)), capital_change_component(tuple(valuation_items))
 
 
 def _gold_revaluation(session, accounts, current, previous):
@@ -477,15 +478,17 @@ def _monthly_capital_change(
                 ),
             )
             cash = cash_balance_for_month(session, current.id)
+            market, valuation_difference = _investment_market_change(
+                session, accounts, current, previous, liquid, previous_liquid
+            )
             flow_breakdown = explain_capital_flow(
                 start=previous_liquid.liquid_capital_net,
                 end=liquid.liquid_capital_net,
                 monthly_flow=RubleAmount(
                     cash.total.kopecks + cash.breakdown.saving_allocations.kopecks
                 ),
-                investment_market_change=_investment_market_change(
-                    session, accounts, current, previous, liquid, previous_liquid
-                ),
+                investment_market_change=market,
+                investment_valuation_difference=valuation_difference,
                 physical_gold_revaluation=_gold_revaluation(session, accounts, current, previous),
             )
             context_hints = _context_hints(

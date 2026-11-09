@@ -200,6 +200,8 @@ class CapitalFlowBreakdown:
     physical_gold_revaluation: CapitalChangeComponent
     unexplained: RubleAmount
     end: RubleAmount
+    investment_valuation_difference: CapitalChangeComponent = capital_change_component(())
+    unexplained_hint: str | None = None
 
 
 def explain_capital_flow(
@@ -209,19 +211,28 @@ def explain_capital_flow(
     monthly_flow: RubleAmount,
     investment_market_change: CapitalChangeComponent,
     physical_gold_revaluation: CapitalChangeComponent,
+    investment_valuation_difference: CapitalChangeComponent = capital_change_component(()),
 ) -> CapitalFlowBreakdown:
     """Reconcile known contributions; unknown items remain explicitly unallocated."""
+    unexplained = RubleAmount(
+        end.kopecks
+        - start.kopecks
+        - monthly_flow.kopecks
+        - investment_market_change.known_subtotal.kopecks
+        - investment_valuation_difference.known_subtotal.kopecks
+        - physical_gold_revaluation.known_subtotal.kopecks
+    )
     return CapitalFlowBreakdown(
         start=start,
         end=end,
         monthly_flow=monthly_flow,
         investment_market_change=investment_market_change,
         physical_gold_revaluation=physical_gold_revaluation,
-        unexplained=RubleAmount(
-            end.kopecks
-            - start.kopecks
-            - monthly_flow.kopecks
-            - investment_market_change.known_subtotal.kopecks
-            - physical_gold_revaluation.known_subtotal.kopecks
+        investment_valuation_difference=investment_valuation_difference,
+        unexplained=unexplained,
+        unexplained_hint=(
+            "Сюда попадают мелкие расходы, которые не вносятся отдельно, и всё неподтверждённое"
+            if unexplained.kopecks < 0
+            else None
         ),
     )

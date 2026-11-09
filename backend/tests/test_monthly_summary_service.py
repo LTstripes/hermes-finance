@@ -643,6 +643,11 @@ def test_capital_flow_gold_revaluation_preserves_unknown(capital_flow_months, ca
         "opening_mismatch",
         "both_endpoints",
         "sections_and_mismatch",
+        "clean_snapshot",
+        "partial_basis",
+        "missing_close",
+        "unknown_withdrawal",
+        "unknown_growth",
     ],
 )
 def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, monkeypatch, case):
@@ -692,15 +697,29 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
         if case == "missing"
         else 100_001
         if case in {"opening_mismatch", "both_endpoints"}
+        else 101_234
+        if case in {"clean_snapshot", "partial_basis"}
         else 100_000,
-        closing_kopecks=113_501
+        closing_kopecks=None
+        if case == "missing_close"
+        else 113_501
         if case in {"mismatch", "both", "both_endpoints", "sections_and_mismatch"}
+        else 115_845
+        if case in {"clean_snapshot", "partial_basis"}
         else 113_500,
         contributions_kopecks=None
         if case in {"unknown_flow", "both", "sections", "sections_and_mismatch"}
         else 10_000,
-        withdrawals_kopecks=0,
-        growth_kopecks=None if case == "missing" else 3500,
+        withdrawals_kopecks=None if case == "unknown_withdrawal" else 0,
+        growth_kopecks=None
+        if case in {"missing", "missing_close", "unknown_growth"}
+        else 4611
+        if case in {"clean_snapshot", "partial_basis"}
+        else 3500
+        + (
+            (1 if case in {"mismatch", "both_endpoints"} else 0)
+            - (1 if case in {"opening_mismatch", "both_endpoints"} else 0)
+        ),
         assumptions_used=case == "assumed",
         approximate=case == "estimate",
         reason_codes=("unknown_flow", "4_Transfers_unsupported")
@@ -723,7 +742,7 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
         "read_monthly_result",
         lambda *args, **kwargs: None if case == "missing_row" else row,
     )
-    if case == "partial":
+    if case in {"partial", "partial_basis"}:
         other = create_account(session, name="Synthetic unlinked IIS", account_type="iis")
         for month, cash in ((jan, "100.00"), (feb, "107.00")):
             create_cash_balance(
@@ -737,13 +756,35 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
     flow = change.flow_breakdown
     assert flow.monthly_flow.to_api() == "18.00"
     investments = flow.investment_market_change
-    if case in {"known", "estimate"}:
-        assert investments.amount.to_api() == "20.00"
+    valuation = flow.investment_valuation_difference
+    if case in {
+        "known",
+        "estimate",
+        "mismatch",
+        "opening_mismatch",
+        "both_endpoints",
+        "clean_snapshot",
+    }:
+        expected_difference = (row.opening_kopecks - 100_000) - (row.closing_kopecks - 113_500)
+        assert valuation.amount.kopecks == expected_difference
+        assert investments.amount.kopecks == 2000 - expected_difference
         assert flow.unexplained == RubleAmount(0)
         assert investments.items[0].unavailable_hint is None
-    elif case == "partial":
+        # A clean-price snapshot omits cash/NKD: +31.11 market, -11.11 basis,
+        # unchanged residual. The opposite sign would create a spurious residual.
+        if case == "clean_snapshot":
+            assert investments.amount.to_api() == "31.11"
+            assert valuation.amount.to_api() == "-11.11"
+    elif case in {"partial", "partial_basis"}:
         assert investments.amount is None
-        assert investments.known_subtotal.to_api() == "20.00"
+        assert investments.known_subtotal.to_api() == (
+            "31.11" if case == "partial_basis" else "20.00"
+        )
+        assert valuation.amount is None
+        assert valuation.known_subtotal.to_api() == (
+            "-11.11" if case == "partial_basis" else "0.00"
+        )
+        assert valuation.items[1].amount is None
         assert flow.unexplained.to_api() == "7.00"
     else:
         assert investments.amount is None
@@ -751,6 +792,20 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
         assert investments.reason_codes
         assert flow.unexplained.to_api() == "20.00"
         assert investments.items[0].unavailable_hint
+        assert valuation.amount is None
+        assert valuation.items[0].amount is None
+        assert valuation.items[0].reason_codes == investments.items[0].reason_codes
+        assert valuation.items[0].unavailable_hint == investments.items[0].unavailable_hint
+
+    assert (
+        flow.start.kopecks
+        + flow.monthly_flow.kopecks
+        + investments.known_subtotal.kopecks
+        + valuation.known_subtotal.kopecks
+        + flow.physical_gold_revaluation.known_subtotal.kopecks
+        + flow.unexplained.kopecks
+        == flow.end.kopecks
+    )
 
     from hermes_finance.api.analytics import capital_change_to_out
 
@@ -760,27 +815,30 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
     ]["items"][0]
     assert serialized["source_reason_codes"] == list(item.source_reason_codes)
     assert serialized["unavailable_hint"] == item.unavailable_hint
+    serialized_valuation = capital_change_to_out(change).model_dump(mode="json")["flow_breakdown"][
+        "investment_valuation_difference"
+    ]["items"][0]
+    assert serialized_valuation["amount"] == (
+        {"amount": valuation.items[0].amount.to_api(), "currency": "RUB"}
+        if valuation.items[0].amount is not None
+        else None
+    )
+    assert serialized_valuation["source_reason_codes"] == serialized["source_reason_codes"]
+    assert serialized_valuation["unavailable_hint"] == serialized["unavailable_hint"]
     assert item.source_reason_codes == (() if case == "missing_row" else row.reason_codes)
-    if case in {"mismatch", "both"}:
-        assert item.reason_codes == ("capital_investment_endpoints_unproven",)
-        assert "28.02.2031" in item.unavailable_hint
-        assert "31.01.2031" not in item.unavailable_hint
     if case == "both":
+        assert item.reason_codes == ("capital_investment_flows_unproven",)
         assert "денежные движения" in item.unavailable_hint
-    if case in {"opening_mismatch", "both_endpoints"}:
-        assert "31.01.2031" in item.unavailable_hint
-        assert ("28.02.2031" in item.unavailable_hint) == (case == "both_endpoints")
     if case in {"sections", "sections_and_mismatch"}:
         assert "одной классификации денег недостаточно" in item.unavailable_hint
     if case == "sections_and_mismatch":
-        assert "28.02.2031" in item.unavailable_hint
-        assert item.reason_codes == ("capital_investment_endpoints_unproven",)
+        assert item.reason_codes == ("capital_investment_flows_unproven",)
     if case == "assumed":
         assert "предположения" in item.unavailable_hint
     if case == "missing":
         assert "границы месяца" in item.unavailable_hint
         assert "денежные движения" not in item.unavailable_hint
-    if case == "partial":
+    if case in {"partial", "partial_basis"}:
         assert investments.items[1].unavailable_hint
 
 

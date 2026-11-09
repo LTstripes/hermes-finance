@@ -871,7 +871,9 @@ def test_closed_report_comparison_does_not_double_count_linked_debt(
     assert body["net_liquid_capital_reconciles"] is True
 
 
-@pytest.mark.parametrize("end,residual", [("1000.01", "0.00"), ("1007.02", "7.01")])
+@pytest.mark.parametrize(
+    "end,residual", [("1000.01", "0.00"), ("1007.02", "7.01"), ("999.99", "-0.02")]
+)
 def test_monthly_capital_bridge_api_keeps_unexplained_separate(client, end, residual):
     jan = _create_month(client, year=2031, month=1, snapshot_date="2031-01-31")
     feb = _create_month(client, year=2031, month=2, snapshot_date="2031-02-28")
@@ -906,6 +908,12 @@ def test_monthly_capital_bridge_api_keeps_unexplained_separate(client, end, resi
     assert flow["monthly_flow"] == _rub("0.00")
     assert flow["unexplained"] == _rub(residual)
     assert flow["investment_market_change"]["amount"] == _rub("0.00")
+    assert flow["investment_valuation_difference"]["amount"] == _rub("0.00")
+    assert flow["unexplained_hint"] == (
+        "Сюда попадают мелкие расходы, которые не вносятся отдельно, и всё неподтверждённое"
+        if Decimal(residual) < 0
+        else None
+    )
     assert change["context_hints"] == []
     dashboard = client.get(f"/api/months/{feb}/dashboard")
     assert dashboard.status_code == 200, dashboard.text
@@ -978,6 +986,7 @@ def test_capital_flow_api_missing_broker_value_is_null_with_reason(client):
     assert investment["items"][0]["amount"] is None
     assert "связь счёта" in investment["items"][0]["unavailable_hint"]
     assert investment["items"][0]["source_reason_codes"] == []
+    assert flow["investment_valuation_difference"] == investment
     assert flow["unexplained"] == _rub("7.00")
 
 

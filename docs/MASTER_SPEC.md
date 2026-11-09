@@ -372,8 +372,19 @@ scrolling at short heights and no content overlap.
 
 Capital shows a monthly change explanation for adjacent month-end snapshots:
 начальный капитал → поток месяца до откладывания (доходы − внесённые расходы) →
-изменение стоимости инвестиций без выплат, уже учтённых в потоке → переоценка
-физического золота → отдельный необъяснённый остаток → конечный капитал.
+изменение стоимости инвестиций без выплат, уже учтённых в потоке → разница оценки
+капитала и выписок → переоценка физического золота → отдельный необъяснённый
+остаток → конечный капитал.
+Рынок берётся из подтверждённого результата выписки с известными оценками и
+потоками без предположений; равенство оценки выписки и снимка не требуется.
+Разница оценки отдельным слагаемым согласует результат выписки со снимком:
+капитал считает облигации без НКД и не включает мелкие рубли на счетах, а выписка
+брокера — с ними; это разница основы оценки, а не прибыль или убыток. Это объяснение
+основы учёта, а не подтверждение причины каждого расхождения. Если рынок счёта
+неизвестен, его разница оценки тоже неизвестна с той же причиной.
+При отрицательном остатке под мостом одна нейтральная строка: «Сюда попадают мелкие
+расходы, которые не вносятся отдельно, и всё неподтверждённое»; не объявлять остаток
+доказанными расходами. Подпись «Необъяснённый остаток» сохраняется.
 Проценты, купоны и дивиденды входят в поток один раз. Откладывание и погашение
 кредитки с депозита внутри капитала — переводы; покупки по карте владелец вносит
 как расходы. Существующая связанная пара показывается одной позицией периметра,
@@ -387,7 +398,7 @@ months withhold the bridge instead of fabricating a zero baseline. The API suppl
 one investment-item hint covering simultaneous valuation and flow gaps; unsupported
 source sections must not be presented as fixable merely by classifying cash rows.
 C2 owns the formulas and evidence gates. The additive flow bridge preserves the legacy API
-decomposition; the Capital screen migration is delivered separately.
+decomposition; Capital uses the flow bridge with a legacy fallback.
 
 Capital places the existing allocation by asset class/account and largest
 positions below its main chart, followed by property and Где лежит капитал.
