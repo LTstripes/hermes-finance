@@ -408,9 +408,15 @@ function CapitalFlowChange({
   hints: CapitalChangeHint[];
 }) {
   const market = componentStep("Рынок: брокерский и ИИС", flow.investment_market_change);
+  const valuation = flow.investment_valuation_difference
+    ? componentStep("Разница оценки капитала и выписок", flow.investment_valuation_difference)
+    : null;
   const gold = componentStep("Переоценка золота", flow.physical_gold_revaluation);
   const unknown = [
     flow.investment_market_change.amount ? null : "изменение стоимости брокерского счёта и ИИС",
+    flow.investment_valuation_difference && !flow.investment_valuation_difference.amount
+      ? "разница оценки капитала и выписок"
+      : null,
     flow.physical_gold_revaluation.amount || flow.physical_gold_revaluation.items.length === 0
       ? null
       : "переоценка золота",
@@ -427,6 +433,7 @@ function CapitalFlowChange({
     { label: "Начало месяца", amount: flow.start, kind: "level" },
     { label: "Доходы минус расходы", amount: flow.monthly_flow, kind: "change" },
     ...(market ? [market] : []),
+    ...(valuation ? [valuation] : []),
     ...(gold ? [gold] : []),
     {
       label: "Необъяснённый остаток",
@@ -444,13 +451,16 @@ function CapitalFlowChange({
           Доходы минус расходы — по записям месяца, до откладывания: откладывание остаётся внутри
           капитала. Проценты, купоны и дивиденды входят сюда один раз. Покупка по кредитке — это
           расход, а погашение кредитки со своего счёта не меняет капитал. Всё, что не подтверждено,
-          остаётся в необъяснённом остатке.
+          остаётся в необъяснённом остатке. Разница оценки капитала и выписок: капитал считает
+          облигации без НКД и не включает мелкие рубли на счетах, а выписка брокера — с ними; это
+          разница основы оценки, а не прибыль или убыток.
         </HelpTip>
       }
       id="capital-change-title"
       title="Как изменился капитал за месяц"
     >
       <CapitalBridgeChart steps={steps} />
+      {flow.unexplained_hint ? <p className={sheet.gapNote}>{flow.unexplained_hint}</p> : null}
       {unknown.length > 0 ? (
         <p className={sheet.gapNote}>
           Пока не подтверждено и входит в необъяснённый остаток: {unknown.join(", ")}.

@@ -147,7 +147,9 @@ class CapitalFlowBreakdownOut(BaseModel):
     monthly_flow: MoneyValue
     investment_market_change: CapitalChangeComponentOut
     physical_gold_revaluation: CapitalChangeComponentOut
+    investment_valuation_difference: CapitalChangeComponentOut
     unexplained: MoneyValue
+    unexplained_hint: str | None = None
     end: MoneyValue
 
 
@@ -226,7 +228,9 @@ def capital_change_to_out(result: MonthlyCapitalChange | None) -> MonthlyCapital
                 monthly_flow=_money(flow.monthly_flow),
                 investment_market_change=component_out(flow.investment_market_change),
                 physical_gold_revaluation=component_out(flow.physical_gold_revaluation),
+                investment_valuation_difference=component_out(flow.investment_valuation_difference),
                 unexplained=_money(flow.unexplained),
+                unexplained_hint=flow.unexplained_hint,
             )
             if flow is not None
             else None

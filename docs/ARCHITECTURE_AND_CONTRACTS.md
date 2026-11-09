@@ -741,6 +741,7 @@ alternatives and must never be added together.
 monthly_flow = cash_balance.total + cash_balance.breakdown.saving_allocations
              = recorded income (including passive income) - recorded expenses
 start + monthly_flow + investment_market_change.known_subtotal
+      + investment_valuation_difference.known_subtotal
       + physical_gold_revaluation.known_subtotal + unexplained = end
 ```
 
@@ -751,8 +752,8 @@ not a separate explanation row. ExternalFlow is not added to monthly flow.
 Unknown funding or unrecorded spending remains in `unexplained`; no balancing
 amount is relabelled as a known component.
 
-Each investment/gold component carries nullable `amount`, `known_subtotal`,
-per-account (gold: per-account/instrument) `items` and `reason_codes`. `amount` is
+Each investment, valuation-difference and gold component carries nullable `amount`,
+`known_subtotal`, per-account (gold: per-account/instrument) `items` and `reason_codes`. `amount` is
 NULL if any item is unavailable; a genuinely empty set is zero. The identity uses
 only explicitly known items, retaining known contributions even when a sibling
 item is NULL. It is a reconciliation of known contributions, not a claim that
@@ -760,8 +761,9 @@ NULL equals zero or the full change has been explained. Endpoint/calendar and
 partial-coverage gates above apply to both bridges.
 
 For included brokerage/IIS accounts, use the exact canonical source-account link,
-the same calendar interval and matching saved capital valuations at both ends.
-Source account growth must have known contributions and withdrawals and no
+the same calendar interval and known source and saved capital valuations at both ends;
+the source valuations need not equal the capital snapshots. Source account growth
+must have known contributions and withdrawals and no
 `assumptions_used`; otherwise return NULL with
 `capital_investment_account_result_unavailable`,
 `capital_investment_endpoints_unproven` or `capital_investment_flows_unproven`.
@@ -774,12 +776,29 @@ unattributed income is substituted. A retained source estimate carries
 The existing source reader marks even its source-only proof projection with
 assumptions; that projection alone therefore cannot establish this stricter row.
 
+For the same eligible account, the additive `investment_valuation_difference` is
+`(source_open - capital_open) - (source_close - capital_close)`. Thus source market
+change plus valuation difference explains the saved-account change after funding
+and payouts without putting the change of valuation basis into the residual.
+Explanation: «капитал считает облигации без НКД и не включает мелкие рубли на счетах,
+а выписка брокера — с ними; это разница основы оценки, а не прибыль или убыток».
+This is an arithmetic basis reconciliation, not evidence that every discrepancy
+is caused by cash or accrued interest. If the account's statement market change
+is unavailable, both items are NULL with the same reason and hint; neither gets
+a balancing value. Missing saved valuations also withhold both items. Preserve
+each component's known subtotal when other accounts remain unavailable.
+
 Investment items additionally expose `unavailable_hint` (one plain-language line,
 NULL for an available item) and `source_reason_codes` (the selected monthly reader's
 reasons, empty when no row/link is available). The hint explains simultaneous
-endpoint and flow/unsupported-section blockers; the established bridge reason
+missing-endpoint and flow/unsupported-section blockers; the established bridge reason
 codes retain their endpoint-first precedence. These diagnostic fields neither
 classify money nor attest completeness and do not change amounts or eligibility.
+
+`flow_breakdown.unexplained_hint` is NULL for a zero or positive residual. For a
+negative residual it says «Сюда попадают мелкие расходы, которые не вносятся
+отдельно, и всё неподтверждённое». It is neutral context, not attribution of the
+residual to spending, and is displayed once below the bridge using `gapNote`.
 
 Physical gold is a saved gold position outside brokerage/IIS (snapshot historical
 type first, catalogue type for legacy untyped rows), matched by account and
@@ -804,8 +823,8 @@ Existing linked-pair endpoint/net-contribution models and the closed-comparison
 sum gross pair legs or subtract their debts a second time.
 
 Consumers: summary and dashboard APIs share `capital_change_to_out` with
-`/api/analytics/closed-report-comparison`; Capital UI currently reads legacy
-`breakdown` and its migration is separate. `include_capital_change=false` still
+`/api/analytics/closed-report-comparison`; Capital UI reads `flow_breakdown` with
+a legacy `breakdown` fallback. `include_capital_change=false` still
 omits the entire optional explanation. The AI analysis/review exports use their
 own allowlisted projections and do not serialize this bridge; no export format
 or saved-file reader changes here.

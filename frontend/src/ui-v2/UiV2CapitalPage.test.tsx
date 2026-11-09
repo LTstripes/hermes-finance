@@ -1029,6 +1029,83 @@ it("does not render a capital explanation for another month", async () => {
   expect(screen.queryByText("Как изменился капитал за месяц")).not.toBeInTheDocument();
 });
 
+it.each([
+  ["-11.11", false],
+  ["0.00", false],
+  [null, false],
+  ["-11.11", true],
+] as const)(
+  "renders the backend valuation difference %s (partial=%s) and residual context",
+  async (difference, partial) => {
+    const { state, mount } = setup();
+    const rub = (amount: string) => ({ amount, currency: "RUB" });
+    const component = (amount: string | null) => ({
+      amount: amount === null || partial ? null : rub(amount),
+      known_subtotal: rub(amount ?? "0.00"),
+      items: [
+        {
+          account_id: 1,
+          instrument_id: null,
+          amount: amount === null ? null : rub(amount),
+          reason_codes: amount === null ? ["capital_investment_flows_unproven"] : [],
+        },
+        ...(partial
+          ? [{ account_id: 2, instrument_id: null, amount: null, reason_codes: ["unknown"] }]
+          : []),
+      ],
+      reason_codes: amount === null ? ["capital_investment_flows_unproven"] : [],
+    });
+    const hint =
+      "Сюда попадают мелкие расходы, которые не вносятся отдельно, и всё неподтверждённое";
+    state.comparison.capital_change = {
+      reporting_month_id: uiV2CapitalMonthId,
+      previous_reporting_month_id: uiV2CapitalPreviousMonthId,
+      period_start: "2026-04-01",
+      period_end: "2026-04-30",
+      component_basis: "known_subtotals",
+      breakdown: null,
+      reason_codes: [],
+      flow_breakdown: {
+        basis: "monthly_flow_v1",
+        start: rub("1000.00"),
+        monthly_flow: rub("0.00"),
+        investment_market_change: component(
+          difference === null ? null : difference === "0.00" ? "20.00" : "31.11",
+        ),
+        investment_valuation_difference: component(difference),
+        physical_gold_revaluation: component("0.00"),
+        unexplained: rub("-30.00"),
+        unexplained_hint: hint,
+        end: rub(difference === null ? "970.00" : "990.00"),
+      },
+    };
+    mount();
+    expect(await screen.findByTestId("capital-unexplained")).toHaveTextContent("−30 ₽");
+    expect(screen.getAllByText(hint)).toHaveLength(1);
+    if (difference === null) {
+      expect(screen.queryByText("Разница оценки капитала и выписок")).toBeNull();
+      expect(screen.queryByText("Рынок: брокерский и ИИС")).toBeNull();
+      expect(screen.getByText(/Пока не подтверждено/)).toHaveTextContent(
+        "разница оценки капитала и выписок",
+      );
+    } else {
+      const label = screen.getByText(
+        `Разница оценки капитала и выписок${partial ? " (известная часть)" : ""}`,
+      );
+      expect(label.parentElement?.getAttribute("title")?.replaceAll(" ", " ")).toBe(
+        difference === "0.00" ? "0 ₽" : "−11,11 ₽",
+      );
+      expect(
+        screen.getByText(`Рынок: брокерский и ИИС${partial ? " (известная часть)" : ""}`),
+      ).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Как читать изменение капитала" }));
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        "это разница основы оценки, а не прибыль или убыток",
+      );
+    }
+  },
+);
+
 it("shows loading rather than a false error while the capital comparison is pending", async () => {
   const { mount, state } = setup();
   let release!: () => void;
