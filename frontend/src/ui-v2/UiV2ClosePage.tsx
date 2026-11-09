@@ -195,11 +195,11 @@ export default function UiV2ClosePage() {
         : null;
   const closed = workflowIdentityMatches && workflow.month.status === "closed";
   const finalReviewActive = panel === "close";
-  // Returning to the panel reuses the read unless a saved write retired it.
-  // Lifecycle commands own their independent GET and must not be raced here.
+  // Refresh the retained review only where it is displayed. Writer panels and
+  // lifecycle commands own their independent GETs and must not be raced here.
   useEffect(() => {
     if (
-      finalReviewActive &&
+      (panel === null || finalReviewActive) &&
       workflowQuery.isStale &&
       !lifecycleBusy &&
       !preparingClose &&
@@ -213,6 +213,7 @@ export default function UiV2ClosePage() {
     preparingClose,
     lifecycleRecovery,
     monthId,
+    panel,
     queryClient,
     workflowQuery.isStale,
     workflowQuery.refetch,

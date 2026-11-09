@@ -3,6 +3,7 @@ import { type ReactNode, useEffect } from "react";
 import { Link, useLocation } from "react-router";
 import { subscribeApiWrites } from "../api/client";
 import { Button } from "../components/ui";
+import { queryKeys } from "../queryClient";
 
 import { UiV2BackToTop } from "./UiV2BackToTop";
 import { UiV2MonthPlate } from "./UiV2MonthPlate";
@@ -87,20 +88,18 @@ export function UiV2Shell({
   useEffect(
     () =>
       subscribeApiWrites(({ pathname }) => {
-        // Cancel pre-write responses and reread mounted projections, including
-        // retained Month panels. Inactive reads stay invalidated until remount.
-        // Writer-specific GETs still verify the exact saved intent independently.
-        void queryClient.cancelQueries();
+        // Retire saved projections without interrupting mounted forms or their
+        // independent writer readbacks. An inactive pre-write response must not
+        // make an obsolete cache entry reusable on the next navigation.
+        void queryClient.cancelQueries({ type: "inactive" });
         void queryClient.invalidateQueries({ refetchType: "none" });
-        const lifecycleMonth = /^\/api\/months\/(\d+)\/(?:close|reopen)$/.exec(pathname)?.[1];
+        // The plate has no writer readback of its own. Restore owns its full
+        // refresh; backup creation changes no financial facts or month status.
+        if (pathname.startsWith("/api/backups")) return;
         void queryClient.refetchQueries({
+          queryKey: queryKeys.monthWorkingStatus,
+          exact: true,
           type: "active",
-          // Close/Reopen owns status verification and its workflow GET. A
-          // parallel automatic GET could consume or clear recovery evidence.
-          predicate: (query) =>
-            !lifecycleMonth ||
-            query.queryKey[0] !== "month-close-workflow" ||
-            query.queryKey[1] !== Number(lifecycleMonth),
         });
       }),
     [queryClient],

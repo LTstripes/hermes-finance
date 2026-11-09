@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { notifyApiWrite } from "../api/client";
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { reopenMonth } from "../api/months";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
@@ -565,6 +566,20 @@ describe("native Monthly Close work mode", () => {
     expect(state.workflowReads).toBe(before);
     fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
     await waitFor(() => expect(state.workflowReads).toBe(before + 1));
+  });
+
+  it("refreshes the retained overview after a write without rereading the month selector", async () => {
+    const { client, mount, state, fetchMock } = setup("/v2/close?month=12");
+    mount();
+    await screen.findByRole("link", { name: "Закрыть месяц" });
+    const before = state.workflowReads;
+    const monthReads = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url) === "/api/months").length;
+    const monthsBefore = monthReads();
+    await act(() => notifyApiWrite("/api/positions/1", "PATCH"));
+    await waitFor(() => expect(state.workflowReads).toBe(before + 1));
+    expect(monthReads()).toBe(monthsBefore);
+    expect(client.getQueryState(queryKeys.months)?.isInvalidated).toBe(true);
   });
 
   it("refreshes the retained Month read when a saved write invalidated it before returning to Close", async () => {

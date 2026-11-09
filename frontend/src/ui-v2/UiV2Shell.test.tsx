@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { apiRequest } from "../api/client";
+import { apiRequest, notifyApiWrite } from "../api/client";
 import type { MonthWorkingStatus } from "../api/types";
 import { createQueryClient, queryKeys } from "../queryClient";
 import { UiV2DataSubnav } from "./UiV2DataShell";
@@ -75,9 +75,9 @@ afterEach(() => {
 });
 
 describe("UiV2Shell native navigation", () => {
-  it("rereads active projections after a saved write without waiting for navigation", async () => {
+  it("invalidates active writer reads without restarting them before the writer readback", async () => {
     const client = createQueryClient();
-    const key = ["synthetic-active-capital"];
+    const key = queryKeys.months;
     const queryFn = vi.fn().mockResolvedValueOnce("before-write").mockResolvedValue("after-write");
     const observer = new QueryObserver(client, { queryKey: key, queryFn });
     const stop = observer.subscribe(() => {});
@@ -92,7 +92,13 @@ describe("UiV2Shell native navigation", () => {
     );
     try {
       await act(() => apiRequest("/api/positions/1", { method: "PATCH", body: {} }));
+      expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+      expect(client.getQueryData(key)).toBe("before-write");
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      // Only the writer's independent readback starts the next request.
+      await act(() => observer.refetch());
       await vi.waitFor(() => expect(client.getQueryData(key)).toBe("after-write"));
+      expect(queryFn).toHaveBeenCalledTimes(2);
     } finally {
       stop();
       view.unmount();
@@ -135,6 +141,69 @@ describe("UiV2Shell native navigation", () => {
     stop();
     view.unmount();
     client.clear();
+  });
+
+  it("keeps an active read in flight and lets its writer own the next readback", async () => {
+    const client = createQueryClient();
+    const key = queryKeys.instruments;
+    client.setQueryData(key, "saved");
+    let finishRead: (value: string) => void = () => {};
+    let signal: AbortSignal | undefined;
+    const observer = new QueryObserver(client, {
+      queryKey: key,
+      queryFn: (context) => {
+        signal = context.signal;
+        return new Promise<string>((resolve) => {
+          finishRead = resolve;
+        });
+      },
+    });
+    const stop = observer.subscribe(() => {});
+    const view = render(
+      withClient(
+        <MemoryRouter>
+          <UiV2Shell header={<h1>Справочники</h1>}>Контент</UiV2Shell>
+        </MemoryRouter>,
+        client,
+      ),
+    );
+    const pending = observer.refetch();
+    try {
+      await act(() => notifyApiWrite("/api/instruments/1", "PATCH"));
+      expect(signal?.aborted).toBe(false);
+      expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+      finishRead("readback");
+      await act(() => pending);
+      expect(client.getQueryData(key)).toBe("readback");
+    } finally {
+      stop();
+      view.unmount();
+      client.clear();
+    }
+  });
+
+  it("refreshes only the working plate after a write and leaves restore to its own refresh", async () => {
+    const client = createQueryClient();
+    const fetchMock = respondWith(draftStatus);
+    const view = render(
+      withClient(
+        <MemoryRouter>
+          <UiV2Shell header={<h1>Месяц</h1>}>Контент</UiV2Shell>
+        </MemoryRouter>,
+        client,
+      ),
+    );
+    try {
+      await screen.findByRole("link", { name: /Рабочий месяц/ });
+      await act(() => notifyApiWrite("/api/positions/1", "PATCH"));
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      await act(() => notifyApiWrite("/api/backups/synthetic/restore", "POST"));
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(client.getQueryState(queryKeys.monthWorkingStatus)?.isInvalidated).toBe(true);
+    } finally {
+      view.unmount();
+      client.clear();
+    }
   });
   it.each([
     "/v2/returns",
