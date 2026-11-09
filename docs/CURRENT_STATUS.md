@@ -9,67 +9,50 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- 1.14.0 is prepared on main for guarded publication with
+  [release notes](release-notes-1.14.0.md). Publication, the tag and the Stable
+  installation are recorded here only after their read-back.
 - [v1.13.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.13.0)
-  is published at `bbf4197e4545be554dc2425b95354a18dff19fb1` with
-  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42504077344)
-  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42504946525)
-  successful, with [release notes](release-notes-1.13.0.md).
-- 1.13.0 is installed on the Owner computer on 2026-11-08 by backup-first OPS02,
-  then Prepare and Start; the running health version reads back 1.13.0 and a
-  pre-update SQLite backup exists in the update backup directory. Detailed numeric
-  Owner UAT of 1.13.0 has not been performed and is not inferred from CI or copy checks.
-- Main after 1.13.0, not released (the Owner holds the next release to combine it
-  with upcoming work): #1146 and #1147 (IIS forms scroll, edit and delete of
-  contributions and deductions), #1148 and #1149 (full bond redemption from
-  exchange-code cancellation rows and the resulting closed-position result,
-  semantics v17 and v18), #1150 and #1151 (monthly capital bridge through the
-  month's flow, with a card-debt hint).
-- The previous release [v1.12.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.12.0)
-  (`067b6be1a5d5957643d50e996ffda647ba9ac891`) keeps its pre-update backup.
+  (`bbf4197e4545be554dc2425b95354a18dff19fb1`) is the installed Stable version since
+  2026-11-08 (backup-first OPS02, Prepare and Start; health read back 1.13.0). Its
+  pre-update backup is retained. Detailed numeric Owner UAT of 1.13.0 has not been
+  performed and is not inferred from CI or copy checks.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
-Changes since 1.12.0, prepared for 1.13.0:
+Changes since 1.13.0, prepared for 1.14.0:
 
-- [#1140](https://github.com/LTstripes/hermes-finance/pull/1140) attributes clean
-  coupons by exact issue identity before issuer text, keeps ambiguous payouts
-  unattributed, resolves extended dividend narratives by an explicit registration
-  bridge and recovers a full bond redemption only from a current custody
-  cancellation with exact quantity, nominal and cash (semantics v14).
-- [#1141](https://github.com/LTstripes/hermes-finance/pull/1141) reconciles a bond
-  sale with its separate NKD money only on an exact kopeck match; otherwise the sale
-  stays without a result (semantics v15).
-- [#1142](https://github.com/LTstripes/hermes-finance/pull/1142) adds per-position
-  simple return on invested and annual XIRR, published only for a capital-weighted
-  holding of at least 365 days (Owner decision on
-  [#1016](https://github.com/LTstripes/hermes-finance/issues/1016); semantics v16).
-  [#1144](https://github.com/LTstripes/hermes-finance/pull/1144) shows both rates on
-  Returns and the instrument card instead of the position Modified Dietz.
-- [#1143](https://github.com/LTstripes/hermes-finance/pull/1143) moves the AI export
-  to 3.2.0 with names, payments, per-ISIN summaries, labeled rates and position
-  rates; [#1139](https://github.com/LTstripes/hermes-finance/pull/1139) removed the
-  export formats the UI did not use.
-- [#1136](https://github.com/LTstripes/hermes-finance/pull/1136),
-  [#1137](https://github.com/LTstripes/hermes-finance/pull/1137) and
-  [#1138](https://github.com/LTstripes/hermes-finance/pull/1138) remove dead code and
-  fix the guided Stable updater on Windows PowerShell 5.1.
+- [#1150](https://github.com/LTstripes/hermes-finance/pull/1150) and
+  [#1151](https://github.com/LTstripes/hermes-finance/pull/1151) explain the monthly
+  capital change through the month's flow before savings, the market change of
+  brokerage and IIS without payouts already in the flow, physical gold revaluation
+  and an explicit residual, with a card-debt hint;
+  [#1153](https://github.com/LTstripes/hermes-finance/pull/1153) names the next step
+  when the market line is unknown. The previous breakdown remains for its consumers.
+- [#1148](https://github.com/LTstripes/hermes-finance/pull/1148) recognizes a full
+  bond redemption from cancellation rows with an exchange issue code and padded
+  quantity (semantics v17); [#1149](https://github.com/LTstripes/hermes-finance/pull/1149)
+  closes a position by that redemption for a full result (semantics v18).
+- [#1146](https://github.com/LTstripes/hermes-finance/pull/1146) and
+  [#1147](https://github.com/LTstripes/hermes-finance/pull/1147) scroll to the IIS forms
+  and add edit and delete of IIS contributions and deductions.
 
-Read-only copy checks: full position results 24 to 27 and purchases with a result
-236 to 239, with no open position degraded. A full bond redemption without a current
-custody cancellation proof and registration bridge remains unknown. There are no new
-database migrations since 1.12.0. Green CI and copy checks do not establish Owner UAT.
+The market line stays unknown where capital snapshots and statements disagree at a
+month boundary or a monthly statement is missing; the bridge then says what to
+reconcile. There are no new database migrations since 1.13.0. Green CI and copy
+checks do not establish Owner UAT.
 
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Owner UAT of installed 1.13.0: Returns rates, the instrument card and the 3.2.0
-   export, together with the pending redesign UAT (#963, #1014, #711). The next
-   release waits for the Owner's go-ahead and then ships main since 1.13.0.
-2. Owner data actions that unlock remaining results: record one-off card purchases
-   as month expenses so the capital bridge reconciles, and classify the remaining
-   unclassified account money. The registration bridge and catalogue fixes of
-   2026-11-08 are done.
+1. Publish 1.14.0 through the guarded route and install it on Stable backup-first,
+   then Owner UAT of the capital bridge and the IIS forms, together with the pending
+   UAT of 1.13.0 and the redesign (#963, #1014, #711).
+2. Owner data actions for the capital bridge: record one-off card purchases as month
+   expenses, reconcile the capital snapshot with the statements at the named month
+   boundaries, confirm the remaining assumed account deposit and add the missing
+   monthly IIS statement.
 3. Apply the Owner's proportional verification rule and never infer UAT from green
    CI. No financial Apply/Close or data repair is implied by release.
 
