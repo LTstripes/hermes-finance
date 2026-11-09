@@ -90,7 +90,7 @@ test("user-decided Close: unconfirmed Clone, warnings, lost ACK, reload and expl
   await page.reload();
   await expect(page.getByRole("button", { name: "Открыть месяц заново" })).toBeVisible();
   await expect(
-    page.getByText("Месяц закрыт по вашему решению. Замечания сохранены."),
+    page.getByText("Месяц закрыт по вашему решению. Для исправлений сначала открой его заново."),
   ).toBeVisible();
   const closedReadiness = await (await request.get(readinessPath)).json();
   expect(closedReadiness.items).toContainEqual(
@@ -148,6 +148,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await expect(page.getByRole("region", { name: "Рабочая область: Расходы и план" })).toBeVisible();
   await page.getByLabel("Категория расхода", { exact: true }).fill("Синтетический расход");
   await page.getByLabel("Сумма расхода", { exact: true }).fill("123.45");
+  const readsBeforeSave = workflowReads;
   await page.getByRole("button", { name: "Добавить расход", exact: true }).click();
   await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
   expect(expenseWrites).toBe(1);
@@ -159,14 +160,14 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
     ).summary.expense_row_count,
   ).toBe(1);
 
-  const readsBeforeReturn = workflowReads;
   await page
     .getByRole("navigation", { name: "Разделы месяца" })
     .getByRole("link", { name: /Закрыть месяц/ })
     .click();
   await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
   await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
-  await expect.poll(() => workflowReads).toBeGreaterThan(readsBeforeReturn);
+  // A retained Month panel can reread immediately after Save, before returning.
+  await expect.poll(() => workflowReads).toBeGreaterThan(readsBeforeSave);
   await fullReview(page);
   await expect(page.getByTestId("final-review-card-income_budget")).toContainText("Есть данные");
 
@@ -404,8 +405,19 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
       .fill(width === 1440 ? "2034-05-30" : "2034-05-31");
     await tile(page, /Закрыть месяц/);
     await page.getByRole("button", { name: "Остаться", exact: true }).click();
+    const editedWorkflow = page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        new URL(response.url()).pathname === `/api/months/${old}/close-workflow` &&
+        response.ok(),
+    );
     await page.getByRole("button", { name: "Сохранить общие данные" }).click();
     await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
+    expect((await (await editedWorkflow).json()).month).toMatchObject({
+      id: old,
+      status: "draft",
+      snapshot_date: width === 1440 ? "2034-05-30" : "2034-05-31",
+    });
     await tile(page, /Закрыть месяц/);
     await expect(page).toHaveURL(/panel=close/);
     await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
@@ -453,17 +465,9 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     });
     expect(reopenedContrast).toBeGreaterThanOrEqual(4.5);
     await reopenedPrimary.click();
-    const panelWorkflow = page.waitForResponse((response) => {
-      const referer = response.request().headers().referer;
-      return (
-        response.request().method() === "GET" &&
-        new URL(response.url()).pathname === `/api/months/${old}/close-workflow` &&
-        !!referer &&
-        new URL(referer).searchParams.get("panel") === "close"
-      );
-    });
+    // No write occurred since the confirmed reopen/edit readbacks. Navigation
+    // reuses that exact month's review; Close still rereads before confirmation.
     await tile(page, /Закрыть месяц/);
-    expect((await panelWorkflow).ok()).toBe(true);
     const closeButton = page.getByRole("button", { name: "Закрыть месяц", exact: true });
     await expect(closeButton).toBeEnabled();
     await closeButton.focus();

@@ -1,8 +1,36 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { applyGoldHistory } from "../ui-v2/returns/goldHistory";
+import { goldIntentFixture } from "../ui-v2/returns/goldHistoryFixtures";
 import { apiMultipart, apiRequest, subscribeApiWrites } from "./client";
 
 afterEach(() => vi.unstubAllGlobals());
 describe("saved-data write notifications", () => {
+  it.each(["saved", "lost ACK"])(
+    "retires projections after gold history Apply: %s",
+    async (outcome) => {
+      const listener = vi.fn();
+      const stop = subscribeApiWrites(listener);
+      vi.stubGlobal(
+        "fetch",
+        outcome === "saved"
+          ? vi.fn().mockResolvedValue(new Response("{}"))
+          : vi.fn().mockRejectedValue(new TypeError("lost ACK")),
+      );
+      try {
+        const apply = applyGoldHistory(
+          goldIntentFixture(),
+          "synthetic-digest",
+          "synthetic-request",
+        );
+        if (outcome === "saved") await apply;
+        else await expect(apply).rejects.toThrow("lost ACK");
+        expect(listener).toHaveBeenCalledTimes(1);
+      } finally {
+        stop();
+      }
+    },
+  );
+
   it.each([
     "/api/incomes",
     "/api/months/1/close",
@@ -49,6 +77,7 @@ describe("saved-data write notifications", () => {
   });
   it.each([
     "/api/quote-preview",
+    "/api/owner-manual-gold-history/preview",
     "/api/broker-months/preview",
     "/api/broker-months/money-prepare",
     "/api/broker-months/public-identity-lookup",

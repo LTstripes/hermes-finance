@@ -4,9 +4,8 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import type { MonthWorkingStatus } from "../api/types";
 import { apiRequest } from "../api/client";
+import type { MonthWorkingStatus } from "../api/types";
 import { createQueryClient, queryKeys } from "../queryClient";
 import { UiV2DataSubnav } from "./UiV2DataShell";
 import { UiV2Shell } from "./UiV2Shell";
@@ -76,6 +75,31 @@ afterEach(() => {
 });
 
 describe("UiV2Shell native navigation", () => {
+  it("rereads active projections after a saved write without waiting for navigation", async () => {
+    const client = createQueryClient();
+    const key = ["synthetic-active-capital"];
+    const queryFn = vi.fn().mockResolvedValueOnce("before-write").mockResolvedValue("after-write");
+    const observer = new QueryObserver(client, { queryKey: key, queryFn });
+    const stop = observer.subscribe(() => {});
+    await vi.waitFor(() => expect(client.getQueryData(key)).toBe("before-write"));
+    const view = render(
+      withClient(
+        <MemoryRouter>
+          <UiV2Shell header={<h1>Капитал</h1>}>Контент</UiV2Shell>
+        </MemoryRouter>,
+        client,
+      ),
+    );
+    try {
+      await act(() => apiRequest("/api/positions/1", { method: "PATCH", body: {} }));
+      await vi.waitFor(() => expect(client.getQueryData(key)).toBe("after-write"));
+    } finally {
+      stop();
+      view.unmount();
+      client.clear();
+    }
+  });
+
   it("invalidates inactive projections after a write and rejects late pre-write responses", async () => {
     const client = createQueryClient();
     const key = ["synthetic-capital"];

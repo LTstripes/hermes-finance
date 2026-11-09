@@ -86,11 +86,22 @@ export function UiV2Shell({
   const fetching = useIsFetching();
   useEffect(
     () =>
-      subscribeApiWrites(() => {
-        // Cancel responses started before the write, then mark every dependent
-        // projection stale. Existing writer readbacks refresh their active keys.
+      subscribeApiWrites(({ pathname }) => {
+        // Cancel pre-write responses and reread mounted projections, including
+        // retained Month panels. Inactive reads stay invalidated until remount.
+        // Writer-specific GETs still verify the exact saved intent independently.
         void queryClient.cancelQueries();
         void queryClient.invalidateQueries({ refetchType: "none" });
+        const lifecycleMonth = /^\/api\/months\/(\d+)\/(?:close|reopen)$/.exec(pathname)?.[1];
+        void queryClient.refetchQueries({
+          type: "active",
+          // Close/Reopen owns status verification and its workflow GET. A
+          // parallel automatic GET could consume or clear recovery evidence.
+          predicate: (query) =>
+            !lifecycleMonth ||
+            query.queryKey[0] !== "month-close-workflow" ||
+            query.queryKey[1] !== Number(lifecycleMonth),
+        });
       }),
     [queryClient],
   );
