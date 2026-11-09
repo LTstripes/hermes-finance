@@ -1338,12 +1338,9 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
   ).toBeVisible();
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
-  const accountsReady = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === "/api/accounts" && response.request().method() === "GET",
-  );
+  // No catalogue write occurred: returning may reuse the saved accounts read.
+  // The assertions below still require the original File and exact account.
   await page.goBack();
-  expect((await accountsReady).ok()).toBe(true);
   await showSourceReview(page);
   await expect(page.getByText(`Оригинал в текущем сеансе: ${file.name}`)).toBeVisible();
   const broker = page.getByLabel("Брокерский счёт", { exact: true });

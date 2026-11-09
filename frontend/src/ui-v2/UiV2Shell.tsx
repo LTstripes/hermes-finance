@@ -88,11 +88,22 @@ export function UiV2Shell({
   useEffect(
     () =>
       subscribeApiWrites(({ pathname }) => {
+        // Source commands own ACK -> GET and the subsequent catalogue refresh.
+        // Invalidating these dependencies at transport completion retires the
+        // source session before it can consume its own ACK (including lost ACKs).
+        const sourceWrite =
+          pathname.startsWith("/api/broker-months") ||
+          /^\/api\/months\/\d+\/broker-sources$/.test(pathname);
+        const sourceDependencies = ["accounts", "instruments", "broker-identity-mappings"];
+        const predicate = sourceWrite
+          ? (query: { queryKey: readonly unknown[] }) =>
+              !sourceDependencies.includes(String(query.queryKey[0]))
+          : undefined;
         // Retire saved projections without interrupting mounted forms or their
         // independent writer readbacks. An inactive pre-write response must not
         // make an obsolete cache entry reusable on the next navigation.
         void queryClient.cancelQueries({ type: "inactive" });
-        void queryClient.invalidateQueries({ refetchType: "none" });
+        void queryClient.invalidateQueries({ refetchType: "none", predicate });
         // The plate has no writer readback of its own. Restore owns its full
         // refresh; backup creation changes no financial facts or month status.
         if (pathname.startsWith("/api/backups")) return;

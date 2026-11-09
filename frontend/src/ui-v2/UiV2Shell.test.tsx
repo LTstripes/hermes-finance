@@ -75,6 +75,65 @@ afterEach(() => {
 });
 
 describe("UiV2Shell native navigation", () => {
+  it.each([
+    "/api/broker-months/apply",
+    "/api/broker-months/intakes",
+    "/api/broker-months/intakes/1/decisions",
+    "/api/broker-months/intakes/1/finance-link",
+    "/api/months/7/broker-sources",
+  ])("leaves source dependencies to the command's ACK and GET at %s", async (path) => {
+    const client = createQueryClient();
+    const dependencies = [["accounts"], ["instruments"], ["broker-identity-mappings"]];
+    for (const key of dependencies) client.setQueryData(key, ["saved"], { updatedAt: 1 });
+    let finishOldRead: (value: string[]) => void = () => {};
+    const oldRead = client
+      .fetchQuery({
+        queryKey: dependencies[0],
+        queryFn: () =>
+          new Promise<string[]>((resolve) => {
+            finishOldRead = resolve;
+          }),
+      })
+      .catch(() => undefined);
+    const projection = ["returns", "synthetic"];
+    client.setQueryData(projection, "before-write");
+    const view = render(
+      withClient(
+        <MemoryRouter>
+          <UiV2Shell header={<h1>Месяц</h1>}>Контент</UiV2Shell>
+        </MemoryRouter>,
+        client,
+      ),
+    );
+    const dependencyEvents: string[] = [];
+    const stop = client.getQueryCache().subscribe((event) => {
+      if (
+        event.type === "updated" &&
+        event.action.type === "invalidate" &&
+        dependencies.some((key) => key[0] === event.query.queryKey[0])
+      )
+        dependencyEvents.push(String(event.query.queryKey[0]));
+    });
+    try {
+      await act(() => notifyApiWrite(path, "POST"));
+      finishOldRead(["obsolete"]);
+      await oldRead;
+      expect(client.getQueryData(dependencies[0])).toEqual(["saved"]);
+      expect(dependencyEvents).toEqual([]);
+      for (const key of dependencies) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+      expect(client.getQueryState(projection)?.isInvalidated).toBe(true);
+      const queryFn = vi.fn().mockResolvedValue("after-write");
+      const observer = new QueryObserver(client, { queryKey: projection, queryFn });
+      const stopObserver = observer.subscribe(() => {});
+      await vi.waitFor(() => expect(client.getQueryData(projection)).toBe("after-write"));
+      stopObserver();
+    } finally {
+      stop();
+      view.unmount();
+      client.clear();
+    }
+  });
+
   it("invalidates active writer reads without restarting them before the writer readback", async () => {
     const client = createQueryClient();
     const key = queryKeys.months;
