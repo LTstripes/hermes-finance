@@ -9,19 +9,24 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
-- 1.14.0 is prepared on main for guarded publication with
-  [release notes](release-notes-1.14.0.md). Publication, the tag and the Stable
-  installation are recorded here only after their read-back.
-- [v1.13.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.13.0)
-  (`bbf4197e4545be554dc2425b95354a18dff19fb1`) is the installed Stable version since
-  2026-11-08 (backup-first OPS02, Prepare and Start; health read back 1.13.0). Its
-  pre-update backup is retained. Detailed numeric Owner UAT of 1.13.0 has not been
-  performed and is not inferred from CI or copy checks.
+- [v1.14.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.14.0)
+  is published at `c4e91bd496c602a6496ec018caff473ac83fa1b4` with
+  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42571502233)
+  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42572541752)
+  successful, with [release notes](release-notes-1.14.0.md).
+- 1.14.0 is installed on the Owner computer on 2026-11-09 by backup-first OPS02,
+  then Prepare and Start; the running health version reads back 1.14.0 and a
+  pre-update SQLite backup exists in the update backup directory. A read-only check
+  of the installed data shows the redeemed bond with a full result and the capital
+  bridge with its card-debt and market-line hints. Detailed numeric Owner UAT of
+  1.14.0 has not been performed.
+- The previous release [v1.13.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.13.0)
+  (`bbf4197e4545be554dc2425b95354a18dff19fb1`) keeps its pre-update backup.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
-Changes since 1.13.0, prepared for 1.14.0:
+Changes since 1.13.0, shipped in 1.14.0:
 
 - [#1150](https://github.com/LTstripes/hermes-finance/pull/1150) and
   [#1151](https://github.com/LTstripes/hermes-finance/pull/1151) explain the monthly
@@ -46,9 +51,8 @@ checks do not establish Owner UAT.
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Publish 1.14.0 through the guarded route and install it on Stable backup-first,
-   then Owner UAT of the capital bridge and the IIS forms, together with the pending
-   UAT of 1.13.0 and the redesign (#963, #1014, #711).
+1. Owner UAT of installed 1.14.0: the capital bridge and the IIS forms, together
+   with the pending UAT of 1.13.0 and the redesign (#963, #1014, #711).
 2. Owner data actions for the capital bridge: record one-off card purchases as month
    expenses, reconcile the capital snapshot with the statements at the named month
    boundaries, confirm the remaining assumed account deposit and add the missing
