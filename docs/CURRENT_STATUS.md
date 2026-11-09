@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-08**. This is the current status; product and numerical rules
+Updated **2026-11-09**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -9,14 +9,23 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
-- 1.13.0 is prepared on main for guarded publication with
-  [release notes](release-notes-1.13.0.md). Publication, the tag and the Stable
-  installation are recorded here only after their read-back.
-- [v1.12.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.12.0)
-  (`067b6be1a5d5957643d50e996ffda647ba9ac891`) is the installed Stable version since
-  2026-11-08 (backup-first OPS02, Prepare and Start; health read back 1.12.0). Its
-  pre-update backup is retained. Detailed numeric Owner UAT of 1.12.0 has not been
-  performed and is not inferred from CI or snapshot checks.
+- [v1.13.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.13.0)
+  is published at `bbf4197e4545be554dc2425b95354a18dff19fb1` with
+  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42504077344)
+  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42504946525)
+  successful, with [release notes](release-notes-1.13.0.md).
+- 1.13.0 is installed on the Owner computer on 2026-11-08 by backup-first OPS02,
+  then Prepare and Start; the running health version reads back 1.13.0 and a
+  pre-update SQLite backup exists in the update backup directory. Detailed numeric
+  Owner UAT of 1.13.0 has not been performed and is not inferred from CI or copy checks.
+- Main after 1.13.0, not released (the Owner holds the next release to combine it
+  with upcoming work): #1146 and #1147 (IIS forms scroll, edit and delete of
+  contributions and deductions), #1148 and #1149 (full bond redemption from
+  exchange-code cancellation rows and the resulting closed-position result,
+  semantics v17 and v18), #1150 and #1151 (monthly capital bridge through the
+  month's flow, with a card-debt hint).
+- The previous release [v1.12.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.12.0)
+  (`067b6be1a5d5957643d50e996ffda647ba9ac891`) keeps its pre-update backup.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
@@ -54,12 +63,13 @@ database migrations since 1.12.0. Green CI and copy checks do not establish Owne
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Publish 1.13.0 through the guarded route, install it on Stable backup-first,
-   then Owner UAT of the Returns rates, the instrument card and the 3.2.0 export,
-   together with the pending 1.12.0 redesign UAT (#963, #1014, #711).
-2. Owner data actions that unlock remaining results: re-confirm the current source
-   reports where a stored cancellation proof is stale, add the missing registration
-   bridge, and fix catalogue types and duplicates.
+1. Owner UAT of installed 1.13.0: Returns rates, the instrument card and the 3.2.0
+   export, together with the pending redesign UAT (#963, #1014, #711). The next
+   release waits for the Owner's go-ahead and then ships main since 1.13.0.
+2. Owner data actions that unlock remaining results: record one-off card purchases
+   as month expenses so the capital bridge reconciles, and classify the remaining
+   unclassified account money. The registration bridge and catalogue fixes of
+   2026-11-08 are done.
 3. Apply the Owner's proportional verification rule and never infer UAT from green
    CI. No financial Apply/Close or data repair is implied by release.
 
