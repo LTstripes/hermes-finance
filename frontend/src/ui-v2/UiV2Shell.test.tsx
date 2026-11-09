@@ -1,11 +1,12 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MonthWorkingStatus } from "../api/types";
+import { apiRequest } from "../api/client";
 import { createQueryClient, queryKeys } from "../queryClient";
 import { UiV2DataSubnav } from "./UiV2DataShell";
 import { UiV2Shell } from "./UiV2Shell";
@@ -75,6 +76,42 @@ afterEach(() => {
 });
 
 describe("UiV2Shell native navigation", () => {
+  it("invalidates inactive projections after a write and rejects late pre-write responses", async () => {
+    const client = createQueryClient();
+    const key = ["synthetic-capital"];
+    client.setQueryData(key, "saved", { updatedAt: 1 });
+    let finishOldRead: (value: string) => void = () => {};
+    const oldRead = client
+      .fetchQuery({
+        queryKey: key,
+        queryFn: () =>
+          new Promise<string>((resolve) => {
+            finishOldRead = resolve;
+          }),
+      })
+      .catch(() => undefined);
+    const view = render(
+      withClient(
+        <MemoryRouter>
+          <UiV2Shell header={<h1>Капитал</h1>}>Контент</UiV2Shell>
+        </MemoryRouter>,
+        client,
+      ),
+    );
+    await act(() => apiRequest("/api/positions/1", { method: "PATCH", body: {} }));
+    expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    finishOldRead("obsolete");
+    await oldRead;
+    expect(client.getQueryData(key)).toBe("saved");
+    const queryFn = vi.fn().mockResolvedValue("after-write");
+    const observer = new QueryObserver(client, { queryKey: key, queryFn });
+    const stop = observer.subscribe(() => {});
+    await vi.waitFor(() => expect(client.getQueryData(key)).toBe("after-write"));
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    stop();
+    view.unmount();
+    client.clear();
+  });
   it.each([
     "/v2/returns",
     "/v2/returns/account?scope=portfolio",

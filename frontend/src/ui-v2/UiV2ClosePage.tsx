@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
@@ -14,7 +14,7 @@ import {
 } from "../components/month-close/FinalMonthReview";
 import { IntentionalEmptyClose } from "../components/month-close/IntentionalEmptyClose";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
-import { closeOwnerCopy } from "../components/month-close/ownerCopy";
+import { closeOwnerActionFindings, closeOwnerCopy } from "../components/month-close/ownerCopy";
 import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
 import {
   type AlfaStatementTransientOutcome,
@@ -106,11 +106,11 @@ export default function UiV2ClosePage() {
   const [params] = useSearchParams();
   const [emptyClosePending, setEmptyClosePending] = useState(false);
   const location = useLocation();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const { newestDraft } = selectNewestDraftAfterLatestClosed(months);
@@ -195,12 +195,28 @@ export default function UiV2ClosePage() {
         : null;
   const closed = workflowIdentityMatches && workflow.month.status === "closed";
   const finalReviewActive = panel === "close";
-  const previousPanel = useRef(panel);
-  const refetchWorkflow = workflowQuery.refetch;
+  // Returning to the panel reuses the read unless a saved write retired it.
+  // Lifecycle commands own their independent GET and must not be raced here.
   useEffect(() => {
-    if (previousPanel.current !== panel && panel === "close") void refetchWorkflow();
-    previousPanel.current = panel;
-  }, [panel, refetchWorkflow]);
+    if (
+      finalReviewActive &&
+      workflowQuery.isStale &&
+      !lifecycleBusy &&
+      !preparingClose &&
+      !lifecycleRecovery &&
+      queryClient.getQueryState(queryKeys.monthCloseWorkflowWithChecklist(monthId))?.isInvalidated
+    )
+      void workflowQuery.refetch({ cancelRefetch: false });
+  }, [
+    finalReviewActive,
+    lifecycleBusy,
+    preparingClose,
+    lifecycleRecovery,
+    monthId,
+    queryClient,
+    workflowQuery.isStale,
+    workflowQuery.refetch,
+  ]);
   const workflowReady = isQueryReady(workflowQuery);
   const { original, session } = useBrokerOriginalSession();
   const { command: journalCommand } = useSourceIntakeRecovery();
@@ -397,10 +413,10 @@ export default function UiV2ClosePage() {
                     />
                     <p>
                       {closed
-                        ? "Месяц закрыт по вашему решению. Замечания сохранены."
+                        ? "Месяц закрыт по вашему решению. Для исправлений сначала открой его заново."
                         : "Можно закрыть с предупреждениями. Закрытие не подтверждает полноту данных."}
                     </p>
-                    {workflow.final_review.close_readiness.items
+                    {closeOwnerActionFindings(workflow.final_review.close_readiness.items)
                       .filter(
                         (item) => item.severity === "hard_blocker" || item.severity === "warning",
                       )

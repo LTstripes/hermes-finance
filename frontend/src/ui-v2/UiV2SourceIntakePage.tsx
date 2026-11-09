@@ -13,7 +13,6 @@ export default function UiV2SourceIntakePage() {
   const list = useQuery({
     queryKey: ["source-intakes", "all"],
     queryFn: ({ signal }) => listAllSourceIntakes(signal),
-    refetchOnWindowFocus: true,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [file, setFile] = useState<File | null>(null);

@@ -713,7 +713,6 @@ export default function UiV2CapitalPage() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const { latestClosed, newestDraft: newerDraft } = selectNewestDraftAfterLatestClosed(months);
@@ -725,7 +724,6 @@ export default function UiV2CapitalPage() {
     enabled: closed,
     queryKey: queryKeys.closedReportComparisonBasic,
     queryFn: ({ signal }) => getClosedReportComparison(signal, false),
-    refetchOnWindowFocus: true,
   });
   const capitalChangeQuery = useQuery({
     enabled:
@@ -737,59 +735,49 @@ export default function UiV2CapitalPage() {
       (comparisonQuery.data.previous?.reporting_month_id ?? null) === previousClosedId,
     queryKey: queryKeys.closedReportComparison,
     queryFn: ({ signal }) => getClosedReportComparison(signal),
-    refetchOnWindowFocus: true,
   });
   const compositionQuery = useQuery({
     enabled: closed,
     queryKey: queryKeys.capitalComposition,
     queryFn: ({ signal }) => getCapitalComposition(signal),
-    refetchOnWindowFocus: true,
   });
   const riskQuery = useQuery({
     enabled: closed,
     queryKey: queryKeys.riskAllocation(closedId, 5),
     queryFn: ({ signal }) => getRiskAllocation(closedId as number, 5, "v1", signal),
-    refetchOnWindowFocus: true,
   });
   const dashboardQuery = useQuery({
     enabled: closed,
     queryKey: queryKeys.dashboardBasic(closedId),
     queryFn: ({ signal }) => getDashboard(closedId as number, signal, false),
-    refetchOnWindowFocus: true,
   });
   const cashQuery = useQuery({
     enabled: closed,
     queryKey: queryKeys.cashBalances(closedId),
     queryFn: ({ signal }) => listCashBalances(closedId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const depositsQuery = useQuery({
     enabled: closed,
     queryKey: queryKeys.deposits(closedId),
     queryFn: ({ signal }) => listDeposits(closedId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const positionsQuery = useQuery({
     enabled: closed,
     queryKey: queryKeys.positions(closedId),
     queryFn: ({ signal }) => listPositions(closedId as number, undefined, signal),
-    refetchOnWindowFocus: true,
   });
   const propertiesQuery = useQuery({
     enabled: closed,
     queryKey: queryKeys.properties(closedId),
     queryFn: ({ signal }) => listProperties(closedId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const accountsQuery = useQuery({
     queryKey: queryKeys.accounts,
     queryFn: ({ signal }) => listAccounts(signal),
-    refetchOnWindowFocus: true,
   });
   const instrumentsQuery = useQuery({
     queryKey: queryKeys.instruments,
     queryFn: ({ signal }) => listInstruments({}, signal),
-    refetchOnWindowFocus: true,
   });
 
   const monthsReady = isQueryReady(monthsQuery);

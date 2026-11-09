@@ -1,12 +1,13 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
+import { reopenMonth } from "../api/months";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
 import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
-import { queryKeys } from "../queryClient";
+import { createQueryClient, queryKeys } from "../queryClient";
 import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
 import UiV2ClosePage from "./UiV2ClosePage";
 
@@ -58,7 +59,7 @@ function closedFrom(workflow: MonthCloseWorkflow): MonthCloseWorkflow {
 }
 
 function setup(path = "/v2/close") {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = createQueryClient();
   const state = {
     months: structuredClone(uiV2Months),
     workflow: structuredClone(makeUiV2Workflow()),
@@ -550,13 +551,31 @@ describe("native Monthly Close work mode", () => {
     expect(await screen.findByText("Черновик")).toBeVisible();
   });
 
-  it("refetches authoritative workflow on window focus", async () => {
+  it("keeps the cached review on focus, visibility, online and panel navigation; refresh is explicit", async () => {
     const { mount, state } = setup("/v2/close?month=12&step=market_quotes");
     mount();
     await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" });
     const before = state.workflowReads;
     fireEvent.focus(window);
-    await waitFor(() => expect(state.workflowReads).toBeGreaterThan(before));
+    fireEvent(document, new Event("visibilitychange"));
+    fireEvent(window, new Event("online"));
+    fireEvent.click(screen.getAllByRole("link", { name: "← К месяцу" })[0]);
+    fireEvent.click(await screen.findByRole("link", { name: "Закрыть месяц" }));
+    await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" });
+    expect(state.workflowReads).toBe(before);
+    fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
+    await waitFor(() => expect(state.workflowReads).toBe(before + 1));
+  });
+
+  it("refreshes the retained Month read when a saved write invalidated it before returning to Close", async () => {
+    const { mount, state } = setup("/v2/close?month=12");
+    mount();
+    await screen.findByRole("link", { name: "Закрыть месяц" });
+    await waitFor(() => expect(state.workflowReads).toBe(1));
+    await act(() => reopenMonth(12));
+    fireEvent.click(screen.getByRole("link", { name: "Закрыть месяц" }));
+    await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" });
+    await waitFor(() => expect(state.workflowReads).toBe(2));
   });
 
   it("keeps final review with an accessible close and exact-month context", async () => {
@@ -700,7 +719,11 @@ describe("native Monthly Close work mode", () => {
     mount();
     await screen.findByRole("button", { name: "Открыть месяц заново" });
     expect(screen.getAllByText("Не все остатки заполнены.")[0]).toBeVisible();
-    expect(screen.getByText("Месяц закрыт по вашему решению. Замечания сохранены.")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Месяц закрыт по вашему решению. Для исправлений сначала открой его заново.",
+      ),
+    ).toBeVisible();
     expect(
       state.workflow.steps.find((step) => step.id === "future_payouts")?.completion_basis,
     ).toBeNull();

@@ -117,8 +117,6 @@ export function MonthInstrumentPayouts({
         throw new Error("Счёт, ISIN или граница сохранённого количества не подтверждены.");
       return value;
     },
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
   });
   const dates = params.getAll("payout_as_of");
   const asOf = dates.length === 0 ? closingDate : dates.length === 1 ? dates[0] : "";

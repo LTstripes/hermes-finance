@@ -1,5 +1,8 @@
-import type { ReactNode } from "react";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useEffect } from "react";
 import { Link, useLocation } from "react-router";
+import { subscribeApiWrites } from "../api/client";
+import { Button } from "../components/ui";
 
 import { UiV2BackToTop } from "./UiV2BackToTop";
 import { UiV2MonthPlate } from "./UiV2MonthPlate";
@@ -66,6 +69,7 @@ export function UiV2Shell({
   busy = false,
   children,
   header,
+  showRefresh = true,
   sidebarExtra,
 }: {
   /** Explicit section for contextual routes outside a native section. */
@@ -73,9 +77,23 @@ export function UiV2Shell({
   busy?: boolean;
   children: ReactNode;
   header: ReactNode;
+  /** Pages with a native refresh action keep that single control. */
+  showRefresh?: boolean;
   sidebarExtra?: ReactNode;
 }) {
   const { pathname } = useLocation();
+  const queryClient = useQueryClient();
+  const fetching = useIsFetching();
+  useEffect(
+    () =>
+      subscribeApiWrites(() => {
+        // Cancel responses started before the write, then mark every dependent
+        // projection stale. Existing writer readbacks refresh their active keys.
+        void queryClient.cancelQueries();
+        void queryClient.invalidateQueries({ refetchType: "none" });
+      }),
+    [queryClient],
+  );
   const current =
     NATIVE_SECTIONS.find((section) =>
       section.id === "home"
@@ -121,7 +139,18 @@ export function UiV2Shell({
       </aside>
       <div className={styles.workspace}>
         <main aria-busy={busy} className={styles.main} id="v2-main" tabIndex={-1}>
-          <header className={styles.header}>{header}</header>
+          <header className={styles.header}>
+            {header}
+            {showRefresh ? (
+              <Button
+                type="button"
+                disabled={busy || fetching > 0}
+                onClick={() => void queryClient.invalidateQueries()}
+              >
+                Обновить
+              </Button>
+            ) : null}
+          </header>
           {children}
         </main>
         <UiV2BackToTop targetId="v2-main" />

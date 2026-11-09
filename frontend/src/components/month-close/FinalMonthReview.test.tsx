@@ -169,6 +169,25 @@ function review(): FinalMonthReview {
 }
 
 describe("FinalMonthReview", () => {
+  it("shows one source issue while retaining every diagnostic code", () => {
+    const data = review();
+    const codes = ["4_Transfers_unsupported", "5_UFSR_unsupported", "unparsed_source_rows"];
+    const message = "Synthetic broker: проверь разделы выписки.";
+    data.close_readiness.items = codes.map((code) => ({
+      code,
+      message,
+      severity: "warning",
+      context: {},
+    }));
+    render(
+      <MemoryRouter>
+        <FinalMonthReviewView review={data} />
+      </MemoryRouter>,
+    );
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.getByText(codes.join(", "))).toBeInTheDocument();
+    expect(data.close_readiness.items).toHaveLength(3);
+  });
   it("renders backend KPIs, all manual cards, unavailable data and separated future cash flows", () => {
     render(
       <MemoryRouter>

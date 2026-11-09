@@ -182,7 +182,7 @@ export function ReturnsGoldHistory({
   const query = useQuery({
     queryKey: key,
     queryFn: ({ signal }) => getGoldHistories(accountId, instrumentId, signal),
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   const [draft, setDraft] = useState(() => empty(accountId, instrumentId));
   const [dirty, setDirty] = useState(false);

@@ -31,8 +31,6 @@ export function SourceMonthReturn({ account, period }: { account: string; period
         throw new Error("Счёт или полномочия предварительного расчёта не подтверждены.");
       return value;
     },
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
   });
   const row = result.data?.months.find(
     (value) => value.opening_date === opening && value.closing_date === closing,

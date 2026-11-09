@@ -121,7 +121,7 @@ export function ReturnsInstrumentCard({
   const query = useQuery({
     queryKey: ["returns", "instrument-card", isin, revision],
     queryFn: ({ signal }) => getInstrumentCard(isin, signal),
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   const selection = query.data
     ? selectCardScope(query.data, selectedScope, selectedStart, selectedEnd)

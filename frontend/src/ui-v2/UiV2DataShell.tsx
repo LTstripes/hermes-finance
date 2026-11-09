@@ -115,6 +115,7 @@ export function UiV2DataFrame({
 }) {
   return (
     <UiV2Shell
+      showRefresh={active !== "app"}
       active="data"
       busy={busy}
       header={

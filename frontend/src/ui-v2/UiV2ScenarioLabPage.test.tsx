@@ -1,3 +1,5 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../queryClient";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
@@ -73,12 +75,14 @@ function BackControl() {
 
 function renderPage(initial = "/v2/income/scenario-lab") {
   return render(
-    <MemoryRouter initialEntries={[initial]}>
-      <BackControl />
-      <Routes>
-        <Route path="/v2/income/scenario-lab" element={<UiV2ScenarioLabPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={createQueryClient()}>
+      <MemoryRouter initialEntries={[initial]}>
+        <BackControl />
+        <Routes>
+          <Route path="/v2/income/scenario-lab" element={<UiV2ScenarioLabPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

@@ -1,3 +1,42 @@
+/** One source-review action per account; details retain the separate findings. */
+export function closeOwnerActionFindings<T extends { message: string; severity: string }>(
+  items: T[],
+): T[] {
+  // The ordinary review needs one next action per account. Detailed review keeps
+  // each individual finding and every diagnostic code.
+  return closeOwnerFindings(
+    items.map((item) => {
+      const account =
+        /^(.*): .*\. Проверь подробности в разделе «Месяц → Брокерские выписки»\.$/.exec(
+          item.message,
+        )?.[1];
+      return account
+        ? {
+            ...item,
+            message: `${account}: сверка выписки с данными месяца не завершена. Открой «Месяц → Брокерские выписки» и проверь замечания.`,
+          }
+        : item;
+    }),
+  );
+}
+
+/** One visible issue; all underlying codes/evidence remain in the response. */
+export function closeOwnerFindings<T extends { message: string; severity: string }>(
+  items: T[],
+): T[] {
+  const seen = new Set<string>();
+  // Keep the strongest severity if multiple codes describe one visible issue.
+  const priority = (severity: string) =>
+    severity === "hard_blocker" ? 2 : severity === "warning" ? 1 : 0;
+  const ordered = [...items].sort((a, b) => priority(b.severity) - priority(a.severity));
+  return ordered.filter((item) => {
+    const key = closeOwnerCopy(item.message).trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Presentation only: lifecycle enums, evidence and readiness stay authoritative. */
 export function closeOwnerCopy(text: string): string {
   return text

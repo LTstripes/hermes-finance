@@ -499,6 +499,7 @@ export default function UiV2TaxIisPage() {
 
   return (
     <UiV2Shell
+      showRefresh={false}
       active="income"
       busy={monthsLoading || plannerLoading}
       header={

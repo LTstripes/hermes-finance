@@ -859,7 +859,6 @@ export default function UiV2IncomePage() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const latestClosed = months.find((month) => month.status === "closed") ?? null;
@@ -878,37 +877,31 @@ export default function UiV2IncomePage() {
     enabled: planningId !== null,
     queryKey: queryKeys.incomePlanSummary(planningId),
     queryFn: ({ signal }) => getIncomePlanSummary(planningId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const headlineHistoryQuery = useQuery({
     enabled: planningId !== null,
     queryKey: queryKeys.passiveIncomeHistory(planningId),
     queryFn: ({ signal }) => getPassiveIncomeHistory(planningId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const factHistoryQuery = useQuery({
     enabled: factId !== null,
     queryKey: queryKeys.passiveIncomeHistory(factId),
     queryFn: ({ signal }) => getPassiveIncomeHistory(factId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const ladderQuery = useQuery({
     enabled: planningId !== null,
     queryKey: queryKeys.cashFlowLadder(planningId),
     queryFn: ({ signal }) => getCashFlowLadder(planningId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const budgetQuery = useQuery({
     enabled: planningId !== null,
     queryKey: queryKeys.planVsActual(planningId),
     queryFn: ({ signal }) => plannedVsActual(planningId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const savingsQuery = useQuery({
     enabled: planningId !== null,
     queryKey: queryKeys.savings(planningId),
     queryFn: ({ signal }) => listSavings(planningId as number, signal),
-    refetchOnWindowFocus: true,
   });
 
   const monthsReady = isQueryReady(monthsQuery);

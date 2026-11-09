@@ -210,6 +210,7 @@ export default function UiV2ScenarioLabPage() {
 
   return (
     <UiV2Shell
+      showRefresh={false}
       active="income"
       busy={monthsLoading || running || downloading}
       header={

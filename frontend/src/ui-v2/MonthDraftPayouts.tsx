@@ -52,7 +52,6 @@ export function MonthDraftPayouts({
     queryKey: ["payout-refresh-status", monthId],
     queryFn: () => getPayoutRefreshStatus(monthId),
     retry: false,
-    refetchInterval: 5000,
   });
   const calendar = useQuery({
     queryKey: ["draft-payout-calendar", monthId],

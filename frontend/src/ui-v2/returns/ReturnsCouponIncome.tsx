@@ -22,7 +22,7 @@ function Breakdown({
   const query = useQuery({
     queryKey: ["returns", "income", kind, revision],
     queryFn: ({ signal }) => getIncome(kind, signal),
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   if (query.isError)
     return (

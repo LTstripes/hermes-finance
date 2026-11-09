@@ -8,7 +8,6 @@ export function SavedInvestmentReports({ account, period }: { account?: string; 
   const query = useQuery({
     queryKey: ["source-returns", "investment-reports", account],
     queryFn: ({ signal }) => getInvestmentReports(account, signal),
-    refetchOnMount: "always",
   });
   if (query.isPending || query.isFetching) return <p>Проверяем сохранённые PDF-связи…</p>;
   if (query.isError) return <p aria-live="polite">{formatApiError(query.error)}</p>;

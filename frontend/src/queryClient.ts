@@ -63,9 +63,11 @@ export function createQueryClient(): QueryClient {
         refetchOnReconnect: false,
         refetchOnWindowFocus: false,
         retry: false,
-        // Keep financial reads fresh when returning from an un-migrated editor.
-        // The cache still retains data for key-scoped placeholder transitions.
-        staleTime: 0,
+        retryOnMount: false,
+        // Navigation reuses saved reads. Writes invalidate them; explicit Refresh
+        // and lifecycle confirmation still fetch authoritative state.
+        refetchOnMount: (query) => query.state.isInvalidated,
+        staleTime: 5 * 60 * 1000,
       },
     },
   });

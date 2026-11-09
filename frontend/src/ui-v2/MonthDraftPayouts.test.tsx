@@ -302,7 +302,7 @@ test("automatic partial failure remains visible after reopening", async () => {
   expect(refreshDraftPayouts).not.toHaveBeenCalled();
 });
 
-test("polls automatic status and displays a later failure without remounting", async () => {
+test("reads a later automatic status only after explicit refresh", async () => {
   const status = { reporting_month_id: 1, positions_changed: 0, items: [], forecast_as_of: null };
   vi.mocked(getPayoutRefreshStatus)
     .mockResolvedValueOnce({
@@ -313,7 +313,10 @@ test("polls automatic status and displays a later failure without remounting", a
       ...status,
       automatic_refresh: { status: "error", message: "", reason_codes: ["provider_error"] },
     });
-  show();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  show({}, client);
+  await waitFor(() => expect(getPayoutRefreshStatus).toHaveBeenCalledTimes(1));
+  await act(async () => client.invalidateQueries({ queryKey: ["payout-refresh-status", 1] }));
   expect(
     await screen.findByText(/При автоматическом обновлении часть данных/, {}, { timeout: 8000 }),
   ).toBeVisible();

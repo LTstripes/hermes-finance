@@ -1,3 +1,5 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../queryClient";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -321,12 +323,14 @@ describe("GoalsWorkspace R03-09 cards", () => {
   it("renders the native v2 route and keeps the selected month in navigation and dialogs", async () => {
     const user = userEvent.setup();
     render(
-      <MemoryRouter initialEntries={["/v2/income/goals?month=10"]}>
-        <LocationProbe />
-        <Routes>
-          <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
-        </Routes>
-      </MemoryRouter>,
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter initialEntries={["/v2/income/goals?month=10"]}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
@@ -367,12 +371,14 @@ describe("GoalsWorkspace R03-09 cards", () => {
 
   it("defaults a missing month to the newest report and does not replace an invalid explicit month", async () => {
     const defaultRoute = render(
-      <MemoryRouter initialEntries={["/v2/income/goals"]}>
-        <LocationProbe />
-        <Routes>
-          <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
-        </Routes>
-      </MemoryRouter>,
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter initialEntries={["/v2/income/goals"]}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     await waitFor(() =>
       expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/income/goals?month=11"),
@@ -400,12 +406,14 @@ describe("GoalsWorkspace R03-09 cards", () => {
       },
     ]);
     render(
-      <MemoryRouter initialEntries={["/v2/income/goals?month=not-a-month"]}>
-        <LocationProbe />
-        <Routes>
-          <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
-        </Routes>
-      </MemoryRouter>,
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter initialEntries={["/v2/income/goals?month=not-a-month"]}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/v2/income/goals" element={<UiV2GoalsPage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     expect(
       await screen.findByText(

@@ -71,7 +71,6 @@ export function UiV2MonthInstruments({
         throw new Error("Счёт или период instrument_return_v2 не совпал с выбранным месяцем.");
       return value;
     },
-    refetchOnWindowFocus: true,
   });
   useEffect(
     () =>

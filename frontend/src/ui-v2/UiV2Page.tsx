@@ -829,7 +829,6 @@ export default function UiV2Page() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const { latestClosed, newestDraft: newerDraft } = selectNewestDraftAfterLatestClosed(months);
@@ -839,25 +838,21 @@ export default function UiV2Page() {
     enabled: closedId !== null,
     queryKey: queryKeys.closedReportComparisonBasic,
     queryFn: ({ signal }) => getClosedReportComparison(signal, false),
-    refetchOnWindowFocus: true,
   });
   const compositionQuery = useQuery({
     enabled: closedId !== null,
     queryKey: queryKeys.capitalComposition,
     queryFn: ({ signal }) => getCapitalComposition(signal),
-    refetchOnWindowFocus: true,
   });
   const passiveQuery = useQuery({
     enabled: closedId !== null,
     queryKey: queryKeys.passiveIncomeHistory(closedId),
     queryFn: ({ signal }) => getPassiveIncomeHistory(closedId as number, signal),
-    refetchOnWindowFocus: true,
   });
   const goalsQuery = useQuery({
     enabled: closedId !== null,
     queryKey: queryKeys.goalSummary(closedId),
     queryFn: ({ signal }) => listGoalSummary(closedId as number, {}, signal),
-    refetchOnWindowFocus: true,
   });
 
   const monthsReady = isQueryReady(monthsQuery);

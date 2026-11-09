@@ -276,12 +276,10 @@ export default function UiV2DataFilesPage() {
   const monthsQuery = useQuery({
     queryKey: queryKeys.months,
     queryFn: ({ signal }) => listMonths(signal),
-    refetchOnWindowFocus: true,
   });
   const backupsQuery = useQuery({
     queryKey: queryKeys.backups,
     queryFn: ({ signal }) => listBackups(signal),
-    refetchOnWindowFocus: true,
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
   const resolution = resolveDataMonth(params.getAll("month"), months, isQueryReady(monthsQuery));

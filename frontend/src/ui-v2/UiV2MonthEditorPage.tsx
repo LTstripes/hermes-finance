@@ -90,7 +90,6 @@ export default function UiV2MonthEditorPage({
     queryFn: ({ signal }) => getMonth(monthId as number, signal),
     enabled: monthId !== null,
     retry: false,
-    refetchOnWindowFocus: true,
   });
   const identity = useRef<{ id: number; year: number; month: number } | null>(null);
   if (identity.current?.id !== monthId) identity.current = null;

@@ -35,6 +35,14 @@ The payout forecast page leads with a 12-month saved-calendar summary: coupon/di
 Start with the selected reporting month and its snapshot date. Manual facts, full source documents and provider observations have different authority. The supported source flow is: unchanged original → zero-write Preview → explicit identity/mapping review or durable non-economic journal → strict financial DRAFT Apply → ACK → independent GET → readiness review → explicit Close. A journal Save preserves observations and decisions; it creates no financial positions, cash, income, flows or accepted financial receipt.
 
 The user may close the selected month with incomplete data or unfinished steps.
+Navigation between pages and month panels, browser focus/visibility and reconnect
+reuse cached reads. Saved writes invalidate dependent reads; **Обновить** explicitly
+reloads the current view. Close retains its authoritative pre-command checks and
+independent status readback. The ordinary final review shows each issue once,
+using the account's display name and a plain next step in its native section.
+Source findings with the same next action are summarized once per account;
+the individual findings and all diagnostic codes remain available in details.
+
 Final review shows short warnings beside **Закрыть месяц** and retains them after
 Reload in the closed month. It does not claim that all checks passed. Corrections
 use the existing editors after **Открыть месяц заново**. See the single normative

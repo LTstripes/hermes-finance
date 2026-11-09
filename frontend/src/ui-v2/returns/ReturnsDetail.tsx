@@ -25,7 +25,7 @@ export function ReturnsDetail({
   const query = useQuery({
     queryKey: ["returns", "detail", scope, period.start, period.end, isin, revision],
     queryFn: ({ signal }) => getDetail(scope, period, isin, signal),
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   if (query.isError)
     return (

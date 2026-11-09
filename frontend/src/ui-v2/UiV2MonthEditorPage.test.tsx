@@ -280,7 +280,7 @@ describe("native month editor frame", () => {
     const user = userEvent.setup();
     renderPage("/v2/data/months/7?section=note");
     await screen.findByRole("region", { name: "Заметки месяца" });
-    const input = screen.getByLabelText("Новая заметка");
+    const input = await screen.findByLabelText("Новая заметка");
     await user.type(input, "Проверить месяц");
     await user.click(screen.getByRole("button", { name: "Добавить заметку" }));
     expect(await screen.findByText("Заметка сохранена и подтверждена.")).toBeInTheDocument();

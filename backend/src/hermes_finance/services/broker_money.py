@@ -76,6 +76,20 @@ def material(row):
 
 
 def receipts(session):
+    from hermes_finance.database import snapshot_read_result
+
+    # Cache plain evidence, never ORM instances. Writers bypass this memo; each
+    # protected read owns its copies and discards them with the SQL snapshot.
+    rows = snapshot_read_result(
+        session, "broker_money_receipts", (), lambda: _receipt_rows(session)
+    )
+    return [
+        (session.get(BrokerMonthApply, request_id), json.loads(projection))
+        for request_id, projection in rows
+    ]
+
+
+def _receipt_rows(session):
     from hermes_finance.services import broker_month_journal as journal
 
     result = [
@@ -87,7 +101,7 @@ def receipts(session):
         )
         if journal.kind(r) in MONEY_CONTRACTS
     ]
-    return sorted(
+    ordered = sorted(
         result,
         key=lambda item: (
             item[1].get("journal_revision", 0),
@@ -95,6 +109,9 @@ def receipts(session):
             item[0].request_id,
         ),
     )
+    # The frozen JSON is substantially cheaper to copy than the entire decoded
+    # journal on each lookup. Consumers still get freshly decoded owned values.
+    return [(receipt.request_id, receipt.projection_json) for receipt, _proof in ordered]
 
 
 def target_key(target):

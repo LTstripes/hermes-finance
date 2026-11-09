@@ -101,7 +101,7 @@ export function ReturnsBasket({
       return result;
     },
     enabled: valid && inputMatchesUrl,
-    staleTime: 0,
+    staleTime: 5 * 60 * 1000,
   });
   const data =
     valid && inputMatchesUrl && !refreshing && !query.isFetching && !query.isError
