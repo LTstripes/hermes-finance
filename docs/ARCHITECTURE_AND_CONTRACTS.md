@@ -774,6 +774,13 @@ unattributed income is substituted. A retained source estimate carries
 The existing source reader marks even its source-only proof projection with
 assumptions; that projection alone therefore cannot establish this stricter row.
 
+Investment items additionally expose `unavailable_hint` (one plain-language line,
+NULL for an available item) and `source_reason_codes` (the selected monthly reader's
+reasons, empty when no row/link is available). The hint explains simultaneous
+endpoint and flow/unsupported-section blockers; the established bridge reason
+codes retain their endpoint-first precedence. These diagnostic fields neither
+classify money nor attest completeness and do not change amounts or eligibility.
+
 Physical gold is a saved gold position outside brokerage/IIS (snapshot historical
 type first, catalogue type for legacy untyped rows), matched by account and
 instrument. Brokerage gold is covered only by its account row. For RUB gold with

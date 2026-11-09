@@ -960,7 +960,22 @@ it("explains the month through income minus expenses and flags unrecorded card s
       investment_market_change: {
         amount: null,
         known_subtotal: rub("0.00"),
-        items: [{ account_id: 1, instrument_id: null, amount: null, reason_codes: ["x"] }],
+        items: [
+          {
+            account_id: 1,
+            instrument_id: null,
+            amount: null,
+            reason_codes: ["x"],
+            unavailable_hint: "Сверьте позиции и деньги в капитале с выписками на 30.09.2026.",
+          },
+          {
+            account_id: 4,
+            instrument_id: null,
+            amount: null,
+            reason_codes: ["x"],
+            unavailable_hint: "Сверьте позиции и деньги в капитале с выписками на 30.09.2026.",
+          },
+        ],
         reason_codes: ["x"],
       },
       physical_gold_revaluation: {
@@ -990,6 +1005,9 @@ it("explains the month through income minus expenses and flags unrecorded card s
   expect(
     screen.getByText(/не подтверждено и входит в необъяснённый остаток: изменение стоимости/),
   ).toBeVisible();
+  const hints = screen.getByTestId("capital-market-hints");
+  expect(within(hints).getAllByRole("listitem")).toHaveLength(1);
+  expect(hints).toHaveTextContent("Сверьте позиции и деньги в капитале с выписками на 30.09.2026.");
   expect(screen.getByTestId("capital-card-hint")).toHaveTextContent(
     /Долг по кредитке вырос на 300 ₽, а расходов за месяц внесено 50 ₽/,
   );

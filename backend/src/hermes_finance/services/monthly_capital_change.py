@@ -201,6 +201,48 @@ def _investment_result(session, accounts, current, previous, liquid, previous_li
     return total
 
 
+def _investment_unavailable_hint(row, before, after, previous, current):
+    """Explain independent blockers together without relaxing the eligibility gates."""
+    if row is None:
+        return "Нужна выписка с оценками счёта на обе границы месяца."
+    hints = []
+    if row.opening_kopecks is None or row.closing_kopecks is None:
+        hints.append("В выписках не подтверждены оценки счёта на обе границы месяца")
+    mismatched_dates = [
+        day.strftime("%d.%m.%Y")
+        for saved, source, day in (
+            (before, row.opening_kopecks, previous.snapshot_date),
+            (after, row.closing_kopecks, current.snapshot_date),
+        )
+        if source is not None and source != saved
+    ]
+    if mismatched_dates:
+        hints.append(
+            "Сверьте позиции и деньги в капитале с выписками на " + ", ".join(mismatched_dates)
+        )
+    if {
+        "4_Transfers_unsupported",
+        "5_UFSR_unsupported",
+        "unparsed_source_rows",
+    }.intersection(row.reason_codes):
+        hints.append(
+            "проверьте неподдержанные разделы выписок, одной классификации денег недостаточно"
+        )
+    elif (
+        row.contributions_kopecks is None
+        or row.withdrawals_kopecks is None
+        or (
+            row.growth_kopecks is None
+            and row.opening_kopecks is not None
+            and row.closing_kopecks is not None
+        )
+    ):
+        hints.append("проверьте денежные движения и полноту выписок в «Доходности»")
+    if row.assumptions_used:
+        hints.append("есть предположения о потоках или расчёт только по источнику")
+    return "; ".join(hints) + "." if hints else None
+
+
 def _investment_market_change(session, accounts, current, previous, liquid, previous_liquid):
     """Account value change after known funding, less payouts already in Month flow.
 
@@ -224,9 +266,12 @@ def _investment_market_change(session, accounts, current, previous, liquid, prev
                 continue
             amount = None
             reasons = ()
+            hint = None
+            source_reasons = ()
             natives = linked.get(account.id, [])
             if len(natives) != 1:
                 reasons = ("capital_investment_account_result_unavailable",)
+                hint = "Проверьте однозначную связь счёта с его выписками в настройках источников."
             else:
                 row = read_monthly_result(
                     session,
@@ -234,6 +279,7 @@ def _investment_market_change(session, accounts, current, previous, liquid, prev
                     opening_date=previous.snapshot_date,
                     closing_date=current.snapshot_date,
                 )
+                source_reasons = row.reason_codes if row is not None else ()
                 if (
                     row is None
                     or row.opening_kopecks is None
@@ -259,7 +305,11 @@ def _investment_market_change(session, accounts, current, previous, liquid, prev
                     amount = RubleAmount(row.growth_kopecks - payouts_in_flow)
                     if row.approximate:
                         reasons = ("capital_investment_source_estimate",)
-            items.append(CapitalChangeItem(account.id, None, amount, reasons))
+                if amount is None:
+                    hint = _investment_unavailable_hint(
+                        row, before.get(account.id), after.get(account.id), previous, current
+                    )
+            items.append(CapitalChangeItem(account.id, None, amount, reasons, hint, source_reasons))
     return capital_change_component(tuple(items))
 
 

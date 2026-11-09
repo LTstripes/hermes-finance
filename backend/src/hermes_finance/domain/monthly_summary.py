@@ -162,6 +162,8 @@ class CapitalChangeItem:
     instrument_id: int | None
     amount: RubleAmount | None
     reason_codes: tuple[str, ...] = ()
+    unavailable_hint: str | None = None
+    source_reason_codes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
