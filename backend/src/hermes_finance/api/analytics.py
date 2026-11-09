@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
@@ -126,6 +126,8 @@ class CapitalChangeItemOut(BaseModel):
     instrument_id: int | None
     amount: MoneyValue | None
     reason_codes: list[str]
+    unavailable_hint: str | None = None
+    source_reason_codes: list[str] = Field(default_factory=list)
 
 
 class CapitalChangeComponentOut(BaseModel):
@@ -185,6 +187,8 @@ def capital_change_to_out(result: MonthlyCapitalChange | None) -> MonthlyCapital
                     instrument_id=item.instrument_id,
                     amount=_money(item.amount) if item.amount is not None else None,
                     reason_codes=list(item.reason_codes),
+                    unavailable_hint=item.unavailable_hint,
+                    source_reason_codes=list(item.source_reason_codes),
                 )
                 for item in component.items
             ],

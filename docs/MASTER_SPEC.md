@@ -383,8 +383,10 @@ Capital shows a monthly change explanation for adjacent month-end snapshots:
 Amounts are backend-owned known contributions. Unknown investment/gold rows remain
 unavailable with one plain-language explanation; their known parts stay visible
 and the unallocated change remains in the residual. Missing endpoints or calendar
-months withhold the bridge instead of fabricating a zero baseline. C2 owns the
-formulas and evidence gates. The additive flow bridge preserves the legacy API
+months withhold the bridge instead of fabricating a zero baseline. The API supplies
+one investment-item hint covering simultaneous valuation and flow gaps; unsupported
+source sections must not be presented as fixable merely by classifying cash rows.
+C2 owns the formulas and evidence gates. The additive flow bridge preserves the legacy API
 decomposition; the Capital screen migration is delivered separately.
 
 Capital places the existing allocation by asset class/account and largest

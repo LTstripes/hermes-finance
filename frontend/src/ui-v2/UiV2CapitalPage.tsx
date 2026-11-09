@@ -415,6 +415,14 @@ function CapitalFlowChange({
       ? null
       : "переоценка золота",
   ].filter((text): text is string => text !== null);
+  // One line per distinct next step; the same advice for two accounts is shown once.
+  const marketHints = [
+    ...new Set(
+      flow.investment_market_change.items
+        .filter((item) => item.amount === null && item.unavailable_hint)
+        .map((item) => item.unavailable_hint as string),
+    ),
+  ];
   const steps: BridgeStep[] = [
     { label: "Начало месяца", amount: flow.start, kind: "level" },
     { label: "Доходы минус расходы", amount: flow.monthly_flow, kind: "change" },
@@ -447,6 +455,13 @@ function CapitalFlowChange({
         <p className={sheet.gapNote}>
           Пока не подтверждено и входит в необъяснённый остаток: {unknown.join(", ")}.
         </p>
+      ) : null}
+      {marketHints.length > 0 ? (
+        <ul className={sheet.gapNote} data-testid="capital-market-hints">
+          {marketHints.map((hint) => (
+            <li key={hint}>{hint}</li>
+          ))}
+        </ul>
       ) : null}
       {hints.map((hint) => (
         <p className={sheet.gapNote} data-testid="capital-card-hint" key={hint.reason_code}>

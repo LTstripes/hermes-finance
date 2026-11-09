@@ -706,6 +706,9 @@ export type CapitalChangeComponent = {
     instrument_id: number | null;
     amount: MoneyValue | null;
     reason_codes: string[];
+    /** Plain-language next step when the item is unknown; absent on older servers. */
+    unavailable_hint?: string | null;
+    source_reason_codes?: string[];
   }[];
   reason_codes: string[];
 };

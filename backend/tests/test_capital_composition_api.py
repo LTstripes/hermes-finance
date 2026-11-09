@@ -976,6 +976,8 @@ def test_capital_flow_api_missing_broker_value_is_null_with_reason(client):
     assert investment["known_subtotal"] == _rub("0.00")
     assert investment["reason_codes"] == ["capital_investment_account_result_unavailable"]
     assert investment["items"][0]["amount"] is None
+    assert "связь счёта" in investment["items"][0]["unavailable_hint"]
+    assert investment["items"][0]["source_reason_codes"] == []
     assert flow["unexplained"] == _rub("7.00")
 
 

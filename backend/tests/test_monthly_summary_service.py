@@ -628,7 +628,22 @@ def test_capital_flow_gold_revaluation_preserves_unknown(capital_flow_months, ca
 
 
 @pytest.mark.parametrize(
-    "case", ["known", "missing", "assumed", "unknown_flow", "mismatch", "partial"]
+    "case",
+    [
+        "known",
+        "missing",
+        "assumed",
+        "unknown_flow",
+        "mismatch",
+        "partial",
+        "both",
+        "sections",
+        "missing_row",
+        "estimate",
+        "opening_mismatch",
+        "both_endpoints",
+        "sections_and_mismatch",
+    ],
 )
 def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, monkeypatch, case):
     from contextlib import nullcontext
@@ -673,13 +688,28 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
             source="synthetic",
         )
     row = SimpleNamespace(
-        opening_kopecks=None if case == "missing" else 100_000,
-        closing_kopecks=113_501 if case == "mismatch" else 113_500,
-        contributions_kopecks=None if case == "unknown_flow" else 10_000,
+        opening_kopecks=None
+        if case == "missing"
+        else 100_001
+        if case in {"opening_mismatch", "both_endpoints"}
+        else 100_000,
+        closing_kopecks=113_501
+        if case in {"mismatch", "both", "both_endpoints", "sections_and_mismatch"}
+        else 113_500,
+        contributions_kopecks=None
+        if case in {"unknown_flow", "both", "sections", "sections_and_mismatch"}
+        else 10_000,
         withdrawals_kopecks=0,
-        growth_kopecks=3500,
+        growth_kopecks=None if case == "missing" else 3500,
         assumptions_used=case == "assumed",
-        approximate=False,
+        approximate=case == "estimate",
+        reason_codes=("unknown_flow", "4_Transfers_unsupported")
+        if case in {"sections", "sections_and_mismatch"}
+        else ("unknown_flow",)
+        if case in {"unknown_flow", "both"}
+        else ("missing_endpoint",)
+        if case == "missing"
+        else (),
     )
     monkeypatch.setattr(service, "_source_scopes", lambda session: {"synthetic": "synthetic"})
     monkeypatch.setattr(
@@ -688,7 +718,11 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
         lambda *args: {"status": "linked", "financial_account_id": broker.id},
     )
     monkeypatch.setattr(service, "source_read_snapshot", lambda session: nullcontext())
-    monkeypatch.setattr(service, "read_monthly_result", lambda *args, **kwargs: row)
+    monkeypatch.setattr(
+        service,
+        "read_monthly_result",
+        lambda *args, **kwargs: None if case == "missing_row" else row,
+    )
     if case == "partial":
         other = create_account(session, name="Synthetic unlinked IIS", account_type="iis")
         for month, cash in ((jan, "100.00"), (feb, "107.00")):
@@ -699,12 +733,14 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
                 name="Synthetic unlinked value",
                 amount=cash,
             )
-    flow = monthly_summary(session, feb.id).capital_change.flow_breakdown
+    change = monthly_summary(session, feb.id).capital_change
+    flow = change.flow_breakdown
     assert flow.monthly_flow.to_api() == "18.00"
     investments = flow.investment_market_change
-    if case == "known":
+    if case in {"known", "estimate"}:
         assert investments.amount.to_api() == "20.00"
         assert flow.unexplained == RubleAmount(0)
+        assert investments.items[0].unavailable_hint is None
     elif case == "partial":
         assert investments.amount is None
         assert investments.known_subtotal.to_api() == "20.00"
@@ -714,6 +750,38 @@ def test_capital_flow_investments_exclude_recorded_payouts(capital_flow_months, 
         assert investments.items[0].amount is None
         assert investments.reason_codes
         assert flow.unexplained.to_api() == "20.00"
+        assert investments.items[0].unavailable_hint
+
+    from hermes_finance.api.analytics import capital_change_to_out
+
+    item = investments.items[0]
+    serialized = capital_change_to_out(change).model_dump(mode="json")["flow_breakdown"][
+        "investment_market_change"
+    ]["items"][0]
+    assert serialized["source_reason_codes"] == list(item.source_reason_codes)
+    assert serialized["unavailable_hint"] == item.unavailable_hint
+    assert item.source_reason_codes == (() if case == "missing_row" else row.reason_codes)
+    if case in {"mismatch", "both"}:
+        assert item.reason_codes == ("capital_investment_endpoints_unproven",)
+        assert "28.02.2031" in item.unavailable_hint
+        assert "31.01.2031" not in item.unavailable_hint
+    if case == "both":
+        assert "денежные движения" in item.unavailable_hint
+    if case in {"opening_mismatch", "both_endpoints"}:
+        assert "31.01.2031" in item.unavailable_hint
+        assert ("28.02.2031" in item.unavailable_hint) == (case == "both_endpoints")
+    if case in {"sections", "sections_and_mismatch"}:
+        assert "одной классификации денег недостаточно" in item.unavailable_hint
+    if case == "sections_and_mismatch":
+        assert "28.02.2031" in item.unavailable_hint
+        assert item.reason_codes == ("capital_investment_endpoints_unproven",)
+    if case == "assumed":
+        assert "предположения" in item.unavailable_hint
+    if case == "missing":
+        assert "границы месяца" in item.unavailable_hint
+        assert "денежные движения" not in item.unavailable_hint
+    if case == "partial":
+        assert investments.items[1].unavailable_hint
 
 
 @pytest.mark.parametrize("case", ["linked", "unlinked", "mismatch", "excluded"])
