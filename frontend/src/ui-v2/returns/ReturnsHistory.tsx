@@ -60,41 +60,49 @@ export function ReturnsHistory({
         <p>Месячных результатов пока нет.</p>
       ) : (
         <>
-          <fieldset className={styles.chart} aria-label="История результата в рублях">
-            {visible.map((row, index) => {
-              const value = values[index];
-              const negative = value !== null && value < 0n;
-              // The sole Number conversion is final pixel geometry, after exact scaling.
-              const height =
-                value === null
-                  ? 0
-                  : Math.max(
-                      value === 0n ? 2 : 4,
-                      Number(((negative ? -value : value) * 72n) / maximum),
-                    );
-              return (
-                <button
-                  type="button"
-                  key={periodKey(row.period)}
-                  className={styles.monthBar}
-                  aria-pressed={samePeriod(row.period, selected)}
-                  aria-label={`${monthLabel(row.period)}: ${displayMetric(row.pnl, true)}`}
-                  title={displayMetric(row.pnl, true)}
-                  onClick={() => choose(row.period)}
-                >
-                  <span className={styles.plot} aria-hidden="true">
-                    <span className={negative ? styles.downBar : styles.upBar} style={{ height }} />
-                    {value === null && <span className={styles.gap}>—</span>}
-                  </span>
-                  <span>
-                    {value === null ? "—" : value > 0n ? "+" : value < 0n ? "−" : "0"}{" "}
-                    {monthLabel(row.period)}
-                  </span>
-                </button>
-              );
-            })}
-          </fieldset>
-          <details className={styles.historyTable}>
+          {values.some((value) => value !== null) && (
+            <fieldset className={styles.chart} aria-label="История результата в рублях">
+              {visible.map((row, index) => {
+                const value = values[index];
+                const negative = value !== null && value < 0n;
+                // The sole Number conversion is final pixel geometry, after exact scaling.
+                const height =
+                  value === null
+                    ? 0
+                    : Math.max(
+                        value === 0n ? 2 : 4,
+                        Number(((negative ? -value : value) * 72n) / maximum),
+                      );
+                return (
+                  <button
+                    type="button"
+                    key={periodKey(row.period)}
+                    className={styles.monthBar}
+                    aria-pressed={samePeriod(row.period, selected)}
+                    aria-label={`${monthLabel(row.period)}: ${displayMetric(row.pnl, true)}`}
+                    title={displayMetric(row.pnl, true)}
+                    onClick={() => choose(row.period)}
+                  >
+                    <span className={styles.plot} aria-hidden="true">
+                      <span
+                        className={negative ? styles.downBar : styles.upBar}
+                        style={{ height }}
+                      />
+                      {value === null && <span className={styles.gap}>—</span>}
+                    </span>
+                    <span>
+                      {value === null ? "—" : value > 0n ? "+" : value < 0n ? "−" : "0"}{" "}
+                      {monthLabel(row.period)}
+                    </span>
+                  </button>
+                );
+              })}
+            </fieldset>
+          )}
+          <details
+            className={styles.historyTable}
+            open={values.every((value) => value === null) || undefined}
+          >
             <summary>Месяцы таблицей</summary>
             <table>
               <thead>

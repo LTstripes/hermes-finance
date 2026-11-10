@@ -304,11 +304,16 @@ test("ui-v2 returns: nine desktop size and zoom screenshots @viewport-owned", as
       if (width === 1280 && zoom === 1.5) {
         state.unavailable = true;
         await page.getByRole("button", { name: "Обновить" }).click();
-        const info = page.getByLabel("Подробнее: Результат периода", { exact: true });
+        const info = page.getByLabel("Подробнее: Доходность периода", { exact: true });
         await info.focus();
         await page.keyboard.press("Enter");
-        const explanation = info.locator("..").locator("div").first();
-        await expect(explanation).toContainText("Не хватает стоимости на границе периода");
+        const explanation = page
+          .getByText("Не хватает стоимости на границе периода.", { exact: true })
+          .first();
+        await expect(explanation).toBeVisible();
+        await expect(page.getByLabel("Подробнее: Результат периода", { exact: true })).toHaveCount(
+          0,
+        );
         await page.screenshot({ path: path.join(directory, "returns-null-info-1280-150.png") });
         const box = await explanation.boundingBox();
         const main = await page.locator("main").boundingBox();
@@ -327,8 +332,12 @@ test("returns accepted basis and category keyboard controls @viewport-owned", as
   const { calls } = await install(page);
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 1000 });
-    await page.goto("/v2/returns/account?scope=portfolio");
-    await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("portfolio");
+    await page.goto("/v2/returns/account?scope=portfolio&diagnostics=performance");
+    await expect(
+      page
+        .getByRole("combobox", { name: "Счёт", exact: true })
+        .filter({ has: page.locator('option[value="portfolio"]') }),
+    ).toHaveValue("portfolio");
     await expect(page.getByRole("combobox", { name: "Представление" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Открыть отчёты месяцев" })).toBeVisible();
     await expect(page.getByRole("region", { name: "Моя доходность" })).toHaveCount(0);
@@ -349,7 +358,11 @@ test("returns accepted basis and category keyboard controls @viewport-owned", as
     await page.goBack();
     await expect(checkbox).toBeChecked();
     await page.goto("/v2/returns/account?scope=source:SYNTH-A");
-    await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-A");
+    await expect(
+      page
+        .getByRole("combobox", { name: "Счёт", exact: true })
+        .filter({ has: page.locator('option[value="portfolio"]') }),
+    ).toHaveValue("source:SYNTH-A");
     await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
@@ -400,20 +413,15 @@ test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/v2/returns");
     const leaders = page.getByRole("region", { name: "Вклад инструментов" });
-    await expect(leaders.locator("ol")).toHaveCount(2);
+    await expect(leaders.locator("ol")).toHaveCount(1);
     await expect(leaders.locator("li")).toHaveCount(6);
-    const groups = leaders.locator("h3");
-    const positive = await groups.nth(0).boundingBox();
-    const negative = await groups.nth(1).boundingBox();
-    if (!positive || !negative) throw new Error("Missing leaders groups");
-    if (width === 1440) {
-      expect(Math.abs(positive.width - negative.width)).toBeLessThan(1);
-      expect(Math.abs(positive.y - negative.y)).toBeLessThan(1);
-      expect(negative.x).toBeGreaterThan(positive.x + positive.width);
-    } else {
-      expect(Math.abs(positive.x - negative.x)).toBeLessThan(1);
-      expect(negative.y).toBeGreaterThan(positive.y + positive.height);
-    }
+    const zeroPositions = await leaders.locator("li > span").evaluateAll((tracks) =>
+      tracks.map((track) => {
+        const bounds = track.getBoundingClientRect();
+        return bounds.x + bounds.width / 2;
+      }),
+    );
+    expect(Math.max(...zeroPositions) - Math.min(...zeroPositions)).toBeLessThan(1);
     const problems = await leaders.locator("li").evaluateAll((items) =>
       items.flatMap((item) => {
         const link = item.querySelector("a");
@@ -565,15 +573,15 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/v2/returns");
-    const instruments = page.getByRole("region", { name: "По инструментам" });
-    const row = instruments.getByRole("row").filter({ hasText: "Учебная акция" });
-    const a = row.getByRole("region", { name: "Учебный счёт А" });
-    const b = row.getByRole("region", { name: "Учебный счёт Б" });
+    const instruments = page.getByRole("region", { name: /^Все бумаги/ });
+    const rows = instruments.getByRole("row").filter({ hasText: "Учебная акция" });
+    const a = rows.filter({ hasText: "Учебный счёт А" });
+    const b = rows.filter({ hasText: "Учебный счёт Б" });
+    await expect(rows).toHaveCount(2);
     await expect(a).toContainText("0 ₽");
-    await expect(a).toContainText("Не хватает стоимости на границе периода");
-    await expect(a).toContainText("30.04.2030 — 31.05.2030");
-    await expect(b).toContainText("−4,00%");
-    await expect(b).toContainText("31.03.2030 — 30.04.2030");
+    await expect(a.getByRole("cell").nth(1)).toHaveText("—");
+    await expect(b).toContainText("−4 ₽");
+    await expect(rows.locator("details")).toHaveCount(0);
     expect(calls.filter((call) => call.endsWith("instrument-card"))).toHaveLength(cardReads);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
@@ -581,11 +589,14 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
     await instruments.screenshot({
       path: testInfo.outputPath(`instrument-results-overview-${width}.png`),
     });
-    await row.getByRole("link", { name: "Учебная акция", exact: true }).click();
+    await a.getByRole("link", { name: "Учебная акция", exact: true }).click();
     const accounts = page.getByRole("region", { name: "Позиции и результат по счетам" });
     await expect(accounts).toContainText("+12 ₽");
     cardReads = calls.filter((call) => call.endsWith("instrument-card")).length;
-    await expect(accounts).toContainText("−4,00%");
+    await expect(accounts).toContainText("−4 ₽");
+    await expect(accounts).toContainText("30.04.2030 — 31.05.2030");
+    await expect(accounts).toContainText("31.03.2030 — 30.04.2030");
+    await accounts.getByText("Подробнее о расчёте по счетам", { exact: true }).click();
     const resultInfo = accounts.getByLabel("Подробнее: Результат инструмента").first();
     await resultInfo.click();
     await expect(resultInfo.locator("..")).toContainText("Номинал сделки принят с допущением");
@@ -604,4 +615,172 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
       true,
     );
   }
+});
+
+test("ui-v2 Returns table fits 720px with wide fonts, separate accounts and compact rows @viewport-owned", async ({
+  page,
+}, info) => {
+  const body = overallFixture();
+  const template = body.instruments[0];
+  body.instruments = Array.from({ length: 12 }, (_, index) => ({
+    ...template,
+    isin: `RU000A00${String(index).padStart(4, "0")}`,
+    name: `Учебная инфраструктурная бумага с длинным названием ${index}`,
+    accounts: template.accounts.map((account) => ({
+      ...account,
+      native_period: true,
+      pnl: {
+        ...account.pnl,
+        value: String(12345678900 - index),
+        reason_codes: index === 0 ? ["clean_partial_result"] : [],
+      },
+      coupons: { ...account.coupons, value: "1234567890" },
+      dividends: { ...account.dividends, value: "2345678901" },
+    })),
+  }));
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      if (await fulfillMonthPlate(route)) return;
+      expect(route.request().method()).toBe("GET");
+      await route.fulfill({ json: body });
+    },
+  );
+  for (const width of [1280, 1440, 1920])
+    for (const zoom of [1, 1.25]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/v2/returns?show=all&sort=pnl-desc");
+      await page.evaluate((scale) => {
+        document.documentElement.style.zoom = String(scale);
+      }, zoom);
+      await page.addStyleTag({ content: ":root { --f-num: Arial; --f-ui: Arial; }" });
+      const table = page.getByRole("table", { name: "Все бумаги", exact: true });
+      await expect(table.getByRole("row")).toHaveCount(25);
+      const geometry = await table.evaluate((element) => {
+        const parent = element.parentElement;
+        if (!parent) throw new Error("Missing table container");
+        parent.style.maxWidth = "720px";
+        const rows = [...element.querySelectorAll("tbody tr")];
+        return {
+          table: element.getBoundingClientRect().width,
+          client: parent.clientWidth,
+          scroll: parent.scrollWidth,
+          rowHeights: rows.map(
+            (row) =>
+              row.getBoundingClientRect().height / Number(document.documentElement.style.zoom),
+          ),
+          overlaps: rows.flatMap((row) =>
+            [...row.querySelectorAll("td")]
+              .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+              .map((cell) => cell.textContent),
+          ),
+        };
+      });
+      expect(geometry.table / zoom).toBeLessThanOrEqual(720.5);
+      expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
+      expect(Math.max(...geometry.rowHeights)).toBeLessThanOrEqual(48);
+      expect(geometry.overlaps).toEqual([]);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+      await table.screenshot({ path: info.outputPath(`returns-table-${width}-${zoom}.png`) });
+    }
+});
+
+test("ui-v2 instrument tables fit 720px and keep long purchase histories collapsed @viewport-owned", async ({
+  page,
+}, info) => {
+  const card = instrumentCardFixture();
+  for (const account of card.accounts)
+    if (account.clean) {
+      account.clean.simple_return = {
+        value: "0.1025",
+        status: "supported",
+        reason_codes: [],
+        assumptions: [],
+        method: "simple_return",
+        annualized: false,
+        invested_kopecks: "100000",
+        start_date: "2029-01-01",
+        end_date: "2030-05-31",
+        holding_days: 515,
+        weighted_holding_days: "515",
+      };
+    }
+  if (card.accounts[0].clean) card.accounts[0].clean.pnl.status = "partial";
+  card.summary.pnl.reason_codes = ["clean_partial_result"];
+  for (const account of card.accounts)
+    account.purchases = Array.from({ length: 12 }, (_, index) => ({
+      id: `synthetic-${account.scope}-${index}`,
+      date: "2030-05-01",
+      settlement_date: "2030-05-02",
+      quantity: "10",
+      remaining_quantity: "0",
+      cost_kopecks: "12345678901",
+      sale_proceeds_kopecks: "12456789012",
+      value_kopecks: "0",
+      price_result_kopecks: "111111111",
+      return_fraction: "0.009",
+      status: "supported",
+      reason_codes: [],
+    }));
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      if (await fulfillMonthPlate(route)) return;
+      expect(route.request().method()).toBe("GET");
+      expect(new URL(route.request().url()).pathname).toBe("/api/returns/instrument-card");
+      await route.fulfill({ json: card });
+    },
+  );
+  for (const width of [1280, 1440, 1920])
+    for (const zoom of [1, 1.25]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/v2/returns/instrument/RU000A000002");
+      await page.evaluate((scale) => {
+        document.documentElement.style.zoom = String(scale);
+      }, zoom);
+      await page.addStyleTag({ content: ":root { --f-num: Arial; --f-ui: Arial; }" });
+      const purchases = page.getByRole("region", { name: "Результат сохранённых покупок" });
+      await expect(purchases.getByRole("table")).toHaveCount(2);
+      for (const table of await purchases.getByRole("table").all())
+        await expect(table.getByRole("row")).toHaveCount(6);
+      const accountTable = page
+        .getByRole("region", { name: "Позиции и результат по счетам" })
+        .getByRole("table");
+      const accountBox = await accountTable.boundingBox();
+      if (width === 1440 && zoom === 1) {
+        expect(accountBox).not.toBeNull();
+        expect((accountBox?.y ?? 900) + (accountBox?.height ?? 0)).toBeLessThanOrEqual(900);
+        await expect(accountTable).toContainText("+10,3%");
+      }
+      const tables = [
+        page.getByRole("region", { name: "Позиции и результат по счетам" }).getByRole("table"),
+        ...(await purchases.getByRole("table").all()),
+      ];
+      for (const table of tables) {
+        const geometry = await table.evaluate((element) => {
+          const parent = element.parentElement;
+          if (!parent) throw new Error("Missing table container");
+          parent.style.maxWidth = "720px";
+          return {
+            client: parent.clientWidth,
+            scroll: parent.scrollWidth,
+            cells: [...element.querySelectorAll("td, th")]
+              .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+              .map((cell) => cell.textContent),
+          };
+        });
+        expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
+        expect(geometry.cells).toEqual([]);
+      }
+      if (width === 1440 && zoom === 1)
+        expect(
+          await page.locator("main").evaluate((element) => element.getBoundingClientRect().height),
+        ).toBeLessThanOrEqual(2700);
+      await page.screenshot({
+        path: info.outputPath(`instrument-tables-${width}-${zoom}.png`),
+        fullPage: true,
+      });
+    }
 });

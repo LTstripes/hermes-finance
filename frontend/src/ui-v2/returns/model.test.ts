@@ -53,3 +53,14 @@ test("clean source results participate in money rankings with partial status pre
     "Known loss",
   ]);
 });
+
+test("ordinary Returns percentages use one signed decimal without double rounding", async () => {
+  const { displayCompactRate, unavailable } = await import("./model");
+  expect(displayCompactRate({ ...unavailable, value: "0.10049", unit: "fraction" })).toBe("+10,0%");
+  expect(displayCompactRate({ ...unavailable, value: "-0.1005", unit: "fraction" })).toBe("−10,1%");
+  expect(displayCompactRate({ ...unavailable, value: "0", unit: "fraction" })).toBe("0,0%");
+  expect(displayCompactRate({ ...unavailable, value: "1.005e-1", unit: "fraction" })).toBe(
+    "+10,1%",
+  );
+  expect(displayCompactRate({ ...unavailable, unit: "fraction" })).toBe("—");
+});

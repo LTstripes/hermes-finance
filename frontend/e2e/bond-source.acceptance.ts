@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type Locator, test } from "@playwright/test";
 import { displayMetric } from "../src/ui-v2/returns/model";
 
 async function openDisclosure(page: Page, name: string) {
@@ -7,6 +7,15 @@ async function openDisclosure(page: Page, name: string) {
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
     await summary.click();
   await expect(summary.locator("..")).toHaveAttribute("open", "");
+}
+
+async function openReturnDiagnostics(page: Page, link: Locator) {
+  const href = await link.getAttribute("href");
+  expect(href).toBeTruthy();
+  const target = new URL(href ?? "", page.url());
+  target.searchParams.set("diagnostics", "performance");
+  await page.goto(target.toString());
+  await openDisclosure(page, "Подробнее о данных");
 }
 
 test("API Decimal boundary rates render identically in Month and Returns after Back/Reload", async ({
@@ -49,8 +58,10 @@ test("API Decimal boundary rates render identically in Month and Returns after B
     const card = page.getByRole("region", { name: "Предварительная доходность месяца" });
     await expect(card).toContainText(expected);
     await card.getByText("Источники расчёта", { exact: true }).click();
-    await card.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
-    await page.getByText("Подробнее о данных", { exact: true }).click();
+    await openReturnDiagnostics(
+      page,
+      card.getByRole("link", { name: "Доходность и подтверждение источников" }),
+    );
 
     const monthly = page.getByRole("region", { name: "Результат периода", exact: true });
     await expect(monthly).toContainText(expected);
@@ -117,9 +128,23 @@ test("source structure proof survives Back/Reload and unrelated financial ABA", 
   // result. The new history uses clean operands; original monthly evidence is
   // verified separately above and remains inspectable in the month history.
   const history = page.getByRole("region", { name: "За всю историю", exact: true });
-  await expect(history.getByRole("heading", { name: /истори/i })).toBeVisible();
-  await expect(history).not.toContainText("%");
-  await expect(page.getByRole("region", { name: "Результат по месяцам" })).toBeVisible();
+  const current = new URL(page.url());
+  const initialOverview = await (
+    await request.get(
+      `/api/returns/overview?${new URLSearchParams({ scope: current.searchParams.get("scope") ?? "", start: current.searchParams.get("start") ?? "", end: current.searchParams.get("end") ?? "" })}`,
+    )
+  ).json();
+  if (initialOverview.all_history?.pnl.value != null) {
+    await expect(history.getByRole("heading", { name: /истори/i })).toBeVisible();
+    await expect(history).not.toContainText("%");
+  } else await expect(history).toHaveCount(0);
+  const knownMonths = initialOverview.history.some(
+    (row: { pnl: { value: string | null }; rate: { value: string | null } }) =>
+      row.pnl.value !== null || row.rate.value !== null,
+  );
+  await expect(page.getByRole("region", { name: "Результат по месяцам" })).toHaveCount(
+    knownMonths ? 1 : 0,
+  );
   await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
   await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
   await openDisclosure(page, "Подробности предварительного результата");
@@ -131,8 +156,10 @@ test("source structure proof survives Back/Reload and unrelated financial ABA", 
   await expect(summary).toContainText("Modified Dietz");
   await summary.screenshot({ path: info.outputPath("source-proof-current-month.png") });
   await summary.getByText("Источники расчёта", { exact: true }).click();
-  await summary.getByRole("link", { name: "Доходность и подтверждение источников" }).click();
-  await page.getByText("Подробнее о данных", { exact: true }).click();
+  await openReturnDiagnostics(
+    page,
+    summary.getByRole("link", { name: "Доходность и подтверждение источников" }),
+  );
 
   await expect(proof.getByText(/Источник подтверждён:/)).toBeVisible();
   const selected = page.getByRole("region", { name: "Результат периода", exact: true });
@@ -142,12 +169,27 @@ test("source structure proof survives Back/Reload and unrelated financial ABA", 
     )
   ).json();
   expect(cleanOverview.contract_version).toBe("returns_source_v2");
-  await expect(selected).toContainText("31.03.2030 — 30.04.2030");
-  await expect(selected).toContainText(displayMetric(cleanOverview.selected.pnl, true));
-  if (cleanOverview.all_history) {
+  expect(new URL(page.url()).searchParams.get("start")).toBe("2030-03-31");
+  expect(new URL(page.url()).searchParams.get("end")).toBe("2030-04-30");
+  if (
+    cleanOverview.selected.pnl.value !== null ||
+    cleanOverview.selected.rate.value !== null ||
+    cleanOverview.selected_available_months_total?.pnl.value != null
+  ) {
+    await expect(selected).toContainText("31.03.2030 — 30.04.2030");
+    if (cleanOverview.selected.pnl.value !== null)
+      await expect(selected).toContainText(displayMetric(cleanOverview.selected.pnl, true));
+    else if (cleanOverview.selected.rate.value !== null)
+      await expect(selected).toContainText(displayMetric(cleanOverview.selected.rate));
+    else
+      await expect(selected).toContainText(
+        displayMetric(cleanOverview.selected_available_months_total.pnl, true),
+      );
+  } else await expect(selected).toHaveCount(0);
+  if (cleanOverview.all_history?.pnl.value != null) {
     await expect(history).toContainText(displayMetric(cleanOverview.all_history.pnl, true));
-  }
-  await expect(history.getByRole("heading", { name: /истори/i })).toBeVisible();
+    await expect(history.getByRole("heading", { name: /истори/i })).toBeVisible();
+  } else await expect(history).toHaveCount(0);
   await page.goBack();
   await openDisclosure(page, "Подробности предварительного результата");
   await expect(summary).toContainText("600 ₽");

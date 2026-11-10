@@ -19,7 +19,7 @@ import { legacyReturnsHref } from "./returns/ReturnsLegacyRedirect";
 import { SourceMonthReturn } from "./SourceMonthReturn";
 import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
 import styles from "./UiV2MonthWorkspace.module.css";
-import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+import { UiV2Skeleton, UiV2Notice } from "./UiV2StateBlocks";
 
 function sourceAccounts(intake: SourceIntake): string[] {
   return [
@@ -464,7 +464,7 @@ export function UiV2MonthSources({
                 )}
               </details>
               {list.isPending ? (
-                <UiV2Loading label="Читаем источники месяца…" />
+                <UiV2Skeleton label="Читаем источники месяца…" expectedTime />
               ) : list.isError ? (
                 <UiV2Notice
                   title="Источники месяца не подтверждены"

@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { Link, useLocation } from "react-router";
 
 import styles from "./UiV2Tabs.module.css";
@@ -6,9 +7,11 @@ import styles from "./UiV2Tabs.module.css";
 export function UiV2Tabs({
   label,
   tabs,
+  onNavigate,
 }: {
   label: string;
   tabs: { label: string; to: string; active: boolean }[];
+  onNavigate?: (event: MouseEvent<HTMLAnchorElement>, to: string) => void;
 }) {
   const { search } = useLocation();
   const month = new URLSearchParams(search).get("month");
@@ -21,7 +24,12 @@ export function UiV2Tabs({
         if (month !== null) params.set("month", month);
         const to = `${pathname}${params.size ? `?${params}` : ""}${hash ? `#${hash}` : ""}`;
         return (
-          <Link aria-current={tab.active ? "page" : undefined} key={tab.to} to={to}>
+          <Link
+            aria-current={tab.active ? "page" : undefined}
+            key={tab.to}
+            to={to}
+            onClick={(event) => onNavigate?.(event, to)}
+          >
             {tab.label}
           </Link>
         );

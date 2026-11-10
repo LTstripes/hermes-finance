@@ -47,7 +47,7 @@ import { UiV2MonthSources } from "./UiV2MonthSources";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
 import styles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
-import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+import { isQueryReady, UiV2Loading, UiV2Notice, UiV2Skeleton } from "./UiV2StateBlocks";
 
 const MANUAL_SECTIONS = [
   "general",
@@ -319,7 +319,7 @@ export default function UiV2ClosePage() {
         {formatApiError(workflowQuery.error)}
       </UiV2Notice>
     );
-  else if (!workflowQuery.data) content = <UiV2Loading label="Читаем состояние месяца…" />;
+  else if (!workflowQuery.data) content = <UiV2Skeleton label="Читаем состояние месяца…" />;
   else if (!workflowIdentityMatches)
     content = (
       <UiV2Notice

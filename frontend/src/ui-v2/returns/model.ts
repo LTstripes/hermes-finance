@@ -5,6 +5,7 @@ import { formatMoney, formatMoneyDelta } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { formatSourceReturnRate } from "../../lib/sourceReturnFormat";
 import { wholeMoneyDeltaText, wholeMoneyText } from "../wholeMoney";
+import { percentText } from "../valueFormat";
 import type { ReturnBreakdown } from "./breakdown";
 import type { CleanInstrument } from "./cards";
 
@@ -175,6 +176,21 @@ export function displaySignedRate(m: Metric) {
   return text === "—" || text.startsWith("−") || compareDecimal(m.value ?? "0", "0") === 0
     ? text
     : `+${text}`;
+}
+
+/** One decimal in the ordinary Returns path, shifting units without rounding twice. */
+export function displayCompactRate(m: Metric, signed = true) {
+  const value = m.value === null ? null : decimal(m.value);
+  if (!value) return "—";
+  const places = value.places - (m.unit === "fraction" ? 2 : 0);
+  const negative = value.n < 0n;
+  const digits = (negative ? -value.n : value.n).toString();
+  const padded = places > 0 ? digits.padStart(places + 1, "0") : digits;
+  const text =
+    places > 0
+      ? `${padded.slice(0, -places)}.${padded.slice(-places)}`
+      : `${digits}${"0".repeat(-places)}`;
+  return percentText(`${negative ? "-" : ""}${text}`, 1, { signed });
 }
 /** Sign of a known value for colour only (P 12.1). */
 export function tone(m: Metric): "positive" | "negative" | undefined {

@@ -995,7 +995,6 @@ export default function UiV2CapitalPage() {
             links={
               latestClosed ? (
                 <>
-                  <Link to={`/v2/returns?month=${latestClosed.id}`}>Доходность за месяц →</Link>
                   <Link to="/v2/returns">Доходность в целом →</Link>
                   <Link to="/v2/reports">Все отчёты →</Link>
                 </>

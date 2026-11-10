@@ -1078,3 +1078,50 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.skeleton {
+  min-width: 0;
+  padding-block: var(--skeleton-gap);
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.skeletonNumber,
+.skeletonTiles > span,
+.skeletonRows > span {
+  display: block;
+  background: var(--line);
+  border-radius: var(--r-sm);
+}
+
+.skeletonNumber {
+  width: 55%;
+  height: var(--skeleton-figure-height);
+}
+
+.skeletonTiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--skeleton-gap);
+  margin-block: var(--skeleton-gap);
+}
+
+.skeletonTiles > span {
+  height: var(--skeleton-tile-height);
+}
+
+.skeletonRows {
+  display: grid;
+  gap: var(--returns-cell-padding);
+}
+
+.skeletonRows > span {
+  height: var(--returns-row-height);
+}
+.skeletonLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

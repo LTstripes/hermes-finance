@@ -200,7 +200,7 @@ describe("App", () => {
     expect(window.location.pathname + window.location.search).toBe("/v2/returns?month=1");
     await act(async () => finishMonths());
     await waitFor(() => expect(window.location.pathname + window.location.search).toBe(returns));
-    await screen.findByRole("link", { name: "В целом — вся доступная история" });
+    await screen.findByRole("link", { name: "Обзор" });
     await act(async () => window.history.back());
     await waitFor(() => expect(window.location.pathname + window.location.search).toBe(calendar));
     view.unmount();
