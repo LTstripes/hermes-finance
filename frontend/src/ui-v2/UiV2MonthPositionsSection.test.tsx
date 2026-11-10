@@ -102,7 +102,11 @@ function deferred() {
 }
 
 type Handler = (init?: RequestInit) => Response | Promise<Response>;
-function setup(overrides: Record<string, Handler> = {}, initial: unknown[] = [position]) {
+function setup(
+  overrides: Record<string, Handler> = {},
+  initial: unknown[] = [position],
+  options: { readOnly?: boolean; closed?: boolean; url?: string } = {},
+) {
   const routes: Record<string, Handler> = {
     "GET /api/accounts": () => json([account]),
     "GET /api/instruments?active=true": () => json([instrument]),
@@ -119,20 +123,24 @@ function setup(overrides: Record<string, Handler> = {}, initial: unknown[] = [po
   vi.stubGlobal("fetch", fetchMock);
   const setDirty = vi.fn();
   const context: MonthEditorContext = {
-    month,
-    readOnly: false,
+    month: options.closed ? { ...month, status: "closed" } : month,
+    readOnly: options.readOnly ?? false,
     refresh: async () => month,
     setDirty,
     returnToClose: null,
   };
-  const view = render(<UiV2MonthPositionsSection context={context} />, { wrapper: MemoryRouter });
+  const view = render(<UiV2MonthPositionsSection context={context} />, {
+    wrapper: ({ children }) => (
+      <MemoryRouter initialEntries={[options.url ?? "/"]}>{children}</MemoryRouter>
+    ),
+  });
   return { fetchMock, setDirty, context, ...view };
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("native month positions leaf", () => {
-  it("renders exact native total and unknown cost/P&L without editable source actions", async () => {
+  it("hides empty native price/result columns, unknown totals and source actions, explaining once", async () => {
     setup({}, [
       {
         ...position,
@@ -146,12 +154,244 @@ describe("native month positions leaf", () => {
     await screen.findByText("Synthetic Fund (SYN)");
     const table = screen.getByRole("table");
     expect(table).toHaveTextContent("550");
-    expect(within(table).getAllByText("—").length).toBeGreaterThanOrEqual(3);
-    expect(screen.getAllByText("Нет подтверждённой суммы")).toHaveLength(2);
+    expect(within(table).queryByText("—")).toBeNull();
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((cell) => cell.textContent),
+    ).toEqual(["Инструмент", "Количество", "Стоимость, ₽", "Доля"]);
+    expect(screen.queryByText("Нет подтверждённой суммы")).toBeNull();
+    expect(screen.queryByText(/Себестоимость:/)).toBeNull();
+    expect(screen.queryByText(/Нереализованный результат:/)).toBeNull();
+    expect(screen.queryByText("Как читаются итоги позиции")).toBeNull();
+    expect(screen.queryByText(/прокрутить вправо/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Действия для позиции/ })).toBeNull();
+    expect(screen.getAllByText(/Брокерская выписка даёт количество и стоимость/)).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "«Доходности»" })).toHaveAttribute(
+      "href",
+      "/v2/returns",
+    );
+    expect(within(table).queryByText(/Выписка|31\.01\.2031/)).toBeNull();
+    expect(screen.getAllByText(/Итого:/)).toHaveLength(1);
+  });
+
+  it("groups and sorts exact values by account and row, and recomputes display shares for filters", async () => {
+    const second = { ...account, id: 12, name: "Synthetic IIS", account_type: "iis" };
+    const bond = {
+      ...instrument,
+      id: 22,
+      name: "Synthetic Bond",
+      ticker: null,
+      instrument_type: "bond",
+    };
+    const small = {
+      ...position,
+      id: 32,
+      instrument_id: 22,
+      market_value: { amount: "50.00", currency: "RUB" },
+    };
+    setup(
+      {
+        "GET /api/accounts": () =>
+          json([
+            account,
+            second,
+            { ...account, id: 13, name: "Empty Deposit", account_type: "deposit" },
+          ]),
+        "GET /api/instruments?active=true": () => json([instrument, bond]),
+      },
+      [
+        small,
+        position,
+        {
+          ...position,
+          id: 33,
+          account_id: 12,
+          market_value: { amount: "900.00", currency: "RUB" },
+        },
+      ],
+    );
+    const table = await screen.findByRole("table");
+    const bodies = table.querySelectorAll("tbody");
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toHaveTextContent("Synthetic IIS 1 поз.");
+    expect(bodies[0]).toHaveTextContent("60,0%");
+    expect(bodies[1]).toHaveTextContent("Synthetic Broker 2 поз.");
+    const rows = within(bodies[1]).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("Synthetic Fund");
+    expect(rows[2]).toHaveTextContent("Synthetic Bond");
+    expect(rows[1]).toHaveTextContent("36,7%");
+    const accountFilter = screen.getByLabelText("Фильтр: счёт");
+    expect(
+      within(accountFilter)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Все счета", "Synthetic Broker", "Synthetic IIS"]);
+    expect(
+      within(screen.getByLabelText("Фильтр: тип инструмента"))
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Все типы", "Облигации", "Фонды"]);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Действия для позиции/ }));
-    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
-    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
+    await user.selectOptions(accountFilter, "11");
+    expect(table.querySelectorAll("tbody")).toHaveLength(1);
+    expect(table.querySelector("tbody th")).toHaveTextContent("100,0%");
+    expect(within(table).getAllByRole("row")[2]).toHaveTextContent("91,7%");
+  });
+
+  it("preserves zero values and leaves statement-only cells blank instead of dashes", async () => {
+    setup({}, [
+      {
+        ...position,
+        average_cost_per_unit: null,
+        market_price_per_unit: null,
+        unrealized_result: null,
+        cost_basis: null,
+        price_source: "broker_statement_native",
+      },
+      {
+        ...position,
+        id: 32,
+        average_cost_per_unit: { amount: "0.00", currency: "RUB" },
+        unrealized_result: { amount: "0.00", currency: "RUB" },
+      },
+    ]);
+    const table = await screen.findByRole("table");
+    expect(
+      within(table).getByRole("columnheader", { name: "Средняя цена приобретения, ₽" }),
+    ).toBeInTheDocument();
+    expect(within(table).queryAllByText("—")).toHaveLength(0);
+    expect(within(table).getAllByText("0")).toHaveLength(2);
+    expect(within(table).getAllByRole("button", { name: /Действия для позиции/ })).toHaveLength(1);
+    expect(screen.queryByText(/Себестоимость:/)).toBeNull();
+    expect(screen.queryByText(/Нереализованный результат:/)).toBeNull();
+    const user = userEvent.setup();
+    await user.click(within(table).getByRole("button", { name: /Действия для позиции/ }));
+    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeEnabled();
+  });
+
+  it.each([{ readOnly: true }, { closed: true }])(
+    "omits the actions column when %j",
+    async (options) => {
+      setup({}, [position], options);
+      const table = await screen.findByRole("table");
+      expect(within(table).queryByRole("columnheader", { name: "Действия" })).toBeNull();
+      expect(within(table).queryByRole("button")).toBeNull();
+      expect(screen.getByText(/Себестоимость:/)).toHaveTextContent("500");
+      expect(screen.getByText(/Нереализованный результат:/)).toHaveTextContent("50");
+    },
+  );
+
+  it("links exact ISIN with account and the full current URL as back, without help chips", async () => {
+    const url = "/v2/data/months/7?section=positions&source=local#positions";
+    setup(
+      { "GET /api/instruments?active=true": () => json([{ ...instrument, isin: "XX0000000001" }]) },
+      [position],
+      { url },
+    );
+    const link = await screen.findByRole("link", { name: "Synthetic Fund (SYN)" });
+    const href = new URL(link.getAttribute("href") ?? "", "http://localhost");
+    expect(href.pathname).toBe("/v2/returns/instrument/XX0000000001");
+    expect(href.searchParams.get("capital_account")).toBe("11");
+    expect(href.searchParams.get("back")).toBe(url);
+    expect(
+      within(screen.getByRole("table")).queryByRole("button", {
+        name: /Полное название|Детали оценки/,
+      }),
+    ).toBeNull();
+  });
+
+  it("shows valuation exceptions once under value and accrued interest under price", async () => {
+    setup({}, [{ ...position, accrued_interest: { amount: "3.00", currency: "RUB" } }]);
+    const table = await screen.findByRole("table");
+    expect(within(table).getAllByText(/Вручную · 31\.01\.2031/)).toHaveLength(1);
+    const nkd = within(table).getByText(/НКД 3/);
+    expect(nkd.closest("td")).toHaveTextContent(/1\s100/);
+  });
+
+  it("updates column visibility, the single statement explanation and totals with the current filter", async () => {
+    setup(
+      {
+        "GET /api/accounts": () => json([account, { ...account, id: 12, account_type: "iis" }]),
+      },
+      [
+        position,
+        {
+          ...position,
+          id: 32,
+          account_id: 12,
+          average_cost_per_unit: null,
+          market_price_per_unit: null,
+          cost_basis: null,
+          unrealized_result: null,
+          price_source: "broker_statement_native",
+        },
+        {
+          ...position,
+          id: 33,
+          account_id: 12,
+          average_cost_per_unit: null,
+          market_price_per_unit: null,
+          cost_basis: null,
+          unrealized_result: null,
+          price_source: "broker_statement_native",
+        },
+      ],
+    );
+    const table = await screen.findByRole("table");
+    const filter = screen.getByLabelText("Фильтр: счёт");
+    expect(
+      within(filter)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Все счета", "Synthetic Broker (Брокерский)", "Synthetic Broker (ИИС)"]);
+    expect(screen.getAllByText(/Брокерская выписка даёт/)).toHaveLength(1);
+    const user = userEvent.setup();
+    await user.selectOptions(filter, "12");
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(4);
+    expect(within(table).queryByText("—")).toBeNull();
+    await user.selectOptions(filter, "11");
+    expect(within(table).getByRole("columnheader", { name: "Цена, ₽" })).toBeInTheDocument();
+    expect(screen.queryByText(/Брокерская выписка даёт/)).toBeNull();
+    expect(screen.getByText(/Себестоимость:/)).toBeInTheDocument();
+    expect(within(table).queryByRole("link")).toBeNull();
+  });
+
+  it("orders money by exact kopecks", async () => {
+    setup({}, [
+      {
+        ...position,
+        id: 32,
+        quantity: "1",
+        market_value: { amount: "90071992547409.01", currency: "RUB" },
+      },
+      {
+        ...position,
+        id: 33,
+        quantity: "2",
+        market_value: { amount: "90071992547409.02", currency: "RUB" },
+      },
+    ]);
+    const table = await screen.findByRole("table");
+    const rows = within(table).getAllByRole("row");
+    expect(within(rows[2]).getAllByRole("cell")[1]).toHaveTextContent("2");
+  });
+
+  it("does not invent a share for zero total or hide known zero totals", async () => {
+    setup({}, [
+      {
+        ...position,
+        market_value: { amount: "0.00", currency: "RUB" },
+        cost_basis: { amount: "0.00", currency: "RUB" },
+        unrealized_result: { amount: "0.00", currency: "RUB" },
+      },
+    ]);
+    const table = await screen.findByRole("table");
+    const cells = within(within(table).getAllByRole("row")[2]).getAllByRole("cell");
+    expect(cells[5].textContent).toBe("");
+    expect(screen.getByText(/Себестоимость:/)).toHaveTextContent("0 ₽");
+    expect(screen.getByText(/Нереализованный результат:/)).toHaveTextContent("0 ₽");
   });
   it("loads only local data, keeps units and currency visible, and never auto-refreshes quotes", async () => {
     const { fetchMock, context, rerender, setDirty, unmount } = setup();
