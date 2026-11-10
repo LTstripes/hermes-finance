@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router";
+import { Link, useLocation } from "react-router";
 
 import { createAccount, listAccounts } from "../api/accounts";
 import { ApiClientError, formatApiError } from "../api/client";
@@ -21,35 +21,40 @@ import type {
   InstrumentMarketMapping,
   MarketDiscoverResult,
   MarketIdentityWrite,
+  MoneyValue,
   PositionSnapshot,
   QuoteApplyResult,
   QuoteApplyRowRequest,
   QuotePreview,
   QuotePreviewRow,
 } from "../api/types";
-import { formatDate, formatMoney, formatQuantity } from "../lib/format";
+import { formatDate, formatMoney, formatPercent, formatQuantity } from "../lib/format";
 import {
   ACCOUNT_TYPE_LABELS,
   INSTRUMENT_TYPE_LABELS,
   labelOf,
   PRICE_SOURCE_LABELS,
 } from "../lib/labels";
-import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
+import {
+  moneyAmount,
+  moneySharePercent,
+  normalizeMoneyInput,
+  rub,
+  sumMoneyAmounts,
+  toKopecks,
+} from "../lib/money";
 import {
   InstrumentMappingDialog,
   type InstrumentMappingSubject,
 } from "../components/InstrumentMappingDialog";
 import { QuotePreviewPanel } from "../components/QuotePreviewPanel";
 import {
-  Badge,
   Button,
   ConfirmDialog,
   EmptyState,
   Field,
-  HelpTip,
   Input,
   LoadingState,
-  MoneyAmount,
   OverflowMenu,
   OverflowMenuItem,
   Panel,
@@ -60,6 +65,7 @@ import {
 } from "../components/ui";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import styles from "./UiV2MonthPositionsSection.module.css";
+import { validIsin } from "./returns/navigation";
 
 export function UiV2MonthPositionsSection({ context }: { context: MonthEditorContext }) {
   return <PositionsLeaf key={context.month.id} context={context} />;
@@ -126,8 +132,38 @@ function safeTotal(
   return sumMoneyAmounts(rows.map((row) => row[field]?.amount ?? ""));
 }
 
-function displayTotal(amount: string | null) {
-  return amount === null ? "Нет подтверждённой суммы" : formatMoney(amount);
+function valueKopecks(value: MoneyValue | null | undefined): bigint | null {
+  return value?.currency === "RUB" && normalizeMoneyInput(value.amount) !== null
+    ? toKopecks(value.amount)
+    : null;
+}
+
+function descendingValue(a: MoneyValue | null, b: MoneyValue | null): number {
+  const left = valueKopecks(a);
+  const right = valueKopecks(b);
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left > right ? -1 : 1;
+}
+
+function displayShare(value: MoneyValue | null, total: string | null): string {
+  const part = valueKopecks(value);
+  if (value === null || part === null || part < 0n || total === null || toKopecks(total) <= 0n)
+    return "";
+  return formatPercent(moneySharePercent(value.amount, total), { digits: 1 });
+}
+
+function fromStatement(row: PositionSnapshot): boolean {
+  return row.price_source === "broker_statement_native";
+}
+
+function displayCell(value: MoneyValue | null, hasValues = true): string {
+  return value == null
+    ? hasValues
+      ? "—"
+      : ""
+    : formatMoney(value.amount, { currency: "" }).trim();
 }
 
 function editDraftFromPosition(row: PositionSnapshot): PositionDraft {
@@ -381,6 +417,39 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
       result: safeTotal(filteredPositions, "unrealized_result"),
     };
   }, [filteredPositions]);
+
+  const positionAccounts = accounts.filter((a) => positions.some((row) => row.account_id === a.id));
+  const positionTypes = [
+    ...new Set(positions.map((row) => instrumentById.get(row.instrument_id)?.instrument_type)),
+  ].filter((type): type is string => type !== undefined);
+  const showAverage = filteredPositions.some((row) => row.average_cost_per_unit !== null);
+  const showPrice = filteredPositions.some((row) => row.market_price_per_unit !== null);
+  const showResult = filteredPositions.some((row) => row.unrealized_result !== null);
+  const hasMarket = filteredPositions.some((row) => row.market_value != null);
+  const showActions =
+    !readOnly &&
+    month.status !== "closed" &&
+    filteredPositions.some((row) => row.price_source !== "broker_statement_native");
+  const columnCount =
+    3 + Number(showAverage) + Number(showPrice) + Number(showResult) + Number(showActions);
+  const groups = [...new Set(filteredPositions.map((row) => row.account_id))]
+    .map((accountId) => {
+      const rows = filteredPositions
+        .filter((row) => row.account_id === accountId)
+        .sort((a, b) => descendingValue(a.market_value, b.market_value) || a.id - b.id);
+      return { accountId, rows, total: safeTotal(rows, "market_value") };
+    })
+    .sort(
+      (a, b) =>
+        descendingValue(
+          a.total === null ? null : rub(a.total),
+          b.total === null ? null : rub(b.total),
+        ) || a.accountId - b.accountId,
+    );
+  const statementExplanation = filteredPositions.some(
+    (row) => row.price_source === "broker_statement_native" && row.average_cost_per_unit === null,
+  );
+  const back = `${location.pathname}${location.search}${location.hash}`;
 
   async function ensureBrokerAccount(): Promise<number> {
     if (brokerAccounts[0]) {
@@ -789,11 +858,10 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
 
       <Panel
         action={
-          <Badge>
-            Рыночная стоимость:{" "}
-            <MoneyAmount amount={totals.market} empty="Нет подтверждённой суммы" /> ·{" "}
+          <span className={styles.total}>
+            Итого: {totals.market === null ? "" : formatMoney(totals.market)} ·{" "}
             {filteredPositions.length} поз.
-          </Badge>
+          </span>
         }
         label="Портфель"
         title="Позиции"
@@ -806,9 +874,12 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
               value={filterAccountId}
             >
               <option value="">Все счета</option>
-              {accounts.map((a) => (
+              {positionAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name} ({labelOf(ACCOUNT_TYPE_LABELS, a.account_type)})
+                  {a.name}
+                  {positionAccounts.filter((item) => item.name === a.name).length > 1
+                    ? ` (${labelOf(ACCOUNT_TYPE_LABELS, a.account_type)})`
+                    : ""}
                 </option>
               ))}
             </Select>
@@ -820,12 +891,11 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
               value={filterType}
             >
               <option value="">Все типы</option>
-              <option value="stock">Акции</option>
-              <option value="bond">Облигации</option>
-              <option value="fund">Фонды</option>
-              <option value="currency">Валюта</option>
-              <option value="gold">Золото</option>
-              <option value="other">Прочее</option>
+              {positionTypes.map((type) => (
+                <option key={type} value={type}>
+                  {labelOf(INSTRUMENT_TYPE_LABELS, type)}
+                </option>
+              ))}
             </Select>
           </Field>
         </div>
@@ -837,25 +907,52 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
             title="Пусто"
           />
         ) : (
-          <>
-            <p className={styles.scrollHint}>Таблицу позиций можно прокрутить вправо.</p>
-            <Table className={`month-positions-table${editingId != null ? " is-editing" : ""}`}>
-              <thead>
-                <tr>
-                  <Th className="month-positions-table__account">Счёт</Th>
-                  <Th className="month-positions-table__instrument">Инструмент</Th>
-                  <Th numeric>Количество</Th>
-                  <Th numeric>Средняя цена приобретения, ₽</Th>
-                  <Th numeric>Цена, ₽</Th>
-                  <Th numeric>Рыночная стоимость, ₽</Th>
-                  <Th numeric>Результат, ₽</Th>
+          <Table className={`month-positions-table${editingId != null ? " is-editing" : ""}`}>
+            <thead>
+              <tr>
+                <Th className="month-positions-table__instrument">Инструмент</Th>
+                <Th numeric title="Количество">
+                  Кол-во
+                </Th>
+                {showAverage ? (
+                  <Th numeric title="Средняя цена приобретения">
+                    Цена покупки, ₽
+                  </Th>
+                ) : null}
+                {showPrice ? <Th numeric>Цена, ₽</Th> : null}
+                <Th numeric title="Стоимость и доля в итоге">
+                  Стоимость, ₽
+                </Th>
+                {showResult ? <Th numeric>Результат, ₽</Th> : null}
+                {showActions ? (
                   <Th className="month-positions-table__actions" aria-label="Действия">
                     ⋯
                   </Th>
+                ) : null}
+              </tr>
+            </thead>
+            {groups.map((group) => (
+              <tbody key={group.accountId}>
+                <tr className={styles.groupRow}>
+                  <th colSpan={columnCount} scope="rowgroup">
+                    <div className={styles.groupHeading}>
+                      <span>
+                        {accountById.get(group.accountId)?.name ?? `#${group.accountId}`}{" "}
+                        <small>{group.rows.length} поз.</small>
+                      </span>
+                      <span className={styles.groupValue}>
+                        {group.total === null ? "" : formatMoney(group.total)}
+                        <small>
+                          {displayShare(
+                            group.total === null ? null : rub(group.total),
+                            totals.market,
+                          )}
+                        </small>
+                      </span>
+                    </div>
+                  </th>
                 </tr>
-              </thead>
-              <tbody>
-                {filteredPositions.map((row) => {
+                {group.rows.map((row) => {
                   const editing = editingId === row.id && editDraft;
                   const instrument = instrumentById.get(row.instrument_id);
                   const account = accountById.get(row.account_id);
@@ -865,7 +962,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                   if (editing) {
                     return (
                       <tr className="month-positions-table__edit-row" key={row.id}>
-                        <Td colSpan={8}>
+                        <Td colSpan={columnCount}>
                           <form
                             className="position-inline-edit"
                             onSubmit={(event) => {
@@ -1004,105 +1101,120 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                   }
                   return (
                     <tr key={row.id}>
-                      <Td>{account?.name ?? `#${row.account_id}`}</Td>
                       <Td className={styles.instrument}>
-                        <span className={styles.instrumentTitle}>{instrumentTitle}</span>
-                        <HelpTip label={`Полное название: ${instrumentTitle}`}>
-                          {instrumentTitle}
-                        </HelpTip>
-                        <div className="muted tiny">
+                        {validIsin(instrument?.isin) ? (
+                          <Link
+                            className={styles.instrumentTitle}
+                            to={`/v2/returns/instrument/${instrument?.isin}?${new URLSearchParams({ capital_account: String(row.account_id), back })}`}
+                          >
+                            {instrumentTitle}
+                          </Link>
+                        ) : (
+                          <span className={styles.instrumentTitle}>{instrumentTitle}</span>
+                        )}
+                        <div className={styles.meta}>
                           {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")} ·{" "}
                           {instrument?.currency ?? "валюта неизвестна"}
                         </div>
                       </Td>
                       <Td numeric>{formatQuantity(row.quantity)}</Td>
+                      {showAverage ? (
+                        <Td numeric>
+                          {displayCell(row.average_cost_per_unit, !fromStatement(row))}
+                        </Td>
+                      ) : null}
+                      {showPrice ? (
+                        <Td numeric>
+                          {displayCell(row.market_price_per_unit, !fromStatement(row))}
+                          {row.accrued_interest !== null ? (
+                            <div className={styles.meta}>
+                              НКД {formatMoney(moneyAmount(row.accrued_interest))}
+                            </div>
+                          ) : null}
+                        </Td>
+                      ) : null}
                       <Td numeric>
-                        {formatMoney(moneyAmount(row.average_cost_per_unit), {
-                          currency: "",
-                        }).trim()}
+                        {displayCell(row.market_value, hasMarket)}
+                        {displayShare(row.market_value, totals.market) ? (
+                          <div className={`${styles.meta} ${styles.share}`}>
+                            {displayShare(row.market_value, totals.market)}
+                          </div>
+                        ) : null}
+                        {row.price_date !== defaultPriceDate ||
+                        ["manual", "t_invest", "moex"].includes(row.price_source) ? (
+                          <div className={styles.meta}>
+                            {labelOf(PRICE_SOURCE_LABELS, row.price_source)} ·{" "}
+                            {formatDate(row.price_date)}
+                          </div>
+                        ) : null}
                       </Td>
-                      <Td numeric>
-                        <span className="position-price">
-                          <span>
-                            {formatMoney(moneyAmount(row.market_price_per_unit), {
-                              currency: "",
-                            }).trim()}
-                          </span>
-                          <HelpTip
-                            label={`Детали оценки для ${instrument?.name ?? `#${row.instrument_id}`}`}
-                          >
-                            <div>Источник: {labelOf(PRICE_SOURCE_LABELS, row.price_source)}</div>
-                            <div>Дата оценки: {formatDate(row.price_date)}</div>
-                            {row.accrued_interest ? (
-                              <div>НКД {formatMoney(moneyAmount(row.accrued_interest))}</div>
-                            ) : null}
-                          </HelpTip>
-                        </span>
-                      </Td>
-                      <Td numeric>
-                        <span className="muted">
-                          {formatMoney(moneyAmount(row.market_value), { currency: "" }).trim()}
-                        </span>
-                      </Td>
-                      <Td numeric>
-                        <span className="muted">
-                          {formatMoney(moneyAmount(row.unrealized_result), { currency: "" }).trim()}
-                        </span>
-                      </Td>
-                      <Td className="month-positions-table__actions">
-                        <div className="row-actions">
-                          <OverflowMenu
-                            label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
-                          >
-                            <OverflowMenuItem
-                              disabled={
-                                busy || readOnly || row.price_source === "broker_statement_native"
-                              }
-                              onClick={() => {
-                                setEditingId(row.id);
-                                setEditDraft(editDraftFromPosition(row));
-                              }}
-                            >
-                              Изменить
-                            </OverflowMenuItem>
-                            <OverflowMenuItem
-                              danger
-                              disabled={
-                                busy || readOnly || row.price_source === "broker_statement_native"
-                              }
-                              onClick={() => setPendingDelete(row)}
-                            >
-                              Удалить
-                            </OverflowMenuItem>
-                          </OverflowMenu>
-                        </div>
-                      </Td>
+                      {showResult ? (
+                        <Td numeric>{displayCell(row.unrealized_result, !fromStatement(row))}</Td>
+                      ) : null}
+                      {showActions ? (
+                        <Td className="month-positions-table__actions">
+                          {row.price_source !== "broker_statement_native" ? (
+                            <div className="row-actions">
+                              <OverflowMenu
+                                label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
+                              >
+                                <OverflowMenuItem
+                                  disabled={
+                                    busy ||
+                                    readOnly ||
+                                    row.price_source === "broker_statement_native"
+                                  }
+                                  onClick={() => {
+                                    setEditingId(row.id);
+                                    setEditDraft(editDraftFromPosition(row));
+                                  }}
+                                >
+                                  Изменить
+                                </OverflowMenuItem>
+                                <OverflowMenuItem
+                                  danger
+                                  disabled={
+                                    busy ||
+                                    readOnly ||
+                                    row.price_source === "broker_statement_native"
+                                  }
+                                  onClick={() => setPendingDelete(row)}
+                                >
+                                  Удалить
+                                </OverflowMenuItem>
+                              </OverflowMenu>
+                            </div>
+                          ) : null}
+                        </Td>
+                      ) : null}
                     </tr>
                   );
                 })}
               </tbody>
-            </Table>
-          </>
+            ))}
+          </Table>
         )}
 
-        <div className="totals-bar">
-          <span>
-            Рыночная стоимость: <strong>{displayTotal(totals.market)}</strong>
-          </span>
-          <span>
-            Себестоимость: <strong>{displayTotal(totals.cost)}</strong>
-          </span>
-          <span>
-            Нереализованный результат: <strong>{displayTotal(totals.result)}</strong>
-          </span>
-        </div>
-        <details className="field-details">
-          <summary>Как читаются итоги позиции</summary>
-          <p>
-            Рыночная стоимость, себестоимость и нереализованный результат приходят из расчёта
-            позиции.
+        {statementExplanation ? (
+          <p className={styles.explanation}>
+            Брокерская выписка даёт количество и стоимость. Цена покупки и доходность по бумаге — на
+            странице инструмента в <Link to="/v2/returns">«Доходности»</Link>.
           </p>
-        </details>
+        ) : null}
+        {filteredPositions.length > 0 && (totals.cost !== null || totals.result !== null) ? (
+          <div className={styles.knownTotals}>
+            {totals.cost !== null ? (
+              <span>
+                Себестоимость: <strong>{formatMoney(totals.cost)}</strong>
+              </span>
+            ) : null}
+            {totals.result !== null ? (
+              <span>
+                Нереализованный результат: <strong>{formatMoney(totals.result)}</strong>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
 
         {!readOnly ? (
           <>
