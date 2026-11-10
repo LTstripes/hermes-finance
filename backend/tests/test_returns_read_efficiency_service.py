@@ -8,7 +8,7 @@ from datetime import date
 from xml.etree import ElementTree as ET
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from test_returns_view_service import END, SCOPE, START, basket_source
 from test_source_instrument_returns_service import save
 from test_source_monthly_returns_service import snapshot
@@ -1715,3 +1715,136 @@ def test_identity_revision_is_shared_only_within_one_committed_snapshot(db, monk
         with coherent_read_snapshot(session):
             assert mybroker_identity._revision(session) != first
             assert build.call_count == 2
+
+
+def test_clean_account_queries_do_not_scale_with_instruments(
+    tmp_path, source_returns_database_factory
+):
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.statement_import.mybroker import NS
+
+    counts = []
+    query_shapes = []
+    for size in (1, 12):
+        directory = tmp_path / str(size)
+        directory.mkdir()
+        database = source_returns_database_factory(directory)
+
+        def instruments(root):
+            collection = root.find(
+                "m:Positions/m:Report/m:Tablix1/m:active_type_Collection/"
+                "m:active_type/m:Details_Collection",
+                NS,
+            )
+            template = deepcopy(collection[0])
+            collection.clear()
+            for index in range(size):
+                row = deepcopy(template)
+                row.set("ISIN1", f"RU{index:010d}")
+                row.set("active_name", f"Synthetic instrument {index}")
+                collection.append(row)
+
+        save(database, bond=None, trades=(), mutate=instruments)
+        statements = []
+
+        def query(*args):
+            statements.append(args[2])
+
+        event.listen(database.engine, "before_cursor_execute", query)
+        try:
+            with database.session_factory() as session, source_read_snapshot(session):
+                result = read_clean_account(session, ACCOUNT, START, END, include_purchases=True)
+            assert len(result["instruments"]) == size
+            counts.append(len(statements))
+            query_shapes.append(Counter(statements))
+        finally:
+            event.remove(database.engine, "before_cursor_execute", query)
+            database.engine.dispose()
+    assert counts[0] == counts[1], (counts, query_shapes[1] - query_shapes[0])
+
+
+def test_instrument_preparation_reused_across_periods_without_exposing_mutable_state(
+    db, monkeypatch
+):
+    from hermes_finance.services import source_instrument_returns as reader
+
+    save(db)
+    save(db, 5)
+    prepare = reader._prepare_instrument_inputs
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return prepare(*args, **kwargs)
+
+    monkeypatch.setattr(reader, "_prepare_instrument_inputs", counted)
+
+    def read(session, start, end):
+        return reader.read_instrument_returns(
+            session,
+            source_account=ACCOUNT,
+            opening_date=start,
+            closing_date=end,
+            include_monthly_history=False,
+            clean_projection=True,
+        )
+
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            first = read(session, START, END)
+            expected = deepcopy(first)
+            first.instruments[0].analysis.coverage.clear()
+            assert read(session, START, END) == expected
+            later = read(session, END, date(2030, 5, 31))
+            assert len(calls) == 1
+        assert "returns_source_scope_reads" not in session.info
+        # No source memo exists outside the protected source-read lifetime.
+        assert read(session, START, END) == expected
+        assert read(session, END, date(2030, 5, 31)) == later
+        assert len(calls) == 3
+
+
+def test_source_money_memo_preserves_gaps_and_rejects_changed_view(db):
+    from hermes_finance.services.source_monthly_returns import _money
+
+    basket_source(db, extra=(("Synthetic cash", "Synthetic receipt", "100"),))
+    with db.session_factory() as session, source_read_snapshot(session):
+        selected, _ = _selected_sources(session, ACCOUNT)
+        view = selected[0][1]
+        gaps = []
+        expected = _money(session, view, None, gaps)
+        again = []
+        assert _money(session, view, None, again) == expected
+        assert again == gaps
+        # A modified consumer projection cannot borrow the original's result.
+        view["document"]["money"][0]["amount"] = "999999"
+        changed_gaps = []
+        changed = _money(session, view, None, changed_gaps)
+        assert (changed, changed_gaps) != (expected, gaps)
+
+
+def test_compiled_attribution_keeps_whole_tokens_precedence_ambiguity_and_new_identities():
+    from hermes_finance.services.source_instrument_returns import _attribute, _attribute_reader
+
+    identities = {
+        "synthetic-a": {"identifiers": {"RU000A000001"}, "names": {"Synthetic issue"}},
+        "synthetic-b": {"identifiers": {"RU000A000002"}, "names": {"Synthetic issue"}},
+    }
+    reader = _attribute_reader(identities)
+    texts = (
+        "RU000A000001",
+        "ru000a000001",
+        "xRU000A000001",
+        "RU000A000001suffix",
+        "Synthetic   ISSUE",
+        "RU000A000001 Synthetic issue",
+        "RU000A000001 RU000A000002",
+        "New identity",
+        "no match",
+    )
+    for text in texts * 2:
+        assert reader(text) == _attribute(text, identities)
+    identities["synthetic-c"] = {"identifiers": {"NEW-ID"}, "names": {"New identity"}}
+    identities["synthetic-a"]["names"].add("Added label")
+    for text in (*texts, "NEW-ID", "Added label"):
+        assert reader(text) == _attribute(text, identities)

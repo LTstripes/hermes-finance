@@ -459,9 +459,9 @@ def read_clean_account(
         and any("repo_trade_unsupported" in event.reason_codes for event in row.analysis.events)
         for row in source.instruments
     ):
-        from hermes_finance.services.source_monthly_returns import _selected_sources
+        from hermes_finance.services.source_monthly_returns import _source_read_inputs
 
-        selected, _ = _selected_sources(session, source_account)
+        selected, _ = _source_read_inputs(session, source_account)
         if all(original is not None and not error for original, _, error in selected):
             views = [view for _, view, _ in selected]
     instruments = []
@@ -469,16 +469,26 @@ def read_clean_account(
     for row in source.instruments:
         analysis = purchase_analysis = row.analysis
         if views is not None:
+            from functools import partial
+
             from hermes_finance.services.clean_repo_pairs import (
                 clean_and_purchase_repo_projections,
                 saved_proof_repo_evidence_complete,
             )
+            from hermes_finance.services.returns_read_inputs import repo_identities
 
+            identity_reader = partial(repo_identities, session)
             allow_pair = saved_proof_repo_evidence_complete(
-                session, source_account, start, end, views, row.isin
+                session,
+                source_account,
+                start,
+                end,
+                views,
+                row.isin,
+                identity_reader=identity_reader,
             )
             analysis, purchase_analysis = clean_and_purchase_repo_projections(
-                analysis, views, row.isin, allow_pair=allow_pair
+                analysis, views, row.isin, allow_pair=allow_pair, identity_reader=identity_reader
             )
         clean = project_clean_analysis(
             analysis,

@@ -21,11 +21,12 @@ from hermes_finance.domain.instrument_return import (
     Metric,
     chain_monthly,
 )
-from hermes_finance.persistence import ExecutedTrade, Instrument
+from hermes_finance.persistence import Instrument
 from hermes_finance.services import broker_trade_money
 from hermes_finance.services.broker_statement_provisional import _minor
 from hermes_finance.services.source_money_classifications import source_reference
 from hermes_finance.services.source_monthly_returns import (
+    _SOURCE_SCOPE_READS,
     SOURCE_PERIOD_INFERRED_MESSAGE,
     SourceReturnGap,
     _money,
@@ -33,6 +34,7 @@ from hermes_finance.services.source_monthly_returns import (
     _native_scope,
     _next_month,
     _selected_sources,
+    _source_read_inputs,
 )
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, digest
@@ -223,6 +225,46 @@ def _attribute(text, identities):
     return None
 
 
+def _attribute_reader(identities):
+    """Reuse whole-token patterns, rebuilding if attribution adds an identity."""
+    previous, fields, cache = None, [], {}
+
+    def read(text):
+        nonlocal previous, fields
+        signature = tuple(
+            (isin, tuple(metadata["identifiers"]), tuple(metadata["names"]))
+            for isin, metadata in identities.items()
+        )
+        if signature != previous:
+            fields = []
+            for index in (1, 2):
+                entries = []
+                for row in signature:
+                    patterns = []
+                    for value in row[index]:
+                        value = " ".join(str(value or "").casefold().split())
+                        if value:
+                            patterns.append(re.compile(r"(?<!\w)" + re.escape(value) + r"(?!\w)"))
+                    entries.append((row[0], patterns))
+                fields.append(entries)
+            previous = signature
+            cache.clear()
+        text = " ".join(text.casefold().split())
+        if text not in cache:
+            result = None
+            for entries in fields:
+                matches = {
+                    isin for isin, patterns in entries if any(p.search(text) for p in patterns)
+                }
+                if matches:
+                    result = next(iter(matches)) if len(matches) == 1 else None
+                    break
+            cache[text] = result
+        return cache[text]
+
+    return read
+
+
 def _identities(views):
     result = defaultdict(lambda: {"identifiers": set(), "names": set(), "types": set()})
     for view in views:
@@ -261,9 +303,14 @@ def _income(
     from hermes_finance.services.source_instrument_events import payout_attribution
 
     resolver = MoneyInstrumentResolver(session)
-    from hermes_finance.services.source_return_evidence import canonical_payout_groups
+    attribute_reader = _attribute_reader(identities)
+    from hermes_finance.services.source_return_evidence import (
+        canonical_payout_groups,
+        overlapping_payout_index,
+    )
 
     payout_groups = canonical_payout_groups(session, views, resolver)
+    overlap_index = overlapping_payout_index(views)
     occurrences = defaultdict(list)
     compensation_refs = {
         ref
@@ -310,6 +357,8 @@ def _income(
                     views=views,
                     historical_evidence=historical_evidence,
                     canonical_matches=payout_groups,
+                    overlap_index=overlap_index,
+                    attribute_reader=attribute_reader,
                     analytical_payouts=analytical_payouts,
                 )
                 if basis in {"accepted_money", "current_source_proof"}:
@@ -464,9 +513,9 @@ def _native_total_basis(session, trade):
     ):
         return None
     try:
-        accepted = session.scalar(
-            select(ExecutedTrade).where(ExecutedTrade.source_identity == trade["identity"])
-        )
+        from hermes_finance.services.returns_read_inputs import executed_trade
+
+        accepted = executed_trade(session, trade["identity"])
         if accepted is None or _trade_core(json.loads(accepted.core_json)) != _trade_core(
             trade["core"]
         ):
@@ -1257,104 +1306,28 @@ def _clean_historical_position_conflicts(analysis, proof):
     )
 
 
-@coherent_read_operation
-def read_instrument_returns(
+def _prepare_instrument_inputs(
     session,
+    source_account,
+    selected,
+    native_scope,
     *,
-    source_account: str,
-    isin: str | None = None,
-    opening_date: date | None = None,
-    closing_date: date | None = None,
-    reviewed_bond_valuation=None,
-    include_monthly_history: bool = True,
-    available_period: bool = False,
-    excluded_periods=(),
-    clean_projection: bool = False,
-) -> SourceInstrumentReturns:
-    """Isolate unreadable sources and individual operand gaps; perform no writes.
-
-    Presentation callers may omit the unused monthly/all-time projections.
-    Default readers retain the ordinary source and proof semantics. Only the
-    clean projection may add its independently validated analytical links.
-    """
-    from hermes_finance.services.source_bond_valuation import (
-        FILE_PATH_KEY,
-        load_reviewed_basis,
-        resolve_reviewed_basis,
-    )
-    from hermes_finance.services.source_instrument_events import (
-        analyse,
-        read_events,
-        reconcile_account,
-    )
-
-    if (opening_date is None) != (closing_date is None) or (
-        opening_date is not None and opening_date >= closing_date
-    ):
-        raise ValueError("both dates are required, with opening_date < closing_date")
-    requested_isin = isin
-    views = []
-    sources = []
-    gaps = []
-    selected, native_scope = _selected_sources(session, source_account)
-    from hermes_finance.services.source_investment_proofs import instrument_result
-    from hermes_finance.services.source_return_proofs import resolve_proof
-
-    investment = (
-        instrument_result(
-            session, source_account, selected, requested_isin, opening_date, closing_date
-        )
-        if clean_projection
-        or not available_period
-        or (
-            opening_date is not None
-            and closing_date is not None
-            and len(selected) == 1
-            and selected[0][0] is not None
-            and not selected[0][2]
-        )
-        else None
-    )
-    from hermes_finance.services.returns_account_link import account_link
-
-    link = account_link(session, source_account)
-    if (
-        not clean_projection
-        and investment is not None
-        and (
-            not available_period
-            or (
-                bool(investment.instruments)
-                and not any(gap.code == "investment_proof_stale" for gap in investment.gaps)
-            )
-        )
-    ):
-        return replace(investment, account_link=link)
-    clean_proofs = (
-        {row.isin: row.analysis for row in investment.instruments}
-        if clean_projection
-        and investment is not None
-        and not any(gap.code == "investment_proof_stale" for gap in investment.gaps)
-        else {}
-    )
-    cancellation_dates, _ = resolve_proof(session, source_account, selected, native_scope)
+    clean_projection,
+    clean_proofs,
+    reviewed_basis,
+    cancellation_dates,
+    relevant_cancellation,
+    catalogue_outer,
+):
+    from hermes_finance.services.source_instrument_events import read_events
     from hermes_finance.services.source_redemption_evidence import verified_redemptions
 
-    relevant_cancellation = any(
-        (opening_date is None or month <= closing_date and _month_end(month) > opening_date)
-        for months in cancellation_dates.values()
-        for month in months
-    )
+    views, sources, gaps = [], [], []
     cancellation_scopes, redemption_evidence = (
         verified_redemptions(session, source_account, selected, native_scope, cancellation_dates)
         if relevant_cancellation
         else ({}, {})
     )
-    if session.info.get(FILE_PATH_KEY) is not None:
-        # The ordinary API and Returns share this path. A configured file is
-        # authoritative for this call; failure cannot revive a caller's packet.
-        reviewed_bond_valuation = load_reviewed_basis(session, session.info[FILE_PATH_KEY])
-    reviewed_basis = resolve_reviewed_basis(selected, native_scope, reviewed_bond_valuation)
     for original, view, error in selected:
         try:
             sources.append(original)
@@ -1432,7 +1405,6 @@ def read_instrument_returns(
         # A catalogue classification may fill a missing source type for this
         # exact ISIN in the sold-out history path. It cannot resolve a source
         # type conflict or reclassify an ordinary current position.
-        first_source = min(date.fromisoformat(v["covered_from"]) for v in views) - timedelta(days=1)
         last_source = max(date.fromisoformat(v["covered_to"]) for v in views)
         last_views = [v for v in views if date.fromisoformat(v["covered_to"]) == last_source]
         present = {
@@ -1446,7 +1418,7 @@ def read_instrument_returns(
             for observation in proposal.get("observations", ())
             if observation.get("source_type") and observation.get("instrument_type") is None
         }
-        if opening_date in (None, first_source) and closing_date in (None, last_source) and absent:
+        if catalogue_outer and absent:
             # MyBroker's positive trade NKD is bond evidence. An absent or zero
             # NKD says nothing about type; REPO and unidentified rows cannot
             # establish it. Conflicting source/catalogue types still block.
@@ -1602,6 +1574,175 @@ def read_instrument_returns(
     for gap in event_gaps:
         if gap not in gaps:
             gaps.append(gap)
+    return (
+        views,
+        sources,
+        gaps,
+        catalogue_kinds,
+        unsupported_type_isins,
+        events,
+        references,
+        income,
+        native_account,
+        retained_proofs,
+        identities,
+    )
+
+
+@coherent_read_operation
+def read_instrument_returns(
+    session,
+    *,
+    source_account: str,
+    isin: str | None = None,
+    opening_date: date | None = None,
+    closing_date: date | None = None,
+    reviewed_bond_valuation=None,
+    include_monthly_history: bool = True,
+    available_period: bool = False,
+    excluded_periods=(),
+    clean_projection: bool = False,
+) -> SourceInstrumentReturns:
+    """Isolate unreadable sources and individual operand gaps; perform no writes.
+
+    Presentation callers may omit the unused monthly/all-time projections.
+    Default readers retain the ordinary source and proof semantics. Only the
+    clean projection may add its independently validated analytical links.
+    """
+    from hermes_finance.services.source_bond_valuation import (
+        FILE_PATH_KEY,
+        load_reviewed_basis,
+        resolve_reviewed_basis,
+    )
+    from hermes_finance.services.source_instrument_events import (
+        analyse,
+        reconcile_account,
+    )
+
+    if (opening_date is None) != (closing_date is None) or (
+        opening_date is not None and opening_date >= closing_date
+    ):
+        raise ValueError("both dates are required, with opening_date < closing_date")
+    requested_isin = isin
+    selected, native_scope = (
+        _source_read_inputs(session, source_account)
+        if _SOURCE_SCOPE_READS in session.info
+        else _selected_sources(session, source_account)
+    )
+    from hermes_finance.services.source_investment_proofs import instrument_result
+    from hermes_finance.services.source_return_proofs import resolve_proof
+
+    investment = (
+        instrument_result(
+            session, source_account, selected, requested_isin, opening_date, closing_date
+        )
+        if clean_projection
+        or not available_period
+        or (
+            opening_date is not None
+            and closing_date is not None
+            and len(selected) == 1
+            and selected[0][0] is not None
+            and not selected[0][2]
+        )
+        else None
+    )
+    from hermes_finance.services.returns_account_link import account_link
+
+    link = account_link(session, source_account)
+    if (
+        not clean_projection
+        and investment is not None
+        and (
+            not available_period
+            or (
+                bool(investment.instruments)
+                and not any(gap.code == "investment_proof_stale" for gap in investment.gaps)
+            )
+        )
+    ):
+        return replace(investment, account_link=link)
+    clean_proofs = (
+        {row.isin: row.analysis for row in investment.instruments}
+        if clean_projection
+        and investment is not None
+        and not any(gap.code == "investment_proof_stale" for gap in investment.gaps)
+        else {}
+    )
+    cancellation_dates, _ = resolve_proof(session, source_account, selected, native_scope)
+
+    relevant_cancellation = any(
+        (opening_date is None or month <= closing_date and _month_end(month) > opening_date)
+        for months in cancellation_dates.values()
+        for month in months
+    )
+    if session.info.get(FILE_PATH_KEY) is not None:
+        # The ordinary API and Returns share this path. A configured file is
+        # authoritative for this call; failure cannot revive a caller's packet.
+        reviewed_bond_valuation = load_reviewed_basis(session, session.info[FILE_PATH_KEY])
+    reviewed_basis = resolve_reviewed_basis(selected, native_scope, reviewed_bond_valuation)
+    valid_views = [
+        v
+        for _, v, error in selected
+        if not error
+        and v is not None
+        and native_scope is not None
+        and _native_scope(v["document"]) == native_scope
+        and source_account in native_scope | {v["document"]["filename_account"]}
+    ]
+    catalogue_outer = bool(valid_views) and (
+        opening_date
+        in (
+            None,
+            min(date.fromisoformat(v["covered_from"]) for v in valid_views) - timedelta(days=1),
+        )
+        and closing_date in (None, max(date.fromisoformat(v["covered_to"]) for v in valid_views))
+    )
+    cache = session.info.get(_SOURCE_SCOPE_READS)
+    input_key = (
+        "instrument_inputs",
+        source_account,
+        clean_projection,
+        relevant_cancellation,
+        tuple(sorted(cancellation_dates.items())),
+        catalogue_outer,
+        reviewed_basis,
+        json.dumps(
+            {isin: asdict(analysis) for isin, analysis in clean_proofs.items()},
+            sort_keys=True,
+            default=str,
+        ),
+    )
+    if cache is None or input_key not in cache:
+        prepared = _prepare_instrument_inputs(
+            session,
+            source_account,
+            selected,
+            native_scope,
+            clean_projection=clean_projection,
+            clean_proofs=clean_proofs,
+            reviewed_basis=reviewed_basis,
+            cancellation_dates=cancellation_dates,
+            relevant_cancellation=relevant_cancellation,
+            catalogue_outer=catalogue_outer,
+        )
+        if cache is not None:
+            cache[input_key] = prepared
+    else:
+        prepared = cache[input_key]
+    (
+        views,
+        sources,
+        gaps,
+        catalogue_kinds,
+        unsupported_type_isins,
+        events,
+        references,
+        income,
+        native_account,
+        retained_proofs,
+        identities,
+    ) = prepared
     instruments = []
     account_analyses = []
     reconciliation = None

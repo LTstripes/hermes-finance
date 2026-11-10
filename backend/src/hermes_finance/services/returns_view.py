@@ -747,10 +747,8 @@ def read_overview(session, *, scope, start, end):
 
 def read_clean_source_overview(session, *, scope, start, end):
     """Selected source period on the same clean basis as the main overview."""
-    from hermes_finance.services.clean_instrument_return import (
-        read_clean_account,
-        read_clean_overview,
-    )
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.source_monthly_returns import _source_read_inputs
 
     with source_read_snapshot(session):
         view = read_overview(session, scope=scope, start=start, end=end)
@@ -826,16 +824,17 @@ def read_clean_source_overview(session, *, scope, start, end):
         view["history"] = [
             build(row["period"]["start"], row["period"]["end"])[0] for row in view["history"]
         ]
-        whole = next(
-            (
-                row
-                for row in read_clean_overview(session)["accounts"]
-                if row["scope"] == f"source:{resolved}"
-            ),
-            None,
-        )
+        # Navigation needs only this account's saved outer dates. Deriving the
+        # clean results of every other account cannot add period metadata.
+        selected, _ = _source_read_inputs(session, resolved)
+        originals = [original for original, _, _ in selected if original is not None]
         view["all_history"] = (
-            build(whole["period"]["start"], whole["period"]["end"])[0] if whole else None
+            build(
+                min(original.covered_from for original in originals) - timedelta(days=1),
+                max(original.covered_to for original in originals),
+            )[0]
+            if originals
+            else None
         )
         view["breakdown"] = None
         view["available_months_total"] = None
