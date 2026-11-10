@@ -911,8 +911,14 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
             <thead>
               <tr>
                 <Th className="month-positions-table__instrument">Инструмент</Th>
-                <Th numeric>Количество</Th>
-                {showAverage ? <Th numeric>Средняя цена приобретения, ₽</Th> : null}
+                <Th numeric title="Количество">
+                  Кол-во
+                </Th>
+                {showAverage ? (
+                  <Th numeric title="Средняя цена приобретения">
+                    Цена покупки, ₽
+                  </Th>
+                ) : null}
                 {showPrice ? <Th numeric>Цена, ₽</Th> : null}
                 <Th numeric>Стоимость, ₽</Th>
                 <Th numeric>Доля</Th>

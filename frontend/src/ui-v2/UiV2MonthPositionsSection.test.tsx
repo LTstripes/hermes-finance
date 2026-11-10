@@ -159,7 +159,7 @@ describe("native month positions leaf", () => {
       within(table)
         .getAllByRole("columnheader")
         .map((cell) => cell.textContent),
-    ).toEqual(["Инструмент", "Количество", "Стоимость, ₽", "Доля"]);
+    ).toEqual(["Инструмент", "Кол-во", "Стоимость, ₽", "Доля"]);
     expect(screen.queryByText("Нет подтверждённой суммы")).toBeNull();
     expect(screen.queryByText(/Себестоимость:/)).toBeNull();
     expect(screen.queryByText(/Нереализованный результат:/)).toBeNull();
@@ -258,7 +258,7 @@ describe("native month positions leaf", () => {
     ]);
     const table = await screen.findByRole("table");
     expect(
-      within(table).getByRole("columnheader", { name: "Средняя цена приобретения, ₽" }),
+      within(table).getByRole("columnheader", { name: "Цена покупки, ₽" }),
     ).toBeInTheDocument();
     expect(within(table).queryAllByText("—")).toHaveLength(0);
     expect(within(table).getAllByText("0")).toHaveLength(2);
