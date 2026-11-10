@@ -292,7 +292,7 @@ describe("native Monthly Close work mode", () => {
   it("payouts reuses saved DRAFT and calendar without loading a second XML review", async () => {
     const { mount, fetchMock } = setup("/v2/close?month=12&panel=payouts");
     mount();
-    await screen.findByRole("button", { name: "Обновить прогноз Т-Инвест" });
+    expect(await screen.findByRole("button", { name: "Обновить прогноз Т-Инвест" })).toBeVisible();
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/draft-payouts"))).toBe(
         true,
@@ -307,6 +307,7 @@ describe("native Monthly Close work mode", () => {
       "href",
       "/v2/data/payouts?month=12",
     );
+    expect(screen.getByRole("link", { name: "Календарь выплат" })).toBeVisible();
     expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(
       true,
     );

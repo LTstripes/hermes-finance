@@ -292,17 +292,33 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(debtTable).toHaveTextContent("В капитале");
     expect(debtTable).toHaveTextContent(/19,90%/);
     expect(debtTable).toHaveTextContent(/20\.06\.2030/);
-    expect(debtTable).toHaveTextContent("Не связано");
-    expect(month).toHaveTextContent(/Кредитные карты:\s*123\s*456\s*₽/);
+    expect(debtTable).not.toHaveTextContent("Связан со счётом");
+
     expect(month).toHaveTextContent("Долг по кредитным картам:");
     expect(month).not.toHaveTextContent("Долгов нет.");
 
     expect(propertyTable).toHaveTextContent(/7\s*000\s*000\s*₽/);
-    expect(propertyTable).toHaveTextContent("не указано");
+    expect(propertyTable).not.toHaveTextContent("не указано");
     expect(propertyTable).not.toHaveTextContent(/0,00%/);
     const propertyBlock = await propertySection();
-    expect(propertyBlock).toHaveTextContent(/Недвижимость:\s*7\s*000\s*000\s*₽/);
+    expect(propertyBlock).toHaveTextContent(/7\s*000\s*000\s*₽/);
     expect(propertyBlock).not.toHaveTextContent("Объектов нет.");
+  });
+
+  it("formats both coverage metrics as Russian percentages in the closed view", async () => {
+    vi.mocked(getDashboard).mockResolvedValue({
+      month: monthRef(7),
+      mortgage: { coverage_pct: "75.25", gap: { amount: "-1000.00", currency: "RUB" } },
+    } as never);
+    vi.mocked(getMonthSummary).mockResolvedValue({
+      month: monthRef(7),
+      coverage: { coverage_pct: "62.50" },
+    } as never);
+    renderLeaf(7, true);
+    const block = await propertySection();
+    expect(labelledValue(block, "Покрытие ипотеки (ориентир):")).toHaveTextContent("75,25%");
+    expect(labelledValue(block, "Покрытие обязательных расходов:")).toHaveTextContent("62,50%");
+    expect(within(block).queryByRole("columnheader", { name: "Ставка" })).not.toBeInTheDocument();
   });
 
   it("keeps a missing dashboard and summary as dashes instead of zeros", async () => {
@@ -320,7 +336,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(labelledValue(propertyBlock, "Покрытие ипотеки (ориентир):")).toHaveTextContent("—");
     expect(labelledValue(propertyBlock, "Недостаток покрытия:")).toHaveTextContent("—");
     expect(labelledValue(propertyBlock, "Покрытие обязательных расходов:")).toHaveTextContent("—");
-    expect(await screen.findByText("Контекст пары недоступен")).toBeInTheDocument();
+    expect(await screen.findByText(/Остаток связанного счёта не подтверждён/)).toBeInTheDocument();
     expect(await tables()).toHaveLength(2);
   });
 
@@ -467,7 +483,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       expect(updateDebt).toHaveBeenCalledWith(1, expect.objectContaining({ annual_rate: null })),
     );
     const [debtTableAfter] = await tables();
-    expect(debtTableAfter).toHaveTextContent("не указано");
+    expect(debtTableAfter).not.toHaveTextContent("не указано");
     expect(debtTableAfter).not.toHaveTextContent(/19,90%/);
   });
 
@@ -483,7 +499,9 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     await waitFor(() => expect(linkDebtToAccount).toHaveBeenCalledWith(1, 11));
     expect(listDebts).toHaveBeenCalledTimes(2);
     const [debtTableAfter] = await tables();
-    expect(within(debtTableAfter).getByText("Синтетический депозит")).toBeInTheDocument();
+    expect(
+      within(debtTableAfter).getByText(/Связан со счётом «Синтетический депозит»/),
+    ).toBeInTheDocument();
     expect(
       within(debtTableAfter).getByRole("button", { name: "Изменить связь" }),
     ).toBeInTheDocument();
@@ -532,7 +550,9 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    expect(within(debtTable).getByText("Синтетический брокерский счёт")).toBeInTheDocument();
+    expect(
+      within(debtTable).getByText(/Связан со счётом «Синтетический брокерский счёт»/),
+    ).toBeInTheDocument();
     await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
 
     const picker = screen.getByLabelText("Счёт для связи с долгом");
@@ -556,7 +576,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     await waitFor(() => expect(unlinkDebtFromAccount).toHaveBeenCalledWith(1));
     expect(listDebts).toHaveBeenCalledTimes(2);
     const [debtTableAfter] = await tables();
-    expect(within(debtTableAfter).getByText("Не связано")).toBeInTheDocument();
+    expect(within(debtTableAfter).queryByText(/Связан со счётом/)).not.toBeInTheDocument();
     expect(
       within(debtTableAfter).getByRole("button", { name: "Связать счёт" }),
     ).toBeInTheDocument();
@@ -659,24 +679,11 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     expect(screen.queryByRole("button", { name: "Добавить долг" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Добавить объект" })).toBeNull();
+    expect(within(debtTable).queryAllByRole("button")).toHaveLength(0);
+    expect(within(propertyTable).queryAllByRole("button")).toHaveLength(0);
     expect(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    ).toBeDisabled();
-    expect(
-      within(debtTable).getByRole("button", { name: "Удалить долг «Основная карта»" }),
-    ).toBeDisabled();
-    expect(within(debtTable).getByRole("button", { name: "Изменить связь" })).toBeDisabled();
-    expect(within(debtTable).getByRole("button", { name: "Отвязать" })).toBeDisabled();
-    expect(
-      within(propertyTable).getByRole("button", {
-        name: "Изменить объект «Синтетическая квартира»",
-      }),
-    ).toBeDisabled();
-    expect(
-      within(propertyTable).getByRole("button", {
-        name: "Удалить объект «Синтетическая квартира»",
-      }),
-    ).toBeDisabled();
+      within(debtTable).queryByRole("columnheader", { name: "Действия" }),
+    ).not.toBeInTheDocument();
   });
 
   it("drops a response that lands only after another month was selected", async () => {
@@ -917,7 +924,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(screen.queryByText(/98\s*765\s*432/)).toBeNull();
     expect(screen.queryByText("35.00")).toBeNull();
 
-    expect(await screen.findByText("Контекст пары недоступен")).toBeInTheDocument();
+    expect(await screen.findByText(/Остаток связанного счёта не подтверждён/)).toBeInTheDocument();
     expect(
       screen.getByText("Сводка выбранного месяца недоступна: чтение отклонено."),
     ).toBeInTheDocument();
@@ -1081,7 +1088,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     expect(month).not.toHaveTextContent("CC ");
     expect(month).not.toHaveTextContent("MV ");
-    expect(month).toHaveTextContent("Кредитные карты:");
+    expect(month).toHaveTextContent("Долг по кредитным картам:");
     expect(month).toHaveTextContent("Долг по кредитным картам:");
     const moneyUnits = month.querySelectorAll(".money");
     expect(moneyUnits.length).toBeGreaterThan(0);
@@ -1090,7 +1097,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     }
     const propertyBlock = await propertySection();
     expect(propertyBlock).not.toHaveTextContent("RE ");
-    expect(propertyBlock).toHaveTextContent("Недвижимость:");
+    expect(propertyBlock).toHaveTextContent("Недвижимость");
   });
 
   it("#650 shows a stacked labelled editor with reachable Save/Cancel and saved totals", async () => {
@@ -1181,6 +1188,6 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     // Card total is saved-only (credit_card only): large amount, no draft math.
     const month = await debtSection();
     expect(month).toHaveTextContent(/1\s*234\s*567\s*890,50\s*₽/);
-    expect(month).toHaveTextContent("Кредитные карты:");
+    expect(month).toHaveTextContent("Долг по кредитным картам:");
   });
 });

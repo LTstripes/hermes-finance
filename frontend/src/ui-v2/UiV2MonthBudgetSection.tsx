@@ -20,7 +20,7 @@ import type {
 import { ConfirmDialog, Table, Td, Th } from "../components/ui";
 import { formatMoney } from "../lib/format";
 import { EXPENSE_TYPE_LABELS, labelOf } from "../lib/labels";
-import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
+import { moneyAmount, normalizeMoneyInput, rub, toKopecks, sumMoneyAmounts } from "../lib/money";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import styles from "./UiV2MonthEditor.module.css";
 
@@ -777,131 +777,438 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
       {notice ? <p role="status">{context.workspace ? "Сохранено" : notice}</p> : null}
 
       <section aria-label="Расходы месяца" className={styles.panel}>
-        <h2>Расходы</h2>
-        <p>
-          Обязательные: <strong>{formatMoney(mandatoryTotal)}</strong>
-          {" · "}Комфортные и прочие: <strong>{formatMoney(otherExpenseTotal)}</strong>
-        </p>
-        {plan.length > 0 ? (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Категория</Th>
-                <Th>Тип</Th>
-                <Th>Факт</Th>
-                <Th>План</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {budgetGroups.map((group) => {
-                const actual =
-                  group.comparison?.actual ??
-                  (group.actual.length
-                    ? {
-                        amount: sumMoneyAmounts(group.actual.map((row) => moneyAmount(row.amount))),
-                        currency: "RUB",
-                      }
-                    : null);
-                const planned =
-                  group.comparison?.planned ??
-                  (group.planned.length
-                    ? {
-                        amount: sumMoneyAmounts(
-                          group.planned.map((row) => moneyAmount(row.planned_amount)),
-                        ),
-                        currency: "RUB",
-                      }
-                    : null);
-                return (
-                  <tr key={JSON.stringify([group.category, group.expenseType])}>
-                    <Td>{group.category}</Td>
-                    <Td>{labelOf(EXPENSE_TYPE_LABELS, group.expenseType)}</Td>
-                    <Td>
-                      {actual === null ? "—" : formatMoney(moneyAmount(actual))}
-                      {group.actual.length ? (
-                        <details open={group.actual.some((row) => row.id === editingExpenseId)}>
-                          <summary>Расходы: {group.actual.length}</summary>
-                          {group.actual.map((row) => (
-                            <div className={styles.budgetEntry} key={row.id}>
-                              {editingExpenseId === row.id && editExpense ? (
+        {!context.workspace && <h2>Расходы</h2>}
+        {(
+          [
+            { id: "mandatory", title: "Обязательные", total: mandatoryTotal },
+            { id: "other", title: "Крупные и прочие", total: otherExpenseTotal },
+          ] as const
+        ).map((expenseGroup) => {
+          const rows = expenses
+            .filter(
+              (row) => (row.expense_type === "mandatory") === (expenseGroup.id === "mandatory"),
+            )
+            .sort((a, b) => {
+              const left = toKopecks(moneyAmount(a.amount));
+              const right = toKopecks(moneyAmount(b.amount));
+              return left === right ? 0 : left > right ? -1 : 1;
+            });
+          const groups = budgetGroups.filter(
+            (group) => (group.expenseType === "mandatory") === (expenseGroup.id === "mandatory"),
+          );
+          if (!rows.length && !groups.length) return null;
+          return (
+            <section key={expenseGroup.id} aria-label={expenseGroup.title}>
+              <h3>
+                {expenseGroup.title} · {formatMoney(expenseGroup.total)}
+              </h3>
+              {plan.length > 0 ? (
+                <Table className={styles.budgetTable}>
+                  <thead>
+                    <tr>
+                      <Th>Категория</Th>
+                      {editingExpenseId !== null ? <Th>Тип</Th> : null}
+                      <Th>Факт</Th>
+                      <Th>План</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groups.map((group) => {
+                      const actual =
+                        group.comparison?.actual ??
+                        (group.actual.length
+                          ? {
+                              amount: sumMoneyAmounts(
+                                group.actual.map((row) => moneyAmount(row.amount)),
+                              ),
+                              currency: "RUB",
+                            }
+                          : null);
+                      const planned =
+                        group.comparison?.planned ??
+                        (group.planned.length
+                          ? {
+                              amount: sumMoneyAmounts(
+                                group.planned.map((row) => moneyAmount(row.planned_amount)),
+                              ),
+                              currency: "RUB",
+                            }
+                          : null);
+                      return (
+                        <tr key={JSON.stringify([group.category, group.expenseType])}>
+                          <Td>{group.category}</Td>
+                          {editingExpenseId !== null ? (
+                            <Td>{labelOf(EXPENSE_TYPE_LABELS, group.expenseType)}</Td>
+                          ) : null}
+                          {!readOnly ? (
+                            <Td numeric>
+                              {actual === null ? "—" : formatMoney(moneyAmount(actual))}
+                              {group.actual.length ? (
+                                <details
+                                  open={group.actual.some((row) => row.id === editingExpenseId)}
+                                >
+                                  <summary>Расходы: {group.actual.length}</summary>
+                                  {group.actual.map((row) => (
+                                    <div className={styles.budgetEntry} key={row.id}>
+                                      {editingExpenseId === row.id && editExpense ? (
+                                        <>
+                                          <label>
+                                            Категория расхода
+                                            <input
+                                              value={editExpense.category}
+                                              onChange={(event) =>
+                                                setEditExpense({
+                                                  ...editExpense,
+                                                  category: event.target.value,
+                                                })
+                                              }
+                                            />
+                                          </label>
+                                          <label>
+                                            Тип расхода
+                                            <select
+                                              value={editExpense.expense_type}
+                                              onChange={(event) =>
+                                                setEditExpense({
+                                                  ...editExpense,
+                                                  expense_type: event.target.value,
+                                                })
+                                              }
+                                            >
+                                              <option value="mandatory">Обязательный</option>
+                                              <option value="comfortable">Комфортный</option>
+                                              <option value="other">Прочее</option>
+                                            </select>
+                                          </label>
+                                          <label>
+                                            Сумма расхода
+                                            <input
+                                              value={editExpense.amount}
+                                              onChange={(event) =>
+                                                setEditExpense({
+                                                  ...editExpense,
+                                                  amount: event.target.value,
+                                                })
+                                              }
+                                            />
+                                          </label>
+                                          <label>
+                                            Комментарий расхода
+                                            <input
+                                              value={editExpense.notes}
+                                              onChange={(event) =>
+                                                setEditExpense({
+                                                  ...editExpense,
+                                                  notes: event.target.value,
+                                                })
+                                              }
+                                            />
+                                          </label>
+                                          {!readOnly ? (
+                                            <button
+                                              disabled={busy || readOnly}
+                                              onClick={() => void handleSaveExpenseEdit()}
+                                              type="button"
+                                            >
+                                              OK
+                                            </button>
+                                          ) : null}
+                                          {!readOnly ? (
+                                            <button
+                                              disabled={busy}
+                                              onClick={() => {
+                                                setEditingExpenseId(null);
+                                                setEditExpense(null);
+                                              }}
+                                              type="button"
+                                            >
+                                              Отмена
+                                            </button>
+                                          ) : null}
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span>
+                                            {formatMoney(moneyAmount(row.amount))}
+                                            {row.notes ? ` · ${row.notes}` : ""}
+                                          </span>
+                                          <div>
+                                            {!readOnly ? (
+                                              <button
+                                                disabled={busy || readOnly}
+                                                onClick={() => {
+                                                  setEditingExpenseId(row.id);
+                                                  setEditExpense({
+                                                    category: row.category,
+                                                    expense_type: row.expense_type,
+                                                    amount: moneyAmount(row.amount),
+                                                    notes: row.notes ?? "",
+                                                  });
+                                                }}
+                                                type="button"
+                                              >
+                                                Изменить
+                                              </button>
+                                            ) : null}
+                                            {!readOnly ? (
+                                              <button
+                                                disabled={busy || readOnly}
+                                                onClick={() => setDelExpense(row)}
+                                                type="button"
+                                              >
+                                                Удалить
+                                              </button>
+                                            ) : null}
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  ))}
+                                </details>
+                              ) : null}
+                            </Td>
+                          ) : null}
+                          <Td>
+                            {planned === null ? "—" : formatMoney(moneyAmount(planned))}
+                            {group.planned.length ? (
+                              <details open={group.planned.some((row) => row.id === editingPlanId)}>
+                                <summary>План: {group.planned.length}</summary>
+                                {group.planned.map((row) => (
+                                  <div className={styles.budgetEntry} key={row.id}>
+                                    {editingPlanId === row.id && editPlan ? (
+                                      <>
+                                        <label>
+                                          Категория плана
+                                          <input
+                                            value={editPlan.category}
+                                            onChange={(event) =>
+                                              setEditPlan({
+                                                ...editPlan,
+                                                category: event.target.value,
+                                              })
+                                            }
+                                          />
+                                        </label>
+                                        <label>
+                                          Тип плана
+                                          <select
+                                            value={editPlan.expense_type}
+                                            onChange={(event) =>
+                                              setEditPlan({
+                                                ...editPlan,
+                                                expense_type: event.target.value,
+                                              })
+                                            }
+                                          >
+                                            <option value="mandatory">Обязательный</option>
+                                            <option value="comfortable">Комфортный</option>
+                                            <option value="other">Прочее</option>
+                                          </select>
+                                        </label>
+                                        <label>
+                                          Сумма плана
+                                          <input
+                                            value={editPlan.planned_amount}
+                                            onChange={(event) =>
+                                              setEditPlan({
+                                                ...editPlan,
+                                                planned_amount: event.target.value,
+                                              })
+                                            }
+                                          />
+                                        </label>
+                                        <label>
+                                          Комментарий плана
+                                          <input
+                                            value={editPlan.notes}
+                                            onChange={(event) =>
+                                              setEditPlan({
+                                                ...editPlan,
+                                                notes: event.target.value,
+                                              })
+                                            }
+                                          />
+                                        </label>
+                                        {!readOnly ? (
+                                          <button
+                                            disabled={busy || readOnly}
+                                            onClick={() => void handleSavePlanEdit()}
+                                            type="button"
+                                          >
+                                            OK
+                                          </button>
+                                        ) : null}
+                                        {!readOnly ? (
+                                          <button
+                                            disabled={busy}
+                                            onClick={() => {
+                                              setEditingPlanId(null);
+                                              setEditPlan(null);
+                                            }}
+                                            type="button"
+                                          >
+                                            Отмена
+                                          </button>
+                                        ) : null}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span>
+                                          {formatMoney(moneyAmount(row.planned_amount))}
+                                          {row.notes ? ` · ${row.notes}` : ""}
+                                        </span>
+                                        <div>
+                                          {!readOnly ? (
+                                            <button
+                                              disabled={busy || readOnly}
+                                              onClick={() => {
+                                                setEditingPlanId(row.id);
+                                                setEditPlan({
+                                                  category: row.category,
+                                                  expense_type: row.expense_type,
+                                                  planned_amount: moneyAmount(row.planned_amount),
+                                                  notes: row.notes ?? "",
+                                                });
+                                              }}
+                                              type="button"
+                                            >
+                                              Изменить
+                                            </button>
+                                          ) : null}
+                                          {!readOnly ? (
+                                            <button
+                                              disabled={busy || readOnly}
+                                              onClick={() => setDelPlan(row)}
+                                              type="button"
+                                            >
+                                              Удалить
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                ))}
+                              </details>
+                            ) : null}
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              ) : expenses.length === 0 ? (
+                <p>Расходов пока нет.</p>
+              ) : (
+                <Table className={styles.budgetTable}>
+                  <thead>
+                    <tr>
+                      <Th>Категория</Th>
+                      {editingExpenseId !== null ? <Th>Тип</Th> : null}
+                      <Th numeric>Сумма</Th>
+                      {rows.some((row) => row.notes?.trim()) || editingExpenseId !== null ? (
+                        <Th>Комментарий</Th>
+                      ) : null}
+                      {!readOnly ? <Th>Действия</Th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => {
+                      const editing = editingExpenseId === row.id && editExpense;
+                      return (
+                        <tr key={row.id}>
+                          <Td>
+                            {editing ? (
+                              <input
+                                aria-label="Категория расхода"
+                                onChange={(event) =>
+                                  setEditExpense({ ...editExpense, category: event.target.value })
+                                }
+                                value={editExpense.category}
+                              />
+                            ) : (
+                              row.category
+                            )}
+                          </Td>
+                          {editingExpenseId !== null ? (
+                            <Td>
+                              {editing ? (
+                                <select
+                                  aria-label="Тип расхода"
+                                  onChange={(event) =>
+                                    setEditExpense({
+                                      ...editExpense,
+                                      expense_type: event.target.value,
+                                    })
+                                  }
+                                  value={editExpense.expense_type}
+                                >
+                                  <option value="mandatory">Обязательный</option>
+                                  <option value="comfortable">Комфортный</option>
+                                  <option value="other">Прочее</option>
+                                </select>
+                              ) : (
+                                labelOf(EXPENSE_TYPE_LABELS, row.expense_type)
+                              )}
+                            </Td>
+                          ) : null}
+                          <Td numeric>
+                            {editing ? (
+                              <input
+                                aria-label="Сумма расхода"
+                                onChange={(event) =>
+                                  setEditExpense({ ...editExpense, amount: event.target.value })
+                                }
+                                value={editExpense.amount}
+                              />
+                            ) : (
+                              formatMoney(moneyAmount(row.amount))
+                            )}
+                          </Td>
+                          {rows.some((row) => row.notes?.trim()) || editingExpenseId !== null ? (
+                            <Td>
+                              {editing ? (
+                                <input
+                                  aria-label="Комментарий расхода"
+                                  onChange={(event) =>
+                                    setEditExpense({ ...editExpense, notes: event.target.value })
+                                  }
+                                  value={editExpense.notes}
+                                />
+                              ) : (
+                                (row.notes ?? "—")
+                              )}
+                            </Td>
+                          ) : null}
+                          {!readOnly ? (
+                            <Td numeric>
+                              {editing ? (
                                 <>
-                                  <label>
-                                    Категория расхода
-                                    <input
-                                      value={editExpense.category}
-                                      onChange={(event) =>
-                                        setEditExpense({
-                                          ...editExpense,
-                                          category: event.target.value,
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                  <label>
-                                    Тип расхода
-                                    <select
-                                      value={editExpense.expense_type}
-                                      onChange={(event) =>
-                                        setEditExpense({
-                                          ...editExpense,
-                                          expense_type: event.target.value,
-                                        })
-                                      }
+                                  {!readOnly ? (
+                                    <button
+                                      disabled={busy || readOnly}
+                                      onClick={() => void handleSaveExpenseEdit()}
+                                      type="button"
                                     >
-                                      <option value="mandatory">Обязательный</option>
-                                      <option value="comfortable">Комфортный</option>
-                                      <option value="other">Прочее</option>
-                                    </select>
-                                  </label>
-                                  <label>
-                                    Сумма расхода
-                                    <input
-                                      value={editExpense.amount}
-                                      onChange={(event) =>
-                                        setEditExpense({
-                                          ...editExpense,
-                                          amount: event.target.value,
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                  <label>
-                                    Комментарий расхода
-                                    <input
-                                      value={editExpense.notes}
-                                      onChange={(event) =>
-                                        setEditExpense({
-                                          ...editExpense,
-                                          notes: event.target.value,
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                  <button
-                                    disabled={busy || readOnly}
-                                    onClick={() => void handleSaveExpenseEdit()}
-                                    type="button"
-                                  >
-                                    OK
-                                  </button>
-                                  <button
-                                    disabled={busy}
-                                    onClick={() => {
-                                      setEditingExpenseId(null);
-                                      setEditExpense(null);
-                                    }}
-                                    type="button"
-                                  >
-                                    Отмена
-                                  </button>
+                                      OK
+                                    </button>
+                                  ) : null}
+                                  {!readOnly ? (
+                                    <button
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setEditingExpenseId(null);
+                                        setEditExpense(null);
+                                      }}
+                                      type="button"
+                                    >
+                                      Отмена
+                                    </button>
+                                  ) : null}
                                 </>
                               ) : (
                                 <>
-                                  <span>
-                                    {formatMoney(moneyAmount(row.amount))}
-                                    {row.notes ? ` · ${row.notes}` : ""}
-                                  </span>
-                                  <div>
+                                  {!readOnly ? (
                                     <button
                                       disabled={busy || readOnly}
                                       onClick={() => {
@@ -917,6 +1224,8 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                     >
                                       Изменить
                                     </button>
+                                  ) : null}
+                                  {!readOnly ? (
                                     <button
                                       disabled={busy || readOnly}
                                       onClick={() => setDelExpense(row)}
@@ -924,257 +1233,20 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                     >
                                       Удалить
                                     </button>
-                                  </div>
+                                  ) : null}
                                 </>
                               )}
-                            </div>
-                          ))}
-                        </details>
-                      ) : null}
-                    </Td>
-                    <Td>
-                      {planned === null ? "—" : formatMoney(moneyAmount(planned))}
-                      {group.planned.length ? (
-                        <details open={group.planned.some((row) => row.id === editingPlanId)}>
-                          <summary>План: {group.planned.length}</summary>
-                          {group.planned.map((row) => (
-                            <div className={styles.budgetEntry} key={row.id}>
-                              {editingPlanId === row.id && editPlan ? (
-                                <>
-                                  <label>
-                                    Категория плана
-                                    <input
-                                      value={editPlan.category}
-                                      onChange={(event) =>
-                                        setEditPlan({ ...editPlan, category: event.target.value })
-                                      }
-                                    />
-                                  </label>
-                                  <label>
-                                    Тип плана
-                                    <select
-                                      value={editPlan.expense_type}
-                                      onChange={(event) =>
-                                        setEditPlan({
-                                          ...editPlan,
-                                          expense_type: event.target.value,
-                                        })
-                                      }
-                                    >
-                                      <option value="mandatory">Обязательный</option>
-                                      <option value="comfortable">Комфортный</option>
-                                      <option value="other">Прочее</option>
-                                    </select>
-                                  </label>
-                                  <label>
-                                    Сумма плана
-                                    <input
-                                      value={editPlan.planned_amount}
-                                      onChange={(event) =>
-                                        setEditPlan({
-                                          ...editPlan,
-                                          planned_amount: event.target.value,
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                  <label>
-                                    Комментарий плана
-                                    <input
-                                      value={editPlan.notes}
-                                      onChange={(event) =>
-                                        setEditPlan({ ...editPlan, notes: event.target.value })
-                                      }
-                                    />
-                                  </label>
-                                  <button
-                                    disabled={busy || readOnly}
-                                    onClick={() => void handleSavePlanEdit()}
-                                    type="button"
-                                  >
-                                    OK
-                                  </button>
-                                  <button
-                                    disabled={busy}
-                                    onClick={() => {
-                                      setEditingPlanId(null);
-                                      setEditPlan(null);
-                                    }}
-                                    type="button"
-                                  >
-                                    Отмена
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <span>
-                                    {formatMoney(moneyAmount(row.planned_amount))}
-                                    {row.notes ? ` · ${row.notes}` : ""}
-                                  </span>
-                                  <div>
-                                    <button
-                                      disabled={busy || readOnly}
-                                      onClick={() => {
-                                        setEditingPlanId(row.id);
-                                        setEditPlan({
-                                          category: row.category,
-                                          expense_type: row.expense_type,
-                                          planned_amount: moneyAmount(row.planned_amount),
-                                          notes: row.notes ?? "",
-                                        });
-                                      }}
-                                      type="button"
-                                    >
-                                      Изменить
-                                    </button>
-                                    <button
-                                      disabled={busy || readOnly}
-                                      onClick={() => setDelPlan(row)}
-                                      type="button"
-                                    >
-                                      Удалить
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          ))}
-                        </details>
-                      ) : null}
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        ) : expenses.length === 0 ? (
-          <p>Расходов пока нет.</p>
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Категория</Th>
-                <Th>Тип</Th>
-                <Th numeric>Сумма</Th>
-                <Th>Комментарий</Th>
-                <Th>Действия</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {expenses.map((row) => {
-                const editing = editingExpenseId === row.id && editExpense;
-                return (
-                  <tr key={row.id}>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Категория расхода"
-                          onChange={(event) =>
-                            setEditExpense({ ...editExpense, category: event.target.value })
-                          }
-                          value={editExpense.category}
-                        />
-                      ) : (
-                        row.category
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <select
-                          aria-label="Тип расхода"
-                          onChange={(event) =>
-                            setEditExpense({ ...editExpense, expense_type: event.target.value })
-                          }
-                          value={editExpense.expense_type}
-                        >
-                          <option value="mandatory">Обязательный</option>
-                          <option value="comfortable">Комфортный</option>
-                          <option value="other">Прочее</option>
-                        </select>
-                      ) : (
-                        labelOf(EXPENSE_TYPE_LABELS, row.expense_type)
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Сумма расхода"
-                          onChange={(event) =>
-                            setEditExpense({ ...editExpense, amount: event.target.value })
-                          }
-                          value={editExpense.amount}
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.amount))
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Комментарий расхода"
-                          onChange={(event) =>
-                            setEditExpense({ ...editExpense, notes: event.target.value })
-                          }
-                          value={editExpense.notes}
-                        />
-                      ) : (
-                        (row.notes ?? "—")
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => void handleSaveExpenseEdit()}
-                            type="button"
-                          >
-                            OK
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => {
-                              setEditingExpenseId(null);
-                              setEditExpense(null);
-                            }}
-                            type="button"
-                          >
-                            Отмена
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => {
-                              setEditingExpenseId(row.id);
-                              setEditExpense({
-                                category: row.category,
-                                expense_type: row.expense_type,
-                                amount: moneyAmount(row.amount),
-                                notes: row.notes ?? "",
-                              });
-                            }}
-                            type="button"
-                          >
-                            Изменить
-                          </button>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => setDelExpense(row)}
-                            type="button"
-                          >
-                            Удалить
-                          </button>
-                        </>
-                      )}
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        )}
+                            </Td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              )}
+            </section>
+          );
+        })}
         {!readOnly ? (
           <form className={styles.form} onSubmit={(event) => void addExpense(event)}>
             <label>
@@ -1293,160 +1365,173 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
         </section>
       </section>
 
-      <section aria-label="Накопления месяца" className={styles.panel}>
-        <h2>Накопления</h2>
-        <p>
-          Всего накоплений: <strong>{formatMoney(savingsTotal)}</strong>
-        </p>
-        {savings.length === 0 ? (
-          <p>Накоплений пока нет.</p>
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Направление</Th>
-                <Th numeric>Сумма</Th>
-                <Th>Комментарий</Th>
-                <Th>Действия</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {savings.map((row) => {
-                const editing = editingSavingId === row.id && editSaving;
-                return (
-                  <tr key={row.id}>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Направление накопления"
-                          onChange={(event) =>
-                            setEditSaving({ ...editSaving, destination: event.target.value })
-                          }
-                          value={editSaving.destination}
-                        />
-                      ) : (
-                        row.destination
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Сумма накопления"
-                          onChange={(event) =>
-                            setEditSaving({ ...editSaving, amount: event.target.value })
-                          }
-                          value={editSaving.amount}
-                        />
-                      ) : (
-                        formatMoney(moneyAmount(row.amount))
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <input
-                          aria-label="Комментарий накопления"
-                          onChange={(event) =>
-                            setEditSaving({ ...editSaving, notes: event.target.value })
-                          }
-                          value={editSaving.notes}
-                        />
-                      ) : (
-                        (row.notes ?? "—")
-                      )}
-                    </Td>
-                    <Td>
-                      {editing ? (
-                        <>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => void handleSaveSavingEdit()}
-                            type="button"
-                          >
-                            OK
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => {
-                              setEditingSavingId(null);
-                              setEditSaving(null);
-                            }}
-                            type="button"
-                          >
-                            Отмена
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => {
-                              setEditingSavingId(row.id);
-                              setEditSaving({
-                                destination: row.destination,
-                                amount: moneyAmount(row.amount),
-                                notes: row.notes ?? "",
-                              });
-                            }}
-                            type="button"
-                          >
-                            Изменить
-                          </button>
-                          <button
-                            disabled={busy || readOnly}
-                            onClick={() => setDelSaving(row)}
-                            type="button"
-                          >
-                            Удалить
-                          </button>
-                        </>
-                      )}
-                    </Td>
+      {!readOnly || toKopecks(savingsTotal) !== 0n ? (
+        <section aria-label="Накопления месяца">
+          <details
+            className={styles.panel}
+            open={readOnly || !context.workspace ? true : undefined}
+          >
+            <summary>Накопления · {formatMoney(savingsTotal)}</summary>
+            <p>
+              Всего накоплений: <strong>{formatMoney(savingsTotal)}</strong>
+            </p>
+            {savings.length === 0 ? (
+              <p>Накоплений пока нет.</p>
+            ) : (
+              <Table className={styles.budgetTable}>
+                <thead>
+                  <tr>
+                    <Th>Направление</Th>
+                    <Th numeric>Сумма</Th>
+                    {savings.some((row) => row.notes?.trim()) || editingSavingId !== null ? (
+                      <Th>Комментарий</Th>
+                    ) : null}
+                    {!readOnly ? <Th>Действия</Th> : null}
                   </tr>
-                );
-              })}
-            </tbody>
-          </Table>
-        )}
-        {!readOnly ? (
-          <form className={styles.form} onSubmit={(event) => void addSaving(event)}>
-            <label>
-              Направление накопления
-              <input
-                onChange={(event) => {
-                  setSavDest(event.target.value);
-                  setSavingDraftTouched(true);
-                }}
-                required
-                value={savDest}
-              />
-            </label>
-            <label>
-              Сумма накопления
-              <input
-                onChange={(event) => {
-                  setSavAmount(event.target.value);
-                  setSavingDraftTouched(true);
-                }}
-                required
-                value={savAmount}
-              />
-            </label>
-            <label>
-              Комментарий накопления
-              <input
-                onChange={(event) => {
-                  setSavNotes(event.target.value);
-                  setSavingDraftTouched(true);
-                }}
-                value={savNotes}
-              />
-            </label>
-            <button disabled={busy} type="submit">
-              Добавить накопление
-            </button>
-          </form>
-        ) : null}
-      </section>
+                </thead>
+                <tbody>
+                  {savings.map((row) => {
+                    const editing = editingSavingId === row.id && editSaving;
+                    return (
+                      <tr key={row.id}>
+                        <Td>
+                          {editing ? (
+                            <input
+                              aria-label="Направление накопления"
+                              onChange={(event) =>
+                                setEditSaving({ ...editSaving, destination: event.target.value })
+                              }
+                              value={editSaving.destination}
+                            />
+                          ) : (
+                            row.destination
+                          )}
+                        </Td>
+                        <Td numeric>
+                          {editing ? (
+                            <input
+                              aria-label="Сумма накопления"
+                              onChange={(event) =>
+                                setEditSaving({ ...editSaving, amount: event.target.value })
+                              }
+                              value={editSaving.amount}
+                            />
+                          ) : (
+                            formatMoney(moneyAmount(row.amount))
+                          )}
+                        </Td>
+                        {savings.some((row) => row.notes?.trim()) || editingSavingId !== null ? (
+                          <Td>
+                            {editing ? (
+                              <input
+                                aria-label="Комментарий накопления"
+                                onChange={(event) =>
+                                  setEditSaving({ ...editSaving, notes: event.target.value })
+                                }
+                                value={editSaving.notes}
+                              />
+                            ) : (
+                              (row.notes ?? "—")
+                            )}
+                          </Td>
+                        ) : null}
+                        {!readOnly ? (
+                          <Td numeric>
+                            {editing ? (
+                              <>
+                                <button
+                                  disabled={busy || readOnly}
+                                  onClick={() => void handleSaveSavingEdit()}
+                                  type="button"
+                                >
+                                  OK
+                                </button>
+                                <button
+                                  disabled={busy}
+                                  onClick={() => {
+                                    setEditingSavingId(null);
+                                    setEditSaving(null);
+                                  }}
+                                  type="button"
+                                >
+                                  Отмена
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  disabled={busy || readOnly}
+                                  onClick={() => {
+                                    setEditingSavingId(row.id);
+                                    setEditSaving({
+                                      destination: row.destination,
+                                      amount: moneyAmount(row.amount),
+                                      notes: row.notes ?? "",
+                                    });
+                                  }}
+                                  type="button"
+                                >
+                                  Изменить
+                                </button>
+                                <button
+                                  disabled={busy || readOnly}
+                                  onClick={() => setDelSaving(row)}
+                                  type="button"
+                                >
+                                  Удалить
+                                </button>
+                              </>
+                            )}
+                          </Td>
+                        ) : null}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            )}
+            {!readOnly ? (
+              <form className={styles.form} onSubmit={(event) => void addSaving(event)}>
+                <label>
+                  Направление накопления
+                  <input
+                    onChange={(event) => {
+                      setSavDest(event.target.value);
+                      setSavingDraftTouched(true);
+                    }}
+                    required
+                    value={savDest}
+                  />
+                </label>
+                <label>
+                  Сумма накопления
+                  <input
+                    onChange={(event) => {
+                      setSavAmount(event.target.value);
+                      setSavingDraftTouched(true);
+                    }}
+                    required
+                    value={savAmount}
+                  />
+                </label>
+                <label>
+                  Комментарий накопления
+                  <input
+                    onChange={(event) => {
+                      setSavNotes(event.target.value);
+                      setSavingDraftTouched(true);
+                    }}
+                    value={savNotes}
+                  />
+                </label>
+                <button disabled={busy} type="submit">
+                  Добавить накопление
+                </button>
+              </form>
+            ) : null}
+          </details>
+        </section>
+      ) : null}
 
       <ConfirmDialog
         busy={busy}

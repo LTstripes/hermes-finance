@@ -23,3 +23,9 @@
   font-size: 13px;
   margin: 0;
 }
+
+.contractNumber {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}

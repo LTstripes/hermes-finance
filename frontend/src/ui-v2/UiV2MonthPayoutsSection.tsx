@@ -1,3 +1,4 @@
+import { Link, useLocation } from "react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { listAccounts } from "../api/accounts";
@@ -34,10 +35,12 @@ import {
   isPassiveInvestmentFlowType,
   isRedemptionFlowType,
 } from "../lib/flowTypes";
-import { FLOW_TYPE_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
+import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import styles from "./UiV2MonthPayoutsSection.module.css";
+import { MonthPanelTotal } from "./MonthPanelTotal";
+import { validIsin } from "./returns/navigation";
 
 type ActualDraft = {
   account_id: string;
@@ -118,6 +121,7 @@ type Operation = {
  */
 export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorContext }) {
   const { month, readOnly, setDirty } = context;
+  const location = useLocation();
   const monthId = month.id;
   const defaultDate = month.snapshot_date;
 
@@ -663,8 +667,21 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
   if (loading) return <LoadingState description="Загружаем выплаты…" inline />;
   if (error) return <EmptyState description={error} inline title="Не удалось загрузить выплаты" />;
 
+  const showGross =
+    sortedActual.some((row) => moneyAmount(row.gross_amount).trim() !== "") ||
+    editingActualId !== null;
+  const showTax =
+    sortedActual.some((row) => moneyAmount(row.tax_amount).trim() !== "") ||
+    editingActualId !== null;
+  const showCommission =
+    sortedActual.some((row) => moneyAmount(row.commission_amount).trim() !== "") ||
+    editingActualId !== null;
+  const showActions =
+    !readOnly &&
+    sortedActual.some((row) => isManuallyEditableInvestmentFlow(row.source, row.statement_link));
   return (
     <div className={`stack-18 ${styles.root}`} id="month-accepted-payouts">
+      {context.workspace ? <MonthPanelTotal value={formatMoney(passiveActualTotal)} /> : null}
       {actionError ? (
         <div className="inline-alert inline-alert--error" role="alert">
           {actionError}
@@ -674,15 +691,18 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
 
       <Panel
         action={
-          <Badge tone="draft">пассивный доход, нетто {formatMoney(passiveActualTotal)}</Badge>
+          context.workspace ? undefined : (
+            <Badge tone="draft">пассивный доход, нетто {formatMoney(passiveActualTotal)}</Badge>
+          )
         }
-        label="Выплаты"
-        title="Фактические потоки"
+        label=""
+        title="Фактические выплаты"
       >
-        <p>
-          Принятые финансовые записи. Наблюдения выписок показаны отдельно и не прибавляются к этому
-          итогу.
-        </p>
+        {sortedActual.some(
+          (row) => !isManuallyEditableInvestmentFlow(row.source, row.statement_link),
+        ) ? (
+          <p className="muted">Выплаты по отчёту брокера не редактируются.</p>
+        ) : null}
         {sortedActual.length === 0 ? (
           <EmptyState
             description="Фактических купонов, дивидендов и процентов ещё нет."
@@ -700,11 +720,11 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                   <Th>Дата</Th>
                   <Th>Тип</Th>
                   <Th>Счёт / инструмент</Th>
-                  <Th numeric>Брутто, ₽</Th>
-                  <Th numeric>Налог, ₽</Th>
-                  <Th numeric>Комиссия, ₽</Th>
-                  <Th numeric>Нетто, ₽</Th>
-                  <Th className="month-flows-table__actions">Действия</Th>
+                  {showGross ? <Th numeric>До налога, ₽</Th> : null}
+                  {showTax ? <Th numeric>Налог, ₽</Th> : null}
+                  {showCommission ? <Th numeric>Комиссия, ₽</Th> : null}
+                  <Th numeric>Получено, ₽</Th>
+                  {showActions ? <Th className="month-flows-table__actions">Действия</Th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -761,16 +781,12 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             <span
                               className={redemption ? "badge badge--closed" : "badge badge--draft"}
                             >
-                              {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
+                              {row.flow_type === "dividend"
+                                ? "Дивиденд"
+                                : labelOf(FLOW_TYPE_LABELS, row.flow_type)}
                             </span>
                             {redemption ? (
                               <div className="muted tiny">не доход (погашение)</div>
-                            ) : null}
-                            {passive ? <div className="muted tiny">пассивный доход</div> : null}
-                            {!manual ? (
-                              <div className="muted tiny">
-                                {labelOf(SOURCE_LABELS, row.source)} · не редактируется
-                              </div>
                             ) : null}
                           </>
                         )}
@@ -796,52 +812,66 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                           </>
                         ) : (
                           <div className="month-flows-table__party">
-                            <strong>{instrumentPrimary || "—"}</strong>
+                            {validIsin(instrument?.isin) ? (
+                              <Link
+                                to={`/v2/returns/instrument/${instrument?.isin}?${new URLSearchParams({ capital_account: String(row.account_id), back: location.pathname + location.search })}`}
+                              >
+                                {instrumentPrimary}
+                              </Link>
+                            ) : (
+                              <strong>{instrumentPrimary || "—"}</strong>
+                            )}
                             <div className="muted tiny">
                               {instrument ? accountName(row.account_id) : "—"}
                             </div>
                           </div>
                         )}
                       </Td>
-                      <Td numeric>
-                        {editing ? (
-                          <Input
-                            aria-label="Брутто"
-                            className="input--money"
-                            disabled={busy}
-                            onChange={(e) => touchEdit({ gross: e.target.value })}
-                            value={editActual.gross}
-                          />
-                        ) : (
-                          formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()
-                        )}
-                      </Td>
-                      <Td numeric>
-                        {editing ? (
-                          <Input
-                            aria-label="Налог"
-                            className="input--money"
-                            disabled={busy}
-                            onChange={(e) => touchEdit({ tax: e.target.value })}
-                            value={editActual.tax}
-                          />
-                        ) : (
-                          formatMoney(moneyAmount(row.tax_amount), { currency: "" }).trim()
-                        )}
-                      </Td>
-                      <Td numeric>
-                        {editing ? (
-                          <Input
-                            aria-label="Комиссия"
-                            className="input--money"
-                            disabled={busy}
-                            onChange={(e) => touchEdit({ commission: e.target.value })}
-                            value={editActual.commission}
-                          />
-                        ) : (
-                          formatMoney(moneyAmount(row.commission_amount), { currency: "" }).trim()
-                        )}
-                      </Td>
+                      {showGross ? (
+                        <Td numeric>
+                          {editing ? (
+                            <Input
+                              aria-label="Брутто"
+                              className="input--money"
+                              disabled={busy}
+                              onChange={(e) => touchEdit({ gross: e.target.value })}
+                              value={editActual.gross}
+                            />
+                          ) : (
+                            formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()
+                          )}
+                        </Td>
+                      ) : null}
+                      {showTax ? (
+                        <Td numeric>
+                          {editing ? (
+                            <Input
+                              aria-label="Налог"
+                              className="input--money"
+                              disabled={busy}
+                              onChange={(e) => touchEdit({ tax: e.target.value })}
+                              value={editActual.tax}
+                            />
+                          ) : (
+                            formatMoney(moneyAmount(row.tax_amount), { currency: "" }).trim()
+                          )}
+                        </Td>
+                      ) : null}
+                      {showCommission ? (
+                        <Td numeric>
+                          {editing ? (
+                            <Input
+                              aria-label="Комиссия"
+                              className="input--money"
+                              disabled={busy}
+                              onChange={(e) => touchEdit({ commission: e.target.value })}
+                              value={editActual.commission}
+                            />
+                          ) : (
+                            formatMoney(moneyAmount(row.commission_amount), { currency: "" }).trim()
+                          )}
+                        </Td>
+                      ) : null}
                       <Td numeric>
                         {editing ? (
                           <Input
@@ -855,54 +885,54 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                           formatMoney(moneyAmount(row.net_amount), { currency: "" }).trim()
                         )}
                       </Td>
-                      <Td className="month-flows-table__actions">
-                        <div className="row-actions">
-                          {editing ? (
-                            <>
-                              <Button
-                                disabled={busy || readOnly}
-                                onClick={() => void handleSaveActualEdit()}
-                                size="sm"
-                                type="button"
-                                variant="primary"
+                      {showActions ? (
+                        <Td className="month-flows-table__actions">
+                          <div className="row-actions">
+                            {editing ? (
+                              <>
+                                <Button
+                                  disabled={busy || readOnly}
+                                  onClick={() => void handleSaveActualEdit()}
+                                  size="sm"
+                                  type="button"
+                                  variant="primary"
+                                >
+                                  OK
+                                </Button>
+                                <Button
+                                  disabled={busy}
+                                  onClick={() => {
+                                    setEditingActualId(null);
+                                    setEditActual(null);
+                                  }}
+                                  size="sm"
+                                  type="button"
+                                >
+                                  Отмена
+                                </Button>
+                              </>
+                            ) : manual ? (
+                              <OverflowMenu
+                                label={`Действия для выплаты «${row.flow_type === "dividend" ? "Дивиденд" : labelOf(FLOW_TYPE_LABELS, row.flow_type)}» от ${row.event_date}`}
                               >
-                                OK
-                              </Button>
-                              <Button
-                                disabled={busy}
-                                onClick={() => {
-                                  setEditingActualId(null);
-                                  setEditActual(null);
-                                }}
-                                size="sm"
-                                type="button"
-                              >
-                                Отмена
-                              </Button>
-                            </>
-                          ) : manual ? (
-                            <OverflowMenu
-                              label={`Действия для выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» от ${row.event_date}`}
-                            >
-                              <OverflowMenuItem
-                                disabled={busy || readOnly}
-                                onClick={() => startActualEdit(row)}
-                              >
-                                Изменить
-                              </OverflowMenuItem>
-                              <OverflowMenuItem
-                                danger
-                                disabled={busy || readOnly}
-                                onClick={() => setPendingDeleteActual(row)}
-                              >
-                                Удалить
-                              </OverflowMenuItem>
-                            </OverflowMenu>
-                          ) : (
-                            <span className="muted tiny">чтение</span>
-                          )}
-                        </div>
-                      </Td>
+                                <OverflowMenuItem
+                                  disabled={busy || readOnly}
+                                  onClick={() => startActualEdit(row)}
+                                >
+                                  Изменить
+                                </OverflowMenuItem>
+                                <OverflowMenuItem
+                                  danger
+                                  disabled={busy || readOnly}
+                                  onClick={() => setPendingDeleteActual(row)}
+                                >
+                                  Удалить
+                                </OverflowMenuItem>
+                              </OverflowMenu>
+                            ) : null}
+                          </div>
+                        </Td>
+                      ) : null}
                     </tr>
                   );
                 })}
@@ -911,14 +941,18 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
           </section>
         )}
 
-        <div className="totals-bar">
-          <span>
-            Пассивный доход (нетто): <strong>{formatMoney(passiveActualTotal)}</strong>
-          </span>
-          <span>
-            Погашение (не доход): <strong>{formatMoney(redemptionActualTotal)}</strong>
-          </span>
-        </div>
+        {!context.workspace || sortedActual.some((row) => isRedemptionFlowType(row.flow_type)) ? (
+          <div className="totals-bar">
+            {!context.workspace ? (
+              <span>
+                Пассивный доход (нетто): <strong>{formatMoney(passiveActualTotal)}</strong>
+              </span>
+            ) : null}
+            <span>
+              Погашение (не доход): <strong>{formatMoney(redemptionActualTotal)}</strong>
+            </span>
+          </div>
+        ) : null}
         <details className="field-details">
           <summary>О классификации выплат</summary>
           <p>
@@ -1030,225 +1064,234 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
         ) : null}
       </Panel>
 
-      <Panel
-        action={<Badge>ручные ожидаемые: {formatMoney(expectedPassiveTotal)}</Badge>}
-        label="Прогноз"
-        title="Ручные ожидаемые выплаты"
-      >
-        <p className="muted">
-          Ручные ожидаемые выплаты — только план для потоков без другого источника. Прогноз не
-          подтверждается автоматически и не смешивается с фактом.
-        </p>
-        <div className="editor-grid filter-grid">
-          <Field htmlFor="payout-exp-version" label="Версия прогноза">
-            <Input
-              id="payout-exp-version"
-              onBlur={() => commitVersion()}
-              onChange={(e) => setVersionInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitVersion();
-                }
-              }}
-              value={versionInput}
-            />
-          </Field>
-          <Button disabled={expectedRefreshing} onClick={() => commitVersion()} type="button">
-            Показать
-          </Button>
-        </div>
-        {expectedRefreshing ? <p role="status">Обновляем прогноз…</p> : null}
-        {expectedError ? (
-          <div className="inline-alert inline-alert--warn" role="alert">
-            Прогноз временно недоступен: {expectedError}
+      <details open={!context.workspace}>
+        <summary>Ожидаемые выплаты и ручной прогноз</summary>
+        <Panel
+          action={<Badge>ручные ожидаемые: {formatMoney(expectedPassiveTotal)}</Badge>}
+          label="Прогноз"
+          title="Ручные ожидаемые выплаты"
+        >
+          <p className="muted">
+            Ручные ожидаемые выплаты — только план для потоков без другого источника. Прогноз не
+            подтверждается автоматически и не смешивается с фактом.
+          </p>
+          <div className="editor-grid filter-grid">
+            <Field htmlFor="payout-exp-version" label="Версия прогноза">
+              <Input
+                id="payout-exp-version"
+                onBlur={() => commitVersion()}
+                onChange={(e) => setVersionInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitVersion();
+                  }
+                }}
+                value={versionInput}
+              />
+            </Field>
+            <Button disabled={expectedRefreshing} onClick={() => commitVersion()} type="button">
+              Показать
+            </Button>
           </div>
-        ) : null}
+          {expectedRefreshing ? <p role="status">Обновляем прогноз…</p> : null}
+          {expectedError ? (
+            <div className="inline-alert inline-alert--warn" role="alert">
+              Прогноз временно недоступен: {expectedError}
+            </div>
+          ) : null}
 
-        {sortedExpected.length === 0 && !expectedError ? (
-          <EmptyState
-            description={`Нет ожидаемых выплат для версии «${forecastVersion}».`}
-            inline
-            title="Пусто"
-          />
-        ) : null}
-        {sortedExpected.length > 0 ? (
-          <section
-            aria-label="Ожидаемые выплаты: горизонтальная прокрутка таблицы"
-            className={styles.scroll}
-          >
-            <Table className="month-flows-table">
-              <thead>
-                <tr>
-                  <Th>Дата</Th>
-                  <Th>Тип</Th>
-                  <Th>Инструмент</Th>
-                  <Th numeric>Брутто, ₽</Th>
-                  <Th numeric>Прогноз налога, ₽</Th>
-                  <Th numeric>Прогноз нетто, ₽</Th>
-                  <Th>Статус</Th>
-                  <Th className="month-flows-table__actions">Действия</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedExpected.map((row) => {
-                  const redemption = isRedemptionFlowType(row.flow_type);
-                  return (
-                    <tr className={redemption ? "row--muted" : "row--income"} key={row.id}>
-                      <Td>{formatDate(row.expected_date)}</Td>
-                      <Td>
-                        <span className={redemption ? "badge badge--closed" : "badge badge--draft"}>
-                          {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
-                        </span>
-                        {redemption ? <div className="muted tiny">погашение ≠ доход</div> : null}
-                      </Td>
-                      <Td>{instrumentName(row.instrument_id)}</Td>
-                      <Td numeric>
-                        {formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()}
-                      </Td>
-                      <Td numeric>
-                        {row.expected_tax_amount
-                          ? formatMoney(moneyAmount(row.expected_tax_amount), {
-                              currency: "",
-                            }).trim()
-                          : "—"}
-                      </Td>
-                      <Td numeric>
-                        {formatMoney(moneyAmount(row.expected_net_amount), { currency: "" }).trim()}
-                      </Td>
-                      <Td>
-                        <div className="muted tiny">
-                          {row.is_confirmed ? "подтверждено" : "план"}
-                          {row.is_approximate ? " · примерно" : ""}
-                        </div>
-                        <div className="muted tiny">{row.forecast_version}</div>
-                      </Td>
-                      <Td className="month-flows-table__actions">
-                        <OverflowMenu
-                          label={`Действия для ожидаемой выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» на ${row.expected_date}`}
-                        >
-                          <OverflowMenuItem
-                            danger
-                            disabled={busy || readOnly}
-                            onClick={() => setPendingDeleteExpected(row)}
+          {sortedExpected.length === 0 && !expectedError ? (
+            <EmptyState
+              description={`Нет ожидаемых выплат для версии «${forecastVersion}».`}
+              inline
+              title="Пусто"
+            />
+          ) : null}
+          {sortedExpected.length > 0 ? (
+            <section
+              aria-label="Ожидаемые выплаты: горизонтальная прокрутка таблицы"
+              className={styles.scroll}
+            >
+              <Table className="month-flows-table">
+                <thead>
+                  <tr>
+                    <Th>Дата</Th>
+                    <Th>Тип</Th>
+                    <Th>Инструмент</Th>
+                    <Th numeric>Брутто, ₽</Th>
+                    <Th numeric>Прогноз налога, ₽</Th>
+                    <Th numeric>Прогноз нетто, ₽</Th>
+                    <Th>Статус</Th>
+                    {!readOnly ? <Th className="month-flows-table__actions">Действия</Th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedExpected.map((row) => {
+                    const redemption = isRedemptionFlowType(row.flow_type);
+                    return (
+                      <tr className={redemption ? "row--muted" : "row--income"} key={row.id}>
+                        <Td>{formatDate(row.expected_date)}</Td>
+                        <Td>
+                          <span
+                            className={redemption ? "badge badge--closed" : "badge badge--draft"}
                           >
-                            Удалить
-                          </OverflowMenuItem>
-                        </OverflowMenu>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </section>
-        ) : null}
+                            {labelOf(FLOW_TYPE_LABELS, row.flow_type)}
+                          </span>
+                          {redemption ? <div className="muted tiny">погашение ≠ доход</div> : null}
+                        </Td>
+                        <Td>{instrumentName(row.instrument_id)}</Td>
+                        <Td numeric>
+                          {formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()}
+                        </Td>
+                        <Td numeric>
+                          {row.expected_tax_amount
+                            ? formatMoney(moneyAmount(row.expected_tax_amount), {
+                                currency: "",
+                              }).trim()
+                            : "—"}
+                        </Td>
+                        <Td numeric>
+                          {formatMoney(moneyAmount(row.expected_net_amount), {
+                            currency: "",
+                          }).trim()}
+                        </Td>
+                        <Td>
+                          <div className="muted tiny">
+                            {row.is_confirmed ? "подтверждено" : "план"}
+                            {row.is_approximate ? " · примерно" : ""}
+                          </div>
+                          <div className="muted tiny">{row.forecast_version}</div>
+                        </Td>
+                        {!readOnly ? (
+                          <Td className="month-flows-table__actions">
+                            <OverflowMenu
+                              label={`Действия для ожидаемой выплаты «${labelOf(FLOW_TYPE_LABELS, row.flow_type)}» на ${row.expected_date}`}
+                            >
+                              <OverflowMenuItem
+                                danger
+                                disabled={busy || readOnly}
+                                onClick={() => setPendingDeleteExpected(row)}
+                              >
+                                Удалить
+                              </OverflowMenuItem>
+                            </OverflowMenu>
+                          </Td>
+                        ) : null}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            </section>
+          ) : null}
 
-        <div className="totals-bar">
-          <span>
-            Ручные ожидаемые (нетто): <strong>{formatMoney(expectedPassiveTotal)}</strong>
-          </span>
-        </div>
+          <div className="totals-bar">
+            <span>
+              Ручные ожидаемые (нетто): <strong>{formatMoney(expectedPassiveTotal)}</strong>
+            </span>
+          </div>
 
-        {!readOnly ? (
-          <details open={!context.workspace}>
-            <summary>Добавить ожидаемую выплату вручную</summary>
-            <form className="form-stack asset-form" onSubmit={handleCreateExpected}>
-              <p className="panel__label section-form-label">Новая ожидаемая выплата</p>
-              <div className="editor-grid">
-                <Field htmlFor="payout-exp-type" label="Тип выплаты">
-                  <Select
-                    id="payout-exp-type"
-                    onChange={(e) => touchExpectedDraft({ flow_type: e.target.value })}
-                    value={expectedDraft.flow_type}
-                  >
-                    <option value="coupon">Купон</option>
-                    <option value="dividend">Дивиденды</option>
-                    <option value="interest">Проценты</option>
-                    <option value="redemption">Погашение</option>
-                    <option value="other">Прочее</option>
-                  </Select>
-                </Field>
-                <Field htmlFor="payout-exp-date" label="Дата выплаты">
-                  <Input
-                    id="payout-exp-date"
-                    onChange={(e) => touchExpectedDraft({ expected_date: e.target.value })}
-                    required
-                    type="date"
-                    value={expectedDraft.expected_date}
-                  />
-                </Field>
-                <Field htmlFor="payout-exp-account" label="Счёт выплаты">
-                  <Select
-                    id="payout-exp-account"
-                    onChange={(e) => touchExpectedDraft({ account_id: e.target.value })}
-                    required
-                    value={expectedDraft.account_id}
-                  >
-                    <option value="">—</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field htmlFor="payout-exp-instr" label="Инструмент выплаты">
-                  <Select
-                    id="payout-exp-instr"
-                    onChange={(e) => touchExpectedDraft({ instrument_id: e.target.value })}
-                    required
-                    value={expectedDraft.instrument_id}
-                  >
-                    <option value="">—</option>
-                    {instruments.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name}
-                        {i.ticker ? ` (${i.ticker})` : ""}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field htmlFor="payout-exp-gross" label="Прогноз брутто">
-                  <Input
-                    className="input--money"
-                    id="payout-exp-gross"
-                    onChange={(e) => touchExpectedDraft({ gross: e.target.value })}
-                    required
-                    value={expectedDraft.gross}
-                  />
-                </Field>
-                <Field htmlFor="payout-exp-tax" label="Прогноз налога (необязательно)">
-                  <Input
-                    className="input--money"
-                    id="payout-exp-tax"
-                    onChange={(e) => touchExpectedDraft({ tax: e.target.value })}
-                    value={expectedDraft.tax}
-                  />
-                </Field>
-                <Field htmlFor="payout-exp-net" label="Прогноз нетто (необязательно)">
-                  <Input
-                    className="input--money"
-                    id="payout-exp-net"
-                    onChange={(e) => touchExpectedDraft({ net: e.target.value })}
-                    value={expectedDraft.net}
-                  />
-                </Field>
-                <Field htmlFor="payout-exp-ver" label="Версия">
-                  <Input
-                    id="payout-exp-ver"
-                    onChange={(e) => touchExpectedDraft({ forecast_version: e.target.value })}
-                    value={expectedDraft.forecast_version}
-                  />
-                </Field>
-              </div>
-              <Button disabled={busy} type="submit" variant="primary">
-                Добавить ожидаемую выплату
-              </Button>
-            </form>
-          </details>
-        ) : null}
-      </Panel>
+          {!readOnly ? (
+            <details open={!context.workspace}>
+              <summary>Добавить ожидаемую выплату вручную</summary>
+              <form className="form-stack asset-form" onSubmit={handleCreateExpected}>
+                <p className="panel__label section-form-label">Новая ожидаемая выплата</p>
+                <div className="editor-grid">
+                  <Field htmlFor="payout-exp-type" label="Тип выплаты">
+                    <Select
+                      id="payout-exp-type"
+                      onChange={(e) => touchExpectedDraft({ flow_type: e.target.value })}
+                      value={expectedDraft.flow_type}
+                    >
+                      <option value="coupon">Купон</option>
+                      <option value="dividend">Дивиденды</option>
+                      <option value="interest">Проценты</option>
+                      <option value="redemption">Погашение</option>
+                      <option value="other">Прочее</option>
+                    </Select>
+                  </Field>
+                  <Field htmlFor="payout-exp-date" label="Дата выплаты">
+                    <Input
+                      id="payout-exp-date"
+                      onChange={(e) => touchExpectedDraft({ expected_date: e.target.value })}
+                      required
+                      type="date"
+                      value={expectedDraft.expected_date}
+                    />
+                  </Field>
+                  <Field htmlFor="payout-exp-account" label="Счёт выплаты">
+                    <Select
+                      id="payout-exp-account"
+                      onChange={(e) => touchExpectedDraft({ account_id: e.target.value })}
+                      required
+                      value={expectedDraft.account_id}
+                    >
+                      <option value="">—</option>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field htmlFor="payout-exp-instr" label="Инструмент выплаты">
+                    <Select
+                      id="payout-exp-instr"
+                      onChange={(e) => touchExpectedDraft({ instrument_id: e.target.value })}
+                      required
+                      value={expectedDraft.instrument_id}
+                    >
+                      <option value="">—</option>
+                      {instruments.map((i) => (
+                        <option key={i.id} value={i.id}>
+                          {i.name}
+                          {i.ticker ? ` (${i.ticker})` : ""}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field htmlFor="payout-exp-gross" label="Прогноз брутто">
+                    <Input
+                      className="input--money"
+                      id="payout-exp-gross"
+                      onChange={(e) => touchExpectedDraft({ gross: e.target.value })}
+                      required
+                      value={expectedDraft.gross}
+                    />
+                  </Field>
+                  <Field htmlFor="payout-exp-tax" label="Прогноз налога (необязательно)">
+                    <Input
+                      className="input--money"
+                      id="payout-exp-tax"
+                      onChange={(e) => touchExpectedDraft({ tax: e.target.value })}
+                      value={expectedDraft.tax}
+                    />
+                  </Field>
+                  <Field htmlFor="payout-exp-net" label="Прогноз нетто (необязательно)">
+                    <Input
+                      className="input--money"
+                      id="payout-exp-net"
+                      onChange={(e) => touchExpectedDraft({ net: e.target.value })}
+                      value={expectedDraft.net}
+                    />
+                  </Field>
+                  <Field htmlFor="payout-exp-ver" label="Версия">
+                    <Input
+                      id="payout-exp-ver"
+                      onChange={(e) => touchExpectedDraft({ forecast_version: e.target.value })}
+                      value={expectedDraft.forecast_version}
+                    />
+                  </Field>
+                </div>
+                <Button disabled={busy} type="submit" variant="primary">
+                  Добавить ожидаемую выплату
+                </Button>
+              </form>
+            </details>
+          ) : null}
+        </Panel>
+      </details>
 
       <ConfirmDialog
         busy={busy}

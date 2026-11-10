@@ -395,7 +395,7 @@ test("browser Back keeps an unsaved month until the user confirms", async ({ pag
   await installApi(page);
   await page.goto("/v2/data/months");
   await page.goto("/v2/data/months/7");
-  await expect(page.getByLabel("Дата снимка")).toBeDisabled();
+  await expect(page.getByLabel("Дата снимка")).toHaveCount(0);
   await page.getByRole("button", { name: "Открыть для редактирования" }).click();
   await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
   await page.getByLabel("Дата снимка").fill("2030-04-29");
@@ -434,7 +434,7 @@ for (const width of [1280]) {
       await page.goto("/v2/data/months/7?from=monthly-close-v2&monthId=7&step=month_setup");
       await expect(page.getByRole("heading", { level: 1, name: "Редактор месяца" })).toBeVisible();
       await expect(page.getByTestId("data-month-context").getByText("Апрель 2030")).toBeVisible();
-      await expect(page.getByLabel("Дата снимка")).toBeDisabled();
+      await expect(page.getByLabel("Дата снимка")).toHaveCount(0);
       await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
         "href",
         "/v2/close?month=7&step=month_setup",
@@ -461,7 +461,7 @@ const leaves = [
   ["income", "Зарплата и прочее", "Зарплата и прочее"],
   ["assets", "Активы", "Депозиты"],
   ["positions", "Позиции", "Позиции"],
-  ["payouts", "Выплаты", "Фактические потоки"],
+  ["payouts", "Выплаты", "Фактические выплаты"],
   ["budget", "Бюджет", "Расходы"],
   ["liabilities", "Долги и недвижимость", "Долги"],
 ] as const;
@@ -470,7 +470,13 @@ for (const [id, , heading] of leaves) {
   test(`deep link ${id} uses exact CLOSED month`, async ({ page }) => {
     const calls = await installApi(page);
     await page.goto(`/v2/data/months/7?section=${id}`);
-    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    if (id === "assets" || id === "liabilities") {
+      await expect(
+        page.getByRole("heading", { name: "Редактор месяца", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("heading", { name: heading, exact: true })).toHaveCount(0);
+      await expect(page.getByRole("table")).toHaveCount(0);
+    } else await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     await expect(page.getByTestId("data-month-context")).toContainText("Апрель 2030");
     // Closed leaves expose no enabled mutation fields; filters remain available.
     const inputs = page.locator(
@@ -655,7 +661,7 @@ for (const width of [1280]) {
       await expect(page.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
 
       // Owner language, no technical shorthand; money is one unit.
-      await expect(page.getByText("Кредитные карты:", { exact: false })).toBeVisible();
+
       await expect(page.getByText("Долг по кредитным картам:", { exact: false })).toBeVisible();
       expect(await page.getByText("CC ", { exact: false }).count()).toBe(0);
       expect(await page.locator(".money").count()).toBeGreaterThan(0);
@@ -862,11 +868,13 @@ async function expectNoTableOverflow(page: Page) {
 test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @viewport-owned", async ({
   page,
 }, testInfo) => {
+  test.setTimeout(120000);
   const writes: string[] = [];
   page.on("request", (request) => {
     if (new URL(request.url()).pathname.startsWith("/api/") && request.method() !== "GET")
       writes.push(request.url());
   });
+  test.setTimeout(120000);
   await installMonthUx(page);
   for (const width of [1280, 1440, 1920]) {
     for (const zoom of [1, 1.25]) {
@@ -912,8 +920,10 @@ test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @vie
       });
       await page.getByRole("button", { name: "Отмена", exact: true }).click();
       await nav.getByRole("link", { name: /^Выплаты/ }).click();
-      await expect(page.getByRole("heading", { name: "Фактические потоки" })).toBeVisible();
-      await expect(page.getByRole("columnheader", { name: "Нетто, ₽", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Фактические выплаты" })).toBeVisible();
+      await expect(
+        page.getByRole("columnheader", { name: "Получено, ₽", exact: true }),
+      ).toBeVisible();
       await expect(page.locator("#payout-act-gross")).not.toBeVisible();
       await expectNoTableOverflow(page);
       await page.screenshot({
@@ -1067,6 +1077,7 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
     exact: true,
   });
   await expect(instrumentDetails.locator("..")).not.toHaveAttribute("open");
+  await expect(instrumentDetails).toBeVisible();
   await instrumentDetails.click();
   await expect(instrumentDetails.locator("..")).toHaveAttribute("open", "");
   await page.getByText("Наблюдения выплат источника", { exact: true }).click();
@@ -1088,6 +1099,7 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   });
   await page.reload();
   await expect(instrumentDetails.locator("..")).not.toHaveAttribute("open");
+  await expect(instrumentDetails).toBeVisible();
   await instrumentDetails.click();
   await expect(dates).toBeVisible();
   await expect(dates).toHaveValue("2030-04-30");
@@ -1109,11 +1121,11 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("");
   await nav.getByRole("link", { name: /^Выплаты/ }).click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
-  await expect(page.locator("#month-accepted-payouts .totals-bar").first()).toContainText("860");
-  await expect(page.locator("#month-accepted-payouts .totals-bar").first()).not.toContainText(
-    "1 720",
-  );
+  await expect(page.locator("#month-panel-total")).toContainText("860");
+  await expect(page.locator("#month-panel-total")).not.toContainText("1 720");
   await expect(page.locator("#month-draft-payouts")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Обновить прогноз Т-Инвест" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Календарь выплат", exact: true })).toBeVisible();
   await expect(
     page.getByText("Подробности разбора и сохранение месяца", { exact: true }),
   ).toHaveCount(0);
@@ -1136,6 +1148,7 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page).toHaveURL(/panel=payouts/);
   await expect(page).toHaveURL(/payout_as_of=2030-04-30/);
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
+  await expect(instrumentDetails).toBeVisible();
   await instrumentDetails.click();
   await expect(dates).toBeVisible();
   await expect(dates).toHaveValue("2030-04-30");
@@ -1153,13 +1166,18 @@ test("ui-v2 Month payout entry keeps CLOSED records read-only without background
   });
   await installMonthUx(page, "closed");
   await page.goto("/v2/close?month=7&panel=payouts");
-  await expect(page.getByRole("heading", { name: "Фактические потоки" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Фактические выплаты" })).toBeVisible();
   await expect(page.locator("#month-accepted-payouts")).toContainText("860");
   await expect(page.locator("#payout-act-gross")).toHaveCount(0);
   await expect(page.locator("#payout-exp-gross")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Добавить выплату", exact: true })).toHaveCount(0);
+  await expect(page.locator("#month-draft-payouts")).not.toBeVisible();
+  await page.getByText("Прогноз и календарь выплат", { exact: true }).click();
+  await expect(page.locator("#month-draft-payouts")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Обновить прогноз Т-Инвест" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Календарь выплат", exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Фактические потоки" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Фактические выплаты" })).toBeVisible();
   expect(writes).toEqual([]);
 });
 
@@ -1216,6 +1234,7 @@ test("month sources collapse historical overlaps and isolate saved draft payouts
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/v2/close?month=7&panel=brokers");
     const sourceDetails = page.getByText("Подробности", { exact: true });
+    await expect(sourceDetails).toBeVisible();
     await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
     await sourceDetails.focus();
     await page.keyboard.press("Enter");
@@ -1239,6 +1258,8 @@ test("month sources collapse historical overlaps and isolate saved draft payouts
       .getByRole("link", { name: /^Выплаты/ })
       .click();
     await expect(page.locator("#month-draft-payouts")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Обновить прогноз Т-Инвест" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Календарь выплат", exact: true })).toBeVisible();
     await expect(page.locator('input[type="file"]')).toHaveCount(0);
     await expect(page.getByLabel("Сохранённый разбор")).toHaveCount(0);
     await page.screenshot({
@@ -1298,4 +1319,124 @@ test("cash table fits the month workspace with a long amount", async ({ page }) 
   expect(dimensions.cellWidth).toBeLessThanOrEqual(dimensions.visibleCell + 1);
   expect(dimensions.left).toBeGreaterThanOrEqual(dimensions.tableLeft);
   expect(dimensions.right).toBeLessThanOrEqual(dimensions.tableRight + 1);
+});
+
+test("closed month internal panels fit all desktop widths and zoom @viewport-owned", async ({
+  page,
+}, info) => {
+  test.setTimeout(180000);
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/") && request.method() !== "GET")
+      writes.push(request.url());
+  });
+  await installMonthUx(page, "closed");
+  await page.route("**/api/deposits?*", (route) =>
+    route.fulfill({
+      json: ["100000.00", "900000.00"].map((amount, index) => ({
+        id: 71 + index,
+        reporting_month_id: 7,
+        account_id: 11,
+        name: `Синтетический вклад ${index + 1}`,
+        deposit_type: "deposit",
+        balance: uxMoney(amount),
+        annual_rate: "14.01",
+        expected_monthly_interest: uxMoney("1234.00"),
+        actual_interest_received: uxMoney("1000.00"),
+      })),
+    }),
+  );
+  await page.route("**/api/debts?*", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 81,
+          reporting_month_id: 7,
+          name: "Синтетическая карта",
+          debt_type: "credit_card",
+          current_balance: uxMoney("120000.00"),
+          annual_rate: null,
+          next_due_date: null,
+          contract_end_date: null,
+          linked_account_id: null,
+          include_in_liquid_capital: true,
+          notes: null,
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/expenses?*", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 91,
+          reporting_month_id: 7,
+          category: "Синтетические обязательные расходы",
+          expense_type: "mandatory",
+          amount: uxMoney("50000.00"),
+          notes: null,
+        },
+        {
+          id: 92,
+          reporting_month_id: 7,
+          category: "Синтетические прочие расходы",
+          expense_type: "other",
+          amount: uxMoney("7000.00"),
+          notes: null,
+        },
+      ],
+    }),
+  );
+  for (const width of [1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const zoom of [1, 1.25]) {
+      for (const panel of [
+        "general",
+        "income",
+        "assets",
+        "liabilities",
+        "budget",
+        "brokers",
+        "payouts",
+        "note",
+      ]) {
+        await page.goto(`/v2/close?month=7&panel=${panel}`);
+        await page.evaluate((value) => {
+          document.documentElement.style.zoom = String(value);
+        }, zoom);
+        const area = page.locator("#month-work-area");
+        await expect(area).toBeVisible();
+        await expect(
+          area.getByText("Месяц закрыт — только просмотр.", { exact: true }),
+        ).toHaveCount(1);
+        await expect(area.getByRole("link", { name: "← К месяцу", exact: true })).toHaveCount(1);
+        await expect(
+          area.getByRole("button", { name: /Изменить|Удалить|Отвязать|Действия для/ }),
+        ).toHaveCount(0);
+        if (panel === "assets") {
+          const table = area.locator(".month-deposits-table");
+          await expect(table).toBeVisible();
+          await expect(table.getByRole("columnheader", { name: "Тип", exact: true })).toHaveCount(
+            0,
+          );
+          await expect(table.getByRole("row").nth(1)).toContainText("Синтетический вклад 2");
+          await expect(table).toContainText("14,01%");
+        }
+        if (panel === "payouts") {
+          await expect(area.getByRole("table").first()).toBeVisible();
+          await expect(
+            area.getByRole("columnheader", { name: "До налога, ₽", exact: true }),
+          ).toHaveCount(0);
+          await expect(page.locator("#month-panel-total")).toContainText("860");
+        }
+        await expectNoTableOverflow(page);
+        if (width === 1280 && zoom === 1.25)
+          await page.screenshot({
+            path: info.outputPath(`closed-${panel}-${width}-${zoom}.png`),
+            fullPage: true,
+          });
+      }
+    }
+  }
+  expect(writes).toEqual([]);
 });

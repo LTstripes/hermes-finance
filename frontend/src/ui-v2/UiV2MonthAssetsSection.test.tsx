@@ -395,13 +395,7 @@ describe("UiV2MonthAssetsSection", () => {
     expect(rendered[1]).toHaveTextContent("Кошелёк");
     expect(screen.getAllByText("5 000 ₽").length).toBeGreaterThan(0);
 
-    const pair = await screen.findByTestId("linked-pair-31");
-    expect(pair).toHaveTextContent("Депозиты");
-    expect(pair).toHaveTextContent("Карта для вклада");
-    expect(pair).toHaveTextContent("Актив A · брутто");
-    expect(pair).toHaveTextContent("Связанный долг D");
-    expect(pair).toHaveTextContent("Чистый вклад A − D");
-    expect(pair).toHaveTextContent(/70\s*000\s*₽/);
+    expect(screen.queryByTestId("linked-pair-context")).not.toBeInTheDocument();
   });
 
   it("renders an empty snapshot date as provided instead of inventing one", async () => {
@@ -539,14 +533,14 @@ describe("UiV2MonthAssetsSection", () => {
     expect(within(panel).getByText(/итог — · данные уточняются/)).toBeInTheDocument();
     const totals = panel.querySelector(".totals-bar") as HTMLElement;
     expect(totals).toHaveTextContent(/Баланс:\s*—/);
-    expect(totals).toHaveTextContent(/Прогноз \/ мес:\s*—/);
+    expect(totals).toHaveTextContent(/Прогноз в месяц:\s*—/);
     expect(totals).toHaveTextContent(/Получено:\s*—/);
     expect(within(panel).getByDisplayValue("110000.00")).toBeInTheDocument();
     expect(within(panel).getByDisplayValue("120000.00")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
     expect(await screen.findByText(/Сохранено: Вклад Альфа, Вклад Бета/)).toBeInTheDocument();
     expect(totals).toHaveTextContent(/Баланс:\s*230\s*000\s*₽/);
-    expect(totals).toHaveTextContent(/Прогноз \/ мес:\s*2\s*000\s*₽/);
+    expect(totals).toHaveTextContent(/Прогноз в месяц:\s*2\s*000\s*₽/);
     expect(totals).toHaveTextContent(/Получено:\s*1\s*800\s*₽/);
     expect(vi.mocked(updateDeposit).mock.calls.map(([id]) => id)).toEqual([21, 22, 22]);
   });
@@ -1021,23 +1015,19 @@ describe("UiV2MonthAssetsSection", () => {
     await tables();
     const meta = await screen.findByTestId("month-assets-meta");
     expect(meta).toHaveTextContent("Закрыт");
-    expect(meta).toHaveTextContent("Месяц закрыт");
-    expect(screen.queryByRole("button", { name: "Добавить вклад" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Добавить денежную позицию" }),
-    ).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
-    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
-    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "да" })).toBeDisabled();
-
-    rerender(contextFor(monthDraft, setDirty, false));
+    expect(screen.queryByRole("button", { name: /Действия для/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Добавить/ })).not.toBeInTheDocument();
+    expect(createDeposit).not.toHaveBeenCalled();
+    expect(updateDeposit).not.toHaveBeenCalled();
+    expect(deleteDeposit).not.toHaveBeenCalled();
+    expect(deleteCashBalance).not.toHaveBeenCalled();
+    expect(updateCashBalance).not.toHaveBeenCalled();
     seedDepositMutations();
-    const submit = await screen.findByRole("button", { name: "Добавить вклад" });
-    await user.type(screen.getByLabelText("Название вклада"), "Вклад После Reopen");
-    await user.type(screen.getByLabelText("Баланс вклада"), "42");
-    await user.click(submit);
+    rerender(contextFor(monthDraft, setDirty, false));
+    await user.type(await screen.findByLabelText("Название вклада"), "Вклад После Reopen");
+    await user.type(screen.getByLabelText("Баланс вклада"), "1000");
+    await user.type(screen.getByLabelText("Годовая ставка %"), "12");
+    await user.click(screen.getByRole("button", { name: "Добавить вклад" }));
     await screen.findByText(/Вклад «Вклад После Reopen» сохранён/);
     expect(createDeposit).toHaveBeenCalledTimes(1);
   });
@@ -1473,7 +1463,7 @@ describe("UiV2MonthAssetsSection", () => {
       await screen.findByText(/Вклад «Вклад Ставка» сохранён; данные перечитаны/);
       // Ставка уходит в API без клиентского округления (семантика не менялась).
       expect(vi.mocked(createDeposit).mock.calls[0][0].annual_rate).toBe(submitted);
-      expect(screen.getByText(echoed)).toBeInTheDocument();
+      expect(screen.getByText(`${echoed.replace(".", ",")}%`)).toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     },
   );
@@ -1501,7 +1491,7 @@ describe("UiV2MonthAssetsSection", () => {
 
       await screen.findByText(/Сохранено: Вклад Альфа/);
       expect(vi.mocked(updateDeposit).mock.calls[0][1].annual_rate).toBe(submitted);
-      expect(screen.getByText(echoed)).toBeInTheDocument();
+      expect(screen.getByText(`${echoed.replace(".", ",")}%`)).toBeInTheDocument();
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     },
   );

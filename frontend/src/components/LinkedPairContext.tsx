@@ -20,6 +20,7 @@ type Props = {
   pairs: DashboardLinkedPair[] | null;
   label?: string;
   title?: string;
+  compact?: boolean;
 };
 
 function fallbackFact(debt: DebtEntry, accountName: string): PairFact {
@@ -86,10 +87,38 @@ export function LinkedPairContext({
   pairs,
   label = "Связь",
   title = "Контекст связанных пар",
+  compact = false,
 }: Props) {
   const facts = buildLinkedPairFacts(pairs, debts, accounts);
   const hasUnavailableFact = facts.some((fact) => !fact.contextAvailable);
 
+  if (compact) {
+    if (!facts.length && pairs !== null && !error) return null;
+    return (
+      <section data-testid="linked-pair-context" className="linked-pair-context">
+        <h3>{title}</h3>
+        {facts.map((fact) => (
+          <p key={fact.debtId} data-testid={`linked-pair-${fact.debtId}`}>
+            {fact.debtName} связана со счётом «{fact.accountName}»: на счёте{" "}
+            {formatMoney(moneyAmount(fact.accountBalance))}, долг{" "}
+            {formatMoney(moneyAmount(fact.debtBalance))}, вместе{" "}
+            {formatMoney(moneyAmount(fact.netContribution))}.
+          </p>
+        ))}
+        {hasUnavailableFact || pairs === null ? (
+          <p role="status">Остаток связанного счёта не подтверждён; итог пары неизвестен.</p>
+        ) : null}
+        <details>
+          <summary>О связанных счетах и долгах</summary>
+          {error ? <p>{error}</p> : null}
+          <p>
+            Счёт и долг уже входят в общую сводку. Итог пары показан для пояснения; долг повторно не
+            вычитается.
+          </p>
+        </details>
+      </section>
+    );
+  }
   return (
     <div data-testid="linked-pair-context">
       <Panel className="linked-pair-context" label={label} title={title}>

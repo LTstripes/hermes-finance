@@ -280,7 +280,10 @@ describe("App", () => {
       expectOnlyReads(fetch);
       fireEvent.click(within(dialog).getByRole("button", { name: "Отмена" }));
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-      expect(screen.getByLabelText("Дата снимка")).toBeDisabled();
+      expect(screen.getByRole("region", { name: "Общие данные месяца" })).toHaveTextContent(
+        "Источник:",
+      );
+      expect(screen.queryByLabelText("Дата снимка")).not.toBeInTheDocument();
       expect(window.location.search).toBe("?action=reopen");
       expectOnlyReads(fetch);
     });
@@ -308,7 +311,10 @@ describe("App", () => {
             screen.queryByRole("region", { name: "Общие данные месяца" }),
           ).not.toBeInTheDocument();
         } else {
-          expect(await screen.findByLabelText("Дата снимка")).toBeDisabled();
+          expect(
+            await screen.findByRole("region", { name: "Общие данные месяца" }),
+          ).toHaveTextContent("Источник:");
+          expect(screen.queryByLabelText("Дата снимка")).not.toBeInTheDocument();
         }
         expect(
           screen.queryByRole("link", { name: "Вернуться к закрытию" }),

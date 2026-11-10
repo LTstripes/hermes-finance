@@ -35,7 +35,13 @@ import {
   sortReportingMonths,
 } from "./monthSelection";
 import UiV2MonthEditorPage, { type EditorSection } from "./UiV2MonthEditorPage";
-import { MONTH_STEP_COPY, MonthKpis, MonthOverview, MonthStepStrip } from "./UiV2MonthOverview";
+import {
+  figureText,
+  MONTH_STEP_COPY,
+  MonthKpis,
+  MonthOverview,
+  MonthStepStrip,
+} from "./UiV2MonthOverview";
 import overviewStyles from "./UiV2MonthOverview.module.css";
 import { UiV2MonthSources } from "./UiV2MonthSources";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
@@ -227,6 +233,7 @@ export default function UiV2ClosePage() {
         ? "close"
         : null;
   const closed = workflowIdentityMatches && workflow.month.status === "closed";
+  const PayoutForecastContainer = closed ? "details" : "section";
   const finalReviewActive = panel === "close";
   // Refresh the retained review only where it is displayed. Writer panels and
   // lifecycle commands own their independent GETs and must not be raced here.
@@ -340,6 +347,7 @@ export default function UiV2ClosePage() {
       panel && panel in MONTH_STEP_COPY
         ? MONTH_STEP_COPY[panel as keyof typeof MONTH_STEP_COPY].label
         : undefined;
+    const panelStep = workflow.checklist?.steps.find((step) => step.id === panel);
     content = !panel ? (
       <MonthOverview pathFor={panelPath} workflow={workflow} />
     ) : (
@@ -362,30 +370,28 @@ export default function UiV2ClosePage() {
           >
             <header className={monthStyles.workHeader}>
               {panel !== "close" ? <h2>{panelLabel}</h2> : null}
+              {panel !== "close" ? (
+                <strong className={monthStyles.workTotal}>
+                  {panel === "payouts" ? "Пассивный доход за месяц: " : null}
+                  {panel === "payouts" ? (
+                    <span id="month-panel-total" />
+                  ) : panelStep ? (
+                    figureText(panelStep)
+                  ) : (
+                    "—"
+                  )}
+                </strong>
+              ) : null}
               <Link to={panelPath(null)}>← К месяцу</Link>
             </header>
-            {panel === "payouts" ? (
-              <MonthDraftPayouts
-                key={`draft-forecasts:${workflow.month.id}:${discardVersion}`}
-                monthId={workflow.month.id}
-                closed={closed}
-                disabled={
-                  !workflowReady ||
-                  sourceDirty ||
-                  sourcePending ||
-                  editorNavigation.dirty ||
-                  editorNavigation.pending ||
-                  lifecycleBusy ||
-                  lifecycleRecovery ||
-                  Boolean(pendingLifecycle)
-                }
-                sourceVersion={original.confirmed?.request_id}
-              />
+            {closed && panel !== "close" ? (
+              <p className={monthStyles.viewOnly}>Месяц закрыт — только просмотр.</p>
             ) : null}
             {panel === "brokers" ? (
               <UiV2MonthSources
                 key={`sources:${workflow.month.id}:${panel}:${discardVersion}`}
                 month={workflow.month}
+                step={workflow.checklist?.steps.find((step) => step.id === "brokers")}
                 canClose={workflowReady && workflow.readiness.can_close}
                 onPendingChange={setUploadPending}
                 onDirtyChange={setJournalDirty}
@@ -398,6 +404,31 @@ export default function UiV2ClosePage() {
                 embeddedSection={panel as EditorSection}
                 onNavigationStateChange={setEditorNavigation}
               />
+            ) : null}
+            {panel === "payouts" ? (
+              <PayoutForecastContainer className={monthStyles.closeDetails}>
+                {closed ? (
+                  <summary>Прогноз и календарь выплат</summary>
+                ) : (
+                  <h3>Прогноз и календарь выплат</h3>
+                )}
+                <MonthDraftPayouts
+                  key={`draft-forecasts:${workflow.month.id}:${discardVersion}`}
+                  monthId={workflow.month.id}
+                  closed={closed}
+                  disabled={
+                    !workflowReady ||
+                    sourceDirty ||
+                    sourcePending ||
+                    editorNavigation.dirty ||
+                    editorNavigation.pending ||
+                    lifecycleBusy ||
+                    lifecycleRecovery ||
+                    Boolean(pendingLifecycle)
+                  }
+                  sourceVersion={original.confirmed?.request_id}
+                />
+              </PayoutForecastContainer>
             ) : null}
             {panel === "close" ? (
               <>
@@ -521,11 +552,6 @@ export default function UiV2ClosePage() {
                   </details>
                 ) : null}
               </>
-            ) : null}
-            {panel !== "close" ? (
-              <footer className={monthStyles.workFooter}>
-                <Link to={panelPath(null)}>← К месяцу</Link>
-              </footer>
             ) : null}
           </section>
         ) : null}

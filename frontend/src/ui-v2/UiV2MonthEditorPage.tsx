@@ -374,7 +374,9 @@ function GeneralSection({
   const [baseline, setBaseline] = useState(month.snapshot_date);
   const [saving, setSaving] = useState(false);
   const [reopening, setReopening] = useState(false);
-  const [confirmReopen, setConfirmReopen] = useState(requestReopen && readOnly);
+  const [confirmReopen, setConfirmReopen] = useState(
+    requestReopen && readOnly && !context.workspace,
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const operation = useRef(0);
@@ -459,37 +461,41 @@ function GeneralSection({
 
   return (
     <section aria-label="Общие данные месяца" className={styles.panel}>
-      <h2>Общие данные</h2>
-      <p>
-        {readOnly
-          ? "Закрытый месяц доступен только для чтения."
-          : "Изменения этого раздела сохраняются отдельно от заметок."}
-      </p>
-      <form className={styles.form} onSubmit={(event) => void save(event)}>
-        <label>
-          Дата снимка
-          <input
-            disabled={readOnly || saving}
-            onChange={(event) => {
-              setSnapshotDate(event.target.value);
-              setNotice(null);
-            }}
-            required
-            type="date"
-            value={snapshotDate}
-          />
-        </label>
-        <p>Источник: {labelOf(SOURCE_LABELS, month.source)}</p>
-        <p>
-          Снимок: {formatDate(month.snapshot_date)} · {formatMonth(month.year, month.month)}
-        </p>
-        {!readOnly ? (
-          <button disabled={!dirty || saving} type="submit">
-            {saving ? "Сохраняем…" : "Сохранить общие данные"}
-          </button>
-        ) : null}
-      </form>
+      {!context.workspace && <h2>Общие данные</h2>}
       {readOnly ? (
+        <div className={styles.snapshotCard}>
+          <strong>{formatDate(month.snapshot_date)}</strong>
+          <p>{formatMonth(month.year, month.month)}</p>
+          <small>Источник: {labelOf(SOURCE_LABELS, month.source)}</small>
+        </div>
+      ) : null}
+      {!readOnly ? (
+        <form className={styles.form} onSubmit={(event) => void save(event)}>
+          <label>
+            Дата снимка
+            <input
+              disabled={readOnly || saving}
+              onChange={(event) => {
+                setSnapshotDate(event.target.value);
+                setNotice(null);
+              }}
+              required
+              type="date"
+              value={snapshotDate}
+            />
+          </label>
+          <p>Источник: {labelOf(SOURCE_LABELS, month.source)}</p>
+          <p>
+            Снимок: {formatDate(month.snapshot_date)} · {formatMonth(month.year, month.month)}
+          </p>
+          {!readOnly ? (
+            <button disabled={!dirty || saving} type="submit">
+              {saving ? "Сохраняем…" : "Сохранить общие данные"}
+            </button>
+          ) : null}
+        </form>
+      ) : null}
+      {readOnly && !context.workspace ? (
         <button disabled={reopening} onClick={() => setConfirmReopen(true)} type="button">
           Открыть для редактирования
         </button>
@@ -609,7 +615,7 @@ function NoteSection({ context }: { context: MonthEditorContext }) {
 
   return (
     <section aria-label="Заметки месяца" className={styles.panel}>
-      <h2>Заметки месяца</h2>
+      {!context.workspace && <h2>Заметки месяца</h2>}
       {commentsQuery.isPending ? <p role="status">Загружаем заметки…</p> : null}
       {commentsQuery.isError ? (
         <p className={styles.warning} role="alert">
@@ -617,53 +623,65 @@ function NoteSection({ context }: { context: MonthEditorContext }) {
         </p>
       ) : null}
       {commentsQuery.isSuccess && comments.length === 0 ? <p>Заметок пока нет.</p> : null}
-      {commentsQuery.isSuccess ? (
-        <ol className={styles.notes}>
-          {comments.map((comment, index) => (
-            <li key={comment.id}>
-              <span>{comment.text}</span>
-              {!readOnly ? (
-                <span className={styles.noteActions}>
-                  <button
-                    aria-label={`Переместить заметку ${index + 1} выше`}
-                    disabled={busy || index === 0}
-                    onClick={() =>
-                      void mutate(
-                        () => moveComment(comment.id, comment.position - 1),
-                        (rows) =>
-                          rows.some(
-                            (row) => row.id === comment.id && row.position === comment.position - 1,
-                          ),
-                      )
-                    }
-                    type="button"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    aria-label={`Переместить заметку ${index + 1} ниже`}
-                    disabled={busy || index === comments.length - 1}
-                    onClick={() =>
-                      void mutate(
-                        () => moveComment(comment.id, comment.position + 1),
-                        (rows) =>
-                          rows.some(
-                            (row) => row.id === comment.id && row.position === comment.position + 1,
-                          ),
-                      )
-                    }
-                    type="button"
-                  >
-                    ↓
-                  </button>
-                  <button disabled={busy} onClick={() => setDeleteTarget(comment)} type="button">
-                    Удалить
-                  </button>
-                </span>
-              ) : null}
-            </li>
-          ))}
-        </ol>
+      {commentsQuery.isSuccess && comments.length > 0 ? (
+        readOnly ? (
+          <div className={styles.notes}>
+            {comments.map((comment) => (
+              <p key={comment.id} className={styles.noteText}>
+                {comment.text}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <ol className={styles.notes}>
+            {comments.map((comment, index) => (
+              <li key={comment.id}>
+                <p className={styles.noteText}>{comment.text}</p>
+                {!readOnly ? (
+                  <span className={styles.noteActions}>
+                    <button
+                      aria-label={`Переместить заметку ${index + 1} выше`}
+                      disabled={busy || index === 0}
+                      onClick={() =>
+                        void mutate(
+                          () => moveComment(comment.id, comment.position - 1),
+                          (rows) =>
+                            rows.some(
+                              (row) =>
+                                row.id === comment.id && row.position === comment.position - 1,
+                            ),
+                        )
+                      }
+                      type="button"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      aria-label={`Переместить заметку ${index + 1} ниже`}
+                      disabled={busy || index === comments.length - 1}
+                      onClick={() =>
+                        void mutate(
+                          () => moveComment(comment.id, comment.position + 1),
+                          (rows) =>
+                            rows.some(
+                              (row) =>
+                                row.id === comment.id && row.position === comment.position + 1,
+                            ),
+                        )
+                      }
+                      type="button"
+                    >
+                      ↓
+                    </button>
+                    <button disabled={busy} onClick={() => setDeleteTarget(comment)} type="button">
+                      Удалить
+                    </button>
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        )
       ) : null}
       {!readOnly && commentsQuery.isSuccess ? (
         <form className={styles.form} onSubmit={(event) => void add(event)}>

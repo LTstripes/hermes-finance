@@ -127,8 +127,8 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     const expenseSection = await screen.findByRole("region", { name: "Расходы месяца" });
     const row = within(expenseSection).getByText("Еда").closest("tr") as HTMLElement;
     const cells = within(row).getAllByRole("cell");
-    expect(cells[2].textContent).toBe("—");
-    expect(cells[3].textContent).toMatch(/48\s*000/);
+    expect(cells[1].textContent).toBe("—");
+    expect(cells[2].textContent).toMatch(/48\s*000/);
     expect(within(expenseSection).getAllByRole("table")).toHaveLength(1);
   });
 
@@ -173,22 +173,22 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     ]);
     renderLeaf(contextWith());
     const section = await screen.findByRole("region", { name: "Расходы месяца" });
-    expect(within(section).getAllByRole("table")).toHaveLength(1);
+    expect(within(section).getAllByRole("table")).toHaveLength(2);
     const fullCells = within(
       within(section).getByText("Еда").closest("tr") as HTMLElement,
     ).getAllByRole("cell");
-    expect(fullCells[2].textContent).toMatch(/50\s*000/);
-    expect(fullCells[3].textContent).toMatch(/48\s*000/);
+    expect(fullCells[1].textContent).toMatch(/50\s*000/);
+    expect(fullCells[2].textContent).toMatch(/48\s*000/);
     const zeroCells = within(
       within(section).getByText("Подписки").closest("tr") as HTMLElement,
     ).getAllByRole("cell");
-    expect(zeroCells[2].textContent).toBe("—");
-    expect(zeroCells[3].textContent).toMatch(/^0\s*₽$/);
+    expect(zeroCells[1].textContent).toBe("—");
+    expect(zeroCells[2].textContent).toMatch(/^0\s*₽$/);
     const missingCells = within(
       within(section).getByText("Такси").closest("tr") as HTMLElement,
     ).getAllByRole("cell");
-    expect(missingCells[2].textContent).toMatch(/12\s*000/);
-    expect(missingCells[3].textContent).toBe("—");
+    expect(missingCells[1].textContent).toMatch(/12\s*000/);
+    expect(missingCells[2].textContent).toBe("—");
   });
 
   it("groups repeated records without losing separate edit and delete actions", async () => {
@@ -225,18 +225,18 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     const cells = within(within(table).getByText("Еда").closest("tr") as HTMLElement).getAllByRole(
       "cell",
     );
-    expect(cells[2]).toHaveTextContent(/52\s*000/);
-    expect(cells[3]).toHaveTextContent(/48\s*000/);
-    await user.click(within(cells[2]).getByText("Расходы: 2"));
-    await user.click(within(cells[3]).getByText("План: 2"));
-    expect(within(cells[2]).getByText(/Первая покупка/)).toBeVisible();
-    expect(within(cells[2]).getByText(/Вторая покупка/)).toBeVisible();
-    expect(within(cells[3]).getByText(/Основной план/)).toBeVisible();
-    expect(within(cells[3]).getByText(/Дополнение/)).toBeVisible();
+    expect(cells[1]).toHaveTextContent(/52\s*000/);
+    expect(cells[2]).toHaveTextContent(/48\s*000/);
+    await user.click(within(cells[1]).getByText("Расходы: 2"));
+    await user.click(within(cells[2]).getByText("План: 2"));
+    expect(within(cells[1]).getByText(/Первая покупка/)).toBeVisible();
+    expect(within(cells[1]).getByText(/Вторая покупка/)).toBeVisible();
+    expect(within(cells[2]).getByText(/Основной план/)).toBeVisible();
+    expect(within(cells[2]).getByText(/Дополнение/)).toBeVisible();
+    expect(within(cells[1]).getAllByRole("button", { name: "Удалить" })).toHaveLength(2);
     expect(within(cells[2]).getAllByRole("button", { name: "Удалить" })).toHaveLength(2);
-    expect(within(cells[3]).getAllByRole("button", { name: "Удалить" })).toHaveLength(2);
-    await user.click(within(cells[3]).getAllByRole("button", { name: "Изменить" })[1]);
-    expect(within(cells[3]).getByLabelText("Сумма плана")).toHaveValue("0.00");
+    await user.click(within(cells[2]).getAllByRole("button", { name: "Изменить" })[1]);
+    expect(within(cells[2]).getByLabelText("Сумма плана")).toHaveValue("0.00");
   });
 
   it("keeps row identity by id when category repeats with different expense_type", async () => {
@@ -246,8 +246,8 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     const rows = within(expenseSection).getAllByRole("row");
     const bodyRows = rows.filter((row) => within(row).queryAllByRole("cell").length > 0);
     expect(bodyRows).toHaveLength(2);
-    expect(bodyRows[0].textContent).toMatch(/Обязательный/);
-    expect(bodyRows[1].textContent).toMatch(/Комфортный/);
+    expect(bodyRows[0].closest("section")).toHaveAccessibleName("Обязательные");
+    expect(bodyRows[1].closest("section")).toHaveAccessibleName("Крупные и прочие");
   });
 
   it("supports savings create with exact money and readback", async () => {
@@ -374,13 +374,27 @@ describe("UiV2MonthBudgetSection mutations and guards", () => {
 
   it("disables mutations in a CLOSED month", async () => {
     vi.mocked(listExpenses).mockResolvedValue([expenseFoodMandatory]);
+    vi.mocked(listSavings).mockResolvedValue([
+      { ...savingRow, amount: { amount: "0.00", currency: "RUB" } },
+    ]);
     const closed: ReportingMonth = { ...draftMonth, status: "closed" };
     renderLeaf(contextWith({ month: closed, readOnly: true }));
 
     const expenseSection = await screen.findByRole("region", { name: "Расходы месяца" });
-    expect(within(expenseSection).getByRole("button", { name: "Изменить" })).toBeDisabled();
-    expect(within(expenseSection).getByRole("button", { name: "Удалить" })).toBeDisabled();
+    expect(
+      within(expenseSection).queryByRole("button", { name: "Изменить" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(expenseSection).queryByRole("button", { name: "Удалить" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Добавить расход" })).not.toBeInTheDocument();
+    expect(
+      within(expenseSection).queryByRole("columnheader", { name: "Комментарий" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(expenseSection).queryByRole("columnheader", { name: "Тип" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Накопления месяца" })).not.toBeInTheDocument();
   });
 
   it("ignores a late save response after the month identity changes", async () => {

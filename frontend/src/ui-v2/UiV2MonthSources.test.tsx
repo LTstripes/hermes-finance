@@ -8,7 +8,7 @@ import { UiV2MonthSources } from "./UiV2MonthSources";
 
 // The unified uploader has its own mixed-file/recovery contract tests.
 vi.mock("../components/month-close/BrokerSourcesIntake", () => ({
-  BrokerSourcesIntake: () => null,
+  BrokerSourcesIntake: ({ children }: { children?: import("react").ReactNode }) => children,
 }));
 
 vi.mock("../components/month-close/BrokerMonthReview", () => ({ BrokerMonthReview: () => null }));
@@ -203,6 +203,16 @@ it("retains historical source-account selection without treating its original as
 it("keeps technical source panels collapsed on ordinary entry", async () => {
   mount("/v2/close?month=12", false, [], false);
   await screen.findByText("Источник #1 · ACCOUNT-A / ACCOUNT-A-native");
+  const sources = screen.getByRole("region", { name: "Брокерские выписки" });
+  expect(within(sources).getByRole("heading", { name: "Брокерские выписки" })).toBeVisible();
+  expect(screen.queryByText("Подробнее о разборе")).not.toBeInTheDocument();
+  for (const title of [
+    "Подробности",
+    "Подробности инструментов и предварительных выплат",
+    "Подробности разбора и сохранение месяца",
+  ]) {
+    expect(screen.getByText(title)).toBeVisible();
+  }
   expect(screen.getByText("Подробности").closest("details")).not.toHaveAttribute("open");
   expect(
     screen.getByText("Подробности инструментов и предварительных выплат").closest("details"),

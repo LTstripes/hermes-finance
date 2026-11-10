@@ -379,7 +379,7 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
         .toBeUndefined();
       const uploadedBRow = savedFiles
         .getByRole("listitem")
-        .filter({ hasText: "Выписка счёта 7114002-000" });
+        .filter({ hasText: "Договор: 7114002-000" });
       await uploadedBRow.getByText("Подробнее о файле", { exact: true }).click();
       const uploadedB = uploadedBRow.getByRole("button", {
         name: "Просмотреть данные",
@@ -501,12 +501,12 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   await page.reload();
   await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
   await tile(page, /Зарплата и другие доходы/);
-  await expect(
-    page.getByLabel("Фактическая зарплата после налогов", { exact: true }),
-  ).toBeDisabled();
-  await expect(page.getByLabel("Фактическая зарплата после налогов", { exact: true })).toHaveValue(
-    /87/,
+  await expect(page.getByLabel("Фактическая зарплата после налогов", { exact: true })).toHaveCount(
+    0,
   );
+  const incomeReadout = page.locator("#month-work-area");
+  await expect(incomeReadout.getByText("На руки", { exact: true })).toBeVisible();
+  await expect(incomeReadout).toContainText(/87\s*000\s*₽/);
   await page.screenshot({ path: info.outputPath("october-closed.png"), fullPage: true });
 });
 
@@ -570,7 +570,7 @@ for (const width of [1280, 1440, 1920])
       await page.getByRole("menuitem", { name: /Изменить/ }).click();
       const fields = await table
         .locator(
-          'td[data-label="Баланс"] input, td[data-label="Получено"] input, td[data-label="Ставка %"] input, td[data-label="Тип"] select',
+          'td[data-label="Баланс"] input, td[data-label="Получено"] input, td[data-label="Ставка"] input, td[data-label="Тип"] select',
         )
         .evaluateAll((inputs) =>
           inputs.map((element) => {
@@ -605,6 +605,7 @@ for (const width of [1280, 1440, 1920])
       await expect(table).toContainText("12 345,67");
       await tile(page, /Брокерские выписки/);
       const sourceDetails = page.getByText("Подробности", { exact: true });
+      await expect(sourceDetails).toBeVisible();
       await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
       await expect(page.getByLabel("Выбрать файлы", { exact: true })).toBeVisible();
       await fits(page);

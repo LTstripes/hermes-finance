@@ -5,8 +5,8 @@ import { formatApiError } from "../api/client";
 import { listIncomes } from "../api/incomes";
 import { getMonthSummary } from "../api/summary";
 import type { IncomeEntry, SalaryTaxSummary } from "../api/types";
-import { SalaryTaxRateSummary } from "../components/SalaryTaxRateSummary";
-import { DataValue, Field, HelpTip, MoneyInput } from "../components/ui";
+import { formatRateBps } from "../components/SalaryTaxRateSummary";
+import { DataValue, Field, MoneyInput } from "../components/ui";
 import { formatMoney } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
 import { isBlankMoney, moneyAmount, normalizeMoneyInput, toKopecks } from "../lib/money";
@@ -330,15 +330,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
 
   return (
     <section aria-label="Зарплата и прочее" className={styles.panel}>
-      <h2>Зарплата и прочее</h2>
-      <details open={!context.workspace}>
-        <summary>Подробнее</summary>{" "}
-        <p>
-          {readOnly
-            ? "Закрытый месяц доступен только для чтения."
-            : "Изменения этого раздела сохраняются отдельно от других разделов."}
-        </p>
-      </details>
+      {!context.workspace && <h2>Зарплата и прочее</h2>}
       {loading ? <p role="status">Загружаем доходы месяца…</p> : null}
       {loadFailed ? (
         <div className={styles.warning} role="alert">
@@ -355,100 +347,120 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
         </div>
       ) : null}
       {!loading && !loadFailed ? (
-        <form onSubmit={(event) => void save(event)}>
-          <div className="editor-grid">
-            <Field htmlFor="salary-gross" label="Зарплата до вычета налогов">
-              <MoneyInput
-                disabled={readOnly || saving}
-                id="salary-gross"
-                inputMode="decimal"
-                onChange={(value) => patch("salaryGross", value)}
-                placeholder="0.00"
-                value={form.salaryGross}
-              />
-            </Field>
-            <section className="summary-grid" aria-label="Расчёт зарплаты">
+        readOnly ? (
+          <>
+            <section className={styles.incomeTiles} aria-label="Расчёт зарплаты">
+              <DataValue label="Зарплата до налога" value={formatMoney(form.salaryGross)} />
               <DataValue
                 label={
-                  <>
-                    Расчётный налог
-                    <HelpTip label="О расчётном налоге">
-                      Значение обновляется после сохранения зарплаты и рассчитывается по правилам
-                      налогообложения месяца.
-                    </HelpTip>
-                  </>
+                  calcTaxParts.length
+                    ? `Налог (${[...new Set(calcTaxParts.map((part) => formatRateBps(part.rate_bps)))].join(" + ")})`
+                    : "Налог"
                 }
-                value={calcTax ? formatMoney(calcTax) : "—"}
-                muted
+                value={formatMoney(calcTax)}
               />
-              <SalaryTaxRateSummary parts={calcTaxParts} />
-              <DataValue
-                label={
-                  <>
-                    Расчётный net
-                    <HelpTip label="О расчётном net">
-                      Это ориентир после расчётного налога. Фактическая выплата вводится отдельно.
-                    </HelpTip>
-                  </>
-                }
-                value={calcNet ? formatMoney(calcNet) : "—"}
-                muted
-              />
+              <DataValue label="На руки" value={formatMoney(form.salaryActualNet)} />
             </section>
-            <Field htmlFor="salary-actual-net" label="Фактическая зарплата после налогов">
-              <MoneyInput
-                disabled={readOnly || saving}
-                id="salary-actual-net"
-                inputMode="decimal"
-                onChange={(value) => patch("salaryActualNet", value)}
-                placeholder="0.00"
-                value={form.salaryActualNet}
-              />
-            </Field>
-            <Field htmlFor="bonus" label="Премия">
-              <MoneyInput
-                disabled={readOnly || saving}
-                id="bonus"
-                inputMode="decimal"
-                onChange={(value) => patch("bonus", value)}
-                placeholder="0.00"
-                value={form.bonus}
-              />
-            </Field>
-            <Field htmlFor="side" label="Дополнительный доход">
-              <MoneyInput
-                disabled={readOnly || saving}
-                id="side"
-                inputMode="decimal"
-                onChange={(value) => patch("sideIncome", value)}
-                placeholder="0.00"
-                value={form.sideIncome}
-              />
-            </Field>
-            <Field htmlFor="cashback" label="Кэшбэк (не пассивный доход)">
-              <MoneyInput
-                disabled={readOnly || saving}
-                id="cashback"
-                inputMode="decimal"
-                onChange={(value) => patch("cashback", value)}
-                placeholder="0.00"
-                value={form.cashback}
-              />
-            </Field>
-          </div>
-          <details className="field-details">
-            <summary>О расчёте и кэшбэке</summary>
-            <p>
-              Кэшбэк учитывается отдельно и не входит в пассивный доход. Расчётные значения
-              обновляются после ручного сохранения.
-            </p>
-          </details>
-          {!readOnly ? (
-            <button disabled={!dirty || saving || retryBlocked} type="submit">
-              {saving ? "Сохраняем…" : context.workspace ? "Сохранить" : "Сохранить доходы"}
-            </button>
-          ) : null}
-        </form>
+            {SIMPLE_LINES.filter((line) => !isZeroMoney(form[line.key])).map((line) => (
+              <DataValue key={line.key} label={line.name} value={formatMoney(form[line.key])} />
+            ))}
+            <details>
+              <summary>О расчёте</summary>
+              <p>
+                Налог рассчитан по правилам месяца; ориентир после налога: {formatMoney(calcNet)}.
+                «На руки» — сохранённая фактическая выплата. Кэшбэк не входит в пассивный доход.
+              </p>
+            </details>
+          </>
+        ) : (
+          <form onSubmit={(event) => void save(event)}>
+            <div className="editor-grid">
+              <Field htmlFor="salary-gross" label="Зарплата до вычета налогов">
+                <MoneyInput
+                  disabled={readOnly || saving}
+                  id="salary-gross"
+                  inputMode="decimal"
+                  onChange={(value) => patch("salaryGross", value)}
+                  placeholder="0.00"
+                  value={form.salaryGross}
+                />
+              </Field>
+              <section className="summary-grid" aria-label="Расчёт зарплаты">
+                <DataValue
+                  label={
+                    calcTaxParts.length
+                      ? `Налог (${[...new Set(calcTaxParts.map((part) => formatRateBps(part.rate_bps)))].join(" + ")})`
+                      : "Налог"
+                  }
+                  value={calcTax ? formatMoney(calcTax) : "—"}
+                  muted
+                />
+                <DataValue
+                  label="После расчётного налога"
+                  value={calcNet ? formatMoney(calcNet) : "—"}
+                  muted
+                />
+              </section>
+              <Field htmlFor="salary-actual-net" label="Фактическая зарплата после налогов">
+                <MoneyInput
+                  disabled={readOnly || saving}
+                  id="salary-actual-net"
+                  inputMode="decimal"
+                  onChange={(value) => patch("salaryActualNet", value)}
+                  placeholder="0.00"
+                  value={form.salaryActualNet}
+                />
+              </Field>
+            </div>
+            <details open={!context.workspace}>
+              <summary>Добавить другой доход</summary>
+              <div className="editor-grid">
+                <Field htmlFor="bonus" label="Премия">
+                  <MoneyInput
+                    disabled={readOnly || saving}
+                    id="bonus"
+                    inputMode="decimal"
+                    onChange={(value) => patch("bonus", value)}
+                    placeholder="0.00"
+                    value={form.bonus}
+                  />
+                </Field>
+                <Field htmlFor="side" label="Дополнительный доход">
+                  <MoneyInput
+                    disabled={readOnly || saving}
+                    id="side"
+                    inputMode="decimal"
+                    onChange={(value) => patch("sideIncome", value)}
+                    placeholder="0.00"
+                    value={form.sideIncome}
+                  />
+                </Field>
+                <Field htmlFor="cashback" label="Кэшбэк (не пассивный доход)">
+                  <MoneyInput
+                    disabled={readOnly || saving}
+                    id="cashback"
+                    inputMode="decimal"
+                    onChange={(value) => patch("cashback", value)}
+                    placeholder="0.00"
+                    value={form.cashback}
+                  />
+                </Field>
+              </div>
+            </details>
+            <details className="field-details">
+              <summary>О расчёте</summary>
+              <p>
+                Кэшбэк учитывается отдельно и не входит в пассивный доход. Расчётные значения
+                обновляются после ручного сохранения.
+              </p>
+            </details>
+            {!readOnly ? (
+              <button disabled={!dirty || saving || retryBlocked} type="submit">
+                {saving ? "Сохраняем…" : context.workspace ? "Сохранить" : "Сохранить доходы"}
+              </button>
+            ) : null}
+          </form>
+        )
       ) : null}
       {error ? (
         <p className={styles.warning} role="alert">
