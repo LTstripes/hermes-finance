@@ -881,11 +881,11 @@ test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @vie
         page.getByRole("columnheader", { name: "Результат, ₽", exact: true }),
       ).toBeVisible();
       await expectNoTableOverflow(page);
-      const fullName = page.getByRole("button", { name: `Полное название: ${uxName} (SYN)` });
-      await fullName.focus();
-      await page.keyboard.press("Enter");
-      await expect(page.getByRole("tooltip")).toHaveText(`${uxName} (SYN)`);
-      await page.keyboard.press("Escape");
+      // The full instrument name wraps in its cell; no help chip is needed.
+      await expect(
+        page.getByRole("table").getByText(`${uxName} (SYN)`, { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: /Полное название/ })).toHaveCount(0);
       await page.screenshot({
         path: testInfo.outputPath(`month-positions-${width}-${zoom}.png`),
         fullPage: true,
