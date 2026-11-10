@@ -3,8 +3,9 @@
 Covers MASTER_SPEC §10.16 end to end against a real SQLite database:
 - account validation (missing account, non-IIS account);
 - unrealized from position snapshots is month-scoped;
-- coupons/dividends/realized PnL and tax benefits are summed across all
-  time; deposits and redemptions never appear in the result;
+- coupons/dividends/realized PnL are summed through the reporting month end;
+  tax benefits retain their all-time scope; deposits and redemptions never
+  appear in the result;
 - received benefits feed portfolio_result_with_tax_benefit; planned and
   submitted stay breakdown-only; rejected benefits are ignored entirely;
 - two IIS accounts are fully independent.
@@ -318,10 +319,21 @@ def test_unrealized_is_month_scoped(tmp_path: Path) -> None:
         database.engine.dispose()
 
 
-# --- cash flows are all-time ---
+# --- cash flows are bounded by the selected month end ---
 
 
-def test_cash_flows_are_all_time(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "flow_type, sign",
+    [
+        (InvestmentCashFlowType.COUPON, 1),
+        (InvestmentCashFlowType.DIVIDEND, 1),
+        (InvestmentCashFlowType.REALIZED_PROFIT, 1),
+        (InvestmentCashFlowType.REALIZED_LOSS, -1),
+    ],
+)
+def test_cash_flows_include_only_dates_through_month_end(
+    tmp_path: Path, flow_type: InvestmentCashFlowType, sign: int
+) -> None:
     session, database = session_for(tmp_path)
     try:
         month_1 = build_month(session, year=2031, month=1)
@@ -330,20 +342,40 @@ def test_cash_flows_are_all_time(tmp_path: Path) -> None:
         bond = create_instrument(
             session, name="Synthetic Bond", instrument_type=InstrumentType.BOND
         )
-        # coupon flow created in 2031-02 must count for the 2031-01 report
+        from hermes_finance.persistence import ReportingMonth
+
+        # A later DRAFT month must not change a closed month's result.
+        session.get(ReportingMonth, month_1).status = "closed"
+        session.flush()
+        assert session.get(ReportingMonth, month_2).status == "draft"
+        before = iis_result(session, account_id=account_id, reporting_month_id=month_1)
         add_flow(
             session,
             month_id=month_2,
             account_id=account_id,
-            flow_type=InvestmentCashFlowType.COUPON,
-            net_kopecks=30_000,
+            flow_type=flow_type,
+            net_kopecks=sign * 30_000,
             instrument_id=bond.id,
-            event_date=date(2031, 2, 15),
+            event_date=date(2031, 2, 1),
         )
-
         result = iis_result(session, account_id=account_id, reporting_month_id=month_1)
-        assert result.breakdown.coupons == RubleAmount(30_000)
-        assert result.portfolio_result_without_tax_benefit == RubleAmount(30_000)
+        assert result == before
+        # Earlier cash and the final day are included, independently of the
+        # month that owns the persisted row.
+        for day, amount in [(date(2030, 12, 31), 10_000), (date(2031, 1, 31), 20_000)]:
+            add_flow(
+                session,
+                month_id=month_2,
+                account_id=account_id,
+                flow_type=flow_type,
+                net_kopecks=sign * amount,
+                instrument_id=bond.id,
+                event_date=day,
+            )
+        result = iis_result(session, account_id=account_id, reporting_month_id=month_1)
+        assert result.portfolio_result_without_tax_benefit == RubleAmount(sign * 30_000)
+        latest = iis_result(session, account_id=account_id, reporting_month_id=month_2)
+        assert latest.portfolio_result_without_tax_benefit == RubleAmount(sign * 60_000)
     finally:
         session.close()
         database.engine.dispose()

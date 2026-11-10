@@ -4,7 +4,7 @@ import json
 import sqlite3
 from copy import deepcopy
 from dataclasses import asdict, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal, localcontext
 
 import pytest
@@ -4618,9 +4618,88 @@ def test_clean_legacy_coupon_needs_exact_bond_identity(db, narrative):
 
 
 @pytest.mark.parametrize(
+    "registration,location,mapping,scoped",
+    [
+        ("4B02-09-99999-Z-001P", "narrative", "owner", True),
+        ("4-09-99999-Z", "operation", "owner", True),
+        ("4B02-09-99999-Z-001P", "narrative", "alias", True),
+        ("4B02-09-99999-Z-001P", "narrative", "absent", False),
+        ("4B02-09-99999-Z-001P", "narrative", "conflict", False),
+        ("4B02-09-99999-Z-001P-EXTRA", "narrative", "owner_prefix", False),
+    ],
+)
+def test_clean_amortization_registration_limits_gap_without_counting_cash(
+    db, registration, location, mapping, scoped
+):
+    from test_source_money_classifications_service import _security_mapping
+
+    from hermes_finance.persistence import Instrument, SecurityRegIsinMapping
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    other_isin = "RU000A000002"
+
+    def two_bonds(root):
+        node = root.find(".//m:Details[@ISIN1]", NS)
+        other = deepcopy(node)
+        other.set("ISIN1", other_isin)
+        other.set("active_name", "Other synthetic bond")
+        next(p for p in root.iter() if node in list(p)).append(other)
+
+    extra = (
+        ("Перевод", f"амортизация {registration}", "25")
+        if location == "narrative"
+        else (f"амортизация {registration}", "principal repayment", "25")
+    )
+    save(
+        db, stock=None, bond=("2", "2", "2000", "2100"), trades=(), extra=(extra,), mutate=two_bonds
+    )
+    with db.session_factory() as session:
+        target = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
+        foreign = Instrument(name="Other synthetic bond", instrument_type="bond", isin=other_isin)
+        session.add_all([target, foreign])
+        session.flush()
+        if mapping in {"owner", "conflict", "owner_prefix"}:
+            session.add(
+                SecurityRegIsinMapping(
+                    reg_number=registration.removesuffix("-EXTRA"),
+                    isin=BOND,
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+            )
+        if mapping in {"alias", "conflict"}:
+            _security_mapping(
+                session,
+                foreign if mapping == "conflict" else target,
+                alias=registration,
+                isin=other_isin if mapping == "conflict" else BOND,
+            )
+        session.commit()
+    before = snapshot(db)
+    with db.session_factory() as session:
+        source = read_instrument_returns(session, source_account=ACCOUNT, clean_projection=True)
+        events = {e.event_key: e for row in source.instruments for e in row.analysis.events}
+        events.update({e.event_key: e for e in source.unresolved_events})
+        (gap,) = [
+            e for e in events.values() if "redemption_amortization_unsupported" in e.reason_codes
+        ]
+        assert gap.isin == (BOND if scoped else None)
+        assert gap.kind == "UNRESOLVED" and not gap.counted
+        result = read_clean_account(session, ACCOUNT, date(2030, 3, 31), date(2030, 4, 30))
+        rows = {r["isin"]: r for r in result["instruments"]}
+        assert rows[BOND]["pnl"]["value"] is None
+        assert rows[other_isin]["pnl"]["value"] == ("10000" if scoped else None)
+        assert rows[other_isin]["redemption"]["value"] == ("0" if scoped else None)
+        legacy = read_instrument_returns(session, source_account=ACCOUNT)
+        assert not any(e.isin for e in legacy.unresolved_events if e.event_key == gap.event_key)
+    assert snapshot(db) == before
+
+
+@pytest.mark.parametrize(
     "case",
     [
         "exact",
+        "owner_registration",
         "amount",
         "date",
         "quantity",
@@ -4647,18 +4726,47 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
     from hermes_finance.persistence import Instrument
     from hermes_finance.services.clean_instrument_return import read_clean_account
 
+    def other_position(root):
+        if case != "owner_registration":
+            return
+        parent = root.find(".//m:Details[@ISIN1]/..", NS)
+        if parent is None:
+            parent = root.find(".//m:active_type/m:Details_Collection", NS)
+        purchased = bool(root.findall(".//m:Details[@trade_no]", NS))
+        ET.SubElement(
+            parent,
+            "{MyBroker}Details",
+            acc_code=ACCOUNT,
+            p_code="RUB",
+            ISIN1="RU000A000002",
+            active_type="Облигации",
+            active_name="Other synthetic bond",
+            income_rest="0" if purchased else "1",
+            real_rest="1",
+            forward_rest="1",
+            income_volume="0" if purchased else "1000",
+            real_volume="1000",
+            nominal="1000",
+        )
+
     def purchase(root):
         node = root.find(".//m:Details[@trade_no]", NS)
         node.set("Price", "100")
         node.attrib.pop("nominal", None)
         for node in root.findall(".//m:Details[@ISIN1]", NS):
             node.attrib.pop("nominal", None)
+        other_position(root)
+        if case == "owner_registration":
+            other_trade = root.findall(".//m:Details[@trade_no]", NS)[1]
+            other_trade.set("Price", "100")
+            other_trade.set("nominal", "1000")
 
     save(
         db,
         stock=None,
         bond=("0", "2", "0", "2020"),
-        trades=((BOND, "2", "2060", "60", "0"),),
+        trades=((BOND, "2", "2060", "60", "0"),)
+        + ((("RU000A000002", "1", "1000", "0", "0"),) if case == "owner_registration" else ()),
         mutate=purchase,
     )
     if case == "face_conflict":
@@ -4677,6 +4785,7 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
     coupon = narrative.replace("полное погашение номинала", "погашение купона")
 
     def cancellation(root, *, wide=False):
+        other_position(root)
         for node in root.findall(".//m:Details[@ISIN1]", NS):
             node.attrib.pop("nominal", None)
         parent = root
@@ -4759,7 +4868,18 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
         target = Instrument(name="Synthetic bond", instrument_type="bond", isin=BOND)
         session.add(target)
         session.flush()
-        if case not in {"missing_registration", "two_issues"}:
+        if case == "owner_registration":
+            from hermes_finance.persistence import SecurityRegIsinMapping
+
+            session.add(
+                SecurityRegIsinMapping(
+                    reg_number="4B02-09-99999-Z-001P",
+                    isin=BOND,
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+            )
+        elif case not in {"missing_registration", "two_issues"}:
             from test_source_money_classifications_service import _security_mapping
 
             _security_mapping(session, target, alias="4B02-09-99999-Z-001P", isin=BOND)
@@ -4783,7 +4903,7 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
     if long_id is not None and case != "wide_missing_proof":
         verified_dates[long_id] = (date(2030, 5, 1),)
     # After full redemption the issue is absent, rather than printed as zero.
-    save(db, 6, stock=None, bond=None, trades=())
+    save(db, 6, stock=None, bond=None, trades=(), mutate=other_position)
     monkeypatch.setattr(
         source_return_proofs,
         "resolve_proof",
@@ -4800,7 +4920,13 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
         events = {e.event_key: e for row in source.instruments for e in row.analysis.events}
         events.update({e.event_key: e for e in source.unresolved_events})
         redemptions = [e for e in events.values() if e.kind == "REDEMPTION"]
-        if case in {"exact", "exchange_code", "wide_without_position", "quantity_padded"}:
+        if case in {
+            "exact",
+            "owner_registration",
+            "exchange_code",
+            "wide_without_position",
+            "quantity_padded",
+        }:
             assert len(redemptions) == 1
             assert redemptions[0].quantity_delta == Decimal("-2")
             assert redemptions[0].cash_legs[0].account_cash_kopecks == 200000
@@ -4814,6 +4940,13 @@ def test_clean_full_redemption_requires_exact_cancellation_and_nominal(db, monke
             assert result["buys"]["value"] == "206000"
             assert result["buys"]["status"] == result["sells"]["status"] == "supported"
             assert result["sells"]["value"] == "0"
+            if case == "owner_registration":
+                other = read_clean_account(
+                    session, ACCOUNT, date(2030, 3, 31), date(2030, 6, 30), isin="RU000A000002"
+                )["instruments"][0]
+                assert other["pnl"]["value"] == "0", json.dumps(other, default=str)
+                assert other["redemption"]["value"] == "0"
+                assert "redemption_incomplete" not in other["pnl"]["reason_codes"]
             if case == "wide_without_position":
                 # This fixture's overlapping coupon has a different posting
                 # date; closing the inventory must not invent its attribution.

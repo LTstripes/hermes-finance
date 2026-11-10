@@ -345,9 +345,19 @@ def test_backup_copy_stale_proof_preserves_observed_clean_components(db, monkeyp
         copied.engine.dispose()
 
 
-def test_v3_proof_remains_current_only_with_exact_unchanged_dependencies(db, monkeypatch):
+@pytest.mark.parametrize(
+    "revision",
+    [
+        "source_investment_semantics_v3",
+        "source_investment_semantics_v18",
+        "source_investment_semantics_v19",
+    ],
+)
+def test_previous_proof_remains_current_only_with_exact_unchanged_dependencies(
+    db, monkeypatch, revision
+):
     with monkeypatch.context() as previous:
-        previous.setattr(proofs, "SEMANTICS_REVISION", "source_investment_semantics_v3")
+        previous.setattr(proofs, "SEMANTICS_REVISION", revision)
         _saved_investment(db, previous)
         with db.session_factory() as session:
             old = proofs.read_reports(session, source_account=ACCOUNT)[0]
