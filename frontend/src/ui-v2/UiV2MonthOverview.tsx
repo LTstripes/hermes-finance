@@ -75,7 +75,7 @@ const COUNT_FORMS: Partial<Record<MonthChecklistStepId, [string, string, string]
   note: ["комментарий", "комментария", "комментариев"],
 };
 
-function figureText(step: MonthChecklistStep): string {
+export function figureText(step: MonthChecklistStep): string {
   const figure = step.figure;
   if (!figure) return "—";
   if (figure.kind === "date") return formatDate(figure.day);

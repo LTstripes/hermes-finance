@@ -1,10 +1,15 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
+import { render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ReportingMonth } from "../api/types";
 import { UiV2MonthPayoutsSection } from "./UiV2MonthPayoutsSection";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
+
+function render(ui: Parameters<typeof rtlRender>[0]) {
+  return rtlRender(ui, { wrapper: MemoryRouter });
+}
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -76,9 +81,11 @@ it("shows received net while native gross/tax/commission remain unknown", async 
     ],
   });
   render(<UiV2MonthPayoutsSection context={contextFor()} />);
-  await screen.findByRole("heading", { name: "Фактические потоки" });
+  await screen.findByRole("heading", { name: "Фактические выплаты" });
   const row = screen.getByRole("row", { name: /Synthetic Bond/ });
-  expect(within(row).getAllByText("—").length).toBeGreaterThanOrEqual(3);
+  for (const name of ["До налога, ₽", "Налог, ₽", "Комиссия, ₽", "Действия"]) {
+    expect(screen.queryByRole("columnheader", { name })).not.toBeInTheDocument();
+  }
   expect(row).toHaveTextContent("860");
   expect(within(row).queryByRole("button", { name: /Изменить|Удалить/ })).toBeNull();
 });
@@ -301,7 +308,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const user = userEvent.setup();
     render(<UiV2MonthPayoutsSection context={contextFor()} />);
 
-    expect(await screen.findByRole("heading", { name: "Фактические потоки" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Фактические выплаты" })).toBeInTheDocument();
     const instrumentSelect = await screen.findByLabelText("Инструмент (необязательно)");
     expect(instrumentSelect).toHaveValue("");
     await user.type(screen.getByLabelText("Брутто"), "1000");
@@ -327,7 +334,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const { fetchMock } = setup({ flows: [manualFlow, redemptionFlow], expected: [expectedFlow] });
     render(<UiV2MonthPayoutsSection context={contextFor()} />);
 
-    expect(await screen.findByText("пассивный доход")).toBeInTheDocument();
+    expect(await screen.findByText(/пассивный доход, нетто/)).toBeInTheDocument();
     expect(screen.getByText("не доход (погашение)")).toBeInTheDocument();
     expect(screen.getAllByText(/план/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Погашение (не доход):")).toBeInTheDocument();
@@ -341,7 +348,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const user = userEvent.setup();
     render(<UiV2MonthPayoutsSection context={contextFor()} />);
 
-    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await screen.findByRole("heading", { name: "Фактические выплаты" });
     await user.type(screen.getByLabelText("Брутто"), "abc");
     await user.type(screen.getByLabelText("Нетто"), "860");
     await user.click(screen.getByRole("button", { name: "Добавить выплату" }));
@@ -356,7 +363,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const user = userEvent.setup();
     render(<UiV2MonthPayoutsSection context={contextFor()} />);
 
-    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await screen.findByRole("heading", { name: "Фактические выплаты" });
     await user.type(screen.getByLabelText("Брутто"), "1000");
     await user.type(screen.getByLabelText("Нетто"), "860");
     await user.click(screen.getByRole("button", { name: "Добавить выплату" }));
@@ -376,8 +383,8 @@ describe("UiV2MonthPayoutsSection", () => {
     render(<UiV2MonthPayoutsSection context={contextFor()} />);
 
     const table = await screen.findByRole("table");
-    expect(table).toHaveTextContent("Выписка Альфа-Банка");
-    expect(table).toHaveTextContent("не редактируется");
+    expect(screen.getByText("Выплаты по отчёту брокера не редактируются.")).toBeInTheDocument();
+    expect(table).not.toHaveTextContent("не редактируется");
     await user.click(
       within(table).getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-15" }),
     );
@@ -447,7 +454,6 @@ describe("UiV2MonthPayoutsSection", () => {
 
   it("disables mutations and hides forms in a closed month", async () => {
     setup({ flows: [manualFlow], expected: [expectedFlow] });
-    const user = userEvent.setup();
     render(<UiV2MonthPayoutsSection context={contextFor(7, true)} />);
 
     const tables = await screen.findAllByRole("table");
@@ -456,11 +462,8 @@ describe("UiV2MonthPayoutsSection", () => {
     expect(
       screen.queryByRole("button", { name: "Добавить ожидаемую выплату" }),
     ).not.toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-15" }),
-    );
-    expect(screen.getByRole("menuitem", { name: "Изменить" })).toBeDisabled();
-    expect(screen.getByRole("menuitem", { name: "Удалить" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Действия для выплаты/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Действия" })).not.toBeInTheDocument();
   });
 
   it("reports dirty state and clears it on unmount", async () => {
@@ -469,7 +472,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const user = userEvent.setup();
     const view = render(<UiV2MonthPayoutsSection context={contextFor(7, false, setDirty)} />);
 
-    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await screen.findByRole("heading", { name: "Фактические выплаты" });
     await user.type(screen.getByLabelText("Брутто"), "10");
     await waitFor(() => expect(setDirty).toHaveBeenCalledWith("payouts", true));
     view.unmount();
@@ -482,7 +485,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const first = contextFor(7);
     const { rerender } = render(<UiV2MonthPayoutsSection context={first} />);
 
-    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await screen.findByRole("heading", { name: "Фактические выплаты" });
     await user.type(screen.getByLabelText("Брутто"), "1000");
     await user.type(screen.getByLabelText("Нетто"), "860");
     await user.click(screen.getByRole("button", { name: "Добавить выплату" }));
@@ -516,7 +519,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const setDirty = vi.fn();
     render(<UiV2MonthPayoutsSection context={contextFor(7, false, setDirty)} />);
 
-    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await screen.findByRole("heading", { name: "Фактические выплаты" });
     await user.type(screen.getByLabelText("Брутто"), "1000");
     await user.type(screen.getByLabelText("Нетто"), "860");
     await waitFor(() => expect(setDirty).toHaveBeenCalledWith("payouts", true));
@@ -550,7 +553,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const user = userEvent.setup();
     render(<UiV2MonthPayoutsSection context={contextFor()} />);
 
-    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await screen.findByRole("heading", { name: "Фактические выплаты" });
     const table = screen.getAllByRole("table")[0];
     await user.click(
       within(table).getByRole("button", { name: "Действия для выплаты «Купон» от 2031-01-15" }),
@@ -577,7 +580,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const user = userEvent.setup();
     render(<UiV2MonthPayoutsSection context={contextFor()} />);
 
-    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await screen.findByRole("heading", { name: "Фактические выплаты" });
     await user.type(screen.getByLabelText("Брутто"), "1000");
     await user.type(screen.getByLabelText("Нетто"), "860");
     await user.click(screen.getByRole("button", { name: "Добавить выплату" }));
@@ -709,7 +712,7 @@ describe("UiV2MonthPayoutsSection", () => {
     const user = userEvent.setup();
     render(<UiV2MonthPayoutsSection context={contextFor()} />);
 
-    expect(await screen.findByRole("heading", { name: "Фактические потоки" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Фактические выплаты" })).toBeInTheDocument();
     (screen.getByLabelText("Тип потока") as HTMLElement).focus();
     await user.keyboard("[Tab][Tab][Tab][Tab]");
     expect(screen.getByLabelText("Брутто")).toHaveFocus();
@@ -735,7 +738,7 @@ describe("UiV2MonthPayoutsSection", () => {
       <UiV2MonthPayoutsSection context={contextFor(7, false, setDirty)} />,
     );
 
-    await screen.findByRole("heading", { name: "Фактические потоки" });
+    await screen.findByRole("heading", { name: "Фактические выплаты" });
     await user.type(screen.getByLabelText("Брутто"), "1000");
     await user.type(screen.getByLabelText("Прогноз брутто"), "500");
     const table = screen.getAllByRole("table")[0];

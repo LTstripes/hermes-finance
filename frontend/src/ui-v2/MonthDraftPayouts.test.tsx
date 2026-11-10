@@ -110,7 +110,9 @@ test.each(["source-only", "closed", "dirty", "failed-get"])(
     show({ closed: mode === "closed", disabled: mode === "dirty" });
     await waitFor(() => expect(getDraftPayoutContext).toHaveBeenCalled());
     await act(async () => {});
-    expect(screen.getByRole("button", { name: cta })).toBeDisabled();
+    if (mode === "closed")
+      expect(screen.queryByRole("button", { name: cta })).not.toBeInTheDocument();
+    else expect(screen.getByRole("button", { name: cta })).toBeDisabled();
     expect(refreshDraftPayouts).not.toHaveBeenCalled();
   },
 );

@@ -8,7 +8,7 @@ import { UiV2MonthSources } from "./UiV2MonthSources";
 
 // The unified uploader has its own mixed-file/recovery contract tests.
 vi.mock("../components/month-close/BrokerSourcesIntake", () => ({
-  BrokerSourcesIntake: () => null,
+  BrokerSourcesIntake: ({ children }: { children?: import("react").ReactNode }) => children,
 }));
 
 vi.mock("../components/month-close/BrokerMonthReview", () => ({ BrokerMonthReview: () => null }));
@@ -97,6 +97,8 @@ function mount(
     </QueryClientProvider>,
   );
   if (disclose) {
+    const group = screen.queryByText("Подробнее о разборе");
+    if (group) fireEvent.click(group);
     fireEvent.click(screen.getByText("Подробности"));
   }
   return { onReview, fetcher };
@@ -217,6 +219,8 @@ it("retains historical XML intake behind details without a second investment-rep
   await screen.findByText("Источник #1 · ACCOUNT-A / ACCOUNT-A-native");
   const upload = screen.getByLabelText("XML-файлы");
   expect(upload).not.toBeVisible();
+  const group = screen.queryByText("Подробнее о разборе");
+  if (group) fireEvent.click(group);
   fireEvent.click(screen.getByText("Подробности"));
   expect(upload).not.toBeVisible();
   fireEvent.click(screen.getByText("Исходники и повторный выбор файла"));

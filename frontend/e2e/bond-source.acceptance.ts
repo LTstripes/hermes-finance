@@ -3,6 +3,8 @@ import { displayMetric } from "../src/ui-v2/returns/model";
 
 async function openDisclosure(page: Page, name: string) {
   const summary = page.getByText(name, { exact: true });
+  const group = page.getByText("Подробнее о разборе", { exact: true });
+  if (!(await summary.isVisible()) && (await group.isVisible())) await group.click();
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
     await summary.click();

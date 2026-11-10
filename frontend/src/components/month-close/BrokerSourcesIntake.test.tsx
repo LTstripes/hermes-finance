@@ -239,3 +239,27 @@ it("shows the witnessed operation and one review action while accepted siblings 
   expect(onReview).toHaveBeenCalledWith(1);
   expect(api.upload).not.toHaveBeenCalled();
 });
+
+it("shows the checklist warning count instead of a healthy file-ingestion status", async () => {
+  api.read.mockResolvedValue(state([{ ...source("SYNTH-01"), state: "file_saved" }]));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <BrokerSourcesIntake
+        month={{ ...month, status: "closed" }}
+        step={
+          {
+            id: "brokers",
+            state: "attention",
+            attention_count: 22,
+          } as import("../../api/monthCloseWorkflow").MonthChecklistStep
+        }
+        onSaved={vi.fn()}
+        onReview={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Есть замечания: 22")).toBeInTheDocument();
+  expect(screen.queryByText("Всё в порядке")).not.toBeInTheDocument();
+  expect(api.upload).not.toHaveBeenCalled();
+});

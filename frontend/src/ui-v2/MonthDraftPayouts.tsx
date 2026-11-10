@@ -325,9 +325,16 @@ export function MonthDraftPayouts({
             : "Дата сохранённого прогноза неизвестна."}
         </p>
         <div className={styles.forecastActions}>
-          <Button variant="primary" type="button" disabled={!ready} onClick={() => void refresh()}>
-            {busy ? "Обновляем прогноз…" : "Обновить прогноз Т-Инвест"}
-          </Button>
+          {!closed && context.data?.status !== "closed" ? (
+            <Button
+              variant="primary"
+              type="button"
+              disabled={!ready}
+              onClick={() => void refresh()}
+            >
+              {busy ? "Обновляем прогноз…" : "Обновить прогноз Т-Инвест"}
+            </Button>
+          ) : null}
           <Link to={`/v2/data/payouts?month=${monthId}`}>Календарь выплат</Link>
         </div>
         {unconfirmed && !busy && (
@@ -335,9 +342,10 @@ export function MonthDraftPayouts({
             Проверить сохранённые прогнозы
           </Button>
         )}
-        {closed || context.data?.status === "closed" ? (
-          <p>Месяц закрыт. Доступно чтение сохранённых прогнозов.</p>
-        ) : context.data && !context.data.eligible_positions ? (
+        {!closed &&
+        context.data?.status !== "closed" &&
+        context.data &&
+        !context.data.eligible_positions ? (
           <p>
             Сначала сохрани позиции из брокерских выписок:{" "}
             <Link to={`/v2/close?${sourceParams}#month-source-review`}>Брокерские выписки</Link>.

@@ -132,3 +132,18 @@
 .cashTable :global(td.num) {
   width: auto;
 }
+
+.cashAccount {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.cashTable th,
+.cashTable td {
+  padding-inline: 12px;
+}
+.cashTable th:first-child,
+.cashTable td:first-child {
+  padding-left: 0;
+}

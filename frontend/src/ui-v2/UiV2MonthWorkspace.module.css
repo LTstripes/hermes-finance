@@ -167,3 +167,25 @@
   align-items: center;
   gap: 8px;
 }
+
+.workHeader {
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.workHeader h2 {
+  flex: 1 1 280px;
+}
+.workTotal {
+  margin-left: auto;
+  font-size: var(--t-lg);
+  font-variant-numeric: tabular-nums;
+}
+.viewOnly {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.workTotal :global(#month-panel-total):empty::after {
+  content: "—";
+}

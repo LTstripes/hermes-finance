@@ -73,3 +73,16 @@ describe("LinkedPairContext", () => {
     expect(card).not.toHaveTextContent("0,00 ₽");
   });
 });
+
+it("explains compact pairs once and omits an empty group", () => {
+  const view = render(
+    <LinkedPairContext accounts={[account]} debts={[debt]} pairs={[pair]} compact />,
+  );
+  expect(screen.getByTestId("linked-pair-1")).toHaveTextContent(
+    /на счёте.*1\s*000\s*000.*долг.*300\s*000.*вместе.*700\s*000/,
+  );
+  expect(screen.getAllByText("О связанных счетах и долгах")).toHaveLength(1);
+  expect(screen.queryByText("Актив A · брутто")).not.toBeInTheDocument();
+  view.rerender(<LinkedPairContext accounts={[]} debts={[]} pairs={[]} compact />);
+  expect(screen.queryByTestId("linked-pair-context")).not.toBeInTheDocument();
+});

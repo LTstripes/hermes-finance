@@ -69,6 +69,16 @@ inline work area; another tile replaces it. The active tile and `panel` URL agre
 Back/Reload and **← К месяцу** preserve the exact month. Existing leaf forms keep
 their own Save/readback actions and APIs. Dirty changes require explicit discard;
 pending writes and uncertain ACK/readback require recovery before navigation.
+Internal month panels use the same «Ясный лист» groups and tiles as the month
+report: one work-area heading with its existing total and one **← К месяцу**
+link. A closed panel shows **Месяц закрыт — только просмотр.** once, saved facts
+without edit forms/actions, and no empty groups or wholly unknown columns.
+Reopen stays on **Закрыть месяц** in this workspace. Rates use Russian decimal
+format and a percent sign. Linked account/debt context appears only in debts;
+actual payouts precede collapsed forecasts. The statements panel takes its
+warning count from the same checklist step as the month navigation; file Save
+status remains a separate fact. These changes do not replace section Save,
+readback, validation or the authoritative backend values.
 The statements tile provides one multi-file XML/PDF intake with account-statement
 slots and an income-payment PDF slot. Three files are a typical example, not a
 required set. Type, account and payment period are detected by the existing readers.

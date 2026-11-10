@@ -162,7 +162,7 @@ describe("native month editor frame", () => {
     current = { ...closed };
     renderPage("/v2/data/months/7?from=monthly-close-v2&monthId=7&step=month_setup");
     await screen.findByRole("region", { name: "Общие данные месяца" });
-    expect(screen.getByLabelText("Дата снимка")).toBeDisabled();
+    expect(screen.queryByLabelText("Дата снимка")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
       "href",
       "/v2/close?month=7&step=month_setup",
@@ -186,7 +186,7 @@ describe("native month editor frame", () => {
     await user.click(screen.getByRole("button", { name: "Открыть для редактирования" }));
     await user.click(screen.getByRole("button", { name: "Открыть месяц" }));
     expect(await screen.findByText("reopen failed")).toBeInTheDocument();
-    expect(screen.getByLabelText("Дата снимка")).toBeDisabled();
+    expect(screen.queryByLabelText("Дата снимка")).not.toBeInTheDocument();
   });
 
   it("opens the list handoff as confirmation only and cancellation preserves CLOSED", async () => {
@@ -196,7 +196,7 @@ describe("native month editor frame", () => {
     await screen.findByRole("alertdialog", { name: "Открыть месяц для редактирования?" });
     expect(reopenMonth).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Отмена" }));
-    expect(screen.getByLabelText("Дата снимка")).toBeDisabled();
+    expect(screen.queryByLabelText("Дата снимка")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Проверить и закрыть" })).toHaveAttribute(
       "href",
       "/v2/close?month=7&step=final_review_close",

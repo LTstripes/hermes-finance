@@ -249,3 +249,63 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.linkName {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.debtTable {
+  table-layout: auto;
+}
+.debtTable th,
+.debtTable td {
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.propertyCards thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+}
+.propertyCards tbody {
+  display: grid;
+  gap: 16px;
+}
+.propertyCards tr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding: 16px;
+  background: var(--soft);
+  border-radius: 12px;
+}
+.propertyCards td,
+.propertyCards :global(td.num) {
+  width: auto;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  white-space: normal;
+}
+.propertyCards td:first-child {
+  flex-basis: 100%;
+  font-weight: 650;
+}
+.propertyCards td[data-label]::before {
+  content: attr(data-label);
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  margin-bottom: 6px;
+}
+
+.debtTable th,
+.debtTable td {
+  padding-inline: 8px;
+}
+.heading h3 {
+  margin: 0;
+}

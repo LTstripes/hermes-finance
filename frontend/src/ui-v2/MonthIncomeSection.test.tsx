@@ -333,10 +333,12 @@ describe("native month editor income leaf", () => {
     });
     expect(within(section).getByText(moneyText(formatMoney("13000.00")))).toBeInTheDocument();
     expect(within(section).getByText(moneyText(formatMoney("87000.00")))).toBeInTheDocument();
-    expect(within(section).getByText("13%")).toBeInTheDocument();
-    expect(within(section).getByRole("button", { name: "О расчётном налоге" })).toBeInTheDocument();
-    expect(within(section).getByText("Расчётный налог")).toBeInTheDocument();
-    expect(within(section).getByText("Расчётный net")).toBeInTheDocument();
+    expect(within(section).getByText("Налог (13%)")).toBeInTheDocument();
+    expect(
+      within(section).queryByRole("button", { name: "О расчётном налоге" }),
+    ).not.toBeInTheDocument();
+    expect(within(section).getByText("О расчёте")).toBeInTheDocument();
+    expect(within(section).queryByText("Расчётный net")).not.toBeInTheDocument();
     expect(listIncomes).toHaveBeenCalledWith(7, expect.any(AbortSignal));
     expect(getMonthSummary).toHaveBeenCalledWith(7, expect.any(AbortSignal), false);
     expect(onDirty).not.toHaveBeenCalledWith("income", true);
@@ -565,7 +567,7 @@ describe("native month editor income leaf", () => {
     expect(
       within(section).queryByRole("button", { name: "Сохранить доходы" }),
     ).not.toBeInTheDocument();
-    await waitFor(() => expect(within(section).getByLabelText("Премия")).toBeDisabled());
+    await waitFor(() => expect(within(section).queryByLabelText("Премия")).not.toBeInTheDocument());
     expect(onDirty.mock.calls.at(-1)).toEqual(["income", true]);
   });
 
@@ -605,16 +607,11 @@ describe("native month editor income leaf", () => {
   it("keeps a closed month read-only without any mutation call", async () => {
     renderSection({ month: { ...draft, status: "closed" } });
     const section = await screen.findByRole("region", { name: "Зарплата и прочее" });
-    const input = await within(section).findByLabelText("Зарплата до вычета налогов");
-
-    expect(input).toBeDisabled();
-    expect(within(section).getByLabelText("Премия")).toBeDisabled();
+    await within(section).findByText("Зарплата до налога");
+    expect(within(section).queryAllByRole("textbox")).toHaveLength(0);
     expect(
       within(section).queryByRole("button", { name: "Сохранить доходы" }),
     ).not.toBeInTheDocument();
-    expect(
-      within(section).getByText("Закрытый месяц доступен только для чтения."),
-    ).toBeInTheDocument();
     expect(replaceSalaryIncome).not.toHaveBeenCalled();
     expect(createIncome).not.toHaveBeenCalled();
     expect(updateIncome).not.toHaveBeenCalled();

@@ -27,7 +27,7 @@ import { UiV2MonthSources } from "./UiV2MonthSources";
 
 // The unified uploader has its own mixed-file/recovery contract tests.
 vi.mock("../components/month-close/BrokerSourcesIntake", () => ({
-  BrokerSourcesIntake: () => null,
+  BrokerSourcesIntake: ({ children }: { children?: import("react").ReactNode }) => children,
 }));
 
 vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));

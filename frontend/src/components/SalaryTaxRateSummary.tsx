@@ -4,7 +4,7 @@ type SalaryTaxRatePart = {
   rate_bps: number;
 };
 
-function formatRateBps(rateBps: number): string {
+export function formatRateBps(rateBps: number): string {
   const whole = Math.trunc(rateBps / 100);
   const remainder = Math.abs(rateBps % 100);
   return remainder === 0 ? `${whole}%` : `${whole},${String(remainder).padStart(2, "0")}%`;

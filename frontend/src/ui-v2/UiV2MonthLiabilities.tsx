@@ -407,39 +407,44 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
           {actionError}
         </p>
       ) : null}
-      <DebtBlock
-        accounts={accounts}
-        busy={busy}
-        commit={commit}
-        debts={debts}
-        key={`debts-${monthId}`}
-        monthId={monthId}
-        onDirtyChange={setDebtsDirty}
-        readOnly={readOnly}
-        retry={() => void debtsQuery.refetch()}
-        unavailable={debtsUnavailable}
-      />
+      {!readOnly || debts.length > 0 || debtsUnavailable ? (
+        <DebtBlock
+          accounts={accounts}
+          busy={busy}
+          commit={commit}
+          debts={debts}
+          key={`debts-${monthId}`}
+          monthId={monthId}
+          onDirtyChange={setDebtsDirty}
+          readOnly={readOnly}
+          retry={() => void debtsQuery.refetch()}
+          unavailable={debtsUnavailable}
+        />
+      ) : null}
       <LinkedPairContext
         accounts={accounts}
         debts={debts}
         error={linkedPairError}
         label="Связи"
         pairs={linkedPairs}
-        title="Контекст связанных пар"
+        title="Связанные долги"
+        compact
       />
-      <PropertyBlock
-        busy={busy}
-        commit={commit}
-        coveragePct={coveragePct}
-        key={`properties-${monthId}`}
-        monthId={monthId}
-        mortgage={mortgage}
-        onDirtyChange={setPropertiesDirty}
-        properties={properties}
-        readOnly={readOnly}
-        retry={() => void propertiesQuery.refetch()}
-        unavailable={propertiesUnavailable}
-      />
+      {!readOnly || properties.length > 0 || propertiesUnavailable ? (
+        <PropertyBlock
+          busy={busy}
+          commit={commit}
+          coveragePct={coveragePct}
+          key={`properties-${monthId}`}
+          monthId={monthId}
+          mortgage={mortgage}
+          onDirtyChange={setPropertiesDirty}
+          properties={properties}
+          readOnly={readOnly}
+          retry={() => void propertiesQuery.refetch()}
+          unavailable={propertiesUnavailable}
+        />
+      ) : null}
     </div>
   );
 }
@@ -637,8 +642,7 @@ function DebtBlock({
       <section aria-label="Долги месяца" className={editorStyles.panel}>
         <div className={leafStyles.heading}>
           <div>
-            <p className={leafStyles.eyebrow}>Обязательства</p>
-            <h2>Долги</h2>
+            <h3>Долги</h3>
           </div>
           <Badge>—</Badge>
         </div>
@@ -653,12 +657,8 @@ function DebtBlock({
     <section aria-label="Долги месяца" className={editorStyles.panel}>
       <div className={leafStyles.heading}>
         <div>
-          <p className={leafStyles.eyebrow}>Обязательства</p>
-          <h2>Долги</h2>
+          <h3>Долги</h3>
         </div>
-        <Badge>
-          Кредитные карты: <MoneyAmount amount={cardDebtTotal} />
-        </Badge>
       </div>
       {dirty ? (
         <p className={leafStyles.savedNote} role="note">
@@ -668,56 +668,78 @@ function DebtBlock({
       {debts.length === 0 ? (
         <p className={leafStyles.empty}>Долгов нет.</p>
       ) : (
-        <Table>
+        <Table className={leafStyles.debtTable}>
           <thead>
             <tr>
               <Th>Название</Th>
               <Th>Тип</Th>
               <Th numeric>Баланс</Th>
-              <Th>Ставка</Th>
-              <Th>Ближайший платёж</Th>
-              <Th>Окончание</Th>
+              {debts.some((row) => row.annual_rate != null) ? <Th>Ставка</Th> : null}
+              {debts.some((row) => row.next_due_date) ? <Th>Ближайший платёж</Th> : null}
+              {debts.some((row) => row.contract_end_date) ? <Th>Окончание</Th> : null}
               <Th>Учёт</Th>
-              <Th>Связанный счёт</Th>
-              <Th>Действия</Th>
+              {!readOnly ? <Th>Действия</Th> : null}
             </tr>
           </thead>
           <tbody>
             {debts.map((row) => {
               return (
                 <tr key={row.id}>
-                  <Td>{row.name}</Td>
+                  <Td>
+                    {row.name}
+                    {row.linked_account_id != null ? (
+                      <small className={leafStyles.linkName}>
+                        Связан со счётом «{accountNameFor(row.linked_account_id)}»
+                      </small>
+                    ) : null}
+                  </Td>
                   <Td>{labelOf(DEBT_TYPE_LABELS, row.debt_type)}</Td>
                   <Td numeric>
                     <MoneyAmount amount={moneyAmount(row.current_balance)} />
                   </Td>
-                  <Td>
-                    <span className={leafStyles.muted}>
-                      {formatPercent(row.annual_rate, { digits: 2, empty: "не указано" })}
-                    </span>
-                  </Td>
-                  <Td>
-                    <span className={leafStyles.muted}>{formatDate(row.next_due_date)}</span>
-                  </Td>
-                  <Td>
-                    <span className={leafStyles.muted}>{formatDate(row.contract_end_date)}</span>
-                  </Td>
+                  {debts.some((row) => row.annual_rate != null) ? (
+                    <Td>
+                      <span className={leafStyles.muted}>
+                        {formatPercent(row.annual_rate, { digits: 2, empty: "" })}
+                      </span>
+                    </Td>
+                  ) : null}
+                  {debts.some((row) => row.next_due_date) ? (
+                    <Td>
+                      <span className={leafStyles.muted}>{formatDate(row.next_due_date)}</span>
+                    </Td>
+                  ) : null}
+                  {debts.some((row) => row.contract_end_date) ? (
+                    <Td>
+                      <span className={leafStyles.muted}>{formatDate(row.contract_end_date)}</span>
+                    </Td>
+                  ) : null}
                   <Td>
                     <Badge tone={row.include_in_liquid_capital ? "ok" : "neutral"}>
                       {row.include_in_liquid_capital ? "В капитале" : "Отдельно"}
                     </Badge>
                   </Td>
-                  <Td>
-                    <div className={leafStyles.linkControl}>
-                      <div className={leafStyles.linkAccount}>
-                        <Badge tone={row.linked_account_id == null ? "neutral" : "ok"}>
-                          {row.linked_account_id == null ? "Не связано" : "Связано"}
-                        </Badge>
-                        {row.linked_account_id != null ? (
-                          <strong className={leafStyles.linkName}>
-                            {accountNameFor(row.linked_account_id)}
-                          </strong>
-                        ) : null}
+                  {!readOnly ? (
+                    <Td>
+                      <div className={leafStyles.rowActions}>
+                        <Button
+                          aria-label={`Изменить долг «${row.name}»`}
+                          disabled={busy || readOnly}
+                          onClick={() => startEditingDebt(row)}
+                          size="sm"
+                          type="button"
+                        >
+                          Изменить
+                        </Button>
+                        <Button
+                          aria-label={`Удалить долг «${row.name}»`}
+                          disabled={busy || readOnly}
+                          onClick={() => setDeleteTarget(row)}
+                          size="sm"
+                          type="button"
+                        >
+                          Удалить
+                        </Button>
                       </div>
                       {row.linked_account_id != null ? (
                         <div className={leafStyles.rowActions}>
@@ -762,30 +784,8 @@ function DebtBlock({
                       ) : (
                         <span className={leafStyles.hint}>{LINK_AVAILABLE_HINT}</span>
                       )}
-                    </div>
-                  </Td>
-                  <Td>
-                    <div className={leafStyles.rowActions}>
-                      <Button
-                        aria-label={`Изменить долг «${row.name}»`}
-                        disabled={busy || readOnly}
-                        onClick={() => startEditingDebt(row)}
-                        size="sm"
-                        type="button"
-                      >
-                        Изменить
-                      </Button>
-                      <Button
-                        aria-label={`Удалить долг «${row.name}»`}
-                        disabled={busy || readOnly}
-                        onClick={() => setDeleteTarget(row)}
-                        size="sm"
-                        type="button"
-                      >
-                        Удалить
-                      </Button>
-                    </div>
-                  </Td>
+                    </Td>
+                  ) : null}
                 </tr>
               );
             })}
@@ -1311,8 +1311,7 @@ function PropertyBlock({
       <section aria-label="Недвижимость месяца" className={editorStyles.panel}>
         <div className={leafStyles.heading}>
           <div>
-            <p className={leafStyles.eyebrow}>Обязательства</p>
-            <h2>Недвижимость</h2>
+            <h3>Недвижимость</h3>
           </div>
           <Badge>—</Badge>
         </div>
@@ -1327,32 +1326,22 @@ function PropertyBlock({
     <section aria-label="Недвижимость месяца" className={editorStyles.panel}>
       <div className={leafStyles.heading}>
         <div>
-          <p className={leafStyles.eyebrow}>Обязательства</p>
-          <h2>Недвижимость</h2>
+          <h3>Недвижимость</h3>
         </div>
-        <Badge>
-          Недвижимость: <MoneyAmount amount={propertyValueTotal} />
-        </Badge>
       </div>
-      <details className={leafStyles.details}>
-        <summary>О недвижимости и покрытии</summary>
-        <p>
-          Недвижимость не входит в ликвидный капитал. Покрытие ипотеки показывается как ориентир из
-          сводки месяца.
-        </p>
-      </details>
+
       {properties.length === 0 ? (
         <p className={leafStyles.empty}>Объектов нет.</p>
       ) : (
-        <Table className={leafStyles.propertyTable}>
+        <Table className={leafStyles.propertyCards}>
           <thead>
             <tr>
               <Th>Объект</Th>
               <Th numeric>Стоимость</Th>
               <Th numeric>Ипотека</Th>
               <Th numeric>Платёж / мес</Th>
-              <Th>Ставка</Th>
-              <Th>Действия</Th>
+              {properties.some((row) => row.mortgage_annual_rate != null) ? <Th>Ставка</Th> : null}
+              {!readOnly ? <Th>Действия</Th> : null}
             </tr>
           </thead>
           <tbody>
@@ -1361,72 +1350,76 @@ function PropertyBlock({
               return (
                 <tr key={row.id}>
                   <Td>{row.name}</Td>
-                  <Td numeric>
+                  <Td numeric data-label="Стоимость">
                     <MoneyAmount amount={moneyAmount(row.estimated_value)} />
                   </Td>
-                  <Td numeric>
+                  <Td numeric data-label="Остаток ипотеки">
                     <MoneyAmount amount={moneyAmount(row.mortgage_balance)} />
                   </Td>
-                  <Td numeric>
+                  <Td numeric data-label="Платёж в месяц">
                     <MoneyAmount amount={moneyAmount(row.monthly_payment)} />
                   </Td>
-                  <Td>
-                    <span className={leafStyles.muted}>
-                      {formatPercent(row.mortgage_annual_rate, {
-                        digits: 2,
-                        empty: "не указано",
-                      })}
-                    </span>
-                  </Td>
-                  <Td>
-                    <div className={leafStyles.rowActions}>
-                      {editing ? (
-                        <>
-                          <Button
-                            disabled={busy || readOnly}
-                            onClick={() => void savePropertyEdit()}
-                            size="sm"
-                            type="button"
-                            variant="primary"
-                          >
-                            OK
-                          </Button>
-                          <Button
-                            disabled={busy}
-                            onClick={() => {
-                              setEditingId(null);
-                              setEditDraft(null);
-                            }}
-                            size="sm"
-                            type="button"
-                          >
-                            Отмена
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button
-                            aria-label={`Изменить объект «${row.name}»`}
-                            disabled={busy || readOnly}
-                            onClick={() => startEditingProperty(row)}
-                            size="sm"
-                            type="button"
-                          >
-                            Изменить
-                          </Button>
-                          <Button
-                            aria-label={`Удалить объект «${row.name}»`}
-                            disabled={busy || readOnly}
-                            onClick={() => setDeleteTarget(row)}
-                            size="sm"
-                            type="button"
-                          >
-                            Удалить
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </Td>
+                  {properties.some((row) => row.mortgage_annual_rate != null) ? (
+                    <Td>
+                      <span className={leafStyles.muted}>
+                        {formatPercent(row.mortgage_annual_rate, {
+                          digits: 2,
+                          empty: "",
+                        })}
+                      </span>
+                    </Td>
+                  ) : null}
+                  {!readOnly ? (
+                    <Td>
+                      <div className={leafStyles.rowActions}>
+                        {editing ? (
+                          <>
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => void savePropertyEdit()}
+                              size="sm"
+                              type="button"
+                              variant="primary"
+                            >
+                              OK
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditDraft(null);
+                              }}
+                              size="sm"
+                              type="button"
+                            >
+                              Отмена
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              aria-label={`Изменить объект «${row.name}»`}
+                              disabled={busy || readOnly}
+                              onClick={() => startEditingProperty(row)}
+                              size="sm"
+                              type="button"
+                            >
+                              Изменить
+                            </Button>
+                            <Button
+                              aria-label={`Удалить объект «${row.name}»`}
+                              disabled={busy || readOnly}
+                              onClick={() => setDeleteTarget(row)}
+                              size="sm"
+                              type="button"
+                            >
+                              Удалить
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </Td>
+                  ) : null}
                 </tr>
               );
             })}
@@ -1503,39 +1496,45 @@ function PropertyBlock({
           <p className={leafStyles.hint}>Пустая ставка — неизвестно. Платёж указан в ₽ за месяц.</p>
         </section>
       )}
-      <div className={leafStyles.propertyTotals}>
-        <span>
-          Стоимость:{" "}
-          <strong>
-            <MoneyAmount amount={propertyValueTotal} />
-          </strong>
-        </span>
-        <span>
-          Остаток ипотеки:{" "}
-          <strong>
-            <MoneyAmount amount={mortgageBalanceTotal} />
-          </strong>
-        </span>
-        <span>
-          Платёж:{" "}
-          <strong>
-            <MoneyAmount amount={paymentTotal} />
-          </strong>
-        </span>
-      </div>
+      {properties.length > 1 ? (
+        <div className={leafStyles.propertyTotals}>
+          <span>
+            Стоимость:{" "}
+            <strong>
+              <MoneyAmount amount={propertyValueTotal} />
+            </strong>
+          </span>
+          <span>
+            Остаток ипотеки:{" "}
+            <strong>
+              <MoneyAmount amount={mortgageBalanceTotal} />
+            </strong>
+          </span>
+          <span>
+            Платёж:{" "}
+            <strong>
+              <MoneyAmount amount={paymentTotal} />
+            </strong>
+          </span>
+        </div>
+      ) : null}
       <div className={leafStyles.propertyTotals}>
         <span>
           Покрытие ипотеки (ориентир):{" "}
-          <strong>{mortgage?.coverage_pct != null ? `${mortgage.coverage_pct}%` : "—"}</strong>
+          <strong>{formatPercent(mortgage?.coverage_pct, { digits: 2 })}</strong>
         </span>
         <span>
           Недостаток покрытия:{" "}
           <strong>{mortgage ? <MoneyAmount amount={moneyAmount(mortgage.gap)} /> : "—"}</strong>
         </span>
         <span>
-          Покрытие обязательных расходов: <strong>{coveragePct ?? "—"}</strong>
+          Покрытие обязательных расходов:{" "}
+          <strong>{formatPercent(coveragePct, { digits: 2 })}</strong>
         </span>
       </div>
+      <p className={leafStyles.hint}>
+        Недвижимость не входит в ликвидный капитал; покрытие ипотеки — ориентир.
+      </p>
       {!readOnly ? (
         <form className={leafStyles.propertyForm} onSubmit={(event) => void addProperty(event)}>
           <div className={leafStyles.propertyValues}>

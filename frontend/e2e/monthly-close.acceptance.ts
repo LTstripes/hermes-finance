@@ -385,19 +385,19 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     await oldRow.getByRole("link", { name: "Открыть месяц", exact: true }).click();
     await expect(page).toHaveURL(`/v2/close?month=${old}`);
     await tile(page, /Снимок и общие данные/);
-    await expect(page.getByLabel("Дата снимка")).toBeDisabled();
-
-    await page.getByRole("button", { name: "Открыть для редактирования", exact: true }).click();
+    await expect(page.getByLabel("Дата снимка")).toHaveCount(0);
     await expect(
-      page.getByRole("alertdialog", { name: "Открыть месяц для редактирования?" }),
-    ).toBeVisible();
+      page.getByRole("button", { name: "Открыть для редактирования", exact: true }),
+    ).toHaveCount(0);
+    await tile(page, /Закрыть месяц/);
+
+    await page.getByRole("button", { name: "Открыть месяц заново", exact: true }).click();
+    await expect(page.getByRole("alertdialog", { name: "Открыть месяц заново?" })).toBeVisible();
     await page.keyboard.press("Escape");
     expect((await (await request.get(`/api/months/${old}`)).json()).status).toBe("closed");
-    await page.getByRole("button", { name: "Открыть для редактирования", exact: true }).click();
-    await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
-    await expect(
-      page.getByText("Месяц открыт для редактирования. Данные перечитаны."),
-    ).toBeVisible();
+    await page.getByRole("button", { name: "Открыть месяц заново", exact: true }).click();
+    await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
+    await tile(page, /Снимок и общие данные/);
     await page
       .getByLabel("Дата снимка", { exact: true })
       .fill(width === 1440 ? "2034-05-30" : "2034-05-31");

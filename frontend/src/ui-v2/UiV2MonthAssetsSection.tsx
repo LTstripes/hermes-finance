@@ -14,7 +14,6 @@ import { getDashboard } from "../api/dashboard";
 import { createDeposit, deleteDeposit, listDeposits, updateDeposit } from "../api/deposits";
 import { listDebts } from "../api/debts";
 import type { CashBalance, DepositSnapshot, MoneyValue } from "../api/types";
-import { LinkedPairContext } from "../components/LinkedPairContext";
 import {
   Badge,
   Button,
@@ -32,9 +31,9 @@ import {
   Td,
   Th,
 } from "../components/ui";
-import { formatDate, formatMonth, formatMoney } from "../lib/format";
+import { formatDate, formatMonth, formatMoney, formatPercent } from "../lib/format";
 import { ACCOUNT_TYPE_LABELS, DEPOSIT_TYPE_LABELS, SOURCE_LABELS, labelOf } from "../lib/labels";
-import { moneyAmount, normalizeMoneyInput, sumMoneyAmounts } from "../lib/money";
+import { moneyAmount, normalizeMoneyInput, sumMoneyAmounts, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import styles from "./UiV2MonthAssets.module.css";
@@ -280,11 +279,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     queryKey: ["cash-balances", monthId, "total"],
     queryFn: ({ signal }) => getCashTotal(monthId, signal),
   });
-  const debtsQuery = useQuery({
+  useQuery({
     queryKey: queryKeys.debts(monthId),
     queryFn: ({ signal }) => listDebts(monthId, signal),
   });
-  const dashboardQuery = useQuery({
+  useQuery({
     queryKey: queryKeys.dashboardBasic(monthId),
     queryFn: ({ signal }) => getDashboard(monthId, signal, false),
   });
@@ -385,7 +384,17 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     (row) => row.reporting_month_id !== monthId,
   );
   const cashForeign = (cashRowsQuery.data ?? []).some((row) => row.reporting_month_id !== monthId);
-  const depositRows = useMemo(() => depositsQuery.data ?? [], [depositsQuery.data]);
+  const depositRows = useMemo(
+    () =>
+      [...(depositsQuery.data ?? [])].sort((a, b) => {
+        const left = toKopecks(moneyAmount(a.balance));
+        const right = toKopecks(moneyAmount(b.balance));
+        return left === right ? 0 : left > right ? -1 : 1;
+      }),
+    [depositsQuery.data],
+  );
+  const showDepositType =
+    new Set(depositRows.map((row) => row.deposit_type)).size > 1 || !!editDeposits;
   const cashRows = useMemo(() => cashRowsQuery.data ?? [], [cashRowsQuery.data]);
   const cashTotal =
     cashTotalQuery.data && cashTotalQuery.data.reporting_month_id === monthId
@@ -453,17 +462,6 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           currency: currencySuffix(cashTotal.total_in_capital.currency),
         })
       : "Недоступно";
-
-  const debts = debtsQuery.data ?? [];
-  const linkedPairs =
-    dashboardQuery.data?.summary?.liquid_capital?.linked_pairs ??
-    (dashboardQuery.isSuccess ? [] : null);
-  let linkedPairError: string | null = null;
-  if (debtsQuery.isError) {
-    linkedPairError = formatApiError(debtsQuery.error);
-  } else if (dashboardQuery.isError) {
-    linkedPairError = formatApiError(dashboardQuery.error);
-  }
 
   async function refetchDepositRows(): Promise<DepositSnapshot[]> {
     const version = depositRecovery.version;
@@ -1002,12 +1000,6 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
             Суммы показываются так, как их возвращает API выбранного месяца. Раздел не рассчитывает
             полноту капитала и не подменяет отсутствующий снимок нулём.
           </p>
-          {readOnly ? (
-            <p className={styles.hint}>
-              Месяц закрыт: создание, изменение и удаление активов недоступны до повторного
-              открытия.
-            </p>
-          ) : null}
         </section>
       </details>
 
@@ -1032,502 +1024,528 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
         />
       ) : (
         <>
-          <Panel
-            action={
-              <Badge>
-                {depositsForeign || depositTotalsUnconfirmed ? (
-                  <>итог — · данные уточняются</>
-                ) : (
-                  <>
-                    итог {totalText(depositTotals.balance, depositTotals.currency)} ·{" "}
-                    {depositRows.length} шт.
-                  </>
-                )}
-              </Badge>
-            }
-            label="Активы"
-            title="Депозиты"
-          >
-            {depositsForeign ? (
-              <div className="inline-alert inline-alert--error" role="alert">
-                {DEPOSITS_FOREIGN_MESSAGE}
-              </div>
-            ) : depositRows.length === 0 ? (
-              <EmptyState
-                description="Депозитов пока нет — добавь вклад формой ниже."
-                inline
-                title="Пусто"
-              />
-            ) : (
-              <Table className={`month-deposits-table ${styles.depositsTable}`}>
-                <thead>
-                  <tr>
-                    <Th className="month-deposits-table__name">Название</Th>
-                    <Th className="month-deposits-table__type">Тип</Th>
-                    <Th numeric>Баланс</Th>
-                    <Th numeric>Ставка %</Th>
-                    <Th numeric>Прогноз / мес</Th>
-                    <Th numeric>Получено</Th>
-                    <Th className="month-deposits-table__actions">Действия</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {depositRows.map((row) => {
-                    const editDeposit = editDeposits?.[row.id];
-                    return (
-                      <tr key={row.id}>
-                        <Td data-label="Название">
-                          {editDeposit ? (
-                            <Input
-                              disabled={busy || readOnly}
-                              value={editDeposit.name}
-                              onChange={(event) =>
-                                setEditDeposits({
-                                  ...editDeposits,
-                                  [row.id]: { ...editDeposit, name: event.target.value },
-                                })
-                              }
-                            />
-                          ) : (
-                            row.name
-                          )}
-                        </Td>
-                        <Td data-label="Тип">
-                          {editDeposit ? (
-                            <Select
-                              disabled={busy || readOnly}
-                              value={editDeposit.deposit_type}
-                              onChange={(event) =>
-                                setEditDeposits({
-                                  ...editDeposits,
-                                  [row.id]: { ...editDeposit, deposit_type: event.target.value },
-                                })
-                              }
-                            >
-                              <option value="deposit">Депозит</option>
-                              <option value="savings">Накопления</option>
-                            </Select>
-                          ) : (
-                            labelOf(DEPOSIT_TYPE_LABELS, row.deposit_type)
-                          )}
-                        </Td>
-                        <Td numeric data-label="Баланс">
-                          {editDeposit ? (
-                            <Input
-                              className="input--money"
-                              disabled={busy || readOnly}
-                              value={editDeposit.balance}
-                              onChange={(event) =>
-                                setEditDeposits({
-                                  ...editDeposits,
-                                  [row.id]: { ...editDeposit, balance: event.target.value },
-                                })
-                              }
-                            />
-                          ) : (
-                            formatMoney(moneyAmount(row.balance), {
-                              currency: currencySuffix(row.balance.currency),
-                            })
-                          )}
-                        </Td>
-                        <Td numeric data-label="Ставка %">
-                          {editDeposit ? (
-                            <Input
-                              className="input--money"
-                              disabled={busy || readOnly}
-                              value={editDeposit.annual_rate}
-                              onChange={(event) =>
-                                setEditDeposits({
-                                  ...editDeposits,
-                                  [row.id]: { ...editDeposit, annual_rate: event.target.value },
-                                })
-                              }
-                            />
-                          ) : (
-                            row.annual_rate
-                          )}
-                        </Td>
-                        <Td numeric data-label="Прогноз / мес">
-                          <span className="muted">
-                            {formatMoney(moneyAmount(row.expected_monthly_interest), {
-                              currency: currencySuffix(row.expected_monthly_interest.currency),
-                            })}
-                          </span>
-                        </Td>
-                        <Td numeric data-label="Получено">
-                          {editDeposit ? (
-                            <Input
-                              className="input--money"
-                              disabled={busy || readOnly}
-                              value={editDeposit.actual_interest}
-                              onChange={(event) =>
-                                setEditDeposits({
-                                  ...editDeposits,
-                                  [row.id]: {
-                                    ...editDeposit,
-                                    actual_interest: event.target.value,
-                                  },
-                                })
-                              }
-                            />
-                          ) : (
-                            formatMoney(moneyAmount(row.actual_interest_received), {
-                              currency: currencySuffix(row.actual_interest_received.currency),
-                            })
-                          )}
-                        </Td>
-                        <Td className="month-deposits-table__actions" data-label="Действия">
-                          <div className="row-actions">
-                            {!editDeposits ? (
-                              <OverflowMenu label={`Действия для вклада «${row.name}»`}>
-                                <OverflowMenuItem
-                                  disabled={busy || readOnly}
-                                  onClick={startDepositEdit}
-                                >
-                                  Изменить
-                                </OverflowMenuItem>
-                                <OverflowMenuItem
-                                  danger
-                                  disabled={busy || readOnly}
-                                  onClick={() => setPendingDeleteDeposit(row)}
-                                >
-                                  Удалить
-                                </OverflowMenuItem>
-                              </OverflowMenu>
-                            ) : null}
-                          </div>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </Table>
-            )}
-
-            {editDeposits ? (
-              <div className="row-actions">
-                <Button
-                  disabled={busy || readOnly}
-                  onClick={() => void handleSaveDepositEdit()}
-                  type="button"
-                  variant="primary"
-                >
-                  Сохранить вклады
-                </Button>
-                <Button disabled={busy} onClick={() => setEditDeposits(null)} type="button">
-                  Отмена
-                </Button>
-              </div>
-            ) : null}
-            {depositTotalsUnconfirmed ? (
-              <p className={styles.hint} role="status">
-                {unresolvedCreate
-                  ? "Не удалось подтвердить создание вклада. Проверь список вкладов и перезапусти приложение перед повторным добавлением."
-                  : "Итоги вкладов уточняются."}{" "}
-                <button disabled={busy} onClick={() => void refreshDepositDisplay()} type="button">
-                  Обновить
-                </button>
-              </p>
-            ) : null}
-            <div className="totals-bar">
-              <span>
-                Баланс:{" "}
-                <strong>
-                  {totalText(
-                    depositTotalsUnconfirmed ? null : depositTotals.balance,
-                    depositTotals.currency,
+          {!readOnly || depositRows.length > 0 || depositsForeign ? (
+            <Panel
+              action={
+                <Badge>
+                  {depositsForeign || depositTotalsUnconfirmed ? (
+                    <>итог — · данные уточняются</>
+                  ) : (
+                    <>
+                      итог {totalText(depositTotals.balance, depositTotals.currency)} ·{" "}
+                      {depositRows.length} шт.
+                    </>
                   )}
-                </strong>
-              </span>
-              <span>
-                Прогноз / мес:{" "}
-                <strong>
-                  {totalText(
-                    depositTotalsUnconfirmed ? null : depositTotals.expected,
-                    depositTotals.currency,
-                  )}
-                </strong>
-              </span>
-              <span>
-                Получено:{" "}
-                <strong>
-                  {totalText(
-                    depositTotalsUnconfirmed ? null : depositTotals.actual,
-                    depositTotals.currency,
-                  )}
-                </strong>
-              </span>
-            </div>
-            {depositTotals.mixed ? (
-              <p className={styles.hint} role="status">
-                Строки в разных валютах: итог показан без конвертации.
-              </p>
-            ) : null}
-
-            {!readOnly ? (
-              <form className="form-stack asset-form" onSubmit={handleCreateDeposit}>
-                <p className="panel__label" style={{ marginBottom: 0 }}>
-                  Новый вклад
-                </p>
-                <div className="editor-grid">
-                  <Field htmlFor="dep-name" label="Название вклада">
-                    <Input
-                      disabled={busy}
-                      id="dep-name"
-                      onChange={(event) => {
-                        setDepositDraft({ ...depositDraft, name: event.target.value });
-                        setDepositDraftTouched(true);
-                      }}
-                      required
-                      value={depositDraft.name}
-                    />
-                  </Field>
-                  <Field htmlFor="dep-type" label="Тип">
-                    <Select
-                      disabled={busy}
-                      id="dep-type"
-                      onChange={(event) => {
-                        setDepositDraft({ ...depositDraft, deposit_type: event.target.value });
-                        setDepositDraftTouched(true);
-                      }}
-                      value={depositDraft.deposit_type}
-                    >
-                      <option value="deposit">Депозит</option>
-                      <option value="savings">Накопления</option>
-                    </Select>
-                  </Field>
-                  <Field htmlFor="dep-account" label="Счёт">
-                    <Select
-                      disabled={busy}
-                      id="dep-account"
-                      onChange={(event) => {
-                        setDepositDraft({ ...depositDraft, account_id: event.target.value });
-                        setDepositDraftTouched(true);
-                      }}
-                      value={effectiveAccountId}
-                    >
-                      <option value="">авто (создать «Депозиты»)</option>
-                      {depositAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.name} ({labelOf(ACCOUNT_TYPE_LABELS, account.account_type)})
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field htmlFor="dep-balance" label="Баланс вклада">
-                    <Input
-                      className="input--money"
-                      disabled={busy}
-                      id="dep-balance"
-                      inputMode="decimal"
-                      onChange={(event) => {
-                        setDepositDraft({ ...depositDraft, balance: event.target.value });
-                        setDepositDraftTouched(true);
-                      }}
-                      required
-                      value={depositDraft.balance}
-                    />
-                  </Field>
-                  <Field htmlFor="dep-rate" label="Годовая ставка %">
-                    <Input
-                      className="input--money"
-                      disabled={busy}
-                      id="dep-rate"
-                      onChange={(event) => {
-                        setDepositDraft({ ...depositDraft, annual_rate: event.target.value });
-                        setDepositDraftTouched(true);
-                      }}
-                      value={depositDraft.annual_rate}
-                    />
-                  </Field>
-                  <Field htmlFor="dep-actual" label="Факт. процент">
-                    <Input
-                      className="input--money"
-                      disabled={busy}
-                      id="dep-actual"
-                      onChange={(event) => {
-                        setDepositDraft({ ...depositDraft, actual_interest: event.target.value });
-                        setDepositDraftTouched(true);
-                      }}
-                      value={depositDraft.actual_interest}
-                    />
-                  </Field>
+                </Badge>
+              }
+              label=""
+              title="Депозиты"
+            >
+              {depositsForeign ? (
+                <div className="inline-alert inline-alert--error" role="alert">
+                  {DEPOSITS_FOREIGN_MESSAGE}
                 </div>
-                <Button
-                  disabled={busy || readOnly || Boolean(unresolvedCreate)}
-                  type="submit"
-                  variant="primary"
-                >
-                  {pendingCreated ? "Проверить создание" : "Добавить вклад"}
-                </Button>
-                <details className="field-details">
-                  <summary>О прогнозе процентов</summary>
-                  <p>
-                    Прогноз и фактическое начисление показываются отдельно; прогноз не является
-                    обещанием выплаты.
-                  </p>
-                </details>
-              </form>
-            ) : null}
-          </Panel>
-
-          <Panel
-            action={
-              <Badge>
-                наличные {cashTotalText} · в капитале {cashInCapitalText}
-              </Badge>
-            }
-            label="Активы"
-            title="Денежные средства"
-          >
-            {cashForeign ? (
-              <div className="inline-alert inline-alert--error" role="alert">
-                {CASH_FOREIGN_MESSAGE}
-              </div>
-            ) : cashRows.length === 0 ? (
-              <EmptyState description="Наличных позиций нет." inline title="Пусто" />
-            ) : (
-              <Table className={`month-cash-table ${styles.cashTable}`}>
-                <thead>
-                  <tr>
-                    <Th>Название</Th>
-                    <Th numeric>Сумма</Th>
-                    <Th>В капитале</Th>
-                    <Th className="month-cash-table__actions">Действия</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cashRows.map((row) => (
-                    <tr key={row.id}>
-                      <Td>{row.name}</Td>
-                      <Td numeric>
-                        {formatMoney(moneyAmount(row.amount), {
-                          currency: currencySuffix(row.currency),
-                        })}
-                      </Td>
-                      <Td>
-                        <Button
-                          disabled={busy || readOnly}
-                          onClick={() => void handleToggleCashCapital(row)}
-                          size="sm"
-                          type="button"
-                        >
-                          {row.include_in_capital ? "да" : "нет"}
-                        </Button>
-                      </Td>
-                      <Td className="month-cash-table__actions">
-                        <OverflowMenu label={`Действия для денежной позиции «${row.name}»`}>
-                          <OverflowMenuItem
-                            danger
-                            disabled={busy || readOnly}
-                            onClick={() => setPendingDeleteCash(row)}
-                          >
-                            Удалить
-                          </OverflowMenuItem>
-                        </OverflowMenu>
-                      </Td>
+              ) : depositRows.length === 0 ? (
+                <EmptyState
+                  description="Депозитов пока нет — добавь вклад формой ниже."
+                  inline
+                  title="Пусто"
+                />
+              ) : (
+                <Table className={`month-deposits-table ${styles.depositsTable}`}>
+                  <thead>
+                    <tr>
+                      <Th className="month-deposits-table__name">Название</Th>
+                      {showDepositType ? <Th className="month-deposits-table__type">Тип</Th> : null}
+                      <Th numeric>Баланс</Th>
+                      <Th numeric>Ставка</Th>
+                      <Th numeric>Прогноз в месяц</Th>
+                      <Th numeric>Получено</Th>
+                      {!readOnly ? (
+                        <Th className="month-deposits-table__actions">Действия</Th>
+                      ) : null}
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
-            )}
+                  </thead>
+                  <tbody>
+                    {depositRows.map((row) => {
+                      const editDeposit = editDeposits?.[row.id];
+                      return (
+                        <tr key={row.id}>
+                          <Td data-label="Название">
+                            {editDeposit ? (
+                              <Input
+                                disabled={busy || readOnly}
+                                value={editDeposit.name}
+                                onChange={(event) =>
+                                  setEditDeposits({
+                                    ...editDeposits,
+                                    [row.id]: { ...editDeposit, name: event.target.value },
+                                  })
+                                }
+                              />
+                            ) : (
+                              row.name
+                            )}
+                          </Td>
+                          {showDepositType ? (
+                            <Td data-label="Тип">
+                              {editDeposit ? (
+                                <Select
+                                  disabled={busy || readOnly}
+                                  value={editDeposit.deposit_type}
+                                  onChange={(event) =>
+                                    setEditDeposits({
+                                      ...editDeposits,
+                                      [row.id]: {
+                                        ...editDeposit,
+                                        deposit_type: event.target.value,
+                                      },
+                                    })
+                                  }
+                                >
+                                  <option value="deposit">Депозит</option>
+                                  <option value="savings">Накопления</option>
+                                </Select>
+                              ) : (
+                                labelOf(DEPOSIT_TYPE_LABELS, row.deposit_type)
+                              )}
+                            </Td>
+                          ) : null}
+                          <Td numeric data-label="Баланс">
+                            {editDeposit ? (
+                              <Input
+                                className="input--money"
+                                disabled={busy || readOnly}
+                                value={editDeposit.balance}
+                                onChange={(event) =>
+                                  setEditDeposits({
+                                    ...editDeposits,
+                                    [row.id]: { ...editDeposit, balance: event.target.value },
+                                  })
+                                }
+                              />
+                            ) : (
+                              formatMoney(moneyAmount(row.balance), {
+                                currency: currencySuffix(row.balance.currency),
+                              })
+                            )}
+                          </Td>
+                          <Td numeric data-label="Ставка">
+                            {editDeposit ? (
+                              <Input
+                                className="input--money"
+                                disabled={busy || readOnly}
+                                value={editDeposit.annual_rate}
+                                onChange={(event) =>
+                                  setEditDeposits({
+                                    ...editDeposits,
+                                    [row.id]: { ...editDeposit, annual_rate: event.target.value },
+                                  })
+                                }
+                              />
+                            ) : (
+                              formatPercent(row.annual_rate, { digits: 2 })
+                            )}
+                          </Td>
+                          <Td numeric data-label="Прогноз в месяц">
+                            <span className="muted">
+                              {formatMoney(moneyAmount(row.expected_monthly_interest), {
+                                currency: currencySuffix(row.expected_monthly_interest.currency),
+                              })}
+                            </span>
+                          </Td>
+                          <Td numeric data-label="Получено">
+                            {editDeposit ? (
+                              <Input
+                                className="input--money"
+                                disabled={busy || readOnly}
+                                value={editDeposit.actual_interest}
+                                onChange={(event) =>
+                                  setEditDeposits({
+                                    ...editDeposits,
+                                    [row.id]: {
+                                      ...editDeposit,
+                                      actual_interest: event.target.value,
+                                    },
+                                  })
+                                }
+                              />
+                            ) : (
+                              formatMoney(moneyAmount(row.actual_interest_received), {
+                                currency: currencySuffix(row.actual_interest_received.currency),
+                              })
+                            )}
+                          </Td>
+                          {!readOnly ? (
+                            <Td className="month-deposits-table__actions" data-label="Действия">
+                              <div className="row-actions">
+                                {!editDeposits ? (
+                                  <OverflowMenu label={`Действия для вклада «${row.name}»`}>
+                                    <OverflowMenuItem
+                                      disabled={busy || readOnly}
+                                      onClick={startDepositEdit}
+                                    >
+                                      Изменить
+                                    </OverflowMenuItem>
+                                    <OverflowMenuItem
+                                      danger
+                                      disabled={busy || readOnly}
+                                      onClick={() => setPendingDeleteDeposit(row)}
+                                    >
+                                      Удалить
+                                    </OverflowMenuItem>
+                                  </OverflowMenu>
+                                ) : null}
+                              </div>
+                            </Td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              )}
 
-            <div className="totals-bar">
-              <span>
-                Всего наличных: <strong>{cashTotalText}</strong>
-              </span>
-              <span>
-                В ликвидном капитале: <strong>{cashInCapitalText}</strong>
-              </span>
-            </div>
-            {!cashTotalQuery.isPending &&
-            !totalUnconfirmed &&
-            !(cashTotal && cashTotalQuery.isSuccess) ? (
-              <div className="inline-alert inline-alert--warn" role="status">
-                Итоги наличных за выбранный месяц недоступны: сумма не подменяется нулём, полнота
-                капитала не утверждается.{" "}
-                <Button
-                  disabled={cashTotalQuery.isFetching}
-                  onClick={() => void refreshCashTotal()}
-                  size="sm"
-                  type="button"
-                >
-                  Повторить чтение итога
-                </Button>
-              </div>
-            ) : null}
-            {totalWarning && !cashTotalQuery.isPending ? (
-              <div className="inline-alert inline-alert--warn" role="alert">
-                {totalWarning}{" "}
-                <Button
-                  disabled={cashTotalQuery.isFetching}
-                  onClick={() => void refreshCashTotal()}
-                  size="sm"
-                  type="button"
-                >
-                  Повторить чтение итога
-                </Button>
-              </div>
-            ) : null}
-
-            {!readOnly ? (
-              <form className="form-stack asset-form" onSubmit={handleCreateCash}>
-                <p className="panel__label section-form-label">Новая денежная позиция</p>
-                <div className="editor-grid">
-                  <Field htmlFor="cash-name" label="Название денежной позиции">
-                    <Input
-                      disabled={busy}
-                      id="cash-name"
-                      onChange={(event) => {
-                        setCashDraft({ ...cashDraft, name: event.target.value });
-                        setCashDraftTouched(true);
-                      }}
-                      required
-                      value={cashDraft.name}
-                    />
-                  </Field>
-                  <Field htmlFor="cash-amount" label="Сумма наличных">
-                    <Input
-                      className="input--money"
-                      disabled={busy}
-                      id="cash-amount"
-                      inputMode="decimal"
-                      onChange={(event) => {
-                        setCashDraft({ ...cashDraft, amount: event.target.value });
-                        setCashDraftTouched(true);
-                      }}
-                      required
-                      value={cashDraft.amount}
-                    />
-                  </Field>
+              {editDeposits ? (
+                <div className="row-actions">
+                  <Button
+                    disabled={busy || readOnly}
+                    onClick={() => void handleSaveDepositEdit()}
+                    type="button"
+                    variant="primary"
+                  >
+                    Сохранить вклады
+                  </Button>
+                  <Button disabled={busy} onClick={() => setEditDeposits(null)} type="button">
+                    Отмена
+                  </Button>
                 </div>
-                <label className="check-row">
-                  <input
-                    checked={cashDraft.include_in_capital}
+              ) : null}
+              {depositTotalsUnconfirmed ? (
+                <p className={styles.hint} role="status">
+                  {unresolvedCreate
+                    ? "Не удалось подтвердить создание вклада. Проверь список вкладов и перезапусти приложение перед повторным добавлением."
+                    : "Итоги вкладов уточняются."}{" "}
+                  <button
                     disabled={busy}
-                    onChange={(event) => {
-                      setCashDraft({ ...cashDraft, include_in_capital: event.target.checked });
-                      setCashDraftTouched(true);
-                    }}
-                    type="checkbox"
-                  />
-                  Включать в ликвидный капитал
-                </label>
-                <Button disabled={busy || readOnly} type="submit" variant="primary">
-                  Добавить денежную позицию
-                </Button>
-              </form>
-            ) : null}
-          </Panel>
+                    onClick={() => void refreshDepositDisplay()}
+                    type="button"
+                  >
+                    Обновить
+                  </button>
+                </p>
+              ) : null}
+              <div className="totals-bar">
+                <span>
+                  Баланс:{" "}
+                  <strong>
+                    {totalText(
+                      depositTotalsUnconfirmed ? null : depositTotals.balance,
+                      depositTotals.currency,
+                    )}
+                  </strong>
+                </span>
+                <span>
+                  Прогноз в месяц:{" "}
+                  <strong>
+                    {totalText(
+                      depositTotalsUnconfirmed ? null : depositTotals.expected,
+                      depositTotals.currency,
+                    )}
+                  </strong>
+                </span>
+                <span>
+                  Получено:{" "}
+                  <strong>
+                    {totalText(
+                      depositTotalsUnconfirmed ? null : depositTotals.actual,
+                      depositTotals.currency,
+                    )}
+                  </strong>
+                </span>
+              </div>
+              {depositTotals.mixed ? (
+                <p className={styles.hint} role="status">
+                  Строки в разных валютах: итог показан без конвертации.
+                </p>
+              ) : null}
 
-          <LinkedPairContext
-            accounts={accounts}
-            debts={debts}
-            error={linkedPairError}
-            label="Актив"
-            pairs={linkedPairs}
-            title="Связанные долги"
-          />
+              {!readOnly ? (
+                <form className="form-stack asset-form" onSubmit={handleCreateDeposit}>
+                  <p className="panel__label" style={{ marginBottom: 0 }}>
+                    Новый вклад
+                  </p>
+                  <div className="editor-grid">
+                    <Field htmlFor="dep-name" label="Название вклада">
+                      <Input
+                        disabled={busy}
+                        id="dep-name"
+                        onChange={(event) => {
+                          setDepositDraft({ ...depositDraft, name: event.target.value });
+                          setDepositDraftTouched(true);
+                        }}
+                        required
+                        value={depositDraft.name}
+                      />
+                    </Field>
+                    <Field htmlFor="dep-type" label="Тип">
+                      <Select
+                        disabled={busy}
+                        id="dep-type"
+                        onChange={(event) => {
+                          setDepositDraft({ ...depositDraft, deposit_type: event.target.value });
+                          setDepositDraftTouched(true);
+                        }}
+                        value={depositDraft.deposit_type}
+                      >
+                        <option value="deposit">Депозит</option>
+                        <option value="savings">Накопления</option>
+                      </Select>
+                    </Field>
+                    <Field htmlFor="dep-account" label="Счёт">
+                      <Select
+                        disabled={busy}
+                        id="dep-account"
+                        onChange={(event) => {
+                          setDepositDraft({ ...depositDraft, account_id: event.target.value });
+                          setDepositDraftTouched(true);
+                        }}
+                        value={effectiveAccountId}
+                      >
+                        <option value="">авто (создать «Депозиты»)</option>
+                        {depositAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} ({labelOf(ACCOUNT_TYPE_LABELS, account.account_type)})
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field htmlFor="dep-balance" label="Баланс вклада">
+                      <Input
+                        className="input--money"
+                        disabled={busy}
+                        id="dep-balance"
+                        inputMode="decimal"
+                        onChange={(event) => {
+                          setDepositDraft({ ...depositDraft, balance: event.target.value });
+                          setDepositDraftTouched(true);
+                        }}
+                        required
+                        value={depositDraft.balance}
+                      />
+                    </Field>
+                    <Field htmlFor="dep-rate" label="Годовая ставка %">
+                      <Input
+                        className="input--money"
+                        disabled={busy}
+                        id="dep-rate"
+                        onChange={(event) => {
+                          setDepositDraft({ ...depositDraft, annual_rate: event.target.value });
+                          setDepositDraftTouched(true);
+                        }}
+                        value={depositDraft.annual_rate}
+                      />
+                    </Field>
+                    <Field htmlFor="dep-actual" label="Факт. процент">
+                      <Input
+                        className="input--money"
+                        disabled={busy}
+                        id="dep-actual"
+                        onChange={(event) => {
+                          setDepositDraft({ ...depositDraft, actual_interest: event.target.value });
+                          setDepositDraftTouched(true);
+                        }}
+                        value={depositDraft.actual_interest}
+                      />
+                    </Field>
+                  </div>
+                  <Button
+                    disabled={busy || readOnly || Boolean(unresolvedCreate)}
+                    type="submit"
+                    variant="primary"
+                  >
+                    {pendingCreated ? "Проверить создание" : "Добавить вклад"}
+                  </Button>
+                  <details className="field-details">
+                    <summary>О прогнозе процентов</summary>
+                    <p>
+                      Прогноз и фактическое начисление показываются отдельно; прогноз не является
+                      обещанием выплаты.
+                    </p>
+                  </details>
+                </form>
+              ) : null}
+            </Panel>
+          ) : null}
+
+          {!readOnly || cashRows.length > 0 || cashForeign ? (
+            <Panel
+              action={
+                <Badge>
+                  наличные {cashTotalText} · в капитале {cashInCapitalText}
+                </Badge>
+              }
+              label=""
+              title="Денежные средства"
+            >
+              {cashForeign ? (
+                <div className="inline-alert inline-alert--error" role="alert">
+                  {CASH_FOREIGN_MESSAGE}
+                </div>
+              ) : cashRows.length === 0 ? (
+                <EmptyState description="Наличных позиций нет." inline title="Пусто" />
+              ) : (
+                <Table className={`month-cash-table ${styles.cashTable}`}>
+                  <thead>
+                    <tr>
+                      <Th>Название</Th>
+                      <Th numeric>Сумма</Th>
+                      <Th>В капитале</Th>
+                      {!readOnly ? <Th className="month-cash-table__actions">Действия</Th> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cashRows.map((row) => (
+                      <tr key={row.id}>
+                        <Td>
+                          {row.name}
+                          {cashRows.filter((cash) => cash.name === row.name).length > 1 &&
+                          row.account_id != null ? (
+                            <small className={styles.cashAccount}>
+                              {accounts.find((account) => account.id === row.account_id)?.name}
+                            </small>
+                          ) : null}
+                        </Td>
+                        <Td numeric>
+                          {formatMoney(moneyAmount(row.amount), {
+                            currency: currencySuffix(row.currency),
+                          })}
+                        </Td>
+                        <Td>
+                          {readOnly ? (
+                            row.include_in_capital ? (
+                              "да"
+                            ) : (
+                              "нет"
+                            )
+                          ) : (
+                            <Button
+                              disabled={busy || readOnly}
+                              onClick={() => void handleToggleCashCapital(row)}
+                              size="sm"
+                              type="button"
+                            >
+                              {row.include_in_capital ? "да" : "нет"}
+                            </Button>
+                          )}
+                        </Td>
+                        {!readOnly ? (
+                          <Td className="month-cash-table__actions">
+                            <OverflowMenu label={`Действия для денежной позиции «${row.name}»`}>
+                              <OverflowMenuItem
+                                danger
+                                disabled={busy || readOnly}
+                                onClick={() => setPendingDeleteCash(row)}
+                              >
+                                Удалить
+                              </OverflowMenuItem>
+                            </OverflowMenu>
+                          </Td>
+                        ) : null}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+
+              <div className="totals-bar">
+                <span>
+                  Всего наличных: <strong>{cashTotalText}</strong>
+                </span>
+                <span>
+                  В ликвидном капитале: <strong>{cashInCapitalText}</strong>
+                </span>
+              </div>
+              {!cashTotalQuery.isPending &&
+              !totalUnconfirmed &&
+              !(cashTotal && cashTotalQuery.isSuccess) ? (
+                <div className="inline-alert inline-alert--warn" role="status">
+                  Итоги наличных за выбранный месяц недоступны: сумма не подменяется нулём, полнота
+                  капитала не утверждается.{" "}
+                  <Button
+                    disabled={cashTotalQuery.isFetching}
+                    onClick={() => void refreshCashTotal()}
+                    size="sm"
+                    type="button"
+                  >
+                    Повторить чтение итога
+                  </Button>
+                </div>
+              ) : null}
+              {totalWarning && !cashTotalQuery.isPending ? (
+                <div className="inline-alert inline-alert--warn" role="alert">
+                  {totalWarning}{" "}
+                  <Button
+                    disabled={cashTotalQuery.isFetching}
+                    onClick={() => void refreshCashTotal()}
+                    size="sm"
+                    type="button"
+                  >
+                    Повторить чтение итога
+                  </Button>
+                </div>
+              ) : null}
+
+              {!readOnly ? (
+                <form className="form-stack asset-form" onSubmit={handleCreateCash}>
+                  <p className="panel__label section-form-label">Новая денежная позиция</p>
+                  <div className="editor-grid">
+                    <Field htmlFor="cash-name" label="Название денежной позиции">
+                      <Input
+                        disabled={busy}
+                        id="cash-name"
+                        onChange={(event) => {
+                          setCashDraft({ ...cashDraft, name: event.target.value });
+                          setCashDraftTouched(true);
+                        }}
+                        required
+                        value={cashDraft.name}
+                      />
+                    </Field>
+                    <Field htmlFor="cash-amount" label="Сумма наличных">
+                      <Input
+                        className="input--money"
+                        disabled={busy}
+                        id="cash-amount"
+                        inputMode="decimal"
+                        onChange={(event) => {
+                          setCashDraft({ ...cashDraft, amount: event.target.value });
+                          setCashDraftTouched(true);
+                        }}
+                        required
+                        value={cashDraft.amount}
+                      />
+                    </Field>
+                  </div>
+                  <label className="check-row">
+                    <input
+                      checked={cashDraft.include_in_capital}
+                      disabled={busy}
+                      onChange={(event) => {
+                        setCashDraft({ ...cashDraft, include_in_capital: event.target.checked });
+                        setCashDraftTouched(true);
+                      }}
+                      type="checkbox"
+                    />
+                    Включать в ликвидный капитал
+                  </label>
+                  <Button disabled={busy || readOnly} type="submit" variant="primary">
+                    Добавить денежную позицию
+                  </Button>
+                </form>
+              ) : null}
+            </Panel>
+          ) : null}
 
           <ConfirmDialog
             busy={busy}

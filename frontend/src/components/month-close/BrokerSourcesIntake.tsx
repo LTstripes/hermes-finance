@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { listAccounts } from "../../api/accounts";
 import {
   type BrokerSource,
@@ -11,6 +11,7 @@ import {
 } from "../../api/brokerSources";
 import { listInstruments } from "../../api/instruments";
 import { readSourceIntake, type SourceIntake } from "../../api/sourceIntake";
+import type { MonthChecklistStep } from "../../api/monthCloseWorkflow";
 import type { ReportingMonth } from "../../api/types";
 import { formatDate, formatMoney } from "../../lib/format";
 import { brokerSourceTitle } from "../../lib/ownerCopy";
@@ -58,6 +59,10 @@ function Issue({ issue }: { issue: BrokerSourceIssue }) {
 export function BrokerSourcesIntake({
   month,
   disabled = false,
+  step,
+  accountByIntake,
+  children,
+  detailsOpen = false,
   reportXmlFiles,
   onXmlFilesChange,
   onSaved,
@@ -67,6 +72,10 @@ export function BrokerSourcesIntake({
 }: {
   month: Pick<ReportingMonth, "id" | "year" | "month" | "status">;
   disabled?: boolean;
+  step?: MonthChecklistStep;
+  accountByIntake?: Record<number, number | null>;
+  children?: ReactNode;
+  detailsOpen?: boolean;
   reportXmlFiles?: File[];
   onXmlFilesChange?: (files: File[]) => void;
   onSaved: (file: File, intake: SourceIntake) => void;
@@ -99,7 +108,7 @@ export function BrokerSourcesIntake({
   const accounts = useQuery({
     queryKey: ["broker-source-pdf-accounts", month.id],
     queryFn: ({ signal }) => listAccounts(signal),
-    enabled: pdf !== null,
+    enabled: true,
   });
   const instruments = useQuery({
     queryKey: ["broker-source-pdf-instruments", month.id],
@@ -252,7 +261,11 @@ export function BrokerSourcesIntake({
   const slotLabel = (item: BrokerSource) =>
     item.kind === "income_pdf"
       ? copy.pdfSlot
-      : copy.statement + (item.source_accounts.join(" / ") || copy.unknownAccount);
+      : ((item.intake_id == null
+          ? undefined
+          : accounts.data?.find((account) => account.id === accountByIntake?.[item.intake_id ?? -1])
+              ?.name) ??
+        (item.source_accounts.join(" / ") || copy.unknownAccount));
   function review(item: BrokerSource) {
     if (blocked) return;
     if (item.intake_id !== null) {
@@ -301,11 +314,19 @@ export function BrokerSourcesIntake({
           </ul>
         </fieldset>
       )}
+      {(step?.attention_count ?? 0) > 0 || step?.state === "attention" ? (
+        <p role="status" className="inline-alert inline-alert--warn">
+          Есть замечания{step?.attention_count ? `: ${step.attention_count}` : ""}
+        </p>
+      ) : null}
       {query.isPending || query.isFetching || busy || uncertain ? (
         <p role="status">{copy.loading}</p>
       ) : query.isError ? (
         <p role="status">{copy.readFailed}</p>
-      ) : query.data?.status === "empty" && !confirmationCount && !retry ? (
+      ) : (step?.attention_count ?? 0) > 0 || step?.state === "attention" ? null : query.data
+          ?.status === "empty" &&
+        !confirmationCount &&
+        !retry ? (
         <p>{copy.empty}</p>
       ) : (
         <p
@@ -324,7 +345,21 @@ export function BrokerSourcesIntake({
         <ul aria-label={copy.savedFiles}>
           {items.map((item) => (
             <li key={item.document_sha256}>
-              <strong>{slotLabel(item)}</strong>. {copy.states[item.state]}
+              <strong>{slotLabel(item)}</strong>
+              <span>
+                {" "}
+                · {formatDate(item.covered_from)} — {formatDate(item.covered_to)} ·{" "}
+                {item.state === "file_saved"
+                  ? "Файл сохранён"
+                  : item.state === "needs_decision"
+                    ? "Нужна проверка"
+                    : "Данные приняты"}
+              </span>
+              {item.kind !== "income_pdf" ? (
+                <small className={styles.contractNumber}>
+                  Договор: {item.source_accounts.join(" / ") || copy.unknownAccount}
+                </small>
+              ) : null}
               {item.state === "needs_decision" && (
                 <>
                   {item.kind === "income_pdf" ? (
@@ -388,25 +423,27 @@ export function BrokerSourcesIntake({
           {copy.refresh}
         </button>
       )}
-      <details>
-        <summary>{copy.investmentDetails}</summary>
-        {month.status !== "closed" && (
-          <fieldset disabled={busy || applying || disabled || !!pdf || !!uncertain}>
-            <legend>{copy.investmentReport}</legend>
-            <SourceReportPreviewPanel
-              xmlFiles={reportXmlFiles ?? xmlFiles}
-              onPendingChange={setProofPending}
-              onSaved={() => {
-                void client.invalidateQueries({ queryKey: ["source-returns"] });
-                void client.invalidateQueries({ queryKey: ["returns"] });
-              }}
-            />
-          </fieldset>
-        )}
-        <SavedInvestmentReports
-          period={`${String(month.year)}-${String(month.month).padStart(2, "0")}`}
-        />
-      </details>
+      <SourceDetails extra={children} open={detailsOpen}>
+        <details>
+          <summary>{copy.investmentDetails}</summary>
+          {month.status !== "closed" && (
+            <fieldset disabled={busy || applying || disabled || !!pdf || !!uncertain}>
+              <legend>{copy.investmentReport}</legend>
+              <SourceReportPreviewPanel
+                xmlFiles={reportXmlFiles ?? xmlFiles}
+                onPendingChange={setProofPending}
+                onSaved={() => {
+                  void client.invalidateQueries({ queryKey: ["source-returns"] });
+                  void client.invalidateQueries({ queryKey: ["returns"] });
+                }}
+              />
+            </fieldset>
+          )}
+          <SavedInvestmentReports
+            period={`${String(month.year)}-${String(month.month).padStart(2, "0")}`}
+          />
+        </details>
+      </SourceDetails>
       <ConfirmDialog
         open={finishPdf}
         title={copy.finishReview}
@@ -447,5 +484,25 @@ export function BrokerSourcesIntake({
         </details>
       )}
     </section>
+  );
+}
+
+function SourceDetails({
+  children,
+  extra,
+  open,
+}: {
+  children: ReactNode;
+  extra?: ReactNode;
+  open: boolean;
+}) {
+  return extra ? (
+    <details open={open}>
+      <summary>Подробнее о разборе</summary>
+      {children}
+      {extra}
+    </details>
+  ) : (
+    <>{children}</>
   );
 }
