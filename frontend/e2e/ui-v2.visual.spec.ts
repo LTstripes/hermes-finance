@@ -530,7 +530,7 @@ test("ui-v2 Monthly Close desktop: final review, Close and Home journey", async 
   await page.goto("/v2");
   await page.getByTestId("v2-draft-action").click();
   await expect(page).toHaveURL(/\/v2\/close\?month=12&step=market_quotes$/);
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   await page.getByRole("button", { name: "Закрыть месяц" }).click();
   await expect(page.getByRole("alertdialog", { name: "Закрыть месяц?" })).toBeVisible();
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
@@ -554,7 +554,7 @@ test("ui-v2 Month desktop: legacy payout return has one Close panel without the 
   const evidence = await installCloseApi(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=12&step=actual_payouts");
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toHaveCount(1);
   await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Выбрать выписку с выплатами" })).toHaveCount(0);
