@@ -155,8 +155,6 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
 
 async function openDisclosure(page: Page, name: string) {
   const summary = page.getByText(name, { exact: true });
-  const group = page.getByText("Подробнее о разборе", { exact: true });
-  if (!(await summary.isVisible()) && (await group.isVisible())) await group.click();
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
     await summary.click();
@@ -606,8 +604,8 @@ for (const width of [1280, 1440, 1920])
       await expect(table).toContainText("12 345 678,90");
       await expect(table).toContainText("12 345,67");
       await tile(page, /Брокерские выписки/);
-      await openDisclosure(page, "Подробнее о разборе");
       const sourceDetails = page.getByText("Подробности", { exact: true });
+      await expect(sourceDetails).toBeVisible();
       await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
       await expect(page.getByLabel("Выбрать файлы", { exact: true })).toBeVisible();
       await fits(page);

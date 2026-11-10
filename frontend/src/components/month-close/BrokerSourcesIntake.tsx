@@ -62,7 +62,6 @@ export function BrokerSourcesIntake({
   step,
   accountByIntake,
   children,
-  detailsOpen = false,
   reportXmlFiles,
   onXmlFilesChange,
   onSaved,
@@ -75,7 +74,6 @@ export function BrokerSourcesIntake({
   step?: MonthChecklistStep;
   accountByIntake?: Record<number, number | null>;
   children?: ReactNode;
-  detailsOpen?: boolean;
   reportXmlFiles?: File[];
   onXmlFilesChange?: (files: File[]) => void;
   onSaved: (file: File, intake: SourceIntake) => void;
@@ -423,27 +421,26 @@ export function BrokerSourcesIntake({
           {copy.refresh}
         </button>
       )}
-      <SourceDetails extra={children} open={detailsOpen}>
-        <details>
-          <summary>{copy.investmentDetails}</summary>
-          {month.status !== "closed" && (
-            <fieldset disabled={busy || applying || disabled || !!pdf || !!uncertain}>
-              <legend>{copy.investmentReport}</legend>
-              <SourceReportPreviewPanel
-                xmlFiles={reportXmlFiles ?? xmlFiles}
-                onPendingChange={setProofPending}
-                onSaved={() => {
-                  void client.invalidateQueries({ queryKey: ["source-returns"] });
-                  void client.invalidateQueries({ queryKey: ["returns"] });
-                }}
-              />
-            </fieldset>
-          )}
-          <SavedInvestmentReports
-            period={`${String(month.year)}-${String(month.month).padStart(2, "0")}`}
-          />
-        </details>
-      </SourceDetails>
+      <details>
+        <summary>{copy.investmentDetails}</summary>
+        {month.status !== "closed" && (
+          <fieldset disabled={busy || applying || disabled || !!pdf || !!uncertain}>
+            <legend>{copy.investmentReport}</legend>
+            <SourceReportPreviewPanel
+              xmlFiles={reportXmlFiles ?? xmlFiles}
+              onPendingChange={setProofPending}
+              onSaved={() => {
+                void client.invalidateQueries({ queryKey: ["source-returns"] });
+                void client.invalidateQueries({ queryKey: ["returns"] });
+              }}
+            />
+          </fieldset>
+        )}
+        <SavedInvestmentReports
+          period={`${String(month.year)}-${String(month.month).padStart(2, "0")}`}
+        />
+      </details>
+      {children}
       <ConfirmDialog
         open={finishPdf}
         title={copy.finishReview}
@@ -484,25 +481,5 @@ export function BrokerSourcesIntake({
         </details>
       )}
     </section>
-  );
-}
-
-function SourceDetails({
-  children,
-  extra,
-  open,
-}: {
-  children: ReactNode;
-  extra?: ReactNode;
-  open: boolean;
-}) {
-  return extra ? (
-    <details open={open}>
-      <summary>Подробнее о разборе</summary>
-      {children}
-      {extra}
-    </details>
-  ) : (
-    <>{children}</>
   );
 }

@@ -35,9 +35,6 @@ async function openBrokerReview(page: Page, accountId: number) {
   await expect(
     page.getByRole("region", { name: "Рабочая область: Брокерские выписки", exact: true }),
   ).toBeVisible();
-  // The outer disclosure starts open for a month that still needs a source.
-  const outer = page.getByText("Подробнее о разборе", { exact: true });
-  if (!(await outer.evaluate((element) => element.closest("details")?.open))) await outer.click();
   const summary = page.getByText("Подробности разбора и сохранение месяца", { exact: true });
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))

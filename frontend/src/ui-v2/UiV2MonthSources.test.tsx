@@ -97,8 +97,6 @@ function mount(
     </QueryClientProvider>,
   );
   if (disclose) {
-    const group = screen.queryByText("Подробнее о разборе");
-    if (group) fireEvent.click(group);
     fireEvent.click(screen.getByText("Подробности"));
   }
   return { onReview, fetcher };
@@ -205,6 +203,16 @@ it("retains historical source-account selection without treating its original as
 it("keeps technical source panels collapsed on ordinary entry", async () => {
   mount("/v2/close?month=12", false, [], false);
   await screen.findByText("Источник #1 · ACCOUNT-A / ACCOUNT-A-native");
+  const sources = screen.getByRole("region", { name: "Брокерские выписки" });
+  expect(within(sources).getByRole("heading", { name: "Брокерские выписки" })).toBeVisible();
+  expect(screen.queryByText("Подробнее о разборе")).not.toBeInTheDocument();
+  for (const title of [
+    "Подробности",
+    "Подробности инструментов и предварительных выплат",
+    "Подробности разбора и сохранение месяца",
+  ]) {
+    expect(screen.getByText(title)).toBeVisible();
+  }
   expect(screen.getByText("Подробности").closest("details")).not.toHaveAttribute("open");
   expect(
     screen.getByText("Подробности инструментов и предварительных выплат").closest("details"),
@@ -219,8 +227,6 @@ it("retains historical XML intake behind details without a second investment-rep
   await screen.findByText("Источник #1 · ACCOUNT-A / ACCOUNT-A-native");
   const upload = screen.getByLabelText("XML-файлы");
   expect(upload).not.toBeVisible();
-  const group = screen.queryByText("Подробнее о разборе");
-  if (group) fireEvent.click(group);
   fireEvent.click(screen.getByText("Подробности"));
   expect(upload).not.toBeVisible();
   fireEvent.click(screen.getByText("Исходники и повторный выбор файла"));

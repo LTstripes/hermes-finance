@@ -233,6 +233,7 @@ export default function UiV2ClosePage() {
         ? "close"
         : null;
   const closed = workflowIdentityMatches && workflow.month.status === "closed";
+  const PayoutForecastContainer = closed ? "details" : "section";
   const finalReviewActive = panel === "close";
   // Refresh the retained review only where it is displayed. Writer panels and
   // lifecycle commands own their independent GETs and must not be raced here.
@@ -405,8 +406,12 @@ export default function UiV2ClosePage() {
               />
             ) : null}
             {panel === "payouts" ? (
-              <details className={monthStyles.closeDetails}>
-                <summary>Прогноз и календарь выплат</summary>
+              <PayoutForecastContainer className={monthStyles.closeDetails}>
+                {closed ? (
+                  <summary>Прогноз и календарь выплат</summary>
+                ) : (
+                  <h3>Прогноз и календарь выплат</h3>
+                )}
                 <MonthDraftPayouts
                   key={`draft-forecasts:${workflow.month.id}:${discardVersion}`}
                   monthId={workflow.month.id}
@@ -423,7 +428,7 @@ export default function UiV2ClosePage() {
                   }
                   sourceVersion={original.confirmed?.request_id}
                 />
-              </details>
+              </PayoutForecastContainer>
             ) : null}
             {panel === "close" ? (
               <>

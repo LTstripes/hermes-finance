@@ -1073,13 +1073,11 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
     );
   expect(order.indexOf("brokers")).toBeLessThan(order.indexOf("positions"));
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
-  await page.getByText("Подробнее о разборе", { exact: true }).click();
   const instrumentDetails = page.getByText("Подробности инструментов и предварительных выплат", {
     exact: true,
   });
   await expect(instrumentDetails.locator("..")).not.toHaveAttribute("open");
-  if (!(await instrumentDetails.isVisible()))
-    await page.getByText("Подробнее о разборе", { exact: true }).click();
+  await expect(instrumentDetails).toBeVisible();
   await instrumentDetails.click();
   await expect(instrumentDetails.locator("..")).toHaveAttribute("open", "");
   await page.getByText("Наблюдения выплат источника", { exact: true }).click();
@@ -1101,19 +1099,13 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   });
   await page.reload();
   await expect(instrumentDetails.locator("..")).not.toHaveAttribute("open");
-  await page.getByText("Подробнее о разборе", { exact: true }).click();
-  if (!(await instrumentDetails.isVisible()))
-    await page.getByText("Подробнее о разборе", { exact: true }).click();
+  await expect(instrumentDetails).toBeVisible();
   await instrumentDetails.click();
   await expect(dates).toBeVisible();
   await expect(dates).toHaveValue("2030-04-30");
   await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
   expect(previewBodies).toHaveLength(0);
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
-  if (
-    !(await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).isVisible())
-  )
-    await page.getByText("Подробнее о разборе", { exact: true }).click();
   await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).click();
   await page.getByLabel("Сохранённый разбор").selectOption("1");
   await page.getByLabel("Валюта предложения счёта").fill("RUB");
@@ -1125,19 +1117,15 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page).toHaveURL(/panel=payouts/);
   await page.goBack();
   await expect(page).toHaveURL(/panel=brokers/);
-  if (
-    !(await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).isVisible())
-  )
-    await page.getByText("Подробнее о разборе", { exact: true }).click();
   await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).click();
   await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("");
   await nav.getByRole("link", { name: /^Выплаты/ }).click();
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(page.locator("#month-panel-total")).toContainText("860");
   await expect(page.locator("#month-panel-total")).not.toContainText("1 720");
-  await expect(page.locator("#month-draft-payouts")).not.toBeVisible();
-  await page.getByText("Прогноз и календарь выплат", { exact: true }).click();
   await expect(page.locator("#month-draft-payouts")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Обновить прогноз Т-Инвест" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Календарь выплат", exact: true })).toBeVisible();
   await expect(
     page.getByText("Подробности разбора и сохранение месяца", { exact: true }),
   ).toHaveCount(0);
@@ -1160,9 +1148,7 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page).toHaveURL(/panel=payouts/);
   await expect(page).toHaveURL(/payout_as_of=2030-04-30/);
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
-  await page.getByText("Подробнее о разборе", { exact: true }).click();
-  if (!(await instrumentDetails.isVisible()))
-    await page.getByText("Подробнее о разборе", { exact: true }).click();
+  await expect(instrumentDetails).toBeVisible();
   await instrumentDetails.click();
   await expect(dates).toBeVisible();
   await expect(dates).toHaveValue("2030-04-30");
@@ -1185,6 +1171,11 @@ test("ui-v2 Month payout entry keeps CLOSED records read-only without background
   await expect(page.locator("#payout-act-gross")).toHaveCount(0);
   await expect(page.locator("#payout-exp-gross")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Добавить выплату", exact: true })).toHaveCount(0);
+  await expect(page.locator("#month-draft-payouts")).not.toBeVisible();
+  await page.getByText("Прогноз и календарь выплат", { exact: true }).click();
+  await expect(page.locator("#month-draft-payouts")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Обновить прогноз Т-Инвест" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Календарь выплат", exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Фактические выплаты" })).toBeVisible();
   expect(writes).toEqual([]);
@@ -1242,8 +1233,8 @@ test("month sources collapse historical overlaps and isolate saved draft payouts
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/v2/close?month=7&panel=brokers");
-    await page.getByText("Подробнее о разборе", { exact: true }).click();
     const sourceDetails = page.getByText("Подробности", { exact: true });
+    await expect(sourceDetails).toBeVisible();
     await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
     await sourceDetails.focus();
     await page.keyboard.press("Enter");
@@ -1266,9 +1257,9 @@ test("month sources collapse historical overlaps and isolate saved draft payouts
       .getByRole("navigation", { name: "Разделы месяца" })
       .getByRole("link", { name: /^Выплаты/ })
       .click();
-    await expect(page.locator("#month-draft-payouts")).not.toBeVisible();
-    await page.getByText("Прогноз и календарь выплат", { exact: true }).click();
     await expect(page.locator("#month-draft-payouts")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Обновить прогноз Т-Инвест" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Календарь выплат", exact: true })).toBeVisible();
     await expect(page.locator('input[type="file"]')).toHaveCount(0);
     await expect(page.getByLabel("Сохранённый разбор")).toHaveCount(0);
     await page.screenshot({

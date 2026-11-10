@@ -368,6 +368,7 @@ export function UiV2MonthSources({
         }}
       />
       <section aria-label="Брокерские выписки" id="month-sources" data-testid="month-month-sources">
+        <h2 className="sr-only">Брокерские выписки</h2>
         <div className={styles.stack}>
           <BrokerSourcesIntake
             key={month.id}
@@ -383,7 +384,6 @@ export function UiV2MonthSources({
             disabled={unresolved || uploadWouldDiscard || historicalUploadPending}
             onSaved={rememberSource}
             onReview={openSource}
-            detailsOpen={reviewExpanded || unresolved}
           >
             <details>
               <summary>Подробности</summary>
