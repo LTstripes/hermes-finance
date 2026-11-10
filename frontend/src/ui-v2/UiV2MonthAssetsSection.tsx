@@ -260,6 +260,8 @@ export function UiV2MonthAssetsSection({ context }: { context: MonthEditorContex
 
 function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   const { month, readOnly, setDirty } = context;
+  const closed = month.status === "closed";
+  const [showEmptyDeposits, setShowEmptyDeposits] = useState(false);
   const monthId = month.id;
   const queryClient = useQueryClient();
 
@@ -432,6 +434,16 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       mixed: depositRows.some((row) => row.balance.currency !== firstCurrency),
     };
   }, [depositRows, depositsForeign]);
+
+  const emptyDeposits = depositRows.filter(
+    (row) =>
+      normalizeMoneyInput(row.balance.amount) !== null && toKopecks(row.balance.amount) === 0n,
+  );
+  const visibleDeposits =
+    closed && !showEmptyDeposits
+      ? depositRows.filter((row) => !emptyDeposits.includes(row))
+      : depositRows;
+  const showCashCapital = !closed || cashRows.some((row) => !row.include_in_capital);
 
   const defaultAccountId = depositAccounts[0]?.id ?? null;
   const effectiveAccountId =
@@ -1067,7 +1079,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {depositRows.map((row) => {
+                    {visibleDeposits.map((row) => {
                       const editDeposit = editDeposits?.[row.id];
                       return (
                         <tr key={row.id}>
@@ -1203,9 +1215,46 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                       );
                     })}
                   </tbody>
+                  {closed ? (
+                    <tfoot>
+                      <tr>
+                        <th scope="row" colSpan={showDepositType ? 2 : 1}>
+                          Итого
+                        </th>
+                        <Td numeric data-label="Баланс">
+                          {totalText(
+                            depositTotalsUnconfirmed ? null : depositTotals.balance,
+                            depositTotals.currency,
+                          )}
+                        </Td>
+                        <Td />
+                        <Td numeric data-label="Прогноз">
+                          {totalText(
+                            depositTotalsUnconfirmed ? null : depositTotals.expected,
+                            depositTotals.currency,
+                          )}
+                        </Td>
+                        <Td numeric data-label="Получено">
+                          {totalText(
+                            depositTotalsUnconfirmed ? null : depositTotals.actual,
+                            depositTotals.currency,
+                          )}
+                        </Td>
+                      </tr>
+                    </tfoot>
+                  ) : null}
                 </Table>
               )}
 
+              {closed && emptyDeposits.length > 0 ? (
+                <button
+                  type="button"
+                  aria-expanded={showEmptyDeposits}
+                  onClick={() => setShowEmptyDeposits(!showEmptyDeposits)}
+                >
+                  {showEmptyDeposits ? "Скрыть пустые" : `ещё ${emptyDeposits.length} пустых`}
+                </button>
+              ) : null}
               {editDeposits ? (
                 <div className="row-actions">
                   <Button
@@ -1235,35 +1284,37 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   </button>
                 </p>
               ) : null}
-              <div className="totals-bar">
-                <span>
-                  Баланс:{" "}
-                  <strong>
-                    {totalText(
-                      depositTotalsUnconfirmed ? null : depositTotals.balance,
-                      depositTotals.currency,
-                    )}
-                  </strong>
-                </span>
-                <span>
-                  Прогноз в месяц:{" "}
-                  <strong>
-                    {totalText(
-                      depositTotalsUnconfirmed ? null : depositTotals.expected,
-                      depositTotals.currency,
-                    )}
-                  </strong>
-                </span>
-                <span>
-                  Получено:{" "}
-                  <strong>
-                    {totalText(
-                      depositTotalsUnconfirmed ? null : depositTotals.actual,
-                      depositTotals.currency,
-                    )}
-                  </strong>
-                </span>
-              </div>
+              {!closed ? (
+                <div className="totals-bar">
+                  <span>
+                    Баланс:{" "}
+                    <strong>
+                      {totalText(
+                        depositTotalsUnconfirmed ? null : depositTotals.balance,
+                        depositTotals.currency,
+                      )}
+                    </strong>
+                  </span>
+                  <span>
+                    Прогноз в месяц:{" "}
+                    <strong>
+                      {totalText(
+                        depositTotalsUnconfirmed ? null : depositTotals.expected,
+                        depositTotals.currency,
+                      )}
+                    </strong>
+                  </span>
+                  <span>
+                    Получено:{" "}
+                    <strong>
+                      {totalText(
+                        depositTotalsUnconfirmed ? null : depositTotals.actual,
+                        depositTotals.currency,
+                      )}
+                    </strong>
+                  </span>
+                </div>
+              ) : null}
               {depositTotals.mixed ? (
                 <p className={styles.hint} role="status">
                   Строки в разных валютах: итог показан без конвертации.
@@ -1400,7 +1451,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                     <tr>
                       <Th>Название</Th>
                       <Th numeric>Сумма</Th>
-                      <Th>В капитале</Th>
+                      {showCashCapital ? <Th>В капитале</Th> : null}
                       {!readOnly ? <Th className="month-cash-table__actions">Действия</Th> : null}
                     </tr>
                   </thead>
@@ -1421,24 +1472,26 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                             currency: currencySuffix(row.currency),
                           })}
                         </Td>
-                        <Td>
-                          {readOnly ? (
-                            row.include_in_capital ? (
-                              "да"
+                        {showCashCapital ? (
+                          <Td>
+                            {readOnly ? (
+                              row.include_in_capital ? (
+                                "да"
+                              ) : (
+                                "нет"
+                              )
                             ) : (
-                              "нет"
-                            )
-                          ) : (
-                            <Button
-                              disabled={busy || readOnly}
-                              onClick={() => void handleToggleCashCapital(row)}
-                              size="sm"
-                              type="button"
-                            >
-                              {row.include_in_capital ? "да" : "нет"}
-                            </Button>
-                          )}
-                        </Td>
+                              <Button
+                                disabled={busy || readOnly}
+                                onClick={() => void handleToggleCashCapital(row)}
+                                size="sm"
+                                type="button"
+                              >
+                                {row.include_in_capital ? "да" : "нет"}
+                              </Button>
+                            )}
+                          </Td>
+                        ) : null}
                         {!readOnly ? (
                           <Td className="month-cash-table__actions">
                             <OverflowMenu label={`Действия для денежной позиции «${row.name}»`}>
@@ -1462,9 +1515,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 <span>
                   Всего наличных: <strong>{cashTotalText}</strong>
                 </span>
-                <span>
-                  В ликвидном капитале: <strong>{cashInCapitalText}</strong>
-                </span>
+                {showCashCapital ? (
+                  <span>
+                    В ликвидном капитале: <strong>{cashInCapitalText}</strong>
+                  </span>
+                ) : null}
               </div>
               {!cashTotalQuery.isPending &&
               !totalUnconfirmed &&

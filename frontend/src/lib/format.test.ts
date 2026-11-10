@@ -78,3 +78,16 @@ describe("formatQuantity", () => {
     expect(formatQuantity("-1")).toBe("—");
   });
 });
+
+it("rounds percent strings exactly and distinguishes a tiny share, zero and unknown", () => {
+  expect(formatPercent("99.95")).toBe("100,0%");
+  expect(formatPercent("-1.25", { signed: true })).toBe("−1,3%");
+  expect(formatPercent("0.001", { share: true })).toBe("<0,1%");
+  expect(formatPercent("0.09", { share: true })).toBe("<0,1%");
+  expect(formatPercent("0.10", { share: true })).toBe("0,1%");
+  expect(formatPercent("0", { signed: true, share: true })).toBe("0,0%");
+  expect(formatPercent("-0.00", { signed: true })).toBe("0,0%");
+  expect(formatPercent("0.79", { signed: true })).toBe("+0,8%");
+  expect(formatPercent(null)).toBe("—");
+  expect(formatPercent("")).toBe("—");
+});

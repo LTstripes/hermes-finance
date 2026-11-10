@@ -9,12 +9,8 @@
 .root :global(.month-positions-table) {
   width: 100%;
   min-width: 0;
-  table-layout: auto;
+  table-layout: fixed;
   border-collapse: collapse;
-}
-
-.root :global(.month-positions-table__instrument) {
-  width: 30%;
 }
 
 .root :global(.month-positions-table) th,
@@ -46,7 +42,46 @@ a.instrumentTitle:hover {
 }
 
 .instrument {
-  min-width: 8rem !important;
+  min-width: 0 !important;
+}
+
+.groups {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.groupCaption {
+  padding: 16px 8px 10px;
+  text-align: left;
+  color: var(--ink);
+  font-weight: var(--w-semibold);
+}
+
+.quantityColumn {
+  width: 64px;
+}
+
+.priceColumn {
+  width: 88px;
+}
+
+.valueColumn {
+  width: 112px;
+}
+
+.shareColumn {
+  width: 72px;
+}
+
+.actionsColumn {
+  width: 40px;
+}
+
+.root :global(.month-positions-table) th,
+.root :global(.month-positions-table) td:global(.num) {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .meta,

@@ -229,7 +229,7 @@ function Hero({
             <div>
               <dt>Включённые обязательства</dt>
               <dd className={sheet.amount} data-testid="capital-debts">
-                − {whole(current.included_debts)}
+                −{whole(current.included_debts)}
               </dd>
             </div>
           </dl>

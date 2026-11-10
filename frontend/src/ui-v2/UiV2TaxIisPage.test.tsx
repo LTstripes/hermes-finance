@@ -155,7 +155,7 @@ describe("UiV2TaxIisPage", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Налоги и ИИС" })).toBeVisible();
     expect(await screen.findByTestId("tax-iis-as-of")).toHaveTextContent(
-      /Налоговый год 2031\s*Срез Февраль 2031 · Утверждён · снимок 28\.02\.2031/,
+      /Налоговый год 2031\s*Срез Февраль 2031 · Закрыт · снимок 28\.02\.2031/,
     );
     expect(screen.getByTestId("tax-iis-taxable-gross-ytd")).toHaveTextContent(/2\s500\s000/);
     expect(screen.getByTestId("tax-iis-marginal-rate")).toHaveTextContent("15%");

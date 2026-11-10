@@ -43,7 +43,7 @@ function money(value: RiskMoneyValue | null | undefined): string {
 }
 
 function percent(value: string | null | undefined): string {
-  return value == null ? "—" : formatPercent(value, { digits: 2 });
+  return value == null ? "—" : formatPercent(value, { digits: 1, share: true });
 }
 
 function Support({ support }: { support: RiskMetricSupport }) {

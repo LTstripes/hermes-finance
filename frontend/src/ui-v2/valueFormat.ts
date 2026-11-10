@@ -1,5 +1,5 @@
 import type { MoneyValue } from "../api/types";
-import { formatMoney, formatMoneyDelta } from "../lib/format";
+import { formatMoney, formatMoneyDelta, formatPercent } from "../lib/format";
 
 /**
  * Shared UI v2 money presentation.
@@ -40,60 +40,16 @@ export function liabilityTone(
   return "neutral";
 }
 
-/**
- * Overview money in whole rubles (P 12.2): kopecks are rounded HALF_UP away from
- * zero for display only. Exact amounts stay in tables and tooltips.
- */
-export function moneyWholeText(value: MoneyValue | null | undefined, empty = "Недоступно"): string {
-  const whole = wholeRubles(value?.amount);
-  if (whole === null) return moneyText(value, empty);
-  return formatMoney(whole, {
-    currency: value?.currency === "RUB" ? "₽" : value?.currency,
-    empty,
-  });
-}
+export {
+  wholeMoneyText as moneyWholeText,
+  wholeMoneyDeltaText as moneyWholeDeltaText,
+} from "./wholeMoney";
 
-/** Signed whole-ruble delta: "+28 900 ₽" / "−203 478 ₽". */
-export function moneyWholeDeltaText(
-  value: MoneyValue | null | undefined,
-  empty = "Недоступно",
-): string {
-  const whole = wholeRubles(value?.amount);
-  if (whole === null) return moneyDeltaText(value, empty);
-  return formatMoneyDelta(whole, {
-    currency: value?.currency === "RUB" ? "₽" : value?.currency,
-    empty,
-  });
-}
-
-function wholeRubles(amount: string | undefined): string | null {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(amount?.trim() ?? "");
-  if (!match) return null;
-  const [, sign, integer, fraction = ""] = match;
-  const roundUp = (fraction[0] ?? "0") >= "5";
-  const rubles = BigInt(integer) + (roundUp ? 1n : 0n);
-  return `${sign && rubles > 0n ? "-" : ""}${rubles}`;
-}
-
-/**
- * Display rounding of a backend percentage string, HALF_UP away from zero,
- * without binary floats: ("-3.13", 1) → "−3,1%", ("92.5", 0) → "93%".
- */
+/** Display-only HALF_UP rounding, shared with the ordinary percentage formatter. */
 export function percentText(
   value: string | null | undefined,
   digits: 0 | 1 | 2 = 1,
-  options: { signed?: boolean; empty?: string } = {},
+  options: { signed?: boolean; empty?: string; share?: boolean } = {},
 ): string {
-  const { signed = false, empty = "—" } = options;
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value?.trim() ?? "");
-  if (!match) return empty;
-  const [, sign, integer, fraction = ""] = match;
-  const kept = fraction.padEnd(digits, "0").slice(0, digits);
-  const roundUp = (fraction[digits] ?? "0") >= "5";
-  const scaled = BigInt(`${integer}${kept}`) + (roundUp ? 1n : 0n);
-  const text = scaled.toString().padStart(digits + 1, "0");
-  const body = digits === 0 ? text : `${text.slice(0, -digits)},${text.slice(-digits)}`;
-  const isZero = scaled === 0n;
-  const prefix = isZero ? "" : sign ? "−" : signed ? "+" : "";
-  return `${prefix}${body}%`;
+  return formatPercent(value, { ...options, digits });
 }

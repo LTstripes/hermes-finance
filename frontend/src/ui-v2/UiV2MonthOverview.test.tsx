@@ -19,6 +19,32 @@ function renderOverview(workflow: MonthCloseWorkflow) {
 afterEach(cleanup);
 
 describe("Month overview (#1079 stage 2)", () => {
+  it("shows closed warnings once using the final review's existing findings", () => {
+    const workflow = makeUiV2Workflow({ monthId: 91 });
+    workflow.checklist = makeUiV2Checklist({ closed: true, attention: true });
+    renderOverview(workflow);
+    expect(screen.getAllByText("Закрыт с замечаниями: 2")).toHaveLength(1);
+    expect(screen.queryByText(/из 10/)).toBeNull();
+    expect(screen.queryByText(/есть замечания|замечание требует решения/)).toBeNull();
+    expect(screen.getByRole("link", { name: "Итоги и замечания" })).toHaveAttribute(
+      "href",
+      pathFor("close"),
+    );
+  });
+
+  it("rounds overview money and retains exact kopecks in titles", () => {
+    const workflow = makeUiV2Workflow();
+    if (!workflow.final_review.available) throw new Error("Review missing");
+    workflow.final_review.kpis.liquid_capital_net = { amount: "1234.50", currency: "RUB" };
+    workflow.final_review.kpis.portfolio_source_coverage = {
+      status: "complete",
+      reason_codes: [],
+      missing_account_ids: [],
+    };
+    renderOverview(workflow);
+    const figure = screen.getByTitle("1 234,50 ₽");
+    expect(figure).toHaveTextContent("1 235 ₽");
+  });
   it("leads with the month result and lists sections with state and key figure", () => {
     const workflow = makeUiV2Workflow();
     workflow.checklist = makeUiV2Checklist({ attention: true });
@@ -110,9 +136,9 @@ describe("Month overview (#1079 stage 2)", () => {
     workflow.checklist = makeUiV2Checklist({ closed: true });
     renderOverview(workflow);
     const nav = screen.getByRole("navigation", { name: "Разделы месяца" });
-    expect(within(nav).getByRole("heading", { level: 2 })).toHaveTextContent("Все шаги выполнены");
+    expect(within(nav).queryByRole("heading", { level: 2 })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Закрыть месяц" })).toBeNull();
-    expect(within(nav).getByRole("link", { name: "Итоги месяца" })).toBeVisible();
+    expect(within(nav).getByRole("link", { name: "Итоги и замечания" })).toBeVisible();
     expect(screen.queryByText(/Прочие расходы/)).toBeNull();
   });
 
@@ -138,7 +164,7 @@ describe("Month overview (#1079 stage 2)", () => {
     );
   });
 
-  it("uses neutral marks and counts for closed attention steps on overview and strip", () => {
+  it("uses neutral marks without duplicated warnings for closed attention steps on overview and strip", () => {
     const workflow = makeUiV2Workflow({ monthId: 91 });
     workflow.checklist = makeUiV2Checklist({ attention: true });
     render(
@@ -150,9 +176,9 @@ describe("Month overview (#1079 stage 2)", () => {
     const brokers = screen.getAllByRole("link", { name: /Брокерские выписки/ });
     expect(brokers).toHaveLength(2);
     for (const link of brokers) {
-      expect(link).toHaveAccessibleName(/есть замечания/);
+      expect(link).not.toHaveAccessibleName(/есть замечания/);
       expect(link).toHaveAttribute("data-state", "noted");
-      expect(link).toHaveTextContent("1 замечание");
+      expect(link).not.toHaveTextContent("1 замечание");
       expect(link).not.toHaveTextContent(/!|требует решения|требуют решения/);
       expect(link.querySelector('[aria-hidden="true"]')).toHaveTextContent("·");
     }

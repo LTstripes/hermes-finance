@@ -1,0 +1,25 @@
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-md);
+}
+
+.tabs a {
+  padding: 10px 0;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.tabs a[aria-current="page"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: var(--w-semibold);
+}
+
+.tabs a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}

@@ -121,23 +121,31 @@ export function formatMoneyDelta(
  */
 export function formatPercent(
   value: string | number | null | undefined,
-  options: { digits?: 1 | 2; empty?: string; signed?: boolean } = {},
+  options: { digits?: 0 | 1 | 2; empty?: string; signed?: boolean; share?: boolean } = {},
 ): string {
-  const { digits = 1, empty = "—", signed = false } = options;
-  if (value == null || value === "") {
-    return empty;
+  const { digits = 1 } = options;
+  const { signed = false, empty = "—" } = options;
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(
+    value == null ? "" : String(value).trim().replace(/\s/g, "").replace(",", "."),
+  );
+  if (!match) return empty;
+  const [, sign, integer, fraction = ""] = match;
+  if (
+    options.share &&
+    BigInt(integer) === 0n &&
+    (fraction[0] ?? "0") === "0" &&
+    /[1-9]/.test(fraction)
+  ) {
+    return `${sign ? "−" : signed ? "+" : ""}<0,1%`;
   }
-  const raw = String(value).trim().replace(/\s/g, "").replace(",", ".");
-  const negative = raw.startsWith("-");
-  const unsigned = negative ? raw.slice(1) : raw;
-  if (!/^\d+(\.\d+)?$/.test(unsigned)) {
-    return empty;
-  }
-  const [intPart, frac = ""] = unsigned.split(".");
-  const fracDigits = frac.padEnd(digits, "0").slice(0, digits);
-  const body = `${intPart},${fracDigits}`;
-  const sign = negative ? "−" : signed ? "+" : "";
-  return `${sign}${body}%`;
+  const kept = fraction.padEnd(digits, "0").slice(0, digits);
+  const roundUp = (fraction[digits] ?? "0") >= "5";
+  const scaled = BigInt(`${integer}${kept}`) + (roundUp ? 1n : 0n);
+  const text = scaled.toString().padStart(digits + 1, "0");
+  const body = digits === 0 ? text : `${text.slice(0, -digits)},${text.slice(-digits)}`;
+  const isZero = scaled === 0n;
+  const prefix = isZero ? "" : sign ? "−" : signed ? "+" : "";
+  return `${prefix}${body}%`;
 }
 
 /**

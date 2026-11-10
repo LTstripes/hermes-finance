@@ -209,16 +209,16 @@ describe("UI v2 reports archive", () => {
     expect(screen.queryByTestId("reports-row-12")).toBeNull();
 
     const currentRow = within(group2031).getByTestId("reports-row-91");
-    expect(currentRow).toHaveTextContent("Текущий отчёт");
+    expect(currentRow).toHaveTextContent("Закрыт");
     expect(
       within(currentRow).getByRole("link", { name: "Открыть в «Мои финансы»" }),
     ).toHaveAttribute("href", "/v2");
     const olderRow = within(group2031).getByTestId("reports-row-90");
-    expect(olderRow).toHaveTextContent("Утверждён");
+    expect(olderRow).toHaveTextContent("Закрыт");
     expect(olderRow).toHaveTextContent("31.05.2031");
     expect(olderRow).toHaveTextContent("2 761 300 ₽");
     expect(olderRow).toHaveTextContent("3 151 300 ₽");
-    expect(olderRow).toHaveTextContent("− 390 000 ₽");
+    expect(olderRow).toHaveTextContent("−390 000 ₽");
     expect(within(olderRow).getByRole("link", { name: "Открыть отчёт" })).toHaveAttribute(
       "href",
       "/v2/reports/90",

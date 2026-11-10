@@ -329,6 +329,30 @@ async function tables() {
 }
 
 describe("UiV2MonthAssetsSection", () => {
+  it("collapses closed empty deposits, retains full footer totals and omits unanimous capital flags", async () => {
+    deposits = [
+      deposit,
+      {
+        ...deposit,
+        id: 22,
+        name: "Synthetic empty deposit",
+        balance: money("0.00"),
+        expected_monthly_interest: money("0.00"),
+        actual_interest_received: money("0.00"),
+      },
+    ];
+    setup({ month: monthClosed });
+    await tables();
+    expect(screen.queryByText("Synthetic empty deposit")).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "В капитале" })).toBeNull();
+    const footer = document.querySelector("tfoot");
+    expect(footer).toHaveTextContent("100 000 ₽");
+    expect(footer).toHaveTextContent("1 000 ₽");
+    expect(footer).toHaveTextContent("900 ₽");
+    await userEvent.setup().click(screen.getByRole("button", { name: "ещё 1 пустых" }));
+    expect(screen.getByText("Synthetic empty deposit")).toBeVisible();
+    expect(document.querySelector("tfoot")).toHaveTextContent("100 000 ₽");
+  });
   beforeEach(() => {
     deposits = [deposit];
     cashRows = [cashRow];

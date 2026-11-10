@@ -151,7 +151,7 @@ describe("native month positions leaf", () => {
         unrealized_result: null,
       },
     ]);
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     const table = screen.getByRole("table");
     expect(table).toHaveTextContent("550");
     expect(within(table).queryByText("—")).toBeNull();
@@ -159,7 +159,7 @@ describe("native month positions leaf", () => {
       within(table)
         .getAllByRole("columnheader")
         .map((cell) => cell.textContent),
-    ).toEqual(["Инструмент", "Кол-во", "Стоимость, ₽"]);
+    ).toEqual(["Инструмент", "Кол-во", "Стоимость, ₽", "Доля"]);
     expect(screen.queryByText("Нет подтверждённой суммы")).toBeNull();
     expect(screen.queryByText(/Себестоимость:/)).toBeNull();
     expect(screen.queryByText(/Нереализованный результат:/)).toBeNull();
@@ -211,13 +211,12 @@ describe("native month positions leaf", () => {
         },
       ],
     );
-    const table = await screen.findByRole("table");
-    const bodies = table.querySelectorAll("tbody");
-    expect(bodies).toHaveLength(2);
-    expect(bodies[0]).toHaveTextContent("Synthetic IIS 1 поз.");
-    expect(bodies[0]).toHaveTextContent("60,0%");
-    expect(bodies[1]).toHaveTextContent("Synthetic Broker 2 поз.");
-    const rows = within(bodies[1]).getAllByRole("row");
+    const tables = await screen.findAllByRole("table");
+    expect(tables).toHaveLength(2);
+    expect(tables[0].querySelector("caption")).toHaveTextContent("Synthetic IIS 1 поз.");
+    expect(tables[0].querySelector("caption")).toHaveTextContent("60,0%");
+    expect(tables[1].querySelector("caption")).toHaveTextContent("Synthetic Broker 2 поз.");
+    const rows = within(tables[1]).getAllByRole("row");
     expect(rows[1]).toHaveTextContent("Synthetic Fund");
     expect(rows[2]).toHaveTextContent("Synthetic Bond");
     expect(rows[1]).toHaveTextContent("36,7%");
@@ -234,9 +233,10 @@ describe("native month positions leaf", () => {
     ).toEqual(["Все типы", "Облигации", "Фонды"]);
     const user = userEvent.setup();
     await user.selectOptions(accountFilter, "11");
+    const table = screen.getByRole("table");
     expect(table.querySelectorAll("tbody")).toHaveLength(1);
-    expect(table.querySelector("tbody th")).toHaveTextContent("100,0%");
-    expect(within(table).getAllByRole("row")[2]).toHaveTextContent("91,7%");
+    expect(table.querySelector("caption")).toHaveTextContent("100,0%");
+    expect(within(table).getAllByRole("row")[1]).toHaveTextContent("91,7%");
   });
 
   it("preserves zero values and leaves statement-only cells blank instead of dashes", async () => {
@@ -290,7 +290,7 @@ describe("native month positions leaf", () => {
       [position],
       { url },
     );
-    const link = await screen.findByRole("link", { name: "Synthetic Fund (SYN)" });
+    const link = await screen.findByRole("link", { name: "Synthetic Fund" });
     const href = new URL(link.getAttribute("href") ?? "", "http://localhost");
     expect(href.pathname).toBe("/v2/returns/instrument/XX0000000001");
     expect(href.searchParams.get("capital_account")).toBe("11");
@@ -339,7 +339,14 @@ describe("native month positions leaf", () => {
         },
       ],
     );
-    const table = await screen.findByRole("table");
+    const tables = await screen.findAllByRole("table");
+    expect(tables).toHaveLength(2);
+    expect(
+      tables.filter((table) => within(table).queryByRole("columnheader", { name: "Цена, ₽" })),
+    ).toHaveLength(1);
+    expect(
+      tables.filter((table) => within(table).queryByRole("columnheader", { name: "Доля" })),
+    ).toHaveLength(1);
     const filter = screen.getByLabelText("Фильтр: счёт");
     expect(
       within(filter)
@@ -349,9 +356,11 @@ describe("native month positions leaf", () => {
     expect(screen.getAllByText(/Брокерская выписка даёт/)).toHaveLength(1);
     const user = userEvent.setup();
     await user.selectOptions(filter, "12");
-    expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
+    let table = screen.getByRole("table");
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(4);
     expect(within(table).queryByText("—")).toBeNull();
     await user.selectOptions(filter, "11");
+    table = screen.getByRole("table");
     expect(within(table).getByRole("columnheader", { name: "Цена, ₽" })).toBeInTheDocument();
     expect(screen.queryByText(/Брокерская выписка даёт/)).toBeNull();
     expect(screen.getByText(/Себестоимость:/)).toBeInTheDocument();
@@ -375,7 +384,7 @@ describe("native month positions leaf", () => {
     ]);
     const table = await screen.findByRole("table");
     const rows = within(table).getAllByRole("row");
-    expect(within(rows[2]).getAllByRole("cell")[1]).toHaveTextContent("2");
+    expect(within(rows[1]).getAllByRole("cell")[1]).toHaveTextContent("2");
   });
 
   it("does not invent a share for zero total or hide known zero totals", async () => {
@@ -388,15 +397,15 @@ describe("native month positions leaf", () => {
       },
     ]);
     const table = await screen.findByRole("table");
-    const cells = within(within(table).getAllByRole("row")[2]).getAllByRole("cell");
+    const cells = within(within(table).getAllByRole("row")[1]).getAllByRole("cell");
     expect(cells.map((cell) => cell.textContent).join("")).not.toMatch(/%/);
     expect(screen.getByText(/Себестоимость:/)).toHaveTextContent("0 ₽");
     expect(screen.getByText(/Нереализованный результат:/)).toHaveTextContent("0 ₽");
   });
-  it("loads only local data, keeps units and currency visible, and never auto-refreshes quotes", async () => {
+  it("loads only local data, keeps units and hides a redundant single currency, and never auto-refreshes quotes", async () => {
     const { fetchMock, context, rerender, setDirty, unmount } = setup();
-    await screen.findByText("Synthetic Fund (SYN)");
-    expect(screen.getByRole("table")).toHaveTextContent("USD");
+    await screen.findByText("Synthetic Fund");
+    expect(screen.getByRole("table")).not.toHaveTextContent("USD");
     expect(screen.getByRole("table")).toHaveTextContent("0,5");
     rerender(<UiV2MonthPositionsSection context={{ ...context }} />);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-preview"))).toBe(false);
@@ -422,7 +431,7 @@ describe("native month positions leaf", () => {
     await user.type(screen.getByLabelText("Средняя цена приобретения"), "1000");
     await user.type(screen.getByLabelText("Рыночная цена"), "1100");
     await user.click(screen.getByRole("button", { name: "Добавить позицию" }));
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     const post = fetchMock.mock.calls.find(
       ([url, init]) => String(url) === "/api/positions" && init?.method === "POST",
     );
@@ -453,7 +462,7 @@ describe("native month positions leaf", () => {
       },
     });
     const user = userEvent.setup();
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Действия для позиции Synthetic Fund" }));
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
     const quantity = within(
@@ -498,7 +507,7 @@ describe("native month positions leaf", () => {
       },
     });
     const user = userEvent.setup();
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Действия для позиции Synthetic Fund" }));
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
     const form = document.querySelector(".position-inline-edit") as HTMLElement;
@@ -562,7 +571,7 @@ describe("native month positions leaf", () => {
     await user.type(quantity, "9");
     expect(quantity).toHaveValue("0.5");
     gate.release();
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await waitFor(() => expect(quantity).toHaveValue(""));
     expect(setDirty).toHaveBeenCalledWith("positions", false);
   });
@@ -586,7 +595,7 @@ describe("native month positions leaf", () => {
       },
     });
     const user = userEvent.setup();
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     const form = screen
       .getByRole("button", { name: "Создать инструмент" })
       .closest("form") as HTMLFormElement;
@@ -617,23 +626,15 @@ describe("native month positions leaf", () => {
     ).toHaveValue("22");
   });
 
-  it("allows a closed month to preview but blocks apply and manual writes", async () => {
-    const { context, rerender, fetchMock } = setup({
-      "POST /api/months/7/quote-preview": () =>
-        json({ ...quote, month_status: "closed", month_editable: false }),
-    });
-    await screen.findByText("Synthetic Fund (SYN)");
-    rerender(
-      <UiV2MonthPositionsSection
-        context={{ ...context, readOnly: true, month: { ...month, status: "closed" } }}
-      />,
-    );
-    const user = userEvent.setup();
+  it("hides closed-month quote preview and prevents provider requests and manual writes", async () => {
+    const { fetchMock } = setup({}, [position], { closed: true, readOnly: true });
+    await screen.findByText("Synthetic Fund");
     expect(screen.queryByRole("button", { name: "Добавить позицию" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
-    await screen.findByRole("table", { name: "Предпросмотр котировок" });
-    expect(screen.queryByRole("button", { name: "Применить выбранные" })).toBeNull();
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-apply"))).toBe(false);
+    expect(screen.queryByRole("button", { name: "Обновить котировки" })).toBeNull();
+    expect(screen.queryByText("Предпросмотр котировок")).toBeNull();
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(
+      true,
+    );
   });
 
   it("ignores a delayed preview after the exact month changes", async () => {
@@ -646,7 +647,7 @@ describe("native month positions leaf", () => {
       "GET /api/positions?month_id=8": () => json([]),
     });
     const user = userEvent.setup();
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     rerender(<UiV2MonthPositionsSection context={{ ...context, month: { ...month, id: 8 } }} />);
     release?.(json(quote));
@@ -658,7 +659,7 @@ describe("native month positions leaf", () => {
   it("keeps stale zero quotes separate from an explicit selection and checks the current month before apply", async () => {
     const { fetchMock } = setup({ "POST /api/months/7/quote-preview": () => json(quote) });
     const user = userEvent.setup();
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     expect(await screen.findByText("Нужно выбрать отдельно")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Применить выбранные" })).toBeDisabled();
@@ -708,7 +709,7 @@ describe("native month positions leaf", () => {
       },
     });
     const user = userEvent.setup();
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await user.click(await screen.findByRole("button", { name: "Применить выбранные" }));
     expect(await screen.findByText(/Котировки применены: 1/)).toBeInTheDocument();
@@ -755,7 +756,7 @@ describe("native month positions leaf", () => {
         },
       });
       const user = userEvent.setup();
-      await screen.findByText("Synthetic Fund (SYN)");
+      await screen.findByText("Synthetic Fund");
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-preview"))).toBe(
         false,
       );
@@ -788,7 +789,7 @@ describe("native month positions leaf", () => {
       "POST /api/months/7/quote-preview": () => pending,
     });
     const user = userEvent.setup();
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     rerender(
       <UiV2MonthPositionsSection
@@ -856,7 +857,7 @@ describe("native month positions leaf", () => {
         });
       },
     });
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-preview"))).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("market-mapping"))).toBe(
       false,
@@ -940,7 +941,7 @@ describe("native month positions leaf", () => {
           409,
         ),
     });
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
     await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
@@ -994,7 +995,7 @@ describe("native month positions leaf", () => {
         });
       },
     });
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
     expect(screen.getByText("Нельзя выбрать источник автоматически")).toBeInTheDocument();
@@ -1046,7 +1047,7 @@ describe("native month positions leaf", () => {
         });
       },
     });
-    await screen.findByText("Synthetic Fund (SYN)");
+    await screen.findByText("Synthetic Fund");
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
     await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));

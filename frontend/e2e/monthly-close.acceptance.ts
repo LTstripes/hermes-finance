@@ -389,7 +389,7 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     await expect(
       page.getByRole("button", { name: "Открыть для редактирования", exact: true }),
     ).toHaveCount(0);
-    await tile(page, /Закрыть месяц/);
+    await tile(page, /Итоги/);
 
     await page.getByRole("button", { name: "Открыть месяц заново", exact: true }).click();
     await expect(page.getByRole("alertdialog", { name: "Открыть месяц заново?" })).toBeVisible();
