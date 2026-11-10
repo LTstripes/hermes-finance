@@ -475,16 +475,16 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   expect(new Set(batches.map((batch: { account_id: number }) => batch.account_id)).size).toBe(2);
   for (const batch of batches) expect(batch.accepted.position_ids).toHaveLength(2);
   await tile(page, /Закрыть месяц/);
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
-  await expect(page.getByRole("list", { name: "Заполнение месяца" })).toContainText("Есть данные");
-  await page.getByText("Подробнее об итогах и проверках", { exact: true }).click();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
+  await expect(page.getByRole("list", { name: "Заполнение месяца" })).toHaveCount(0);
+  await page.getByText("Подробнее о проверках", { exact: true }).click();
   await page.getByTestId("final-review-card-income_budget").getByRole("link").first().click();
   await expect(page).toHaveURL(/panel=income/);
   await expect(page.getByLabel("Фактическая зарплата после налогов", { exact: true })).toHaveValue(
     /87/,
   );
   await tile(page, /Закрыть месяц/);
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   const close = page.getByRole("button", { name: "Закрыть месяц", exact: true });
   await expect(close).toBeEnabled();
   await page.screenshot({ path: info.outputPath("october-final.png"), fullPage: true });
@@ -618,7 +618,7 @@ for (const width of [1280, 1440, 1920])
       await fits(page);
       await page.screenshot({ path: info.outputPath("sources.png"), fullPage: true });
       await tile(page, /Закрыть месяц/);
-      await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+      await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
       await fits(page);
       await page.screenshot({ path: info.outputPath("final.png"), fullPage: true });
     });

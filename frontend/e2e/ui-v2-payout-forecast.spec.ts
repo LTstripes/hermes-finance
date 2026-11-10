@@ -425,7 +425,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await backToClose.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/v2\/close\?month=12&step=future_payouts$/);
-    await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+    await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
     await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1, name: "Август 2031" })).toBeVisible();
     await assertNoPageOverflow(page);

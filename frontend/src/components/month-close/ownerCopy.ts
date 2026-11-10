@@ -1,3 +1,39 @@
+import type { CloseReadinessItem } from "../../api/types";
+
+/** Only unambiguous section destinations; unknown findings stay without a link. */
+export function closeFindingPanel(item: CloseReadinessItem): string | undefined {
+  const families: Record<string, string> = {
+    market_quotes: "positions",
+    broker_positions: "positions",
+    t_invest_payouts: "payouts",
+    alfa_statement_payouts: "brokers",
+    manual_month_data: "general",
+    deposit_cash_snapshots: "assets",
+  };
+  const codes: Record<string, string> = {
+    snapshot_date_required: "general",
+    salary_tax_history_incomplete: "income",
+    active_account_snapshot_missing: "positions",
+    unresolved_payout_reconciliation: "payouts",
+    source_intake_pending: "brokers",
+    money_semantics_unsupported: "brokers",
+  };
+  const family = item.context.family_id;
+  if (typeof family === "string" && Object.hasOwn(families, family)) return families[family];
+  if (Object.hasOwn(codes, item.code)) return codes[item.code];
+  if (item.message.includes("Месяц → Брокерские выписки")) return "brokers";
+  return undefined;
+}
+
+/** Closed-month summary retains the finding; correction instructions are shown once. */
+export function closedFindingCopy(text: string): string {
+  return closeOwnerCopy(text)
+    .replace(/\s+(?:Открой|Проверь подробности)[^.]*\.(?=\s|$)/gu, "")
+    .replace(/\s+Проверь[^.;]*;\s*ручную цену можно оставить\./gu, " Ручную цену можно оставить.")
+    .replace(/^Проверь\s+/u, "Нужна проверка: ")
+    .trim();
+}
+
 /** One source-review action per account; details retain the separate findings. */
 export function closeOwnerActionFindings<T extends { message: string; severity: string }>(
   items: T[],

@@ -169,6 +169,29 @@ function review(): FinalMonthReview {
 }
 
 describe("FinalMonthReview", () => {
+  it("retains closed-month warning evidence in collapsed diagnostics without correction links", () => {
+    const data = review();
+    data.month_header.status = "closed";
+    data.close_readiness.status = "closed";
+    data.close_readiness.items = [
+      {
+        code: "active_account_snapshot_missing",
+        severity: "warning",
+        message: "Синтетический остаток не подтверждён.",
+        context: {},
+      },
+    ];
+    render(
+      <MemoryRouter>
+        <FinalMonthReviewView review={data} />
+      </MemoryRouter>,
+    );
+    const diagnostic = screen.getByText("Синтетический остаток не подтверждён.");
+    expect(diagnostic.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("active_account_snapshot_missing")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Заполнить остатки этого месяца" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Изменить" })).toBeNull();
+  });
   it("shows one source issue while retaining every diagnostic code", () => {
     const data = review();
     const codes = ["4_Transfers_unsupported", "5_UFSR_unsupported", "unparsed_source_rows"];

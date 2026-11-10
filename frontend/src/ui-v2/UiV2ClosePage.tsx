@@ -3,25 +3,27 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
 import { listMonths } from "../api/months";
-import type { ReportingMonth } from "../api/types";
+import type { CloseReadinessItem, ReportingMonth } from "../api/types";
 import {
   useBrokerOriginalContext,
   useBrokerOriginalSession,
 } from "../components/month-close/brokerOriginalSession";
-import {
-  FinalMonthReview,
-  MonthCompletionSummary,
-} from "../components/month-close/FinalMonthReview";
+import { FinalMonthReview } from "../components/month-close/FinalMonthReview";
 import { IntentionalEmptyClose } from "../components/month-close/IntentionalEmptyClose";
 import { NextMonthOutlook } from "../components/month-close/NextMonthOutlook";
-import { closeOwnerActionFindings, closeOwnerCopy } from "../components/month-close/ownerCopy";
+import {
+  closedFindingCopy,
+  closeFindingPanel,
+  closeOwnerActionFindings,
+  closeOwnerCopy,
+} from "../components/month-close/ownerCopy";
 import { useSourceIntakeRecovery } from "../components/month-close/SourceIntakeJournal";
 import {
   type AlfaStatementTransientOutcome,
   parseAlfaStatementTransientOutcome,
 } from "../components/month-close/statementOutcome";
 import { useMonthCloseLifecycle } from "../components/month-close/useMonthCloseLifecycle";
-import { Button, ConfirmDialog, MoneyAmount } from "../components/ui";
+import { Button, ConfirmDialog } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { queryKeys } from "../queryClient";
 import { MonthDraftPayouts } from "./MonthDraftPayouts";
@@ -33,7 +35,7 @@ import {
   sortReportingMonths,
 } from "./monthSelection";
 import UiV2MonthEditorPage, { type EditorSection } from "./UiV2MonthEditorPage";
-import { MONTH_STEP_COPY, MonthOverview, MonthStepStrip } from "./UiV2MonthOverview";
+import { MONTH_STEP_COPY, MonthKpis, MonthOverview, MonthStepStrip } from "./UiV2MonthOverview";
 import overviewStyles from "./UiV2MonthOverview.module.css";
 import { UiV2MonthSources } from "./UiV2MonthSources";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
@@ -51,6 +53,37 @@ const MANUAL_SECTIONS = [
   "liabilities",
   "note",
 ] as const;
+
+function CloseFindings({
+  items,
+  closed,
+  pathFor,
+}: {
+  items: CloseReadinessItem[];
+  closed: boolean;
+  pathFor: (panel: string) => string;
+}) {
+  return (
+    <ul className={monthStyles.findings}>
+      {items.map((item) => {
+        const panel = closeFindingPanel(item);
+        return (
+          <li
+            key={`${item.code}:${item.message}`}
+            data-severity={closed ? undefined : item.severity}
+          >
+            <span>{closed ? closedFindingCopy(item.message) : closeOwnerCopy(item.message)}</span>
+            {panel ? (
+              <Link className="btn btn--ghost btn--sm" to={pathFor(panel)}>
+                Открыть шаг
+              </Link>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 function MonthStatusChip({
   month,
@@ -290,6 +323,19 @@ export default function UiV2ClosePage() {
       </UiV2Notice>
     );
   else {
+    const findings = workflow.final_review.available
+      ? closeOwnerActionFindings(workflow.final_review.close_readiness.items).filter(
+          (item) => item.severity === "hard_blocker" || item.severity === "warning",
+        )
+      : [];
+    const blocked = !closed && !workflow.readiness.can_close;
+    const blockers = blocked ? findings.filter((item) => item.severity === "hard_blocker") : [];
+    const remaining = blocked
+      ? findings.filter((item) => item.severity !== "hard_blocker")
+      : findings;
+    const findingCount = workflow.final_review.available
+      ? findings.length
+      : workflow.readiness.hard_blocker_count + workflow.readiness.warning_count;
     const panelLabel =
       panel && panel in MONTH_STEP_COPY
         ? MONTH_STEP_COPY[panel as keyof typeof MONTH_STEP_COPY].label
@@ -298,7 +344,12 @@ export default function UiV2ClosePage() {
       <MonthOverview pathFor={panelPath} workflow={workflow} />
     ) : (
       <div className={styles.closeWorkspace} data-testid="v2-close-workspace">
-        <MonthStepStrip checklist={workflow.checklist} current={panel} pathFor={panelPath} />
+        <MonthStepStrip
+          checklist={workflow.checklist}
+          closed={closed}
+          current={panel}
+          pathFor={panelPath}
+        />
         {panel === "invalid" ? (
           <UiV2Notice title="Неизвестный раздел">
             <Link to={panelPath(null)}>← К месяцу</Link>
@@ -310,7 +361,7 @@ export default function UiV2ClosePage() {
             id="month-work-area"
           >
             <header className={monthStyles.workHeader}>
-              <h2>{panelLabel}</h2>
+              {panel !== "close" ? <h2>{panelLabel}</h2> : null}
               <Link to={panelPath(null)}>← К месяцу</Link>
             </header>
             {panel === "payouts" ? (
@@ -350,34 +401,70 @@ export default function UiV2ClosePage() {
             ) : null}
             {panel === "close" ? (
               <>
-                {!closed ? (
-                  <Button
-                    variant="primary"
-                    type="button"
-                    disabled={
-                      !workflowReady ||
-                      !workflow.readiness.can_close ||
-                      preparingClose ||
-                      lifecycleBusy ||
-                      lifecycleRecovery ||
-                      emptyClosePending
-                    }
-                    onClick={() => void prepareClose()}
-                  >
-                    {preparingClose ? "Проверяем…" : "Закрыть месяц"}
-                  </Button>
-                ) : (
-                  <div className={monthStyles.sourceNav}>
-                    <Link to="/v2">Открыть «Мои финансы»</Link>
-                    <Button
-                      type="button"
-                      disabled={lifecycleBusy || lifecycleRecovery}
-                      onClick={requestReopen}
-                    >
-                      Открыть месяц заново
-                    </Button>
+                <div
+                  className={monthStyles.closeStatus}
+                  data-state={closed ? "closed" : blocked ? "blocked" : "ready"}
+                >
+                  <div>
+                    <h2>
+                      {closed
+                        ? "Месяц закрыт"
+                        : blocked
+                          ? `Нужно исправить: ${workflow.readiness.hard_blocker_count}`
+                          : findingCount
+                            ? `Можно закрыть с замечаниями: ${findingCount}`
+                            : "Можно закрывать"}
+                    </h2>
+                    {closed ? (
+                      <>
+                        <p>
+                          Снимок{" "}
+                          {workflow.month.snapshot_date
+                            ? formatDate(workflow.month.snapshot_date)
+                            : "не указан"}
+                        </p>
+                        {findingCount ? <p>Закрыт с замечаниями: {findingCount}</p> : null}
+                      </>
+                    ) : (
+                      <p>Закрытие не подтверждает полноту данных.</p>
+                    )}
                   </div>
-                )}
+                  {!closed ? (
+                    <Button
+                      variant="primary"
+                      type="button"
+                      disabled={
+                        !workflowReady ||
+                        !workflow.readiness.can_close ||
+                        preparingClose ||
+                        lifecycleBusy ||
+                        lifecycleRecovery ||
+                        emptyClosePending
+                      }
+                      onClick={() => void prepareClose()}
+                    >
+                      {preparingClose ? "Проверяем…" : "Закрыть месяц"}
+                    </Button>
+                  ) : (
+                    <div className={monthStyles.sourceNav}>
+                      <Link to="/v2">Открыть «Мои финансы»</Link>
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        aria-label="Открыть месяц заново"
+                        disabled={lifecycleBusy || lifecycleRecovery}
+                        onClick={requestReopen}
+                      >
+                        Открыть заново
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {blockers.length ? (
+                  <section aria-label="Нужно исправить">
+                    <CloseFindings items={blockers} closed={false} pathFor={panelPath} />
+                  </section>
+                ) : null}
                 {!workflowReady ? <UiV2Loading label="Проверяем актуальное состояние…" /> : null}
                 {workflowQuery.isError ? (
                   <UiV2Notice
@@ -387,47 +474,30 @@ export default function UiV2ClosePage() {
                     {formatApiError(workflowQuery.error)}
                   </UiV2Notice>
                 ) : null}
-                {workflowReady && workflow.final_review.available ? (
+                {workflow.final_review.available ? (
                   <>
-                    <fieldset className={monthStyles.totals} aria-label="Итоги месяца">
-                      <div>
-                        <span>Ликвидный капитал</span>
-                        <MoneyAmount
-                          amount={
-                            workflow.final_review.assets_and_cash.liquid_capital
-                              ?.liquid_capital_net ?? null
-                          }
-                        />
-                      </div>
-                      <div>
-                        <span>Пассивный доход</span>
-                        <MoneyAmount amount={workflow.final_review.actual_passive_income} />
-                      </div>
-                      <div>
-                        <span>Инвестиции</span>
-                        <MoneyAmount amount={workflow.final_review.investments.market_value} />
-                      </div>
-                    </fieldset>
-                    <MonthCompletionSummary
-                      cards={workflow.final_review.manual_review_cards}
-                      className={monthStyles.completion}
-                    />
-                    <p>
-                      {closed
-                        ? "Месяц закрыт по вашему решению. Для исправлений сначала открой его заново."
-                        : "Можно закрыть с предупреждениями. Закрытие не подтверждает полноту данных."}
-                    </p>
-                    {closeOwnerActionFindings(workflow.final_review.close_readiness.items)
-                      .filter(
-                        (item) => item.severity === "hard_blocker" || item.severity === "warning",
+                    <MonthKpis workflow={workflow} variant="close" />
+                    {remaining.length ? (
+                      closed ? (
+                        <section className={monthStyles.closeRemarks} aria-label="Замечания месяца">
+                          <p>Чтобы исправить, открой месяц заново.</p>
+                          <details>
+                            <summary>Замечания ({remaining.length})</summary>
+                            <CloseFindings items={remaining} closed pathFor={panelPath} />
+                          </details>
+                        </section>
+                      ) : (
+                        <section
+                          className={monthStyles.closeRemarks}
+                          aria-labelledby="close-remaining-title"
+                        >
+                          <h3 id="close-remaining-title">Что осталось</h3>
+                          <CloseFindings items={remaining} closed={false} pathFor={panelPath} />
+                        </section>
                       )
-                      .map((item) => (
-                        <p role="status" key={`${item.code}:${item.message}`}>
-                          {closeOwnerCopy(item.message)}
-                        </p>
-                      ))}
-                    <details>
-                      <summary>Подробнее об итогах и проверках</summary>
+                    ) : null}
+                    <details className={monthStyles.closeDetails}>
+                      <summary>Подробнее о проверках</summary>
                       <FinalMonthReview review={workflow.final_review} />
                     </details>
                   </>
@@ -445,16 +515,18 @@ export default function UiV2ClosePage() {
                   />
                 ) : null}
                 {closed && workflow.outlook ? (
-                  <details>
+                  <details className={monthStyles.closeDetails}>
                     <summary>Что известно о следующем месяце</summary>
                     <NextMonthOutlook outlook={workflow.outlook} />
                   </details>
                 ) : null}
               </>
             ) : null}
-            <footer className={monthStyles.workFooter}>
-              <Link to={panelPath(null)}>← К месяцу</Link>
-            </footer>
+            {panel !== "close" ? (
+              <footer className={monthStyles.workFooter}>
+                <Link to={panelPath(null)}>← К месяцу</Link>
+              </footer>
+            ) : null}
           </section>
         ) : null}
       </div>

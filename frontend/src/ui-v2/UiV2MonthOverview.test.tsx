@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { makeUiV2Checklist, makeUiV2Workflow } from "../test/uiV2Fixtures";
-import { MonthOverview, MonthStepStrip } from "./UiV2MonthOverview";
+import { MonthKpis, MonthOverview, MonthStepStrip } from "./UiV2MonthOverview";
 
 const pathFor = (panel: string) => `/v2/close?month=12&panel=${panel}`;
 
@@ -136,5 +136,44 @@ describe("Month overview (#1079 stage 2)", () => {
       "aria-current",
       "page",
     );
+  });
+
+  it("uses neutral marks and counts for closed attention steps on overview and strip", () => {
+    const workflow = makeUiV2Workflow({ monthId: 91 });
+    workflow.checklist = makeUiV2Checklist({ attention: true });
+    render(
+      <MemoryRouter>
+        <MonthOverview workflow={workflow} pathFor={pathFor} />
+        <MonthStepStrip checklist={workflow.checklist} closed current="close" pathFor={pathFor} />
+      </MemoryRouter>,
+    );
+    const brokers = screen.getAllByRole("link", { name: /Брокерские выписки/ });
+    expect(brokers).toHaveLength(2);
+    for (const link of brokers) {
+      expect(link).toHaveAccessibleName(/есть замечания/);
+      expect(link).toHaveAttribute("data-state", "noted");
+      expect(link).toHaveTextContent("1 замечание");
+      expect(link).not.toHaveTextContent(/!|требует решения|требуют решения/);
+      expect(link.querySelector('[aria-hidden="true"]')).toHaveTextContent("·");
+    }
+  });
+
+  it("shows only supplied deltas and preserves unknown and explicit zero in close tiles", () => {
+    const workflow = makeUiV2Workflow();
+    if (!workflow.final_review.available) throw new Error("Review missing");
+    workflow.checklist = makeUiV2Checklist();
+    workflow.final_review.kpis.liquid_capital_delta = null;
+    workflow.final_review.kpis.passive_income_delta = { amount: "0.00", currency: "RUB" };
+    workflow.final_review.investments.market_value = null;
+    workflow.final_review.kpis.mandatory_expenses = { amount: "0.00", currency: "RUB" };
+    const view = render(<MonthKpis workflow={workflow} variant="close" />);
+    const kpis = screen.getByLabelText("Итоги месяца");
+    expect(kpis).not.toHaveTextContent("за месяц");
+    expect(kpis).toHaveTextContent("0 ₽ к прошлому месяцу");
+    expect(within(kpis).getByText("Инвестиции").parentElement).toHaveTextContent("Недоступно");
+    expect(within(kpis).getByText("Обязательные расходы").parentElement).toHaveTextContent("0 ₽");
+    workflow.checklist.expenses.mandatory_items = [];
+    view.rerender(<MonthKpis workflow={workflow} variant="close" />);
+    expect(within(kpis).queryByText("Обязательные расходы")).toBeNull();
   });
 });

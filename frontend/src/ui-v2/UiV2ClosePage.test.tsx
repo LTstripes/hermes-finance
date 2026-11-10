@@ -9,7 +9,7 @@ import { reopenMonth } from "../api/months";
 import type { ReportingMonth, ReportingMonthStatus } from "../api/types";
 import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { createQueryClient, queryKeys } from "../queryClient";
-import { makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
+import { makeUiV2Checklist, makeUiV2Workflow, uiV2Months } from "../test/uiV2Fixtures";
 import UiV2ClosePage from "./UiV2ClosePage";
 
 function LocationProbe() {
@@ -165,6 +165,130 @@ afterEach(() => {
 });
 
 describe("native Monthly Close work mode", () => {
+  it("leads with one ready decision, shared KPIs and available backend deltas", async () => {
+    const { mount, state } = setup("/v2/close?month=12&panel=close");
+    state.workflow = readyForClose();
+    state.workflow.checklist = makeUiV2Checklist();
+    if (!state.workflow.final_review.available) throw new Error("Review missing");
+    state.workflow.final_review.close_readiness.items = [];
+    state.workflow.readiness.warning_count = 0;
+    mount();
+    expect(await screen.findByRole("heading", { name: "Можно закрывать" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeEnabled();
+    expect(screen.queryByRole("heading", { name: "Закрыть месяц" })).toBeNull();
+    expect(screen.getAllByRole("link", { name: "← К месяцу" })).toHaveLength(1);
+    expect(screen.queryByRole("list", { name: "Заполнение месяца" })).toBeNull();
+    const kpis = screen.getByLabelText("Итоги месяца");
+    expect(within(kpis).getByText(/42 600 ₽ за месяц/)).toBeVisible();
+    expect(within(kpis).getByText(/1 100 ₽ к прошлому месяцу/)).toBeVisible();
+    expect(within(kpis).getByText("Инвестиции")).toBeVisible();
+    expect(within(kpis).getByText("Обязательные расходы")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Что осталось" })).toBeNull();
+  });
+
+  it("puts hard blockers immediately below the disabled decision and links known steps", async () => {
+    const { mount, state } = setup("/v2/close?month=12&panel=close");
+    state.workflow = makeUiV2Workflow({ blocked: true });
+    if (!state.workflow.final_review.available) throw new Error("Review missing");
+    state.workflow.final_review.close_readiness.items = [
+      { code: "unknown", severity: "warning", message: "Синтетическое замечание.", context: {} },
+      {
+        code: "money_semantics_unsupported",
+        severity: "hard_blocker",
+        message: "Смысл суммы не подтверждён.",
+        context: {},
+      },
+      {
+        code: "active_account_snapshot_missing",
+        severity: "warning",
+        message: "Остаток не сохранён.",
+        context: {},
+      },
+    ];
+    mount();
+    expect(await screen.findByRole("heading", { name: "Нужно исправить: 1" })).toBeVisible();
+    const close = screen.getByRole("button", { name: "Закрыть месяц" });
+    expect(close).toBeDisabled();
+    const blockers = screen.getByRole("region", { name: "Нужно исправить" });
+    expect(blockers.previousElementSibling).toContainElement(close);
+    expect(within(blockers).getByRole("link", { name: "Открыть шаг" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=12&panel=brokers",
+    );
+    const remaining = screen.getByRole("region", { name: "Что осталось" });
+    expect(within(remaining).getAllByRole("link")).toHaveLength(1);
+    expect(within(remaining).getByRole("link", { name: "Открыть шаг" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=12&panel=positions",
+    );
+    expect(state.writes).toEqual([]);
+  });
+
+  it("folds neutral closed findings without repeated instructions and preserves source details", async () => {
+    const { mount, state } = setup("/v2/close?month=12&panel=close");
+    state.workflow = closedFrom(readyForClose());
+    if (!state.workflow.final_review.available) throw new Error("Review missing");
+    const detail =
+      "Synthetic broker: не разобраны денежные движения. Проверь подробности в разделе «Месяц → Брокерские выписки».";
+    state.workflow.final_review.close_readiness.items = [
+      { code: "source_intake_pending", severity: "warning", message: detail, context: {} },
+    ];
+    mount();
+    expect(await screen.findByText("Закрыт с замечаниями: 1")).toBeVisible();
+    const card = screen.getByRole("heading", { name: "Месяц закрыт" }).closest("div");
+    expect(card?.parentElement).toHaveAttribute("data-state", "closed");
+    const remarks = screen.getByRole("region", { name: "Замечания месяца" });
+    expect(within(remarks).getByText("Чтобы исправить, открой месяц заново.")).toBeVisible();
+    const disclosure = within(remarks).getByText("Замечания (1)").closest("details");
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(disclosure).not.toHaveTextContent(/Открой|Проверь|требует решения/);
+    expect(disclosure?.querySelector("li")).not.toHaveAttribute("data-severity");
+    fireEvent.click(within(remarks).getByText("Замечания (1)"));
+    expect(
+      within(remarks).getByText("Synthetic broker: сверка выписки с данными месяца не завершена."),
+    ).toBeVisible();
+    expect(within(remarks).getByRole("link", { name: "Открыть шаг" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=12&panel=brokers",
+    );
+    expect(screen.getByRole("button", { name: "Открыть месяц заново" })).toHaveTextContent(
+      "Открыть заново",
+    );
+    expect(screen.getByText(detail)).not.toBeVisible();
+    expect(state.writes).toEqual([]);
+  });
+
+  it("keeps shown figures and findings while a background read is pending", async () => {
+    const { mount, state, client, fetchMock } = setup("/v2/close?month=12&panel=close");
+    state.workflow = readyForClose();
+    mount();
+    const kpis = await screen.findByLabelText("Итоги месяца");
+    const originalFetch = fetchMock.getMockImplementation();
+    if (!originalFetch) throw new Error("Fetch mock missing");
+    let finish: ((response: Response) => void) | undefined;
+    fetchMock.mockImplementation((input, init) =>
+      String(input).includes("/close-workflow")
+        ? new Promise<Response>((resolve) => {
+            finish = resolve;
+          })
+        : originalFetch(input, init),
+    );
+    act(() => {
+      void client.invalidateQueries({ queryKey: queryKeys.monthCloseWorkflowWithChecklist(12) });
+    });
+    expect(await screen.findByText("Проверяем актуальное состояние…")).toBeVisible();
+    expect(kpis).toBeVisible();
+    expect(screen.getAllByText("Часть оценок активов задана вручную.")[0]).toBeVisible();
+    expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeDisabled();
+    await act(async () => {
+      finish?.(jsonResponse(state.workflow));
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeEnabled(),
+    );
+    expect(state.workflowReads).toBe(1);
+    expect(state.writes).toEqual([]);
+  });
   it("payouts reuses saved DRAFT and calendar without loading a second XML review", async () => {
     const { mount, fetchMock } = setup("/v2/close?month=12&panel=payouts");
     mount();
@@ -333,7 +457,7 @@ describe("native Monthly Close work mode", () => {
       state.workflow = readyForClose();
       mount();
       await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" });
-      expect(screen.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+      expect(screen.getByLabelText("Итоги месяца")).toBeVisible();
       expect(screen.getAllByRole("button", { name: "Закрыть месяц" })).toHaveLength(1);
       expect(screen.queryByRole("list", { name: "Шаги закрытия" })).toBeNull();
       expect(screen.queryByText("Дополнительные интеграции и проверки")).toBeNull();
@@ -385,11 +509,11 @@ describe("native Monthly Close work mode", () => {
     const { mount, state } = setup("/v2/close?month=12&step=final_review_close");
     state.workflow = readyForClose();
     mount();
-    await screen.findByRole("group", { name: "Итоги месяца" });
-    expect(
-      screen.getByText("Подробнее об итогах и проверках").closest("details"),
-    ).not.toHaveAttribute("open");
-    fireEvent.click(screen.getByText("Подробнее об итогах и проверках"));
+    await screen.findByLabelText("Итоги месяца");
+    expect(screen.getByText("Подробнее о проверках").closest("details")).not.toHaveAttribute(
+      "open",
+    );
+    fireEvent.click(screen.getByText("Подробнее о проверках"));
     expect(await screen.findByRole("heading", { name: /Итоги.*2031/ })).toBeVisible();
     expect(screen.getByRole("button", { name: "Закрыть месяц" })).toBeVisible();
   });
@@ -599,7 +723,7 @@ describe("native Monthly Close work mode", () => {
     mount();
     const close = await screen.findByRole("button", { name: "Закрыть месяц" });
     expect(screen.queryByRole("list", { name: "Шаги закрытия" })).toBeNull();
-    expect(screen.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+    expect(screen.getByLabelText("Итоги месяца")).toBeVisible();
     expect(close).toBeVisible();
     expect(screen.getByTestId("test-location")).toHaveTextContent("context=retained");
     expect(state.writes).toEqual([]);
@@ -733,12 +857,10 @@ describe("native Monthly Close work mode", () => {
     client.clear();
     mount();
     await screen.findByRole("button", { name: "Открыть месяц заново" });
+    expect(screen.getAllByText("Не все остатки заполнены.")[0]).not.toBeVisible();
+    fireEvent.click(screen.getByText("Замечания (2)"));
     expect(screen.getAllByText("Не все остатки заполнены.")[0]).toBeVisible();
-    expect(
-      screen.getByText(
-        "Месяц закрыт по вашему решению. Для исправлений сначала открой его заново.",
-      ),
-    ).toBeVisible();
+    expect(screen.getByText("Чтобы исправить, открой месяц заново.")).toBeVisible();
     expect(
       state.workflow.steps.find((step) => step.id === "future_payouts")?.completion_basis,
     ).toBeNull();
