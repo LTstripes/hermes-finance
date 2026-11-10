@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-09**. This is the current status; product and numerical rules
+Updated **2026-11-11**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -9,50 +9,57 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
-- 1.14.0 is prepared on main for guarded publication with
-  [release notes](release-notes-1.14.0.md). Publication, the tag and the Stable
+- 1.15.0 is prepared on main for guarded publication with
+  [release notes](release-notes-1.15.0.md). Publication, the tag and the Stable
   installation are recorded here only after their read-back.
-- [v1.13.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.13.0)
-  (`bbf4197e4545be554dc2425b95354a18dff19fb1`) is the installed Stable version since
-  2026-11-08 (backup-first OPS02, Prepare and Start; health read back 1.13.0). Its
-  pre-update backup is retained. Detailed numeric Owner UAT of 1.13.0 has not been
-  performed and is not inferred from CI or copy checks.
+- [v1.14.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.14.0)
+  (`c4e91bd496c602a6496ec018caff473ac83fa1b4`, exact-main CI
+  [42571502233](https://github.com/LTstripes/hermes-finance/actions/runs/42571502233),
+  guarded publication
+  [42572541752](https://github.com/LTstripes/hermes-finance/actions/runs/42572541752))
+  is the installed Stable version since 2026-11-09 (backup-first OPS02, Prepare and
+  Start; health read back 1.14.0). Its pre-update backup is retained. Detailed
+  numeric Owner UAT of 1.13.0 and 1.14.0 has not been performed and is not inferred
+  from CI or copy checks.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
-Changes since 1.13.0, prepared for 1.14.0:
+Changes since 1.14.0, prepared for 1.15.0:
 
-- [#1150](https://github.com/LTstripes/hermes-finance/pull/1150) and
-  [#1151](https://github.com/LTstripes/hermes-finance/pull/1151) explain the monthly
-  capital change through the month's flow before savings, the market change of
-  brokerage and IIS without payouts already in the flow, physical gold revaluation
-  and an explicit residual, with a card-debt hint;
-  [#1153](https://github.com/LTstripes/hermes-finance/pull/1153) names the next step
-  when the market line is unknown. The previous breakdown remains for its consumers.
-- [#1148](https://github.com/LTstripes/hermes-finance/pull/1148) recognizes a full
-  bond redemption from cancellation rows with an exchange issue code and padded
-  quantity (semantics v17); [#1149](https://github.com/LTstripes/hermes-finance/pull/1149)
-  closes a position by that redemption for a full result (semantics v18).
-- [#1146](https://github.com/LTstripes/hermes-finance/pull/1146) and
-  [#1147](https://github.com/LTstripes/hermes-finance/pull/1147) scroll to the IIS forms
-  and add edit and delete of IIS contributions and deductions.
+- [#1156](https://github.com/LTstripes/hermes-finance/pull/1156) takes the market
+  line of the capital bridge from statements and shows the capital-vs-statement
+  valuation difference as its own line.
+- [#1157](https://github.com/LTstripes/hermes-finance/pull/1157) removes forced
+  refetches (data refresh after writes and on «Обновить»), speeds up the close check
+  and deduplicates close messages.
+- [#1160](https://github.com/LTstripes/hermes-finance/pull/1160) keeps unattributed
+  bond amortization from producing a fake loss (UNKNOWN instead; a resolved
+  registration number limits it to that issue) and limits IIS month flows to the
+  month end (semantics v20).
+- [#1162](https://github.com/LTstripes/hermes-finance/pull/1162) reads the account
+  and period returns in seconds instead of minutes with byte-identical responses.
+- UI from the 10.11.2026 audit:
+  [#1158](https://github.com/LTstripes/hermes-finance/pull/1158),
+  [#1159](https://github.com/LTstripes/hermes-finance/pull/1159),
+  [#1161](https://github.com/LTstripes/hermes-finance/pull/1161),
+  [#1163](https://github.com/LTstripes/hermes-finance/pull/1163) and
+  [#1164](https://github.com/LTstripes/hermes-finance/pull/1164) (month positions,
+  close screen, month step pages, shared formats, returns overview, instrument page,
+  loading skeletons).
 
-The market line stays unknown where capital snapshots and statements disagree at a
-month boundary or a monthly statement is missing; the bridge then says what to
-reconcile. There are no new database migrations since 1.13.0. Green CI and copy
-checks do not establish Owner UAT.
+There are no new database migrations since 1.14.0. Green CI and copy checks do not
+establish Owner UAT. Returns summaries and one instrument card still take about
+16 s on the installed data.
 
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Publish 1.14.0 through the guarded route and install it on Stable backup-first,
-   then Owner UAT of the capital bridge and the IIS forms, together with the pending
-   UAT of 1.13.0 and the redesign (#963, #1014, #711).
-2. Owner data actions for the capital bridge: record one-off card purchases as month
-   expenses, reconcile the capital snapshot with the statements at the named month
-   boundaries, confirm the remaining assumed account deposit and add the missing
-   monthly IIS statement.
+1. Publish 1.15.0 through the guarded route and install it on Stable backup-first,
+   then Owner UAT of the returns screens, the month pages and the close screen,
+   together with the pending UAT of 1.13.0 and 1.14.0.
+2. Remaining UI audit tasks (navigation, payouts forecast, capital table, settings,
+   mobile) through Codex; returns summaries speed.
 3. Apply the Owner's proportional verification rule and never infer UAT from green
    CI. No financial Apply/Close or data repair is implied by release.
 
