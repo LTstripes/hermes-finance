@@ -13,7 +13,7 @@ describe("whole-ruble overview money", () => {
     expect(plain(moneyWholeText(rub("1234567.50")))).toBe("1 234 568 ₽");
     expect(plain(moneyWholeText(rub("-499567.50")))).toBe("−499 568 ₽");
     expect(plain(moneyWholeText(rub("9876543210123.45")))).toBe("9 876 543 210 123 ₽");
-    expect(plain(moneyWholeText(rub("-0.40")))).toBe("0 ₽");
+    expect(plain(moneyWholeText(rub("-0.40")))).toBe("−0,40 ₽");
   });
 
   it("keeps unknown distinct from zero", () => {
@@ -24,7 +24,7 @@ describe("whole-ruble overview money", () => {
   it("signs a delta and leaves zero unsigned", () => {
     expect(plain(moneyWholeDeltaText(rub("28900.00")))).toBe("+28 900 ₽");
     expect(plain(moneyWholeDeltaText(rub("-203478.20")))).toBe("−203 478 ₽");
-    expect(plain(moneyWholeDeltaText(rub("0.30")))).toBe("0 ₽");
+    expect(plain(moneyWholeDeltaText(rub("0.30")))).toBe("+0,30 ₽");
   });
 });
 

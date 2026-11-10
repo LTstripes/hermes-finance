@@ -1107,7 +1107,7 @@ test("ui-v2 Capital desktop: closed composition, allocation and holdings stay bo
   await expect(page.getByRole("heading", { level: 1, name: "Капитал" })).toBeVisible();
   await expect(page.getByTestId("capital-net")).toHaveText("2 803 900 ₽");
   await expect(page.getByTestId("capital-assets")).toHaveText("3 203 900 ₽");
-  await expect(page.getByTestId("capital-debts")).toHaveText("− 400 000 ₽");
+  await expect(page.getByTestId("capital-debts")).toHaveText("−400 000 ₽");
   await expect(page.getByTestId("capital-draft-note")).toContainText("Август 2031 ещё не закрыт");
   await expect(page.getByTestId("capital-composition")).toHaveAttribute("data-point-count", "4");
   await expect(page.getByTestId("capital-change-list")).toHaveCount(0);
@@ -1374,10 +1374,10 @@ test("ui-v2 reports archive desktop: year groups, gaps and the current report st
   await page.goto("/v2/reports");
   await expect(page.getByRole("heading", { level: 1, name: "Отчёты" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "2031" })).toBeVisible();
-  await expect(page.getByTestId("reports-row-91")).toContainText("Текущий отчёт");
+  await expect(page.getByTestId("reports-row-91")).toContainText("Закрыт");
   await expect(page.getByTestId("reports-row-91")).toContainText("2 803 900 ₽");
   await expect(page.getByTestId("reports-row-90")).toContainText("2 761 300 ₽");
-  await expect(page.getByTestId("reports-row-90")).toContainText("− 390 000 ₽");
+  await expect(page.getByTestId("reports-row-90")).toContainText("−390 000 ₽");
   await expect(page.getByTestId("reports-gap-2031-6")).toContainText("отчёта нет");
   await expect(page.getByTestId("reports-row-12")).toHaveCount(0);
   await expect(page.getByTestId("reports-draft-note")).toContainText("Август 2031 ещё не закрыт");
@@ -1483,7 +1483,7 @@ test("ui-v2 historical report desktop: context, values and place in history stay
   await expect(page.getByTestId("v2-report-context")).toContainText("Снимок 31.05.2031");
   await expect(page.getByTestId("report-net")).toHaveText("2 761 300 ₽");
   await expect(page.getByTestId("report-assets")).toHaveText("3 151 300 ₽");
-  await expect(page.getByTestId("report-debts")).toHaveText("− 390 000 ₽");
+  await expect(page.getByTestId("report-debts")).toHaveText("−390 000 ₽");
   await expect(page.getByTestId("report-class-cash")).toContainText("751 300 ₽");
   await expect(page.getByTestId("report-history")).toBeVisible();
   await expect(page.locator('[data-highlight-key="2031-05"]')).toHaveCount(1);

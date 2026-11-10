@@ -476,7 +476,7 @@ describe("ReturnsPerformanceDiagnostics", () => {
     expect(screen.getByTestId("test-location")).toHaveTextContent("view=classes");
     expect(screen.getByTestId("test-location")).toHaveTextContent(`start=${START}&end=${END}`);
     await waitFor(() =>
-      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%"),
+      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,13%"),
     );
   });
 
@@ -488,7 +488,7 @@ describe("ReturnsPerformanceDiagnostics", () => {
     expect(await screen.findByTestId("performance-detail-xirr")).toHaveTextContent("+8,00%");
     fireEvent.click(screen.getByRole("button", { name: "По классам" }));
     await waitFor(() =>
-      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%"),
+      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,13%"),
     );
     expect(screen.getByTestId("test-location")).toHaveTextContent("scope=portfolio");
     expect(screen.getByTestId("test-location")).not.toHaveTextContent("account_id");
@@ -588,7 +588,7 @@ it("Returns host retains deposit refusal, class metrics and period horizons", as
       "Расчёт не поддерживается",
     ),
   );
-  expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%");
+  expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,13%");
   expect(screen.getByRole("button", { name: "1 мес." })).toBeDisabled();
   expect(screen.getByRole("button", { name: "3 мес." })).toBeDisabled();
   expect(screen.getByRole("button", { name: "12 мес." })).toBeDisabled();

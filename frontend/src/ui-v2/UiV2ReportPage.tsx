@@ -79,7 +79,7 @@ function ReportValues({ point }: { point: CapitalCompositionPoint }) {
   ];
   const values: Record<string, string> = {
     "report-assets": money(point.liquid_assets_total),
-    "report-debts": `− ${money(point.included_debts)}`,
+    "report-debts": `−${money(point.included_debts)}`,
     "report-net":
       point.portfolio_source_coverage?.status === "unavailable"
         ? "—"
@@ -172,7 +172,7 @@ function CompositionBlock({
             </div>
             <div className={styles.deduction}>
               <dt>Включённые обязательства</dt>
-              <dd>− {money(point.included_debts)}</dd>
+              <dd>−{money(point.included_debts)}</dd>
             </div>
             <div>
               <dt>Ликвидный капитал</dt>
@@ -566,7 +566,7 @@ export default function UiV2ReportPage() {
           kind="historical"
           month={month}
           source={SOURCE_LABELS[month.source] ?? UNKNOWN_SOURCE_LABEL}
-          status="Закрыт · Утверждён"
+          status="Закрыт"
         >
           <span className={styles.reportContextLinks}>
             {latestClosed ? (

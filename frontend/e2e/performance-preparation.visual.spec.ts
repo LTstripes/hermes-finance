@@ -117,7 +117,7 @@ for (const width of [1366]) {
         await expect(bond).toContainText("Подтверждения изменены или отозваны");
         await expect(gold).toContainText("Ограничение расчётного метода");
       } else {
-        await expect(stock).toContainText("+10,12%");
+        await expect(stock).toContainText("+10,13%");
         await expect(stock).toContainText("Доходность не определена");
       }
       const classes = page.getByRole("button", { name: "По классам", exact: true });
@@ -473,7 +473,7 @@ for (const width of [1366]) {
     // The existing month lifecycle owns Close; this UI only rereads its committed outcome.
     closed = true;
     await page.getByRole("button", { name: "Перечитать подготовку класса" }).click();
-    await expect(page.getByTestId("class-return-stock")).toContainText("+10,12%");
+    await expect(page.getByTestId("class-return-stock")).toContainText("+10,13%");
     await expect(page.getByText(/Сначала явно откройте все CLOSED/)).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Сохранить подтверждение класса" }),

@@ -865,6 +865,81 @@ async function expectNoTableOverflow(page: Page) {
   expect(clipped).toEqual([]);
 }
 
+test("ui-v2 grouped month positions fit 720px with closed quote tools absent @viewport-owned", async ({
+  page,
+}, info) => {
+  await installMonthUx(page, "closed");
+  await page.route("**/api/accounts", (route) =>
+    route.fulfill({
+      json: [uxAccount, { ...uxAccount, id: 12, name: "Синтетический ИИС", account_type: "iis" }],
+    }),
+  );
+  const base = {
+    id: 31,
+    reporting_month_id: 7,
+    account_id: 11,
+    instrument_id: 21,
+    quantity: "123.456789",
+    average_cost_per_unit: uxMoney("12345.67"),
+    market_price_per_unit: uxMoney("13456.78"),
+    market_value: uxMoney("1661330.85"),
+    cost_basis: uxMoney("1524156.78"),
+    unrealized_result: uxMoney("137174.07"),
+    accrued_interest: null,
+    price_source: "manual",
+    price_date: "2030-05-31",
+  };
+  await page.route("**/api/positions?*", (route) =>
+    route.fulfill({
+      json: [
+        base,
+        {
+          ...base,
+          id: 32,
+          account_id: 12,
+          average_cost_per_unit: null,
+          market_price_per_unit: null,
+          cost_basis: null,
+          unrealized_result: null,
+          price_source: "broker_statement_native",
+        },
+      ],
+    }),
+  );
+  for (const width of [1280, 1440, 1920]) {
+    for (const zoom of [1, 1.25]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/v2/close?month=7&panel=positions");
+      await page.evaluate((scale) => {
+        document.documentElement.style.zoom = String(scale);
+      }, zoom);
+      const area = page.locator("#month-work-area");
+      await area.evaluate((node) => {
+        node.style.width = "720px";
+        node.style.maxWidth = "100%";
+      });
+      const manual = area.getByRole("table", { name: /Синтетический брокерский/ });
+      const statement = area.getByRole("table", { name: /Синтетический ИИС/ });
+      await expect(manual.getByRole("columnheader", { name: "Цена покупки, ₽" })).toBeVisible();
+      await expect(statement.getByRole("columnheader")).toHaveText([
+        "Инструмент",
+        "Кол-во",
+        "Стоимость, ₽",
+        "Доля",
+      ]);
+      await expect(statement).toContainText("по выписке брокера");
+      await expect(manual).toContainText("вручную");
+      await expect(statement).not.toContainText("RUB");
+      await expect(area.getByRole("button", { name: "Обновить котировки" })).toHaveCount(0);
+      await expectNoTableOverflow(page);
+      await page.screenshot({
+        path: info.outputPath(`positions-groups-720-${width}-${zoom}.png`),
+        fullPage: true,
+      });
+    }
+  }
+});
+
 test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @viewport-owned", async ({
   page,
 }, testInfo) => {
@@ -890,9 +965,7 @@ test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @vie
       ).toBeVisible();
       await expectNoTableOverflow(page);
       // The full instrument name wraps in its cell; no help chip is needed.
-      await expect(
-        page.getByRole("table").getByText(`${uxName} (SYN)`, { exact: true }),
-      ).toBeVisible();
+      await expect(page.getByRole("table").getByText(uxName, { exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: /Полное название/ })).toHaveCount(0);
       await page.screenshot({
         path: testInfo.outputPath(`month-positions-${width}-${zoom}.png`),

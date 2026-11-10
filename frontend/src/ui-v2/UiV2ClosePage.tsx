@@ -345,7 +345,9 @@ export default function UiV2ClosePage() {
       : workflow.readiness.hard_blocker_count + workflow.readiness.warning_count;
     const panelLabel =
       panel && panel in MONTH_STEP_COPY
-        ? MONTH_STEP_COPY[panel as keyof typeof MONTH_STEP_COPY].label
+        ? panel === "close" && closed
+          ? "Итоги"
+          : MONTH_STEP_COPY[panel as keyof typeof MONTH_STEP_COPY].label
         : undefined;
     const panelStep = workflow.checklist?.steps.find((step) => step.id === panel);
     content = !panel ? (
@@ -372,8 +374,8 @@ export default function UiV2ClosePage() {
               {panel !== "close" ? <h2>{panelLabel}</h2> : null}
               {panel !== "close" ? (
                 <strong className={monthStyles.workTotal}>
-                  {panel === "payouts" ? "Пассивный доход за месяц: " : null}
-                  {panel === "payouts" ? (
+                  {panel === "payouts" ? "Купоны и дивиденды: " : null}
+                  {panel === "payouts" || panel === "budget" ? (
                     <span id="month-panel-total" />
                   ) : panelStep ? (
                     figureText(panelStep)

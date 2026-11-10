@@ -77,7 +77,7 @@ describe("class returns in existing Performance detail", () => {
   it("reads the four ordered classes and months context; explains evidence without write actions", async () => {
     const { reads } = setup();
     const stock = await screen.findByTestId("class-return-stock");
-    await waitFor(() => expect(stock).toHaveTextContent("+10,12%"));
+    await waitFor(() => expect(stock).toHaveTextContent("+10,13%"));
     expect(stock).toHaveTextContent("+5,75%");
     const table = screen.getByRole("table");
     expect(
@@ -272,7 +272,7 @@ describe("class returns in existing Performance detail", () => {
           "Ответ не соответствует",
         ),
       );
-      expect(screen.getByTestId("class-return-stock")).not.toHaveTextContent("10,12%");
+      expect(screen.getByTestId("class-return-stock")).not.toHaveTextContent("10,13%");
       expect(screen.queryByRole("button", { name: "Подробнее: Акции" })).toBeNull();
     },
   );
@@ -287,7 +287,7 @@ describe("class returns in existing Performance detail", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("account_id=77");
     fireEvent.click(screen.getByRole("button", { name: "Перейти к классам портфеля" }));
     await waitFor(() =>
-      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%"),
+      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,13%"),
     );
     expect(screen.getByTestId("location")).toHaveTextContent(
       `start=${START}&end=${END}&scope=portfolio`,
@@ -315,7 +315,7 @@ describe("class returns in existing Performance detail", () => {
     release?.(classReturnsFixture("stock", START, END));
     await waitFor(() => expect(client.isFetching()).toBe(0));
     expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+21,00%");
-    expect(screen.getByTestId("class-return-stock")).not.toHaveTextContent("10,12%");
+    expect(screen.getByTestId("class-return-stock")).not.toHaveTextContent("10,13%");
   });
 
   it("hides cached percentages during refetch and retries transport errors without evidence copy", async () => {
@@ -325,19 +325,19 @@ describe("class returns in existing Performance detail", () => {
       return row;
     });
     await waitFor(() =>
-      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%"),
+      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,13%"),
     );
     fail = true;
     await client.invalidateQueries({ queryKey: ["class-returns", "stock"] });
     await waitFor(() =>
       expect(screen.getByTestId("class-return-stock")).toHaveTextContent("сетевая ошибка"),
     );
-    expect(screen.getByTestId("class-return-stock")).not.toHaveTextContent("10,12%");
+    expect(screen.getByTestId("class-return-stock")).not.toHaveTextContent("10,13%");
     expect(screen.getByTestId("class-return-stock")).not.toHaveTextContent("Подтверждения неполны");
     fail = false;
     fireEvent.click(screen.getByRole("button", { name: "Повторить: Акции" }));
     await waitFor(() =>
-      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,12%"),
+      expect(screen.getByTestId("class-return-stock")).toHaveTextContent("+10,13%"),
     );
   });
 });

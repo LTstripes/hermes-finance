@@ -54,10 +54,10 @@ describe("buildArchive", () => {
 
     expect(current).toHaveLength(1);
     expect(current[0].month.id).toBe(uiV2CapitalMonthId);
-    expect(current[0].statusLabel).toBe("Текущий отчёт");
+    expect(current[0].statusLabel).toBe("Закрыт");
     expect(current[0].actionPath).toBe("/v2");
     const older = rows.find((row) => row.month.id === 90);
-    expect(older?.statusLabel).toBe("Утверждён");
+    expect(older?.statusLabel).toBe("Закрыт");
     expect(older?.actionLabel).toBe("Открыть отчёт");
     expect(older?.actionPath).toBe(reportPath(90));
   });

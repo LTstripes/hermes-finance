@@ -368,7 +368,7 @@ describe("UiV2CapitalAllocationPage", () => {
     const accountDetails = accounts.closest("details") as HTMLElement;
     expect(within(accounts).getByText("Наличные без привязки к счёту")).toBeInTheDocument();
     expect(within(accounts).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
-    expect(within(accounts).getByText(/20,00%/)).toBeInTheDocument();
+    expect(within(accounts).getByText(/20,0%/)).toBeInTheDocument();
     expect(within(accountDetails).getByText("⚠ часть сумм не распределена")).toBeInTheDocument();
     expect(within(accountDetails).getByText("Недоступно")).toBeInTheDocument();
     expect(within(accountDetails).queryByText(/Строки не равны всему портфелю/)).toBeNull();

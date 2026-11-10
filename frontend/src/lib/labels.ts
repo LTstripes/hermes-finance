@@ -1,6 +1,6 @@
 export const MONTH_STATUS_LABELS: Record<string, string> = {
   draft: "Черновик",
-  closed: "Утверждён",
+  closed: "Закрыт",
 };
 
 export const SOURCE_LABELS: Record<string, string> = {
@@ -103,3 +103,12 @@ export const DEBT_TYPE_LABELS: Record<string, string> = {
 export function labelOf(labels: Record<string, string>, value: string): string {
   return labels[value] ?? value;
 }
+
+/** Shared display names for the five portfolio classes; API keys stay unchanged. */
+export const ASSET_CLASS_NAMES: Record<string, string> = {
+  cash: "Деньги",
+  deposits: "Депозиты",
+  stocks: "Акции",
+  bonds: "Облигации",
+  gold_other: "Золото",
+};

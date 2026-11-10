@@ -316,8 +316,8 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     } as never);
     renderLeaf(7, true);
     const block = await propertySection();
-    expect(labelledValue(block, "Покрытие ипотеки (ориентир):")).toHaveTextContent("75,25%");
-    expect(labelledValue(block, "Покрытие обязательных расходов:")).toHaveTextContent("62,50%");
+    expect(labelledValue(block, "Покрытие ипотеки (ориентир):")).toHaveTextContent("75,3%");
+    expect(labelledValue(block, "Покрытие обязательных расходов:")).toHaveTextContent("62,5%");
     expect(within(block).queryByRole("columnheader", { name: "Ставка" })).not.toBeInTheDocument();
   });
 

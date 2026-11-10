@@ -19,7 +19,7 @@ export function reportPath(monthId: number): string {
 
 /** Archive row vocabulary (frozen). */
 export const GAP_ROW_LABEL = "отчёта нет";
-export const CURRENT_ROW_STATUS = "Текущий отчёт";
+export const CURRENT_ROW_STATUS = "Закрыт";
 export const CURRENT_ROW_ACTION = "Открыть в «Мои финансы»";
 export const OLDER_ROW_ACTION = "Открыть отчёт";
 export const SINGLE_REPORT_NOTE = "История появится после второго закрытого отчёта.";

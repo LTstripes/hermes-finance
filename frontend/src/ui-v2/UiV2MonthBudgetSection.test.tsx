@@ -113,6 +113,28 @@ beforeEach(() => {
 });
 
 describe("UiV2MonthBudgetSection plan/fact matrix", () => {
+  it("presents both existing expense totals in the workspace header without a checklist figure", async () => {
+    vi.mocked(listExpenses).mockResolvedValue([
+      expenseFoodMandatory,
+      {
+        ...expenseFoodMandatory,
+        id: 12,
+        expense_type: "other",
+        amount: { amount: "125.50", currency: "RUB" },
+      },
+    ]);
+    render(
+      <>
+        <strong id="month-panel-total" />
+        <UiV2MonthBudgetSection context={contextWith({ workspace: true })} />
+      </>,
+    );
+    await waitFor(() =>
+      expect(document.getElementById("month-panel-total")).toHaveTextContent(
+        "обязательные 50 000 ₽ · крупные и прочие 125,50 ₽",
+      ),
+    );
+  });
   it("renders plan-only with an explicit fact gap", async () => {
     vi.mocked(listPlannedBudget).mockResolvedValue([planRow]);
     vi.mocked(plannedVsActual).mockResolvedValue([

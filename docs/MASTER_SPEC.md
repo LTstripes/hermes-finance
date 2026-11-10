@@ -73,7 +73,7 @@ Internal month panels use the same «Ясный лист» groups and tiles as t
 report: one work-area heading with its existing total and one **← К месяцу**
 link. A closed panel shows **Месяц закрыт — только просмотр.** once, saved facts
 without edit forms/actions, and no empty groups or wholly unknown columns.
-Reopen stays on **Закрыть месяц** in this workspace. Rates use Russian decimal
+Reopen stays on **Итоги** in a closed month (**Закрыть месяц** while open). Rates use Russian decimal
 format and a percent sign. Linked account/debt context appears only in debts;
 actual payouts precede collapsed forecasts. The statements panel takes its
 warning count from the same checklist step as the month navigation; file Save
@@ -950,7 +950,7 @@ Every read has explicit loading/error/empty/partial states. Failed or stale refr
 #### 12.2. Форматирование
 
 - рубли: `1 234 567 ₽`;
-- проценты: максимум 1–2 знака после запятой;
+- проценты для отображения: один знак после запятой, без пробела перед `%`, HALF_UP; доходность может иметь знак, ненулевая доля меньше 0,1% — `<0,1%`. Ставки, введённые владельцем, сохраняют до двух знаков;
 - даты: `ДД.ММ.ГГГГ`;
 - месяц: `Июль 2026`;
 - отрицательные значения — заметно, но без кричащего интерфейса;
@@ -1005,6 +1005,16 @@ Every read has explicit loading/error/empty/partial states. Failed or stale refr
 итоговую проверку. Открытый раздел показывает компактную полосу всех разделов.
 Данные приходят из блока `checklist` ответа `close-workflow`, только на этой
 странице; счёт «N из M» в нём считается по тому же правилу, что и на плашке.
+
+В закрытом месяце обзор не показывает прогресс закрытия и замечания у каждого
+шага. Единственный счётчик «Закрыт с замечаниями: N» внизу использует тот же
+список замечаний, что «Итоги», со ссылкой «Итоги и замечания». Суммы обзора —
+целые рубли, точные копейки доступны в подсказках; малая ненулевая сумма не
+округляется в ноль. Колонки позиций определяются отдельно для каждого счёта:
+группа без цен и результата показывает инструмент, количество, стоимость и
+долю. Источник назван у группы; тикер и ISIN — в подсказке имени. Закрытый месяц
+не показывает предпросмотр котировок; пустые вклады раскрываются отдельно,
+а итоги депозитов остаются в подвале таблицы и включают свёрнутые строки.
 
 «Мои финансы» начинаются с одного главного показателя: ликвидный капитал последнего
 закрытого отчёта в целых рублях, изменение к предыдущему закрытому отчёту суммой и

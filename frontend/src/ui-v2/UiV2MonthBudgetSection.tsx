@@ -25,6 +25,8 @@ import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import styles from "./UiV2MonthEditor.module.css";
 
 /** Leaf section id reserved for Integrator wiring (#563, after #558). */
+import { MonthPanelTotal } from "./MonthPanelTotal";
+
 export const MONTH_BUDGET_SECTION_ID = "budget";
 
 type ExpenseExpectation = {
@@ -769,6 +771,11 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
 
   return (
     <div>
+      {context.workspace ? (
+        <MonthPanelTotal
+          value={`обязательные ${formatMoney(mandatoryTotal)} · крупные и прочие ${formatMoney(otherExpenseTotal)}`}
+        />
+      ) : null}
       {actionError ? (
         <p className={styles.warning} role="alert">
           {actionError}

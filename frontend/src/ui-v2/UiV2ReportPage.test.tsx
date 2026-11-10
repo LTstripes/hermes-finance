@@ -156,7 +156,7 @@ describe("UI v2 historical report", () => {
     const context = screen.getByTestId("v2-report-context");
     expect(context).toHaveAttribute("data-context", "historical");
     expect(context).toHaveTextContent("Исторический отчёт");
-    expect(context).toHaveTextContent("Закрыт · Утверждён");
+    expect(context).toHaveTextContent("Закрыт");
     expect(context).toHaveTextContent("Май 2031");
     expect(context).toHaveTextContent("Снимок 31.05.2031");
     expect(context).toHaveTextContent("Источник: Вручную");
@@ -171,12 +171,12 @@ describe("UI v2 historical report", () => {
 
     expect(screen.getByTestId("report-net")).toHaveTextContent("2 761 300 ₽");
     expect(screen.getByTestId("report-assets")).toHaveTextContent("3 151 300 ₽");
-    expect(screen.getByTestId("report-debts")).toHaveTextContent("− 390 000 ₽");
+    expect(screen.getByTestId("report-debts")).toHaveTextContent("−390 000 ₽");
 
     const composition = screen.getByTestId("report-composition");
     expect(within(composition).getAllByRole("listitem")).toHaveLength(5);
     expect(screen.getByTestId("report-class-cash")).toHaveTextContent("751 300 ₽");
-    expect(screen.getByTestId("report-class-gold_other")).toHaveTextContent("Золото и прочее");
+    expect(screen.getByTestId("report-class-gold_other")).toHaveTextContent("Золото");
     const compositionPanel = screen.getByTestId("report-panel-report-composition-title");
     fireEvent.click(within(compositionPanel).getByRole("button", { name: "Доли" }));
     expect(screen.getByTestId("report-class-cash")).toHaveTextContent("%");
@@ -440,7 +440,7 @@ describe("UI v2 historical report", () => {
     expect(await screen.findByTestId("report-net")).toHaveTextContent("0 ₽");
     expect(screen.getByTestId("report-class-cash")).toHaveTextContent("0 ₽");
     expect(screen.getByTestId("report-assets")).toHaveTextContent("0 ₽");
-    expect(screen.getByTestId("report-debts")).toHaveTextContent("− 0 ₽");
+    expect(screen.getByTestId("report-debts")).toHaveTextContent("−0 ₽");
     expect(screen.queryByTestId("report-composition-empty")).toBeNull();
     fireEvent.click(
       within(screen.getByTestId("report-panel-report-composition-title")).getByRole("button", {

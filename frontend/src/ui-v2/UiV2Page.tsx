@@ -588,11 +588,7 @@ function AllocationBlock({
                 <span>{row.label}</span>
                 <strong className="money">{whole(row.amount)}</strong>
                 <span className={styles.share}>
-                  {row.share === null
-                    ? ""
-                    : Number(row.share) < 0.1
-                      ? "<0,1%"
-                      : percentText(row.share, 1)}
+                  {row.share === null ? "" : percentText(row.share, 1, { share: true })}
                 </span>
               </li>
             ))}

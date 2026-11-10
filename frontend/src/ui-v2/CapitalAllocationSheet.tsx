@@ -39,7 +39,7 @@ function money(value: RiskMoneyValue | null | undefined): string {
 }
 
 function percent(value: string | null | undefined): string {
-  return value == null ? "—" : formatPercent(value, { digits: 1 });
+  return value == null ? "—" : formatPercent(value, { digits: 1, share: true });
 }
 
 /** Share of a backend percentage as a bar width; geometry only. */

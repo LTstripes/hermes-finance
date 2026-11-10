@@ -1521,7 +1521,7 @@ function PropertyBlock({
       <div className={leafStyles.propertyTotals}>
         <span>
           Покрытие ипотеки (ориентир):{" "}
-          <strong>{formatPercent(mortgage?.coverage_pct, { digits: 2 })}</strong>
+          <strong>{formatPercent(mortgage?.coverage_pct, { digits: 1 })}</strong>
         </span>
         <span>
           Недостаток покрытия:{" "}
@@ -1529,7 +1529,7 @@ function PropertyBlock({
         </span>
         <span>
           Покрытие обязательных расходов:{" "}
-          <strong>{formatPercent(coveragePct, { digits: 2 })}</strong>
+          <strong>{formatPercent(coveragePct, { digits: 1 })}</strong>
         </span>
       </div>
       <p className={leafStyles.hint}>

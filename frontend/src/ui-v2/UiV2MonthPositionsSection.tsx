@@ -65,6 +65,7 @@ import {
 } from "../components/ui";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import styles from "./UiV2MonthPositionsSection.module.css";
+import { shortInstrumentName } from "./instrumentName";
 import { validIsin } from "./returns/navigation";
 
 export function UiV2MonthPositionsSection({ context }: { context: MonthEditorContext }) {
@@ -422,16 +423,13 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
   const positionTypes = [
     ...new Set(positions.map((row) => instrumentById.get(row.instrument_id)?.instrument_type)),
   ].filter((type): type is string => type !== undefined);
-  const showAverage = filteredPositions.some((row) => row.average_cost_per_unit !== null);
-  const showPrice = filteredPositions.some((row) => row.market_price_per_unit !== null);
-  const showResult = filteredPositions.some((row) => row.unrealized_result !== null);
   const hasMarket = filteredPositions.some((row) => row.market_value != null);
   const showActions =
     !readOnly &&
     month.status !== "closed" &&
     filteredPositions.some((row) => row.price_source !== "broker_statement_native");
-  const columnCount =
-    3 + Number(showAverage) + Number(showPrice) + Number(showResult) + Number(showActions);
+  const showCurrency =
+    new Set(positions.map((row) => instrumentById.get(row.instrument_id)?.currency)).size > 1;
   const groups = [...new Set(filteredPositions.map((row) => row.account_id))]
     .map((accountId) => {
       const rows = filteredPositions
@@ -907,41 +905,45 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
             title="Пусто"
           />
         ) : (
-          <Table className={`month-positions-table${editingId != null ? " is-editing" : ""}`}>
-            <thead>
-              <tr>
-                <Th className="month-positions-table__instrument">Инструмент</Th>
-                <Th numeric title="Количество">
-                  Кол-во
-                </Th>
-                {showAverage ? (
-                  <Th numeric title="Средняя цена приобретения">
-                    Цена покупки, ₽
-                  </Th>
-                ) : null}
-                {showPrice ? <Th numeric>Цена, ₽</Th> : null}
-                <Th numeric title="Стоимость и доля в итоге">
-                  Стоимость, ₽
-                </Th>
-                {showResult ? <Th numeric>Результат, ₽</Th> : null}
-                {showActions ? (
-                  <Th className="month-positions-table__actions" aria-label="Действия">
-                    ⋯
-                  </Th>
-                ) : null}
-              </tr>
-            </thead>
-            {groups.map((group) => (
-              <tbody key={group.accountId}>
-                <tr className={styles.groupRow}>
-                  <th colSpan={columnCount} scope="rowgroup">
-                    <div className={styles.groupHeading}>
+          <div className={styles.groups}>
+            {groups.map((group) => {
+              const showAverage = group.rows.some((row) => row.average_cost_per_unit != null);
+              const showPrice = group.rows.some((row) => row.market_price_per_unit != null);
+              const showResult = group.rows.some((row) => row.unrealized_result != null);
+              const compact = !showAverage && !showPrice && !showResult;
+              const columnCount =
+                3 +
+                Number(showAverage) +
+                Number(showPrice) +
+                Number(showResult) +
+                Number(showActions) +
+                Number(compact);
+              const source = [
+                ...new Set(
+                  group.rows.map((row) =>
+                    fromStatement(row)
+                      ? "по выписке брокера"
+                      : row.price_source === "manual"
+                        ? "вручную"
+                        : labelOf(PRICE_SOURCE_LABELS, row.price_source),
+                  ),
+                ),
+              ].join(" · ");
+              return (
+                <Table
+                  key={group.accountId}
+                  className={`month-positions-table${editingId != null ? " is-editing" : ""}`}
+                >
+                  <caption className={styles.groupCaption}>
+                    <span className={styles.groupHeading}>
                       <span>
                         {accountById.get(group.accountId)?.name ?? `#${group.accountId}`}{" "}
-                        <small>{group.rows.length} поз.</small>
+                        <small>
+                          {group.rows.length} поз. · {source}
+                        </small>
                       </span>
                       <span className={styles.groupValue}>
-                        {group.total === null ? "" : formatMoney(group.total)}
+                        {group.total === null ? "" : formatMoney(group.total)}{" "}
                         <small>
                           {displayShare(
                             group.total === null ? null : rub(group.total),
@@ -949,250 +951,301 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                           )}
                         </small>
                       </span>
-                    </div>
-                  </th>
-                </tr>
-                {group.rows.map((row) => {
-                  const editing = editingId === row.id && editDraft;
-                  const instrument = instrumentById.get(row.instrument_id);
-                  const account = accountById.get(row.account_id);
-                  const instrumentTitle = instrument
-                    ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
-                    : `#${row.instrument_id}`;
-                  if (editing) {
-                    return (
-                      <tr className="month-positions-table__edit-row" key={row.id}>
-                        <Td colSpan={columnCount}>
-                          <form
-                            className="position-inline-edit"
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              void handleSaveEdit();
-                            }}
-                          >
-                            <div className="position-inline-edit__identity">
-                              <strong>{account?.name ?? `#${row.account_id}`}</strong>
-                              <span>{instrumentTitle}</span>
-                              <span className="muted tiny">
-                                {labelOf(
-                                  INSTRUMENT_TYPE_LABELS,
-                                  instrument?.instrument_type ?? "—",
-                                )}
-                              </span>
-                            </div>
-                            <div className="position-inline-edit__grid">
-                              <Field htmlFor={`pos-edit-${row.id}-qty`} label="Количество">
-                                <Input
-                                  className="input--money"
-                                  disabled={busy || readOnly}
-                                  id={`pos-edit-${row.id}-qty`}
-                                  value={editDraft.quantity}
-                                  onChange={(e) =>
-                                    setEditDraft({ ...editDraft, quantity: e.target.value })
-                                  }
-                                />
-                              </Field>
-                              <Field
-                                htmlFor={`pos-edit-${row.id}-avg`}
-                                label="Средняя цена приобретения"
-                              >
-                                <Input
-                                  className="input--money"
-                                  disabled={busy || readOnly}
-                                  id={`pos-edit-${row.id}-avg`}
-                                  value={editDraft.average_cost}
-                                  onChange={(e) =>
-                                    setEditDraft({ ...editDraft, average_cost: e.target.value })
-                                  }
-                                />
-                              </Field>
-                              <Field htmlFor={`pos-edit-${row.id}-price`} label="Рыночная цена">
-                                <Input
-                                  className="input--money"
-                                  disabled={busy || readOnly}
-                                  id={`pos-edit-${row.id}-price`}
-                                  value={editDraft.market_price}
-                                  onChange={(e) =>
-                                    setEditDraft({ ...editDraft, market_price: e.target.value })
-                                  }
-                                />
-                              </Field>
-                              <Field htmlFor={`pos-edit-${row.id}-nkd`} label="НКД">
-                                <Input
-                                  aria-label="НКД"
-                                  className="input--money"
-                                  disabled={busy || readOnly}
-                                  id={`pos-edit-${row.id}-nkd`}
-                                  placeholder="НКД"
-                                  value={editDraft.accrued_interest}
-                                  onChange={(e) =>
-                                    setEditDraft({
-                                      ...editDraft,
-                                      accrued_interest: e.target.value,
-                                    })
-                                  }
-                                />
-                              </Field>
-                              <Field htmlFor={`pos-edit-${row.id}-date`} label="Дата оценки">
-                                <Input
-                                  aria-label="Дата оценки"
-                                  disabled={busy || readOnly}
-                                  id={`pos-edit-${row.id}-date`}
-                                  type="date"
-                                  value={editDraft.price_date}
-                                  onChange={(e) =>
-                                    setEditDraft({ ...editDraft, price_date: e.target.value })
-                                  }
-                                />
-                              </Field>
-                              <Field htmlFor={`pos-edit-${row.id}-source`} label="Источник оценки">
-                                <Select
-                                  aria-label="Источник оценки"
-                                  disabled={busy || readOnly}
-                                  id={`pos-edit-${row.id}-source`}
-                                  value={editDraft.price_source}
-                                  onChange={(e) =>
-                                    setEditDraft({ ...editDraft, price_source: e.target.value })
-                                  }
-                                >
-                                  <option value="manual">Вручную</option>
-                                  <option value="moex">Мосбиржа</option>
-                                  <option value="alfa_pdf">Выписка Альфа-Банка</option>
-                                </Select>
-                              </Field>
-                              <div className="position-inline-edit__readonly">
-                                <span className="field__label">Рыночная стоимость</span>
-                                <span className="position-inline-edit__readonly-value muted">
-                                  {formatMoney(moneyAmount(row.market_value))}
-                                </span>
-                              </div>
-                              <div className="position-inline-edit__readonly">
-                                <span className="field__label">Результат</span>
-                                <span className="position-inline-edit__readonly-value muted">
-                                  {formatMoney(moneyAmount(row.unrealized_result))}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="position-inline-edit__actions">
-                              <Button
-                                disabled={busy || readOnly}
-                                size="sm"
-                                type="submit"
-                                variant="primary"
-                              >
-                                Сохранить
-                              </Button>
-                              <Button
-                                disabled={busy}
-                                onClick={() => {
-                                  setEditingId(null);
-                                  setEditDraft(null);
-                                }}
-                                size="sm"
-                                type="button"
-                              >
-                                Отмена
-                              </Button>
-                            </div>
-                          </form>
-                        </Td>
-                      </tr>
-                    );
-                  }
-                  return (
-                    <tr key={row.id}>
-                      <Td className={styles.instrument}>
-                        {validIsin(instrument?.isin) ? (
-                          <Link
-                            className={styles.instrumentTitle}
-                            to={`/v2/returns/instrument/${instrument?.isin}?${new URLSearchParams({ capital_account: String(row.account_id), back })}`}
-                          >
-                            {instrumentTitle}
-                          </Link>
-                        ) : (
-                          <span className={styles.instrumentTitle}>{instrumentTitle}</span>
-                        )}
-                        <div className={styles.meta}>
-                          {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")} ·{" "}
-                          {instrument?.currency ?? "валюта неизвестна"}
-                        </div>
-                      </Td>
-                      <Td numeric>{formatQuantity(row.quantity)}</Td>
+                    </span>
+                  </caption>
+                  <colgroup>
+                    <col />
+                    <col className={styles.quantityColumn} />
+                    {showAverage ? <col className={styles.priceColumn} /> : null}
+                    {showPrice ? <col className={styles.priceColumn} /> : null}
+                    <col className={styles.valueColumn} />
+                    {showResult ? <col className={styles.valueColumn} /> : null}
+                    {compact ? <col className={styles.shareColumn} /> : null}
+                    {showActions ? <col className={styles.actionsColumn} /> : null}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <Th className="month-positions-table__instrument">Инструмент</Th>
+                      <Th numeric title="Количество">
+                        Кол-во
+                      </Th>
                       {showAverage ? (
-                        <Td numeric>
-                          {displayCell(row.average_cost_per_unit, !fromStatement(row))}
-                        </Td>
+                        <Th numeric title="Средняя цена приобретения">
+                          Цена покупки, ₽
+                        </Th>
                       ) : null}
-                      {showPrice ? (
-                        <Td numeric>
-                          {displayCell(row.market_price_per_unit, !fromStatement(row))}
-                          {row.accrued_interest !== null ? (
-                            <div className={styles.meta}>
-                              НКД {formatMoney(moneyAmount(row.accrued_interest))}
-                            </div>
-                          ) : null}
-                        </Td>
-                      ) : null}
-                      <Td numeric>
-                        {displayCell(row.market_value, hasMarket)}
-                        {displayShare(row.market_value, totals.market) ? (
-                          <div className={`${styles.meta} ${styles.share}`}>
-                            {displayShare(row.market_value, totals.market)}
-                          </div>
-                        ) : null}
-                        {row.price_date !== defaultPriceDate ||
-                        ["manual", "t_invest", "moex"].includes(row.price_source) ? (
-                          <div className={styles.meta}>
-                            {labelOf(PRICE_SOURCE_LABELS, row.price_source)} ·{" "}
-                            {formatDate(row.price_date)}
-                          </div>
-                        ) : null}
-                      </Td>
-                      {showResult ? (
-                        <Td numeric>{displayCell(row.unrealized_result, !fromStatement(row))}</Td>
-                      ) : null}
+                      {showPrice ? <Th numeric>Цена, ₽</Th> : null}
+                      <Th numeric title="Стоимость и доля в итоге">
+                        Стоимость, ₽
+                      </Th>
+                      {showResult ? <Th numeric>Результат, ₽</Th> : null}
+                      {compact ? <Th numeric>Доля</Th> : null}
                       {showActions ? (
-                        <Td className="month-positions-table__actions">
-                          {row.price_source !== "broker_statement_native" ? (
-                            <div className="row-actions">
-                              <OverflowMenu
-                                label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
-                              >
-                                <OverflowMenuItem
-                                  disabled={
-                                    busy ||
-                                    readOnly ||
-                                    row.price_source === "broker_statement_native"
-                                  }
-                                  onClick={() => {
-                                    setEditingId(row.id);
-                                    setEditDraft(editDraftFromPosition(row));
-                                  }}
-                                >
-                                  Изменить
-                                </OverflowMenuItem>
-                                <OverflowMenuItem
-                                  danger
-                                  disabled={
-                                    busy ||
-                                    readOnly ||
-                                    row.price_source === "broker_statement_native"
-                                  }
-                                  onClick={() => setPendingDelete(row)}
-                                >
-                                  Удалить
-                                </OverflowMenuItem>
-                              </OverflowMenu>
-                            </div>
-                          ) : null}
-                        </Td>
+                        <Th className="month-positions-table__actions" aria-label="Действия">
+                          ⋯
+                        </Th>
                       ) : null}
                     </tr>
-                  );
-                })}
-              </tbody>
-            ))}
-          </Table>
+                  </thead>
+                  <tbody>
+                    {group.rows.map((row) => {
+                      const editing = editingId === row.id && editDraft;
+                      const instrument = instrumentById.get(row.instrument_id);
+                      const account = accountById.get(row.account_id);
+                      const instrumentTitle = instrument
+                        ? shortInstrumentName(instrument)
+                        : `#${row.instrument_id}`;
+                      if (editing) {
+                        return (
+                          <tr className="month-positions-table__edit-row" key={row.id}>
+                            <Td colSpan={columnCount}>
+                              <form
+                                className="position-inline-edit"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void handleSaveEdit();
+                                }}
+                              >
+                                <div className="position-inline-edit__identity">
+                                  <strong>{account?.name ?? `#${row.account_id}`}</strong>
+                                  <span>{instrumentTitle}</span>
+                                  <span className="muted tiny">
+                                    {labelOf(
+                                      INSTRUMENT_TYPE_LABELS,
+                                      instrument?.instrument_type ?? "—",
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="position-inline-edit__grid">
+                                  <Field htmlFor={`pos-edit-${row.id}-qty`} label="Количество">
+                                    <Input
+                                      className="input--money"
+                                      disabled={busy || readOnly}
+                                      id={`pos-edit-${row.id}-qty`}
+                                      value={editDraft.quantity}
+                                      onChange={(e) =>
+                                        setEditDraft({ ...editDraft, quantity: e.target.value })
+                                      }
+                                    />
+                                  </Field>
+                                  <Field
+                                    htmlFor={`pos-edit-${row.id}-avg`}
+                                    label="Средняя цена приобретения"
+                                  >
+                                    <Input
+                                      className="input--money"
+                                      disabled={busy || readOnly}
+                                      id={`pos-edit-${row.id}-avg`}
+                                      value={editDraft.average_cost}
+                                      onChange={(e) =>
+                                        setEditDraft({ ...editDraft, average_cost: e.target.value })
+                                      }
+                                    />
+                                  </Field>
+                                  <Field htmlFor={`pos-edit-${row.id}-price`} label="Рыночная цена">
+                                    <Input
+                                      className="input--money"
+                                      disabled={busy || readOnly}
+                                      id={`pos-edit-${row.id}-price`}
+                                      value={editDraft.market_price}
+                                      onChange={(e) =>
+                                        setEditDraft({ ...editDraft, market_price: e.target.value })
+                                      }
+                                    />
+                                  </Field>
+                                  <Field htmlFor={`pos-edit-${row.id}-nkd`} label="НКД">
+                                    <Input
+                                      aria-label="НКД"
+                                      className="input--money"
+                                      disabled={busy || readOnly}
+                                      id={`pos-edit-${row.id}-nkd`}
+                                      placeholder="НКД"
+                                      value={editDraft.accrued_interest}
+                                      onChange={(e) =>
+                                        setEditDraft({
+                                          ...editDraft,
+                                          accrued_interest: e.target.value,
+                                        })
+                                      }
+                                    />
+                                  </Field>
+                                  <Field htmlFor={`pos-edit-${row.id}-date`} label="Дата оценки">
+                                    <Input
+                                      aria-label="Дата оценки"
+                                      disabled={busy || readOnly}
+                                      id={`pos-edit-${row.id}-date`}
+                                      type="date"
+                                      value={editDraft.price_date}
+                                      onChange={(e) =>
+                                        setEditDraft({ ...editDraft, price_date: e.target.value })
+                                      }
+                                    />
+                                  </Field>
+                                  <Field
+                                    htmlFor={`pos-edit-${row.id}-source`}
+                                    label="Источник оценки"
+                                  >
+                                    <Select
+                                      aria-label="Источник оценки"
+                                      disabled={busy || readOnly}
+                                      id={`pos-edit-${row.id}-source`}
+                                      value={editDraft.price_source}
+                                      onChange={(e) =>
+                                        setEditDraft({ ...editDraft, price_source: e.target.value })
+                                      }
+                                    >
+                                      <option value="manual">Вручную</option>
+                                      <option value="moex">Мосбиржа</option>
+                                      <option value="alfa_pdf">Выписка Альфа-Банка</option>
+                                    </Select>
+                                  </Field>
+                                  <div className="position-inline-edit__readonly">
+                                    <span className="field__label">Рыночная стоимость</span>
+                                    <span className="position-inline-edit__readonly-value muted">
+                                      {formatMoney(moneyAmount(row.market_value))}
+                                    </span>
+                                  </div>
+                                  <div className="position-inline-edit__readonly">
+                                    <span className="field__label">Результат</span>
+                                    <span className="position-inline-edit__readonly-value muted">
+                                      {formatMoney(moneyAmount(row.unrealized_result))}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="position-inline-edit__actions">
+                                  <Button
+                                    disabled={busy || readOnly}
+                                    size="sm"
+                                    type="submit"
+                                    variant="primary"
+                                  >
+                                    Сохранить
+                                  </Button>
+                                  <Button
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setEditingId(null);
+                                      setEditDraft(null);
+                                    }}
+                                    size="sm"
+                                    type="button"
+                                  >
+                                    Отмена
+                                  </Button>
+                                </div>
+                              </form>
+                            </Td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key={row.id}>
+                          <Td
+                            className={styles.instrument}
+                            title={[instrument?.ticker, instrument?.isin]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          >
+                            {validIsin(instrument?.isin) ? (
+                              <Link
+                                className={styles.instrumentTitle}
+                                to={`/v2/returns/instrument/${instrument?.isin}?${new URLSearchParams({ capital_account: String(row.account_id), back })}`}
+                              >
+                                {instrumentTitle}
+                              </Link>
+                            ) : (
+                              <span className={styles.instrumentTitle}>{instrumentTitle}</span>
+                            )}
+                            <div className={styles.meta}>
+                              {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")}
+                              {showCurrency || !instrument?.currency
+                                ? ` · ${instrument?.currency ?? "валюта неизвестна"}`
+                                : ""}
+                            </div>
+                          </Td>
+                          <Td numeric>{formatQuantity(row.quantity)}</Td>
+                          {showAverage ? (
+                            <Td numeric>
+                              {displayCell(row.average_cost_per_unit, !fromStatement(row))}
+                            </Td>
+                          ) : null}
+                          {showPrice ? (
+                            <Td numeric>
+                              {displayCell(row.market_price_per_unit, !fromStatement(row))}
+                              {row.accrued_interest !== null ? (
+                                <div className={styles.meta}>
+                                  НКД {formatMoney(moneyAmount(row.accrued_interest))}
+                                </div>
+                              ) : null}
+                            </Td>
+                          ) : null}
+                          <Td numeric>
+                            {displayCell(row.market_value, hasMarket)}
+                            {!compact && displayShare(row.market_value, totals.market) ? (
+                              <div className={`${styles.meta} ${styles.share}`}>
+                                {displayShare(row.market_value, totals.market)}
+                              </div>
+                            ) : null}
+                            {row.price_date !== defaultPriceDate ||
+                            ["manual", "t_invest", "moex"].includes(row.price_source) ? (
+                              <div className={styles.meta}>
+                                {labelOf(PRICE_SOURCE_LABELS, row.price_source)} ·{" "}
+                                {formatDate(row.price_date)}
+                              </div>
+                            ) : null}
+                          </Td>
+                          {compact ? (
+                            <Td numeric>{displayShare(row.market_value, totals.market) || "—"}</Td>
+                          ) : null}
+                          {showResult ? (
+                            <Td numeric>
+                              {displayCell(row.unrealized_result, !fromStatement(row))}
+                            </Td>
+                          ) : null}
+                          {showActions ? (
+                            <Td className="month-positions-table__actions">
+                              {row.price_source !== "broker_statement_native" ? (
+                                <div className="row-actions">
+                                  <OverflowMenu
+                                    label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
+                                  >
+                                    <OverflowMenuItem
+                                      disabled={
+                                        busy ||
+                                        readOnly ||
+                                        row.price_source === "broker_statement_native"
+                                      }
+                                      onClick={() => {
+                                        setEditingId(row.id);
+                                        setEditDraft(editDraftFromPosition(row));
+                                      }}
+                                    >
+                                      Изменить
+                                    </OverflowMenuItem>
+                                    <OverflowMenuItem
+                                      danger
+                                      disabled={
+                                        busy ||
+                                        readOnly ||
+                                        row.price_source === "broker_statement_native"
+                                      }
+                                      onClick={() => setPendingDelete(row)}
+                                    >
+                                      Удалить
+                                    </OverflowMenuItem>
+                                  </OverflowMenu>
+                                </div>
+                              ) : null}
+                            </Td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              );
+            })}
+          </div>
         )}
 
         {statementExplanation ? (
@@ -1399,20 +1452,22 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
         ) : null}
       </Panel>
 
-      <div id="month-quotes" tabIndex={-1}>
-        <QuotePreviewPanel
-          applying={previewApplying}
-          applyResult={quoteApplyResult}
-          closedMonthHint={readOnly}
-          error={previewError}
-          loading={previewLoading}
-          mappingNotice={mappingNotice}
-          onApply={readOnly ? undefined : (rows) => void handleQuoteApply(rows)}
-          onMapInstrument={readOnly ? undefined : (row) => void openQuoteMapping(row)}
-          onRefresh={() => void handleQuotePreview()}
-          preview={quotePreview}
-        />
-      </div>
+      {!readOnly ? (
+        <div id="month-quotes" tabIndex={-1}>
+          <QuotePreviewPanel
+            applying={previewApplying}
+            applyResult={quoteApplyResult}
+            closedMonthHint={readOnly}
+            error={previewError}
+            loading={previewLoading}
+            mappingNotice={mappingNotice}
+            onApply={readOnly ? undefined : (rows) => void handleQuoteApply(rows)}
+            onMapInstrument={readOnly ? undefined : (row) => void openQuoteMapping(row)}
+            onRefresh={() => void handleQuotePreview()}
+            preview={quotePreview}
+          />
+        </div>
+      ) : null}
 
       <InstrumentMappingDialog
         busy={mappingBusy}

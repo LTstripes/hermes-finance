@@ -65,7 +65,7 @@ function ReportRowCells({ row }: { row: ArchiveReportRow }) {
         {point && !unavailable ? money(point.liquid_assets_total) : "—"}
       </Td>
       <Td className={reportStyles.moneyCell} data-label={COLUMNS[5]} numeric>
-        {point && !unavailable ? `− ${money(point.included_debts)}` : "—"}
+        {point && !unavailable ? `−${money(point.included_debts)}` : "—"}
       </Td>
       <Td data-label={COLUMNS[6]}>
         <Link to={row.actionPath}>{row.actionLabel}</Link>

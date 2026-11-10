@@ -464,8 +464,12 @@ function GeneralSection({
       {!context.workspace && <h2>Общие данные</h2>}
       {readOnly ? (
         <div className={styles.snapshotCard}>
-          <strong>{formatDate(month.snapshot_date)}</strong>
-          <p>{formatMonth(month.year, month.month)}</p>
+          {!context.workspace ? (
+            <>
+              <strong>{formatDate(month.snapshot_date)}</strong>
+              <p>{formatMonth(month.year, month.month)}</p>
+            </>
+          ) : null}
           <small>Источник: {labelOf(SOURCE_LABELS, month.source)}</small>
         </div>
       ) : null}

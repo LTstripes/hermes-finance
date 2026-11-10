@@ -1,3 +1,4 @@
+import { ASSET_CLASS_NAMES } from "./labels";
 import { reasonCopy } from "./reasonCopy";
 /**
  * Owner-facing copy for the R07-06A allocation/concentration support model.
@@ -7,13 +8,13 @@ import { reasonCopy } from "./reasonCopy";
  */
 
 export const ASSET_CLASS_LABELS: Record<string, string> = {
-  cash: "Наличные",
-  deposits: "Депозиты",
-  stock: "Акции",
-  bond: "Облигации",
+  cash: ASSET_CLASS_NAMES.cash,
+  deposits: ASSET_CLASS_NAMES.deposits,
+  stock: ASSET_CLASS_NAMES.stocks,
+  bond: ASSET_CLASS_NAMES.bonds,
   fund: "Фонды",
   currency: "Валюта",
-  gold: "Золото",
+  gold: ASSET_CLASS_NAMES.gold_other,
   other: "Прочее",
   unknown_asset_class: "Неизвестный класс активов",
   unassigned_cash: "Наличные без привязки к счёту",

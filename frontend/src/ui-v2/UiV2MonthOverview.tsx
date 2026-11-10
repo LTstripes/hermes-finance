@@ -8,10 +8,17 @@ import type {
   MonthCloseWorkflow,
 } from "../api/monthCloseWorkflow";
 import type { MoneyValue } from "../api/types";
+import { closeOwnerActionFindings } from "../components/month-close/ownerCopy";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatDate, formatPercent } from "../lib/format";
 import styles from "./UiV2MonthOverview.module.css";
-import { moneyDeltaText, moneyText, moneyTone } from "./valueFormat";
+import {
+  moneyText,
+  moneyDeltaText,
+  moneyTone,
+  moneyWholeText,
+  moneyWholeDeltaText,
+} from "./valueFormat";
 
 type StepCopy = { label: string; hint: string };
 
@@ -90,10 +97,9 @@ function hintText(
   closed: boolean,
 ): string {
   const base = MONTH_STEP_COPY[id].hint;
-  if (!step) return base;
+  if (!step || closed) return base;
   if (step.state === "attention") {
     const count = step.attention_count;
-    if (closed) return countText(count, ["замечание", "замечания", "замечаний"]);
     return `${countText(count, ["замечание", "замечания", "замечаний"])} ${count === 1 ? "требует" : "требуют"} решения`;
   }
   if (step.state === "empty") return "Не заполнено";
@@ -166,13 +172,8 @@ export function MonthStepStrip({
             to={pathFor(id)}
           >
             {id === "close" ? null : <StateMark state={step?.state} closed={closed} />}
-            {MONTH_STEP_COPY[id].label}
-            {closed && step?.state === "attention" ? (
-              <span className={styles.stripCount}>
-                {countText(step.attention_count, ["замечание", "замечания", "замечаний"])}
-              </span>
-            ) : null}
-            {step && id !== "close" ? (
+            {id === "close" && closed ? "Итоги" : MONTH_STEP_COPY[id].label}
+            {!closed && step && id !== "close" ? (
               <span className={styles.visuallyHidden}>, {stateText(step.state, closed)}</span>
             ) : null}
           </Link>
@@ -188,7 +189,9 @@ function Kpi({
   note,
   tone,
   extra,
+  title,
 }: {
+  title?: string;
   label: string;
   value: string;
   note?: ReactNode;
@@ -199,7 +202,9 @@ function Kpi({
   return (
     <div className={styles.kpi}>
       <dt>{label}</dt>
-      <dd className={styles.kpiValue}>{value}</dd>
+      <dd className={styles.kpiValue} title={title}>
+        {value}
+      </dd>
       {note ? (
         <dd className={styles.kpiNote} data-tone={tone ?? "neutral"}>
           {note}
@@ -210,9 +215,12 @@ function Kpi({
   );
 }
 
-function deltaNote(value: MoneyValue | null | undefined, suffix: string) {
+function deltaNote(value: MoneyValue | null | undefined, suffix: string, whole = false) {
   if (!value) return { note: undefined, tone: undefined };
-  return { note: `${moneyDeltaText(value)} ${suffix}`, tone: moneyTone(value) };
+  return {
+    note: `${(whole ? moneyWholeDeltaText : moneyDeltaText)(value)} ${suffix}`,
+    tone: moneyTone(value),
+  };
 }
 
 export function MonthKpis({
@@ -225,14 +233,15 @@ export function MonthKpis({
   const review = workflow.final_review;
   if (!review.available) return null;
   const { kpis } = review;
+  const display = variant === "overview" ? moneyWholeText : moneyText;
   // Without capital snapshots the backend sum is 0.00 by construction, not a measured zero.
   const coverage = kpis.portfolio_source_coverage;
   const capitalUnknown = coverage?.status === "unavailable";
   const capital =
     capitalUnknown || kpis.liquid_capital_delta_coverage?.status === "unavailable"
       ? deltaNote(null, "")
-      : deltaNote(kpis.liquid_capital_delta, "за месяц");
-  const passive = deltaNote(kpis.passive_income_delta, "к прошлому месяцу");
+      : deltaNote(kpis.liquid_capital_delta, "за месяц", variant === "overview");
+  const passive = deltaNote(kpis.passive_income_delta, "к прошлому месяцу", variant === "overview");
   const budget = workflow.checklist?.steps.find((step) => step.id === "budget");
   const noExpenseRows = workflow.checklist?.expenses.mandatory_items.length === 0;
   const articles =
@@ -243,7 +252,8 @@ export function MonthKpis({
     <dl aria-label={variant === "close" ? "Итоги месяца" : "Итог месяца"} className={styles.kpis}>
       <Kpi
         label="Ликвидный капитал"
-        value={capitalUnknown ? "—" : moneyText(kpis.liquid_capital_net)}
+        title={capitalUnknown ? undefined : moneyText(kpis.liquid_capital_net)}
+        value={capitalUnknown ? "—" : display(kpis.liquid_capital_net)}
         {...capital}
         extra={
           coverage &&
@@ -256,15 +266,21 @@ export function MonthKpis({
           ) : undefined
         }
       />
-      <Kpi label="Пассивный доход" value={moneyText(kpis.passive_income_actual)} {...passive} />
+      <Kpi
+        label="Пассивный доход"
+        title={moneyText(kpis.passive_income_actual)}
+        value={display(kpis.passive_income_actual)}
+        {...passive}
+      />
       {variant === "close" ? (
         <Kpi label="Инвестиции" value={moneyText(review.investments.market_value)} />
       ) : null}
       {variant === "overview" || (kpis.mandatory_expenses != null && !noExpenseRows) ? (
         <Kpi
           label="Обязательные расходы"
+          title={noExpenseRows ? undefined : moneyText(kpis.mandatory_expenses)}
           // No mandatory rows at all is "not entered", not a measured zero.
-          value={noExpenseRows ? "—" : moneyText(kpis.mandatory_expenses)}
+          value={noExpenseRows ? "—" : display(kpis.mandatory_expenses)}
           note={noExpenseRows ? "не заполнено" : articles}
         />
       ) : null}
@@ -330,15 +346,20 @@ function CloseBanner({
   const checklist = workflow.checklist;
   const closed = workflow.month.status === "closed";
   if (closed) {
+    const count = workflow.final_review.available
+      ? closeOwnerActionFindings(workflow.final_review.close_readiness.items).filter(
+          (item) => item.severity === "hard_blocker" || item.severity === "warning",
+        ).length
+      : workflow.readiness.hard_blocker_count + workflow.readiness.warning_count;
     return (
       <div className={styles.banner} data-state="closed">
         <StateMark state="done" />
         <div>
           <strong>Месяц закрыт</strong>
-          <p>Данные только для чтения. Открыть заново можно в итогах.</p>
+          {count ? <p>Закрыт с замечаниями: {count}</p> : null}
         </div>
         <Link className={styles.secondaryAction} to={pathFor("close")}>
-          Итоги месяца
+          Итоги и замечания
         </Link>
       </div>
     );
@@ -400,7 +421,7 @@ export function MonthOverview({
   const title = closed
     ? allDone
       ? "Все шаги выполнены"
-      : "Месяц закрыт"
+      : "Разделы месяца"
     : checklist?.attention_count
       ? "Что требует решения"
       : "Что осталось сделать";
@@ -409,15 +430,17 @@ export function MonthOverview({
       <MonthKpis workflow={workflow} />
       <div className={styles.columns} data-side={hasExpenses ? "true" : undefined}>
         <nav aria-label="Разделы месяца" className={styles.checklist}>
-          <div className={styles.checklistHead}>
-            <p className={styles.eyebrow}>Закрытие месяца</p>
-            {checklist ? (
-              <span className={styles.counter}>
-                {checklist.completed_count} из {checklist.total_count}
-              </span>
-            ) : null}
-            <h2 id="month-checklist-title">{title}</h2>
-          </div>
+          {!closed ? (
+            <div className={styles.checklistHead}>
+              <p className={styles.eyebrow}>Закрытие месяца</p>
+              {checklist ? (
+                <span className={styles.counter}>
+                  {checklist.completed_count} из {checklist.total_count}
+                </span>
+              ) : null}
+              <h2 id="month-checklist-title">{title}</h2>
+            </div>
+          ) : null}
           {GROUPS.map((group) => (
             <section aria-label={group.title} className={styles.group} key={group.id}>
               <h3 className={styles.eyebrow}>{group.title}</h3>
@@ -435,11 +458,26 @@ export function MonthOverview({
                       >
                         <StateMark state={step?.state} closed={closed} />
                         <span className={styles.rowText}>
-                          <span className={styles.rowTitle}>{MONTH_STEP_COPY[id].label}</span>
+                          <span className={styles.rowTitle}>
+                            {id === "close" && closed ? "Итоги" : MONTH_STEP_COPY[id].label}
+                          </span>
                           <span className={styles.rowHint}>{hintText(step, id, closed)}</span>
                         </span>
-                        {step ? <span className={styles.rowFigure}>{figureText(step)}</span> : null}
                         {step ? (
+                          <span
+                            className={styles.rowFigure}
+                            title={
+                              step.figure?.kind === "money"
+                                ? moneyText(step.figure.amount)
+                                : undefined
+                            }
+                          >
+                            {step.figure?.kind === "money"
+                              ? moneyWholeText(step.figure.amount, "—")
+                              : figureText(step)}
+                          </span>
+                        ) : null}
+                        {!closed && step ? (
                           <span className={styles.visuallyHidden}>
                             , {stateText(step.state, closed)}
                           </span>

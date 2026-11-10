@@ -7,12 +7,14 @@
  * literal values, so they are repeated here.
  * Presentation only — no amount, share or class is ever derived here.
  */
+import { ASSET_CLASS_NAMES } from "../lib/labels";
+
 export const ASSET_CLASS_META: Record<string, { label: string; color: string }> = {
-  cash: { label: "Деньги", color: "#9aa3ae" },
-  deposits: { label: "Депозиты", color: "#8a6bbe" },
-  stocks: { label: "Акции", color: "#d0843a" },
-  bonds: { label: "Облигации", color: "#3d6fb6" },
-  gold_other: { label: "Золото и прочее", color: "#c8a227" },
+  cash: { label: ASSET_CLASS_NAMES.cash, color: "#9aa3ae" },
+  deposits: { label: ASSET_CLASS_NAMES.deposits, color: "#8a6bbe" },
+  stocks: { label: ASSET_CLASS_NAMES.stocks, color: "#d0843a" },
+  bonds: { label: ASSET_CLASS_NAMES.bonds, color: "#3d6fb6" },
+  gold_other: { label: ASSET_CLASS_NAMES.gold_other, color: "#c8a227" },
 };
 
 export const CLASS_COLORS: Record<string, string> = Object.fromEntries(

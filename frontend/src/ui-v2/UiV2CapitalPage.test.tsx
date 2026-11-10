@@ -266,7 +266,7 @@ it("shows the capital hero and its two subtotals in the frozen order and reads o
   expect(within(headlines).getByText("+42 600 ₽", { exact: false })).toBeVisible();
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
   expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 900 ₽");
-  expect(screen.getByTestId("capital-debts")).toHaveTextContent("− 400 000 ₽");
+  expect(screen.getByTestId("capital-debts")).toHaveTextContent("−400 000 ₽");
   expect(screen.queryByRole("tooltip")).toBeNull();
   fireEvent.click(within(headlines).getByRole("button", { name: "Как считается капитал" }));
   expect(screen.getByRole("tooltip")).toHaveTextContent(
