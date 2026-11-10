@@ -1519,6 +1519,106 @@ def test_account_rows_of_other_issues_do_not_hide_a_reconciled_bond():
     assert result.pnl.assumptions == ("account_money_unattributed",)
 
 
+@pytest.mark.parametrize(
+    "instrument_type, amortization_isin, incomplete",
+    [
+        ("bond", None, True),
+        ("bond", "ZZ0000000011", True),
+        ("bond", "ZZ0000000029", False),
+        ("stock", None, False),
+        ("fund", None, False),
+    ],
+)
+def test_amortization_gap_is_scoped_to_potentially_affected_bonds(
+    instrument_type, amortization_isin, incomplete
+):
+    amortization = replace(
+        cash("COUPON", 25000),
+        event_key="amortization",
+        kind="UNRESOLVED",
+        isin=amortization_isin,
+        classification="unknown",
+        counted=False,
+        current=False,
+        reason_codes=("redemption_amortization_unsupported", "unrecognized_money"),
+    )
+    analysis = scoped_case(payout_reasons=(), other=(amortization,))
+    analysis.events = (
+        replace(analysis.events[0], native_identity="synthetic-buy"),
+        *analysis.events[1:],
+    )
+    analysis.coverage["events"] = Coverage(False, amortization.reason_codes)
+    analysis.coverage["quantity"] = Coverage(False, ("redemption_amortization_unsupported",))
+    analysis.closing = Endpoint(END, Decimal(1), 77000, 77000, 0, "dirty")
+    clean = project_clean_analysis(analysis, "ZZ0000000011", instrument_type=instrument_type)
+    purchases = clean_purchase_price_contributions(
+        analysis, clean, "ZZ0000000011", instrument_type=instrument_type
+    )
+    assert purchases and len(purchases) == 1
+    if incomplete:
+        assert clean.redemption.value is None
+        assert "redemption_incomplete" in clean.redemption.reason_codes
+        assert clean.pnl.value is clean.simple_return.value is None
+        assert clean.valuation_and_trades.value is None
+        assert "redemption_incomplete" in clean.pnl.reason_codes
+        assert purchases[0]["status"] == "partial"
+        assert purchases[0]["price_result_kopecks"] is None
+        assert purchases[0]["return_fraction"] is None
+    else:
+        assert clean.redemption.value == 0
+        assert clean.pnl.value == -25000
+        assert clean.simple_return.value is not None
+        assert purchases[0]["price_result_kopecks"] == "-25000"
+
+
+def test_owned_full_redemption_does_not_create_another_bonds_amortization_gap():
+    redemption = replace(
+        cash("REDEMPTION", 100000),
+        isin="ZZ0000000029",
+        quantity_delta=Decimal(-1),
+        depository_settlement_date=DAY,
+        attribution_basis="analytical_full_redemption",
+    )
+    analysis = scoped_case(payout_reasons=(), other=(redemption,))
+    clean = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    assert clean.redemption.value == 0
+    assert clean.redemption.status == "supported"
+    assert clean.pnl.value == -3000
+    assert "redemption_incomplete" not in clean.pnl.reason_codes
+
+
+@pytest.mark.parametrize(
+    "amortization_date, incomplete",
+    [(START, False), (DAY, True), (END, True), (END + timedelta(days=1), False)],
+)
+def test_carried_bond_without_trades_keeps_period_amortization_unknown(
+    amortization_date, incomplete
+):
+    amortization = replace(
+        cash("COUPON", 25000),
+        kind="UNRESOLVED",
+        isin=None,
+        event_date=amortization_date,
+        cash_legs=(CashLeg("unknown", amortization_date, 25000, -25000, ("m",), "m"),),
+        counted=False,
+        current=False,
+        reason_codes=("redemption_amortization_unsupported", "unrecognized_money"),
+    )
+    analysis = scoped_case(payout_reasons=())
+    analysis.events = (amortization,)
+    analysis.opening = Endpoint(START, Decimal(1), 102000, 102000, 0, "dirty")
+    analysis.closing = Endpoint(END, Decimal(1), 77000, 77000, 0, "dirty")
+    analysis.coverage["events"] = Coverage(False, amortization.reason_codes)
+    analysis.coverage["quantity"] = Coverage(True)
+    clean = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")
+    if incomplete:
+        assert clean.redemption.value is None
+        assert "redemption_incomplete" in clean.pnl.reason_codes
+    else:
+        assert clean.redemption.value == 0
+        assert "redemption_incomplete" not in clean.pnl.reason_codes
+
+
 def test_own_payout_conflict_still_withholds_the_full_result():
     analysis = scoped_case(payout_reasons=("pdf_xml_payout_mismatch",))
     result = project_clean_analysis(analysis, "ZZ0000000011", instrument_type="bond")

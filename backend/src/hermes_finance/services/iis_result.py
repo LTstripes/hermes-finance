@@ -24,6 +24,8 @@ Key invariants (docs/ARCHITECTURE_AND_CONTRACTS.md#c8):
 
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -43,16 +45,18 @@ from hermes_finance.persistence import (
     TaxBenefit,
 )
 from hermes_finance.services.accounts import AccountNotFoundError
+from hermes_finance.services.reporting_months import get_reporting_month
 
 
 def _sum_cash_flows(
-    session: Session, account_id: int, flow_type: InvestmentCashFlowType
+    session: Session, account_id: int, flow_type: InvestmentCashFlowType, period_end: date
 ) -> RubleAmount:
-    """Sum ``net_amount_kopecks`` for a single flow type across all time."""
+    """Sum a flow type through the selected month end, inclusive."""
     total = session.scalar(
         select(func.coalesce(func.sum(InvestmentCashFlow.net_amount_kopecks), 0)).where(
             InvestmentCashFlow.account_id == account_id,
             InvestmentCashFlow.flow_type == flow_type.value,
+            InvestmentCashFlow.event_date <= period_end,
         )
     )
     return RubleAmount(int(total or 0))
@@ -81,8 +85,8 @@ def iis_result(session: Session, *, account_id: int, reporting_month_id: int) ->
         an :class:`IisProfile`.
     reporting_month_id:
         The month whose position snapshots determine the unrealized result.
-        Coupons, dividends, realized PnL and tax benefits are summed across
-        *all* months (all time) per the fixed C09 contract.
+        Coupons, dividends and realized PnL include dated flows through that
+        month's period_end, inclusive. Tax benefits retain their all-time scope.
 
     Raises
     ------
@@ -101,6 +105,7 @@ def iis_result(session: Session, *, account_id: int, reporting_month_id: int) ->
     if has_iis_profile is None:
         raise ValueError(f"account {account_id} is not an IIS account")
 
+    period_end = get_reporting_month(session, reporting_month_id).period_end
     values = list(
         session.scalars(
             select(PositionSnapshot.unrealized_result_kopecks).where(
@@ -111,11 +116,15 @@ def iis_result(session: Session, *, account_id: int, reporting_month_id: int) ->
     )
     unrealized = None if any(value is None for value in values) else RubleAmount(sum(values))
 
-    coupons = _sum_cash_flows(session, account_id, InvestmentCashFlowType.COUPON)
-    dividends = _sum_cash_flows(session, account_id, InvestmentCashFlowType.DIVIDEND)
+    coupons = _sum_cash_flows(session, account_id, InvestmentCashFlowType.COUPON, period_end)
+    dividends = _sum_cash_flows(session, account_id, InvestmentCashFlowType.DIVIDEND, period_end)
 
-    realized_profit = _sum_cash_flows(session, account_id, InvestmentCashFlowType.REALIZED_PROFIT)
-    realized_loss = _sum_cash_flows(session, account_id, InvestmentCashFlowType.REALIZED_LOSS)
+    realized_profit = _sum_cash_flows(
+        session, account_id, InvestmentCashFlowType.REALIZED_PROFIT, period_end
+    )
+    realized_loss = _sum_cash_flows(
+        session, account_id, InvestmentCashFlowType.REALIZED_LOSS, period_end
+    )
     realized_pnl = RubleAmount(realized_profit.kopecks + realized_loss.kopecks)
 
     received_tax_benefits = _sum_tax_benefits(session, account_id, TaxBenefitStatus.RECEIVED)

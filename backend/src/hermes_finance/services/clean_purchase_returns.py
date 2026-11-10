@@ -228,6 +228,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         isin,
         (set(coverage["events"].reason_codes) | set(coverage["quantity"].reason_codes))
         - permitted_event_reasons,
+        instrument_type=instrument_type,
     )
     event_coverage = coverage["events"]
     if not reconciled and (

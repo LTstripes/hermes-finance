@@ -7009,6 +7009,18 @@ commission does not invalidate clean principal only after available linked
 principal/NKD legs, ownership, settlement dates, and position quantities have
 been checked. Conflicting or ambiguous principal remains unknown.
 
+An unresolved amortization row in the account's selected period leaves
+redemption coverage incomplete only for its uniquely identified issue. The clean
+projection may scope the gap using exact saved issue identifiers or the existing
+explicit registration-to-ISIN registry and effective aliases; ambiguous or
+conflicting mappings do not establish identity. This scope alone never counts
+cash as redemption. Recognition of full redemption still requires all the exact
+cash, cancellation, quantity and nominal checks below. Only a row whose issue
+remains unidentified leaves redemption coverage incomplete for every bond held
+during that period, even when quantities reconcile. Stocks, funds and other
+identified issues do not inherit that gap; affected FIFO purchase rows retain
+observed facts without a price result.
+
 For this clean projection, a saved `unresolved_no_match` coupon may be linked
 analytically through a current unique explicit registration-to-ISIN mapping.
 Its exact source account, date, positive received amount, currency, classification
@@ -9604,6 +9616,9 @@ normalized_bonus_monthly = sum(bonuses for selected 12m period) / 12
 
 <a id="c8-master_spec-860-1016-иис"></a>
 #### 10.16. ИИС
+
+Результат ИИС за месяц = нереализованный результат по оценке на конец месяца
++ купоны, дивиденды и реализованный P&L с начала истории по `period_end` включительно; более поздние потоки не входят.
 
 Показываются два результата:
 

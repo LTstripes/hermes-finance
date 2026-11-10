@@ -123,7 +123,7 @@ def _dividend_identified_by_registration(event):
     )
 
 
-def instrument_scoped_reasons(analysis, isin, reasons):
+def instrument_scoped_reasons(analysis, isin, reasons, *, instrument_type=None):
     """Keep only reasons that can still concern this reconciled instrument."""
     own = set()
     foreign = set()
@@ -132,11 +132,37 @@ def instrument_scoped_reasons(analysis, isin, reasons):
             (own if event.isin == isin else foreign).update(event.reason_codes)
     if _own_money_is_trade_nkd([event for event in analysis.events if event.isin == isin]):
         own.discard("unmatched_trade_money")
-    return {
+    scoped = {
         reason
         for reason in reasons
         if reason in own or (reason not in foreign and reason not in _ACCOUNT_SOURCE_GAPS)
     }
+    if _has_unattributed_amortization(analysis, isin, instrument_type):
+        scoped.add("redemption_amortization_unsupported")
+    return scoped
+
+
+def _has_unattributed_amortization(analysis, isin, instrument_type):
+    """Unchanged units cannot exclude principal repayment from a held bond."""
+    if instrument_type != "bond":
+        return False
+    held = (
+        analysis.opening.quantity != 0
+        or analysis.closing.quantity != 0
+        or any(
+            event.isin == isin and event.kind in {"BUY", "SELL", "REDEMPTION"}
+            for event in analysis.events
+        )
+    )
+    return held and any(
+        event.isin is None
+        and "redemption_amortization_unsupported" in event.reason_codes
+        and any(
+            day is not None and analysis.opening_date < day <= analysis.closing_date
+            for day in (event.event_date, *(leg.date for leg in event.cash_legs))
+        )
+        for event in analysis.events
+    )
 
 
 def _clean_endpoint(endpoint, instrument_type):
@@ -252,7 +278,9 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None, include_posi
         if quantity_reconciled:
             # Statement quantities and this instrument's trades agree, so a
             # transfer or an account row of another issue cannot change it.
-            reasons = instrument_scoped_reasons(analysis, isin, reasons)
+            reasons = instrument_scoped_reasons(
+                analysis, isin, reasons, instrument_type=instrument_type
+            )
             if name == "events":
                 for reason in recoverable_trade_reasons:
                     # Reasons are already scoped, so only own trades decide.
@@ -282,7 +310,8 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None, include_posi
         tuple(events),
         trades_complete=clean_complete("events") and clean_complete("quantity"),
         payouts_complete=payouts_known or (quantity_reconciled and not own_payout_reasons),
-        redemptions_complete=clean_complete("quantity"),
+        redemptions_complete=clean_complete("quantity")
+        and not _has_unattributed_amortization(analysis, isin, instrument_type),
         valuation_complete=opening is not None and closing is not None,
         include_position_rates=include_position_rates,
         holding_period_resolver=lambda operands: clean_weighted_holding_days(

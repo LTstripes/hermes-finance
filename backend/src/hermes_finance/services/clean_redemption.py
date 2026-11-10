@@ -1,10 +1,12 @@
 """Analytical full redemption from exact retained source facts, never a receipt."""
 
+import re
 from dataclasses import replace
 from decimal import Decimal, localcontext
 
 from hermes_finance.domain.clean_instrument_return import clean_trade_amount, trade_amount_with_nkd
-from hermes_finance.statement_import.investment_money import parse_investment_money_security
+from hermes_finance.domain.money_security import MoneySecurity
+from hermes_finance.statement_import.investment_money import _REG, parse_investment_money_security
 from hermes_finance.statement_import.mybroker import NS, digest
 from hermes_finance.statement_import.mybroker_return_structure import _inventory_tree
 
@@ -144,27 +146,81 @@ def _cancelled_quantity(views, isin, account, day, cancellation_dates):
     return quantity
 
 
+def _scope_redemption_gaps(events, choices, identities, resolver):
+    """Exact issue identity limits a gap; it never establishes redemption cash."""
+    result = []
+    for event in events:
+        if (
+            event.isin is not None
+            or "redemption_amortization_unsupported" not in event.reason_codes
+        ):
+            result.append(event)
+            continue
+        scopes = set()
+        for ref in event.source_references:
+            member = choices.get(ref)
+            if member is None:
+                scopes.add(None)
+                continue
+            _, choice = member
+            text = " ".join(
+                str(choice.get(field) or "")
+                for field in ("operation", "narrative", "security_reg_number")
+            )
+            registrations = {
+                value.upper()
+                for value in re.findall(rf"(?<![\w-]){_REG}(?![\w-])", text, re.IGNORECASE)
+            }
+            matches = {
+                isin
+                for isin, metadata in identities.items()
+                if any(str(value).upper() in registrations for value in metadata["identifiers"])
+            }
+            for registration in registrations:
+                target, status = resolver.resolve(MoneySecurity(registration.upper(), "", "coupon"))
+                instrument = resolver.instruments.get(target)
+                if status == "linked":
+                    matches.add(
+                        instrument.isin
+                        if instrument and instrument.instrument_type == "bond"
+                        else None
+                    )
+                elif status == "unresolved_ambiguous" or not any(
+                    str(value).upper() == registration
+                    for metadata in identities.values()
+                    for value in metadata["identifiers"]
+                ):
+                    matches.add(None)
+            scopes.add(next(iter(matches)) if len(matches) == 1 else None)
+        isin = next(iter(scopes)) if len(scopes) == 1 else None
+        result.append(
+            replace(event, isin=isin, effective_isin=isin, attribution_basis="registration_scope")
+            if isin is not None
+            else event
+        )
+    return tuple(result)
+
+
 def apply_clean_redemptions(session, events, views, cancellation_dates):
     """Reuse the cash occurrence once after issue, cancellation, face and sum agree."""
 
     from hermes_finance.services.broker_money_ownership import owners
     from hermes_finance.services.money_instrument_links import MoneyInstrumentResolver
+    from hermes_finance.services.source_instrument_returns import _identities
     from hermes_finance.services.source_money_classifications import source_reference
     from hermes_finance.services.source_return_evidence import _source_allows_payout, bound_import
 
-    candidates = [
-        e
-        for e in events
-        if e.kind == "UNRESOLVED"
-        and e.classification == "unknown"
-        and "redemption_amortization_unsupported" in e.reason_codes
-    ]
-    if not candidates or not cancellation_dates:
+    candidates = [e for e in events if "redemption_amortization_unsupported" in e.reason_codes]
+    if not candidates:
         return tuple(events), frozenset()
-    candidate_refs = {ref for event in candidates for ref in event.source_references}
     choices = {
         c["source_reference"]: (view, c) for view in views for c in view["money_classifications"]
     }
+    resolver = MoneyInstrumentResolver(session)
+    events = _scope_redemption_gaps(events, choices, _identities(views), resolver)
+    if not cancellation_dates:
+        return events, frozenset()
+    candidate_refs = {ref for event in candidates for ref in event.source_references}
     occurrences, references = [], {}
     for view in views:
         source = bound_import(session, view)
@@ -186,7 +242,6 @@ def apply_clean_redemptions(session, events, views, cancellation_dates):
         if occurrences
         else set()
     )
-    resolver = MoneyInstrumentResolver(session)
     result, resolved = [], set()
     for event in events:
         if (
