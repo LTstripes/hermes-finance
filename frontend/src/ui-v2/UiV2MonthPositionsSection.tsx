@@ -431,7 +431,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
     month.status !== "closed" &&
     filteredPositions.some((row) => row.price_source !== "broker_statement_native");
   const columnCount =
-    4 + Number(showAverage) + Number(showPrice) + Number(showResult) + Number(showActions);
+    3 + Number(showAverage) + Number(showPrice) + Number(showResult) + Number(showActions);
   const groups = [...new Set(filteredPositions.map((row) => row.account_id))]
     .map((accountId) => {
       const rows = filteredPositions
@@ -920,8 +920,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                   </Th>
                 ) : null}
                 {showPrice ? <Th numeric>Цена, ₽</Th> : null}
-                <Th numeric>Стоимость, ₽</Th>
-                <Th numeric>Доля</Th>
+                <Th numeric title="Стоимость и доля в итоге">
+                  Стоимость, ₽
+                </Th>
                 {showResult ? <Th numeric>Результат, ₽</Th> : null}
                 {showActions ? (
                   <Th className="month-positions-table__actions" aria-label="Действия">
@@ -1134,6 +1135,11 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                       ) : null}
                       <Td numeric>
                         {displayCell(row.market_value, hasMarket)}
+                        {displayShare(row.market_value, totals.market) ? (
+                          <div className={`${styles.meta} ${styles.share}`}>
+                            {displayShare(row.market_value, totals.market)}
+                          </div>
+                        ) : null}
                         {row.price_date !== defaultPriceDate ||
                         ["manual", "t_invest", "moex"].includes(row.price_source) ? (
                           <div className={styles.meta}>
@@ -1141,11 +1147,6 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                             {formatDate(row.price_date)}
                           </div>
                         ) : null}
-                      </Td>
-                      <Td numeric>
-                        <span className={styles.share}>
-                          {displayShare(row.market_value, totals.market)}
-                        </span>
                       </Td>
                       {showResult ? (
                         <Td numeric>{displayCell(row.unrealized_result, !fromStatement(row))}</Td>

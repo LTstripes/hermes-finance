@@ -159,7 +159,7 @@ describe("native month positions leaf", () => {
       within(table)
         .getAllByRole("columnheader")
         .map((cell) => cell.textContent),
-    ).toEqual(["Инструмент", "Кол-во", "Стоимость, ₽", "Доля"]);
+    ).toEqual(["Инструмент", "Кол-во", "Стоимость, ₽"]);
     expect(screen.queryByText("Нет подтверждённой суммы")).toBeNull();
     expect(screen.queryByText(/Себестоимость:/)).toBeNull();
     expect(screen.queryByText(/Нереализованный результат:/)).toBeNull();
@@ -349,7 +349,7 @@ describe("native month positions leaf", () => {
     expect(screen.getAllByText(/Брокерская выписка даёт/)).toHaveLength(1);
     const user = userEvent.setup();
     await user.selectOptions(filter, "12");
-    expect(within(table).getAllByRole("columnheader")).toHaveLength(4);
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
     expect(within(table).queryByText("—")).toBeNull();
     await user.selectOptions(filter, "11");
     expect(within(table).getByRole("columnheader", { name: "Цена, ₽" })).toBeInTheDocument();
@@ -389,7 +389,7 @@ describe("native month positions leaf", () => {
     ]);
     const table = await screen.findByRole("table");
     const cells = within(within(table).getAllByRole("row")[2]).getAllByRole("cell");
-    expect(cells[5].textContent).toBe("");
+    expect(cells.map((cell) => cell.textContent).join("")).not.toMatch(/%/);
     expect(screen.getByText(/Себестоимость:/)).toHaveTextContent("0 ₽");
     expect(screen.getByText(/Нереализованный результат:/)).toHaveTextContent("0 ₽");
   });
