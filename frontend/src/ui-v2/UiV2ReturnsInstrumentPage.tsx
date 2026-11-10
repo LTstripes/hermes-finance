@@ -1,4 +1,4 @@
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { instrumentBackTarget } from "./returns/cardPresentation";
 import { validIsin } from "./returns/navigation";
 import { ReturnsInstrumentCard } from "./returns/ReturnsInstrumentCard";
@@ -13,6 +13,7 @@ export default function UiV2ReturnsInstrumentPage({
   const { isin } = useParams<{ isin: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const back = instrumentBackTarget(params.get("back"));
   const selection = (key: string) =>
     params.getAll(key).length > 1 ? "invalid-duplicate" : params.get(key);
@@ -24,6 +25,11 @@ export default function UiV2ReturnsInstrumentPage({
           isin={isin}
           revision={0}
           standalone
+          initialName={
+            typeof location.state?.instrumentName === "string"
+              ? location.state.instrumentName
+              : undefined
+          }
           accountLabels={accountLabels}
           capitalAccount={
             params.getAll("capital_account").length === 1 ? params.get("capital_account") : null

@@ -473,3 +473,40 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+.accountsTable,
+.lots {
+  table-layout: fixed;
+}
+.accountsTable th,
+.accountsTable td,
+.lots th,
+.lots td {
+  padding: var(--returns-cell-padding);
+  overflow-wrap: anywhere;
+}
+.accountsTable col:first-child {
+  width: 24%;
+}
+.accountsTable col:nth-child(2) {
+  width: 12%;
+}
+.accountsTable col:nth-child(3),
+.accountsTable col:nth-child(4) {
+  width: 18%;
+}
+.accountsTable col:nth-child(5),
+.accountsTable col:nth-child(6) {
+  width: 14%;
+}
+.accountsTable td {
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.accountsTable tbody th {
+  font-weight: var(--w-regular);
+}
+.lots td:nth-child(n + 2),
+.lots th:nth-child(n + 2) {
+  white-space: normal;
+}

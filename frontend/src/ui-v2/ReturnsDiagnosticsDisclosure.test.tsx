@@ -36,7 +36,7 @@ test("details load on disclosure and keep pending form state after collapse", as
     >
       <MemoryRouter
         initialEntries={[
-          `/v2/returns/account?scope=source:SYNTH-A&start=${may.start}&end=${may.end}`,
+          `/v2/returns/account?scope=source:SYNTH-A&start=${may.start}&end=${may.end}&diagnostics=performance`,
         ]}
       >
         <UiV2ReturnsAccountPage />
@@ -44,10 +44,9 @@ test("details load on disclosure and keep pending form state after collapse", as
     </QueryClientProvider>,
   );
   await screen.findByRole("region", { name: "Результат периода" });
-  expect(screen.queryByRole("button", { name: "Синтетическая форма: 0" })).toBeNull();
+  await screen.findByRole("button", { name: "Синтетическая форма: 0" });
   const user = userEvent.setup();
   const summary = screen.getByText("Подробнее о данных", { exact: true });
-  await user.click(summary);
   await user.click(await screen.findByRole("button", { name: "Синтетическая форма: 0" }));
   await user.click(summary);
   expect(summary.closest("details")).not.toHaveAttribute("open");

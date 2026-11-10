@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
+import { reasonCopy } from "../lib/reasonCopy";
+import { shortInstrumentName } from "./instrumentName";
 import sheet from "./ReportSheet.module.css";
 import { positionRateMetric } from "./returns/cards";
 import layout from "./returns/Dashboard.module.css";
@@ -9,29 +11,34 @@ import {
   brokerageResult,
   compactQuantity,
   instrumentSummary,
-  readDisplayNames,
-  saveDisplayNames,
   selectedAccounts,
   selectedIncome,
 } from "./returns/dashboard";
-import resultStyles from "./returns/InstrumentResult.module.css";
 import {
   compareDecimal,
   dateLabel,
   displayMetric,
+  displayCompactRate,
   displayWhole,
   isPartialResult,
   periodLabel,
   tone,
+  unavailable,
 } from "./returns/model";
 import { capitalGoldTarget, goldTargets } from "./returns/navigation";
-import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
+import {
+  accountHref,
+  type GoldTarget,
+  getOverall,
+  type OverallInstrumentAccount,
+} from "./returns/overall";
 import styles from "./returns/Returns.module.css";
 import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
-import { MissingMetricNote } from "./returns/ReturnsInfo";
-import { ReturnsInstrumentResult } from "./returns/ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./returns/ReturnsResultMeta";
+import { useReturnsInvalidated } from "./returns/useReturnsInvalidated";
 import { UiV2Shell } from "./UiV2Shell";
+import { UiV2Skeleton } from "./UiV2StateBlocks";
+import { UiV2Tabs } from "./UiV2Tabs";
 
 const ReturnsGoldHistory = lazy(() =>
   import("./returns/ReturnsGoldHistory").then((m) => ({ default: m.ReturnsGoldHistory })),
@@ -39,13 +46,44 @@ const ReturnsGoldHistory = lazy(() =>
 
 const RETURNS_DATA_HREF = "/v2/returns/account?scope=portfolio&diagnostics=performance";
 
+function InstrumentIncome({
+  account,
+  kind,
+}: {
+  account: OverallInstrumentAccount & { resultAvailable: boolean };
+  kind: string | null;
+}) {
+  if (!account.resultAvailable) return <>—</>;
+  const income = (
+    [
+      ["Купоны", "куп.", account.coupons],
+      ["Дивиденды", "див.", account.dividends],
+    ] as const
+  ).filter(
+    ([label, , metric]) =>
+      metric.value !== null &&
+      !(
+        metric.value === "0" &&
+        ((kind === "stock" && label === "Купоны") || (kind === "bond" && label === "Дивиденды"))
+      ),
+  );
+  return income.length ? (
+    income.map(([label, short, metric]) => (
+      <div key={label} title={`${label}: ${displayMetric(metric)}`}>
+        {displayWhole(metric)} <small className={layout.payoutLabel}>{short}</small>
+      </div>
+    ))
+  ) : (
+    <>—</>
+  );
+}
+
 export default function UiV2ReturnsPage() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const [names, setNames] = useState(readDisplayNames);
-  const [showAllInstruments, setShowAllInstruments] = useState(false);
+  const showAllInstruments = params.get("show") === "all";
   const [goldEditorTarget, setGoldEditorTarget] = useState<GoldTarget | null>(null);
   const [goldNavigation, setGoldNavigation] = useState({ dirty: false, pending: false });
   const [nextParams, setNextParams] = useState<URLSearchParams | null>(null);
@@ -55,13 +93,17 @@ export default function UiV2ReturnsPage() {
     queryFn: ({ signal }) => getOverall(signal, true),
     staleTime: 5 * 60 * 1000,
   });
-  const data = !query.isFetching && !query.isError ? query.data : undefined;
+  const invalidated = useReturnsInvalidated(["returns", "overall", "summaries"]);
+  const data = !invalidated && !query.isError ? query.data : undefined;
   const scope =
     params.getAll("accounts").length > 1 ? "invalid" : (params.get("accounts") ?? "all");
   const search = params.get("q") ?? "";
   const sort = params.get("sort") ?? "pnl-absolute";
   const kind = params.get("kind") ?? "all";
-  const label = (s: string, fallback: string) => names[s] || fallback;
+  const label = (scope: string, fallback: string) => {
+    const account = data?.source_accounts.find((account) => account.scope === scope);
+    return account?.account_link?.status === "linked" ? account.account_link.label : fallback;
+  };
   const change = (updates: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
     for (const [k, v] of Object.entries(updates)) {
@@ -82,6 +124,20 @@ export default function UiV2ReturnsPage() {
   }, [target, data, goldNavigation.dirty, goldNavigation.pending]);
   const accounts = data ? selectedAccounts(data, scope) : [];
   const result = data ? brokerageResult(data, scope) : null;
+  const incomeCaveat = data
+    ? (["coupon", "dividend"] as const)
+        .filter((kind) => selectedIncome(data, scope, kind).known_total.value !== null)
+        .map(
+          (kind) =>
+            reasonCopy(
+              kind === "coupon"
+                ? "known_source_history_coupons_only"
+                : "known_source_history_dividends_only",
+              { surface: "returns" },
+            ).message,
+        )
+        .join(" ")
+    : "";
   const rows = data
     ? data.instruments
         .map((r) => instrumentSummary(data, r, scope))
@@ -106,6 +162,40 @@ export default function UiV2ReturnsPage() {
             a.name.localeCompare(b.name, "ru")
           : compareDecimal(a.pnl.value, b.pnl.value) * (sort === "pnl-asc" ? 1 : -1),
   );
+  const tableRows = rows.flatMap((row) =>
+    row.accounts.map((account) => ({
+      ...row,
+      name: shortInstrumentName({ name: row.name, isin: row.isin, ticker: null }),
+      account,
+      pnl: account.resultAvailable ? account.pnl : unavailable,
+      simple:
+        account.resultAvailable && account.simple_return
+          ? positionRateMetric(account.simple_return)
+          : { ...unavailable, unit: "fraction" as const },
+      annual:
+        account.resultAvailable && account.xirr
+          ? positionRateMetric(account.xirr)
+          : { ...unavailable, unit: "fraction" as const },
+    })),
+  );
+  tableRows.sort((a, b) => {
+    if (sort === "name" || sort === "name-asc" || sort === "name-desc")
+      return a.name.localeCompare(b.name, "ru") * (sort === "name-desc" ? -1 : 1);
+    const field = sort.startsWith("rate-") ? "simple" : sort.startsWith("xirr-") ? "annual" : "pnl";
+    const x = a[field].value;
+    const y = b[field].value;
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    return (
+      compareDecimal(
+        sort === "pnl-absolute" ? x.replace(/^-/, "") : x,
+        sort === "pnl-absolute" ? y.replace(/^-/, "") : y,
+      ) * (sort.endsWith("-asc") ? 1 : -1) || a.name.localeCompare(b.name, "ru")
+    );
+  });
+  const sortHeader = (field: string) =>
+    change({
+      sort: sort === `${field}-desc` ? `${field}-asc` : `${field}-desc`,
+    });
   const instrumentHref = (isin: string) => {
     const next = new URLSearchParams({ back: `${location.pathname}${location.search}` });
     if (scope !== "all") {
@@ -131,7 +221,10 @@ export default function UiV2ReturnsPage() {
   };
   const openInstrument = (isin: string) => {
     if (goldNavigation.dirty || goldNavigation.pending) setNextHref(instrumentHref(isin));
-    else navigate(instrumentHref(isin));
+    else
+      navigate(instrumentHref(isin), {
+        state: { instrumentName: rows.find((r) => r.isin === isin)?.name },
+      });
   };
   const guardLink = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (goldNavigation.dirty || goldNavigation.pending) {
@@ -154,7 +247,6 @@ export default function UiV2ReturnsPage() {
         .slice(0, 5),
     }))
     .filter((group) => group.items.length > 0);
-  const unranked = rows.filter((r) => isPartialResult(r.pnl)).length;
   const resultPeriods = new Set(
     rows
       .filter((row) => row.pnl.value !== null)
@@ -199,6 +291,14 @@ export default function UiV2ReturnsPage() {
           </div>
         }
       >
+        <UiV2Tabs
+          label="Разделы доходности"
+          onNavigate={guardLink}
+          tabs={[
+            { label: "Обзор", to: "/v2/returns", active: true },
+            { label: "По месяцам", to: "/v2/returns/account", active: false },
+          ]}
+        />
         {query.isError ? (
           <p role="alert">
             Не удалось загрузить доходность.{" "}
@@ -206,51 +306,57 @@ export default function UiV2ReturnsPage() {
               Повторить
             </button>
           </p>
-        ) : query.isFetching ? (
-          <p role="status">Загружаем доходность…</p>
+        ) : query.isFetching && !data ? (
+          <UiV2Skeleton label="Загружаем доходность…" expectedTime />
         ) : null}
+        {query.isFetching && data && (
+          <p role="status" className={layout.note}>
+            Обновляем…
+          </p>
+        )}
         {data && (
           <>
             <div className={layout.toolbar}>
-              <label className={sheet.select}>
-                Счета
-                <select
-                  aria-label="Счета"
-                  value={scope}
-                  onChange={(e) =>
-                    change({ accounts: e.target.value === "all" ? null : e.target.value })
-                  }
-                >
-                  <option value="all">Все счета</option>
-                  {data.source_accounts.map((a) => (
-                    <option key={a.scope} value={a.scope}>
-                      {label(a.scope, a.label)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <details className={layout.names}>
-                <summary>Названия счетов</summary>
-                <div className={layout.namesPanel}>
-                  <p className={sheet.muted}>Только для отображения в этом браузере.</p>
-                  {data.source_accounts.map((a) => (
-                    <label key={a.scope}>
-                      {a.label}
-                      <input
-                        aria-label={`Название: ${a.label}`}
-                        maxLength={80}
-                        value={names[a.scope] ?? ""}
-                        placeholder={a.label}
-                        onChange={(e) => {
-                          const next = { ...names, [a.scope]: e.target.value };
-                          setNames(next);
-                          saveDisplayNames(next);
-                        }}
-                      />
-                    </label>
-                  ))}
-                </div>
-              </details>
+              {data.source_accounts.length <= 4 ? (
+                <fieldset className={sheet.segmented} aria-label="Счета">
+                  {[{ scope: "all", label: "Все счета" }, ...data.source_accounts].map(
+                    (account) => (
+                      <button
+                        type="button"
+                        key={account.scope}
+                        aria-pressed={scope === account.scope}
+                        title={
+                          data.source_accounts.find((a) => a.scope === account.scope)?.account_link
+                            ?.source_account_id
+                        }
+                        onClick={() =>
+                          change({ accounts: account.scope === "all" ? null : account.scope })
+                        }
+                      >
+                        {label(account.scope, account.label)}
+                      </button>
+                    ),
+                  )}
+                </fieldset>
+              ) : (
+                <label className={sheet.select}>
+                  Счета
+                  <select
+                    aria-label="Счета"
+                    value={scope}
+                    onChange={(e) =>
+                      change({ accounts: e.target.value === "all" ? null : e.target.value })
+                    }
+                  >
+                    <option value="all">Все счета</option>
+                    {data.source_accounts.map((account) => (
+                      <option key={account.scope} value={account.scope}>
+                        {label(account.scope, account.label)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
             {accounts.length === 0 ? (
               <p role="alert">Выбранный счёт недоступен. Выберите другой счёт.</p>
@@ -260,7 +366,9 @@ export default function UiV2ReturnsPage() {
                   <div className={layout.leadMain}>
                     {result && result.amount.value !== null && (
                       <section className={layout.total} aria-label="Результат">
-                        <h2 className={sheet.eyebrow}>Сумма по бумагам за доступную историю</h2>
+                        <h2 className={sheet.eyebrow}>
+                          Результат по бумагам · {singlePeriod ?? "доступная история"}
+                        </h2>
                         <strong className={sheet.hero} title={displayMetric(result.amount, true)}>
                           {displayWhole(result.amount, true)}
                         </strong>
@@ -268,10 +376,17 @@ export default function UiV2ReturnsPage() {
                           {accounts.length > 1 ? "По выбранным счетам" : "По счёту"}
                           {singlePeriod ? ` · ${singlePeriod}` : " за совпадающий период"}
                         </small>
-                        {result.partial && (
-                          <p className={layout.caveat}>Учтены не все составляющие результата</p>
-                        )}
                       </section>
+                    )}
+                    {(result?.partial || incomeCaveat) && (
+                      <p className={layout.caveat}>
+                        {result?.partial
+                          ? reasonCopy(
+                              result.amount.reason_codes[0] ?? "selected_components_incomplete",
+                              { surface: "returns" },
+                            ).message
+                          : incomeCaveat}
+                      </p>
                     )}
                     <div className={layout.figures}>
                       {accounts.length === 1 &&
@@ -280,7 +395,7 @@ export default function UiV2ReturnsPage() {
                           <section className={layout.figure} aria-label="Доходность периода">
                             <h2>Modified Dietz за период</h2>
                             <strong data-tone={tone(accounts[0].result.rate)}>
-                              {displayMetric(accounts[0].result.rate)}
+                              {displayCompactRate(accounts[0].result.rate)}
                             </strong>
                             <small>
                               {accounts[0].period && periodLabel(accounts[0].period)} · не годовая
@@ -302,12 +417,22 @@ export default function UiV2ReturnsPage() {
                           />
                         ) : null;
                       })}
+                      {data.deposits.interest.value !== null && (
+                        <section className={layout.figure} aria-label="Проценты по вкладам">
+                          <h2>Проценты по вкладам</h2>
+                          <strong title={displayMetric(data.deposits.interest)}>
+                            {displayWhole(data.deposits.interest)}
+                          </strong>
+                          <small>вне бумаг</small>
+                        </section>
+                      )}
                     </div>
                   </div>
                   <ul className={layout.accounts} aria-label="Счета">
                     {accounts.map((a) => (
                       <li className={layout.account} key={a.scope}>
                         <Link
+                          title={a.account_link?.source_account_id}
                           to={
                             accounts.length > 1
                               ? summaryAccountHref(a.scope)
@@ -330,22 +455,13 @@ export default function UiV2ReturnsPage() {
                             data-tone={tone(a.result.pnl)}
                           >
                             {displayWhole(a.result.pnl, true)}
-                            {isPartialResult(a.result.pnl) && (
-                              <>
-                                <sup aria-hidden="true">*</sup>
-                                <span className={sheet.visuallyHidden}>
-                                  {" "}
-                                  (известная часть, не полный итог)
-                                </span>
-                              </>
-                            )}
                           </strong>
                         ) : !a.result || a.result.pnl.value === null ? (
                           <p>Пока нет результата по сохранённым данным</p>
                         ) : null}
                         {accounts.length > 1 && a.result && a.result.rate.value !== null && (
                           <small className={layout.accountRate}>
-                            Modified Dietz {displayMetric(a.result.rate)} за этот период
+                            Modified Dietz {displayCompactRate(a.result.rate)} за этот период
                           </small>
                         )}
                         <ReturnsResultMeta
@@ -355,20 +471,17 @@ export default function UiV2ReturnsPage() {
                         />
                       </li>
                     ))}
-                    {accounts.length > 1 &&
-                      accounts.some((a) => a.result && isPartialResult(a.result.pnl)) && (
-                        <li className={layout.accountNote}>
-                          * Сумма известных результатов бумаг счёта, не полный итог.
-                        </li>
-                      )}
                   </ul>
                 </div>
-                <p className={layout.note}>
-                  Комиссии и налоги не входят в результат бумаг, НКД учтён в сделках облигаций,
-                  полученные выплаты уже включены.
-                  {accounts.length > 1 &&
-                    " Общий процент для разных периодов счетов не складывается."}
-                </p>
+                <details className={layout.note}>
+                  <summary>Подробнее о расчёте</summary>
+                  <p>
+                    Комиссии и налоги не входят в результат бумаг, НКД учтён в сделках облигаций,
+                    полученные выплаты уже включены.
+                    {accounts.length > 1 &&
+                      " Общий процент для разных периодов счетов не складывается."}
+                  </p>
+                </details>
                 {leaders.length > 0 && resultPeriods.size === 1 && (
                   <section className={layout.section} aria-label="Вклад инструментов">
                     <div className={sheet.sectionHead}>
@@ -376,59 +489,79 @@ export default function UiV2ReturnsPage() {
                         <p className={sheet.eyebrow}>Лидеры и отстающие</p>
                         <h2>Вклад бумаг в результат</h2>
                       </div>
-                      <span className={sheet.muted}>В рублях за доступную историю</span>
+                      <span className={sheet.muted}>
+                        в плюсе{" "}
+                        {
+                          tableRows.filter(
+                            (r) =>
+                              !isPartialResult(r.pnl) &&
+                              r.pnl.value !== null &&
+                              compareDecimal(r.pnl.value, "0") > 0,
+                          ).length
+                        }{" "}
+                        · в минусе{" "}
+                        {
+                          tableRows.filter(
+                            (r) =>
+                              !isPartialResult(r.pnl) &&
+                              r.pnl.value !== null &&
+                              compareDecimal(r.pnl.value, "0") < 0,
+                          ).length
+                        }{" "}
+                        · без итога{" "}
+                        {
+                          tableRows.filter((r) => r.pnl.value === null || isPartialResult(r.pnl))
+                            .length
+                        }
+                      </span>
                     </div>
-                    <div className={layout.leaders}>
-                      {leaders.map(({ positive, items }) => (
-                        <div className={layout.leaderGroup} key={String(positive)}>
-                          <h3>{positive ? "Наибольший доход" : "Наибольший убыток"}</h3>
-                          <ol className={layout.leaderList}>
-                            {items.map((r, index) => {
-                              const v = BigInt(r.pnl.value ?? "0");
-                              return (
-                                <li className={layout.leaderRow} key={r.isin}>
-                                  <span className={layout.leaderRank} aria-hidden="true">
-                                    {index + 1}
-                                  </span>
-                                  <Link
-                                    to={instrumentHref(r.isin)}
-                                    onClick={(e) => guardLink(e, instrumentHref(r.isin))}
-                                  >
-                                    {r.name}
-                                  </Link>
-                                  <span className={layout.barTrack} aria-hidden="true">
-                                    <span
-                                      className={layout.bar}
-                                      data-tone={positive ? "positive" : "negative"}
-                                      style={{
-                                        width: `${Number(((v < 0n ? -v : v) * 10000n) / maximum) / 100}%`,
-                                      }}
-                                    />
-                                  </span>
-                                  <strong
-                                    className={layout.leaderAmount}
-                                    title={displayMetric(r.pnl, true)}
-                                  >
-                                    {displayWhole(r.pnl, true)}
-                                  </strong>
-                                </li>
-                              );
-                            })}
-                          </ol>
-                        </div>
-                      ))}
-                    </div>
-                    {unranked > 0 && (
-                      <p className={layout.note}>
-                        Бумаги с неполным итогом ({unranked}) не ранжируются, они есть в таблице
-                        ниже.
-                      </p>
-                    )}
+                    <ol className={layout.leaderList}>
+                      {leaders.flatMap(({ positive, items }) =>
+                        items.map((row) => {
+                          const value = BigInt(row.pnl.value ?? "0");
+                          return (
+                            <li className={layout.leaderRow} key={row.isin}>
+                              <Link
+                                to={instrumentHref(row.isin)}
+                                state={{ instrumentName: row.name }}
+                                onClick={(e) => guardLink(e, instrumentHref(row.isin))}
+                              >
+                                {shortInstrumentName({
+                                  name: row.name,
+                                  isin: row.isin,
+                                  ticker: null,
+                                })}
+                              </Link>
+                              <span
+                                className={layout.barTrack}
+                                data-tone={positive ? "positive" : "negative"}
+                                aria-hidden="true"
+                              >
+                                <span
+                                  className={layout.bar}
+                                  data-tone={positive ? "positive" : "negative"}
+                                  style={{
+                                    width: `${Number(((value < 0n ? -value : value) * 5000n) / maximum) / 100}%`,
+                                  }}
+                                />
+                              </span>
+                              <strong
+                                className={layout.leaderAmount}
+                                data-tone={tone(row.pnl)}
+                                title={displayMetric(row.pnl, true)}
+                              >
+                                {displayWhole(row.pnl, true)}
+                              </strong>
+                            </li>
+                          );
+                        }),
+                      )}
+                    </ol>
                   </section>
                 )}
                 <section className={layout.section} aria-labelledby="returns-instruments">
                   <div className={sheet.sectionHead}>
-                    <h2 id="returns-instruments">Доходность по инструментам ({rows.length})</h2>
+                    <h2 id="returns-instruments">Все бумаги ({tableRows.length})</h2>
                   </div>
                   <div className={layout.filters}>
                     <label className={layout.search}>
@@ -460,160 +593,104 @@ export default function UiV2ReturnsPage() {
                         <option value="pnl-desc">Результат: больше</option>
                         <option value="pnl-asc">Результат: меньше</option>
                         <option value="name">Название</option>
+                        <option value="name-desc">Название: Я–А</option>
+                        <option value="name-asc">Название: А–Я</option>
+                        <option value="rate-desc">На вложенное: больше</option>
+                        <option value="rate-asc">На вложенное: меньше</option>
+                        <option value="xirr-desc">Годовых: больше</option>
+                        <option value="xirr-asc">Годовых: меньше</option>
                       </select>
                     </label>
                   </div>
-                  {rows.length > 0 ? (
+                  {tableRows.length > 0 ? (
                     <div className={styles.tableScroll}>
-                      <table
-                        className={`${styles.instruments} ${layout.list} ${resultStyles.list}`}
-                      >
+                      <table className={layout.list} aria-label="Все бумаги">
+                        <colgroup>
+                          <col />
+                          <col />
+                          <col />
+                          <col />
+                          <col />
+                        </colgroup>
                         <thead>
                           <tr>
-                            <th>Инструмент</th>
-                            <th>Сумма по данным</th>
-                            <th>Полученный доход</th>
+                            {[
+                              ["name", "Бумага"],
+                              ["pnl", "Результат, ₽"],
+                              ["rate", "На вложенное"],
+                              ["xirr", "Годовых"],
+                            ].map(([field, title]) => (
+                              <th
+                                key={field}
+                                aria-sort={
+                                  sort.startsWith(field)
+                                    ? sort.endsWith("-asc") || sort === "name"
+                                      ? "ascending"
+                                      : "descending"
+                                    : "none"
+                                }
+                              >
+                                <button type="button" onClick={() => sortHeader(field)}>
+                                  {title}
+                                </button>
+                              </th>
+                            ))}
+                            <th>Купоны и дивиденды, ₽</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {(showAllInstruments ? rows : rows.slice(0, 5)).map((r) => (
-                            <tr key={r.isin}>
-                              <th>
-                                <Link
-                                  to={instrumentHref(r.isin)}
-                                  onClick={(e) => guardLink(e, instrumentHref(r.isin))}
-                                >
-                                  {r.name}
-                                </Link>
-                                <small>
-                                  {r.kind === "bond"
+                          {(showAllInstruments ? tableRows : tableRows.slice(0, 10)).map((row) => (
+                            <tr key={`${row.isin}/${row.account.scope}`}>
+                              <th scope="row" title={`${row.name} · ${row.isin}`}>
+                                <div className={layout.instrumentTitle}>
+                                  <Link
+                                    to={instrumentHref(row.isin)}
+                                    state={{ instrumentName: row.name }}
+                                    onClick={(e) => guardLink(e, instrumentHref(row.isin))}
+                                  >
+                                    {row.name}
+                                  </Link>
+                                  {isPartialResult(row.pnl) && (
+                                    <span className={layout.muted}>неполный</span>
+                                  )}
+                                </div>
+                                <small title={row.account.account_link?.source_account_id}>
+                                  {row.kind === "bond"
                                     ? "Облигация"
-                                    : r.kind === "stock"
+                                    : row.kind === "stock"
                                       ? "Акция"
-                                      : r.isin}
+                                      : "Бумага"}{" "}
+                                  · {label(row.account.scope, row.account.label)}
                                 </small>
                               </th>
-                              <td>
-                                {r.accounts.map((a) => (
-                                  <section
-                                    className={layout.instrumentAccount}
-                                    key={a.scope}
-                                    aria-label={label(a.scope, a.label)}
-                                  >
-                                    <details>
-                                      <summary>
-                                        {scope === "all" && (
-                                          <>
-                                            <span className={layout.instrumentAccountName}>
-                                              {label(a.scope, a.label)}
-                                            </span>{" "}
-                                            ·{" "}
-                                          </>
-                                        )}
-                                        {a.resultAvailable ? (
-                                          <>
-                                            <strong
-                                              title={displayMetric(a.pnl, true)}
-                                              data-tone={tone(a.pnl)}
-                                            >
-                                              {displayWhole(a.pnl, true)}
-                                              {isPartialResult(a.pnl) && (
-                                                <>
-                                                  <sup aria-hidden="true">*</sup>
-                                                  <span className={sheet.visuallyHidden}>
-                                                    {" "}
-                                                    (известная часть, не полный итог)
-                                                  </span>
-                                                </>
-                                              )}
-                                            </strong>{" "}
-                                            <span className={layout.rate}>
-                                              ·{" "}
-                                              {a.simple_return
-                                                ? displayMetric(positionRateMetric(a.simple_return))
-                                                : displayMetric(a.rate)}
-                                              {a.xirr?.value != null &&
-                                                ` · ${displayMetric(positionRateMetric(a.xirr))} годовых`}
-                                            </span>
-                                          </>
-                                        ) : (
-                                          "Нет доступного результата"
-                                        )}
-                                      </summary>
-                                      <ReturnsInstrumentResult
-                                        showMissingNote={false}
-                                        result={a.resultAvailable ? a : null}
-                                        positionRates={
-                                          a.resultAvailable && a.simple_return
-                                            ? { simple: a.simple_return, xirr: a.xirr ?? null }
-                                            : null
-                                        }
-                                        reasonCodes={
-                                          a.resultAvailable
-                                            ? r.reason_codes
-                                            : [
-                                                ...(data.source_accounts.find(
-                                                  (source) => source.scope === a.scope,
-                                                )?.reason_codes ?? []),
-                                                "all_history_source_proof_unavailable",
-                                              ]
-                                        }
-                                      />
-                                      <ReturnsResultMeta
-                                        period={a.period}
-                                        valuationDate={a.valuation_date}
-                                        accountLink={a.account_link}
-                                      />
-                                    </details>
-                                    {a.resultAvailable && (
-                                      <MissingMetricNote
-                                        metrics={[
-                                          a.pnl,
-                                          a.simple_return
-                                            ? positionRateMetric(a.simple_return)
-                                            : a.rate,
-                                        ]}
-                                      />
-                                    )}
-                                  </section>
-                                ))}
+                              <td title={displayMetric(row.pnl, true)} data-tone={tone(row.pnl)}>
+                                {displayWhole(row.pnl, true)}
                               </td>
+                              <td data-tone={tone(row.simple)}>{displayCompactRate(row.simple)}</td>
+                              <td data-tone={tone(row.annual)}>{displayCompactRate(row.annual)}</td>
                               <td>
-                                {r.coupons.value !== null && r.coupons.value !== "0" && (
-                                  <div>
-                                    Купоны{" "}
-                                    <span title={displayMetric(r.coupons)}>
-                                      {displayWhole(r.coupons)}
-                                    </span>
-                                  </div>
-                                )}
-                                {r.dividends.value !== null && r.dividends.value !== "0" && (
-                                  <div>
-                                    Дивиденды{" "}
-                                    <span title={displayMetric(r.dividends)}>
-                                      {displayWhole(r.dividends)}
-                                    </span>
-                                  </div>
-                                )}
+                                <InstrumentIncome account={row.account} kind={row.kind} />
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      {rows.some((r) => r.accounts.some((a) => isPartialResult(a.pnl))) && (
-                        <p className={layout.note}>* Учтены не все составляющие результата.</p>
+                      {tableRows.some((row) => isPartialResult(row.pnl)) && (
+                        <p className={layout.note}>
+                          Неполный результат включает только известные составляющие.
+                        </p>
                       )}
                     </div>
                   ) : (
                     <p>Бумаги не найдены.</p>
                   )}
-                  {rows.length > 5 && (
+                  {tableRows.length > 10 && (
                     <button
                       type="button"
                       className={layout.more}
-                      onClick={() => setShowAllInstruments((shown) => !shown)}
+                      onClick={() => change({ show: showAllInstruments ? null : "all" })}
                     >
-                      {showAllInstruments ? "Свернуть" : "Показать все"}
+                      {showAllInstruments ? "Свернуть" : `Показать все ${tableRows.length}`}
                     </button>
                   )}
                 </section>

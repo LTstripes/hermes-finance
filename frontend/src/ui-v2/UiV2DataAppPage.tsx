@@ -338,6 +338,12 @@ export default function UiV2DataAppPage() {
             </div>
             <div className={styles.diagnosticsAnchor} id="diagnostics" tabIndex={-1}>
               <h2 tabIndex={-1}>Диагностика</h2>
+              <Link to="/v2/returns/account?scope=portfolio&diagnostics=performance">
+                Диагностика доходности
+              </Link>
+              <Link to="/v2/returns/account?scope=portfolio&diagnostics=statement">
+                Доходность по отдельной выписке и сценарий
+              </Link>
               <DiagnosticsPanel />
             </div>
           </div>

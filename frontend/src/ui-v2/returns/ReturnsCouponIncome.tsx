@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { getIncome, type IncomeKind } from "./cards";
 import layout from "./Dashboard.module.css";
-import { readDisplayNames } from "./dashboard";
 import { dateLabel, displayMetric, displayWhole, isPartialResult } from "./model";
 import type { CouponIncome } from "./overall";
 import styles from "./Returns.module.css";
@@ -35,7 +34,10 @@ function Breakdown({
     );
   if (query.isFetching || !query.data) return <p role="status">Загружаем выплаты…</p>;
   const data = query.data;
-  const names = readDisplayNames();
+  const accountLabel = (scope: string, fallback: string) => {
+    const link = data.summary.accounts.find((account) => account.scope === scope)?.account_link;
+    return link?.status === "linked" ? link.label : fallback;
+  };
   const included = (s: string) => !scopes || scopes.includes(s);
   const rows = data.instruments
     .flatMap((r) =>
@@ -72,7 +74,7 @@ function Breakdown({
                       {row.name}
                     </button>
                     <small>
-                      {names[row.account.scope] || row.account.label}
+                      {accountLabel(row.account.scope, row.account.label)}
                       {row.account.period &&
                         ` · ${dateLabel(row.account.period.start)} — ${dateLabel(row.account.period.end)}`}
                     </small>
@@ -84,7 +86,7 @@ function Breakdown({
                           .map((event, index) => (
                             // biome-ignore lint/suspicious/noArrayIndexKey: No public event ID; preserve distinct identical-looking source occurrences.
                             <li key={`${event.scope}/${event.date}/${index}`}>
-                              {dateLabel(event.date)} · {names[event.scope] || event.label} ·{" "}
+                              {dateLabel(event.date)} · {accountLabel(event.scope, event.label)} ·{" "}
                               {displayMetric(event.amount)}
                             </li>
                           ))}
@@ -105,7 +107,7 @@ function Breakdown({
             {unresolved.map((event, index) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: No public event ID; preserve distinct identical-looking source occurrences.
               <li key={`${event.scope}/${event.date}/${index}`}>
-                {dateLabel(event.date)} · {names[event.scope] || event.label} ·{" "}
+                {dateLabel(event.date)} · {accountLabel(event.scope, event.label)} ·{" "}
                 {displayMetric(event.amount)}
               </li>
             ))}
@@ -145,13 +147,14 @@ export function ReturnsCouponIncome({
       <strong title={displayMetric(value.known_total)}>
         {compact ? displayWhole(value.known_total) : displayMetric(value.known_total)}
       </strong>
-      {value.included_accounts < value.selected_accounts ? (
-        <small>
-          Учтены {value.included_accounts} из {value.selected_accounts} счетов, не полный итог
-        </small>
-      ) : (
-        isPartialResult(value.known_total) && <small>По известным выплатам, не полный итог</small>
-      )}
+      {!compact &&
+        (value.included_accounts < value.selected_accounts ? (
+          <small>
+            Учтены {value.included_accounts} из {value.selected_accounts} счетов, не полный итог
+          </small>
+        ) : (
+          isPartialResult(value.known_total) && <small>По известным выплатам, не полный итог</small>
+        ))}
       <details className={layout.income} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary>По инструментам</summary>
         {open && (

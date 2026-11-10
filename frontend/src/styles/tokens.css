@@ -21,6 +21,14 @@
   --w-medium: 500;
   --w-semibold: 600;
 
+  /* Returns tables and their loading placeholders share compact geometry. */
+  --returns-cell-padding: 6px;
+  --returns-row-height: 44px;
+  --returns-line-height: 16px;
+  --skeleton-figure-height: 64px;
+  --skeleton-tile-height: 90px;
+  --skeleton-gap: 16px;
+
   --r-sm: 8px;
   --r: 12px;
   --r-lg: 18px;

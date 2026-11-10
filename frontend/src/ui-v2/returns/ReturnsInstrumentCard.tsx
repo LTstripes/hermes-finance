@@ -3,8 +3,10 @@ import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
 import { reasonCopy } from "../../lib/reasonCopy";
+import { shortInstrumentName } from "../instrumentName";
+import { UiV2Skeleton } from "../UiV2StateBlocks";
 import sheet from "../ReportSheet.module.css";
-import { money, rate } from "../SourceInstrumentDetail";
+import { money } from "../SourceInstrumentDetail";
 import { cardOperations, cardQuantityStatus, nonzeroAmount } from "./cardPresentation";
 import {
   cleanMetric,
@@ -14,15 +16,16 @@ import {
   selectCardScope,
 } from "./cards";
 import styles from "./InstrumentCard.module.css";
-import resultStyles from "./InstrumentResult.module.css";
 import {
   compareDecimal,
   dateLabel,
   displayMetric,
-  displaySignedRate,
+  displayWhole,
+  displayCompactRate,
   isPartialResult,
   type Metric,
   tone,
+  unavailable,
 } from "./model";
 import { canonicalId } from "./navigation";
 import { accountHref } from "./overall";
@@ -36,6 +39,7 @@ import {
 } from "./ReturnsInfo";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
+import { useReturnsInvalidated } from "./useReturnsInvalidated";
 
 const kindLabel = (kind: string | null) =>
   kind === "bond"
@@ -105,6 +109,7 @@ export function ReturnsInstrumentCard({
   standalone = false,
   accountLabels = {},
   backLabel = "К списку инструментов",
+  initialName,
 }: {
   isin: string;
   revision: number;
@@ -117,7 +122,9 @@ export function ReturnsInstrumentCard({
   standalone?: boolean;
   accountLabels?: Record<string, string>;
   backLabel?: string;
+  initialName?: string;
 }) {
+  const [expandedPurchases, setExpandedPurchases] = useState<string[]>([]);
   const query = useQuery({
     queryKey: ["returns", "instrument-card", isin, revision],
     queryFn: ({ signal }) => getInstrumentCard(isin, signal),
@@ -126,7 +133,12 @@ export function ReturnsInstrumentCard({
   const selection = query.data
     ? selectCardScope(query.data, selectedScope, selectedStart, selectedEnd)
     : null;
-  const data = !query.isError ? selection?.card : undefined;
+  const invalidated = useReturnsInvalidated(["returns", "instrument-card", isin, revision]);
+  const data = !query.isError && !invalidated ? selection?.card : undefined;
+  const accountName = (scope: string, fallback: string) => {
+    const link = data?.accounts.find((account) => account.scope === scope)?.account_link;
+    return accountLabels[scope] ?? (link?.status === "linked" ? link.label : fallback);
+  };
   const accountsWithKnownTrades =
     data?.accounts.filter(
       (account) =>
@@ -193,10 +205,6 @@ export function ReturnsInstrumentCard({
       : null;
   const annualRate =
     onlyClean?.xirr && onlyClean.xirr.value !== null ? positionRateMetric(onlyClean.xirr) : null;
-  const ratesPerAccount =
-    !!data &&
-    data.accounts.length > 1 &&
-    data.accounts.some((account) => account.clean?.simple_return?.value != null);
   // Equality is drawn only for a complete bridge: all three values known, none partial
   // (one producer-owned account set), and the parts adding up to the total exactly.
   // Matching numbers alone do not prove that parts and total cover the same data.
@@ -212,6 +220,8 @@ export function ReturnsInstrumentCard({
       purchase.reason_codes.includes("account_money_unattributed"),
     ),
   );
+  const purchaseMoney = (value: string | null, signed = false) =>
+    displayWhole({ ...unavailable, value }, signed);
   const Heading = standalone ? "h1" : "h2";
   return (
     <section className={styles.page} aria-label={`Карточка инструмента ${isin}`}>
@@ -227,7 +237,12 @@ export function ReturnsInstrumentCard({
           </button>
         </p>
       ) : query.isFetching && !data ? (
-        <p role="status">Загружаем инструмент…</p>
+        <>
+          {initialName && (
+            <Heading>{shortInstrumentName({ name: initialName, isin, ticker: null })}</Heading>
+          )}
+          <UiV2Skeleton label="Загружаем инструмент…" expectedTime />
+        </>
       ) : null}
       {selection?.mismatch && !query.isFetching && (
         <p role="alert">
@@ -244,10 +259,15 @@ export function ReturnsInstrumentCard({
             </p>
             <div className={styles.titleRow}>
               <Heading>
-                {data.name} <MissingName name={data.name} isin={data.isin} />
+                {shortInstrumentName({ name: data.name, isin: data.isin, ticker: null })}{" "}
+                <MissingName name={data.name} isin={data.isin} />
               </Heading>
               <span className={styles.periodChip}>{periodText(data, !!selectedScope)}</span>
             </div>
+            {data.name !==
+              shortInstrumentName({ name: data.name, isin: data.isin, ticker: null }) && (
+              <small className={sheet.muted}>{data.name}</small>
+            )}
           </header>
           {capitalRequested && matches.length !== 1 && (
             <p className={styles.notice}>
@@ -259,7 +279,9 @@ export function ReturnsInstrumentCard({
             <div className={styles.lead}>
               <section className={styles.total}>
                 <h2 className={sheet.eyebrow}>Сумма по данным</h2>
-                <strong className={sheet.hero}>{displayMetric(data.summary.pnl, true)}</strong>
+                <strong className={sheet.hero} title={displayMetric(data.summary.pnl, true)}>
+                  {displayWhole(data.summary.pnl, true)}
+                </strong>
                 <div className={styles.totalMeta}>
                   {partialTotal && data.summary.pnl.value !== null && (
                     <span className={styles.estimate}>по доступным данным</span>
@@ -272,13 +294,13 @@ export function ReturnsInstrumentCard({
                     )}
                   {simpleRate && (
                     <span className={sheet.delta} data-tone={tone(simpleRate)}>
-                      {displaySignedRate(simpleRate)}
+                      {displayCompactRate(simpleRate)}
                     </span>
                   )}
                   {simpleRate && (
                     <span className={sheet.muted}>
                       на вложенное
-                      {annualRate ? ` · ${displaySignedRate(annualRate)} годовых` : ""}{" "}
+                      {annualRate ? ` · ${displayCompactRate(annualRate)} годовых` : ""}{" "}
                       <Info label="Процент">
                         <p>
                           Процент на вложенное — итог позиции, делённый на сумму покупок. Он не
@@ -292,9 +314,13 @@ export function ReturnsInstrumentCard({
                       </Info>
                     </span>
                   )}
-                  {ratesPerAccount && (
-                    <span className={sheet.muted}>Процент — по каждому счёту ниже</span>
-                  )}
+                  {simpleRate &&
+                    !annualRate &&
+                    onlyClean?.xirr?.reason_codes.includes("short_holding") && (
+                      <small className={sheet.muted}>
+                        Годовая не считается: деньги в среднем были в позиции меньше года
+                      </small>
+                    )}
                 </div>
                 {partialTotal && (
                   <p className={styles.caveat}>
@@ -391,62 +417,193 @@ export function ReturnsInstrumentCard({
                 Комиссии и налоги не входят в расчёт. НКД учтён в сделках, стоимости и купонах.
               </p>
             </div>
-            {accountsWithKnownTrades.length > 0 && (
-              <section className={styles.knownTrades} aria-label="Известные суммы сделок">
-                <h3>Известные суммы сделок</h3>
-                <p className={sheet.muted}>Эти суммы сами по себе не являются доходностью.</p>
-                {accountsWithKnownTrades.some(
-                  (account) =>
-                    account.clean?.buys.status === "partial" ||
-                    account.clean?.sells.status === "partial",
-                ) && <p className={sheet.muted}>Включены не все операции.</p>}
-                {accountsWithKnownTrades.map((account) => {
-                  const clean = account.clean;
-                  if (!clean || (clean.buys.value === null && clean.sells.value === null))
-                    return null;
-                  return (
-                    <div key={account.scope}>
-                      {!selectedScope && (
-                        <strong>{accountLabels[account.scope] ?? account.label}</strong>
-                      )}
-                      {account.period && (
-                        <p className={sheet.muted}>
-                          {dateLabel(account.period.start)} – {dateLabel(account.period.end)}
-                        </p>
-                      )}
-                      {(
-                        [
-                          ["Покупки", clean.buys],
-                          ["Продажи", clean.sells],
-                        ] as const
-                      )
-                        .filter(([, value]) => value.value !== null)
-                        .map(([label, value]) => {
-                          const assumption = value.assumptions.find(
-                            (code) => !shownCaveats.has(code),
-                          );
-                          return (
-                            <p key={label}>
-                              {label}
-                              {value.status === "provisional" ? " · оценка" : ""}:{" "}
-                              <span className={styles.amount}>
-                                {displayMetric(cleanMetric(value))}
-                              </span>
-                              {assumption && (
-                                <small>
-                                  {" "}
-                                  · {reasonCopy(assumption, { surface: "returns" }).message}
-                                </small>
-                              )}
-                            </p>
-                          );
-                        })}
-                    </div>
-                  );
-                })}
-              </section>
-            )}
           </section>
+          {!!data.accounts.length && (
+            <section className={styles.section} aria-label="Позиции и результат по счетам">
+              <h2>По счетам</h2>
+              <div className={styles.scroll}>
+                <table className={`${styles.table} ${styles.accountsTable}`}>
+                  <colgroup>
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                    <col />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>Счёт</th>
+                      <th>Количество</th>
+                      <th>Стоимость</th>
+                      <th>Результат</th>
+                      <th>На вложенное</th>
+                      <th>Годовых</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.accounts.map((account) => {
+                      const clean = account.clean;
+                      const pnl = clean
+                        ? cleanMetric(clean.pnl.value !== null ? clean.pnl : clean.known_result)
+                        : unavailable;
+                      const simple = clean?.simple_return
+                        ? positionRateMetric(clean.simple_return)
+                        : unavailable;
+                      const annual = clean?.xirr ? positionRateMetric(clean.xirr) : unavailable;
+                      return (
+                        <tr
+                          key={account.scope}
+                          data-capital-context={
+                            matches.length === 1 && matches[0] === account ? "true" : undefined
+                          }
+                        >
+                          <th scope="row">
+                            <Link
+                              to={accountHref(account.scope, account.period)}
+                              title={account.account_link?.source_account_id}
+                            >
+                              {accountName(account.scope, account.label)}
+                            </Link>
+                          </th>
+                          <td>
+                            {account.detail?.closing_quantity != null
+                              ? formatQuantity(account.detail.closing_quantity)
+                              : "—"}
+                          </td>
+                          <td title={clean ? money(clean.closing_value.value) : undefined}>
+                            {clean ? displayWhole(cleanMetric(clean.closing_value)) : "—"}
+                          </td>
+                          <td data-tone={tone(pnl)} title={displayMetric(pnl, true)}>
+                            {displayWhole(pnl, true)}
+                          </td>
+                          <td data-tone={tone(simple)}>{displayCompactRate(simple)}</td>
+                          <td data-tone={tone(annual)}>{displayCompactRate(annual)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <details className={styles.details}>
+                <summary>Подробнее о расчёте по счетам</summary>
+                {data.accounts.map((account) => (
+                  <section key={account.scope}>
+                    <h3>{accountName(account.scope, account.label)}</h3>
+                    {account.ai_account_ref && <small>В отчёте AI: {account.ai_account_ref}</small>}
+                    <ReturnsResultMeta
+                      period={account.period}
+                      valuationDate={account.valuation_date}
+                      accountLink={account.account_link}
+                    />
+                    {!account.included && <small>Не включён в общий результат</small>}
+                    <ReturnsInstrumentResult
+                      result={
+                        account.clean
+                          ? {
+                              pnl: cleanMetric(
+                                account.clean.pnl.value !== null
+                                  ? account.clean.pnl
+                                  : account.clean.known_result,
+                              ),
+                              rate: cleanMetric(account.clean.modified_dietz, true),
+                            }
+                          : null
+                      }
+                      positionRates={
+                        account.clean?.simple_return
+                          ? {
+                              simple: account.clean.simple_return,
+                              xirr: account.clean.xirr ?? null,
+                            }
+                          : null
+                      }
+                      reasonCodes={account.reason_codes.filter((code) => !shownCaveats.has(code))}
+                    />
+                    {account.clean && (
+                      <div>
+                        <h4>Составляющие результата</h4>
+                        {(
+                          [
+                            ["Покупки", account.clean.buys],
+                            ["Продажи", account.clean.sells],
+                            ["Купоны", account.clean.coupons],
+                            ["Дивиденды", account.clean.dividends],
+                            ["Погашение", account.clean.redemption],
+                          ] as const
+                        )
+                          .filter(([, part]) => part.value !== null)
+                          .map(([label, part]) => (
+                            <p key={label}>
+                              {label}: {displayMetric(cleanMetric(part))}
+                              {part.status === "partial" && " · включены не все операции"}
+                            </p>
+                          ))}
+                      </div>
+                    )}
+                  </section>
+                ))}
+                <p>
+                  «На вложенное» — результат позиции к сумме покупок, без пересчёта на год. Годовая
+                  — XIRR по датам покупок, продаж и выплат; показывается после среднего срока
+                  вложения не меньше года.
+                </p>
+              </details>
+            </section>
+          )}
+          {accountsWithKnownTrades.length > 0 && (
+            <section className={styles.knownTrades} aria-label="Известные суммы сделок">
+              <h3>Известные суммы сделок</h3>
+              <p className={sheet.muted}>Эти суммы сами по себе не являются доходностью.</p>
+              {accountsWithKnownTrades.some(
+                (account) =>
+                  account.clean?.buys.status === "partial" ||
+                  account.clean?.sells.status === "partial",
+              ) && <p className={sheet.muted}>Включены не все операции.</p>}
+              {accountsWithKnownTrades.map((account) => {
+                const clean = account.clean;
+                if (!clean || (clean.buys.value === null && clean.sells.value === null))
+                  return null;
+                return (
+                  <div key={account.scope}>
+                    {!selectedScope && <strong>{accountName(account.scope, account.label)}</strong>}
+                    {account.period && (
+                      <p className={sheet.muted}>
+                        {dateLabel(account.period.start)} – {dateLabel(account.period.end)}
+                      </p>
+                    )}
+                    {(
+                      [
+                        ["Покупки", clean.buys],
+                        ["Продажи", clean.sells],
+                      ] as const
+                    )
+                      .filter(([, value]) => value.value !== null)
+                      .map(([label, value]) => {
+                        const assumption = value.assumptions.find(
+                          (code) => !shownCaveats.has(code),
+                        );
+                        return (
+                          <p key={label}>
+                            {label}
+                            {value.status === "provisional" ? " · оценка" : ""}:{" "}
+                            <span className={styles.amount}>
+                              {displayMetric(cleanMetric(value))}
+                            </span>
+                            {assumption && (
+                              <small>
+                                {" "}
+                                · {reasonCopy(assumption, { surface: "returns" }).message}
+                              </small>
+                            )}
+                          </p>
+                        );
+                      })}
+                  </div>
+                );
+              })}
+            </section>
+          )}
           {data.accounts.some(
             (account) =>
               account.purchases != null ||
@@ -481,7 +638,7 @@ export function ReturnsInstrumentCard({
                 account.purchases ? (
                   <div className={styles.scroll} key={account.scope}>
                     <h3 className={styles.tableTitle}>
-                      <span>{accountLabels[account.scope] ?? account.label}</span>
+                      <span>{accountName(account.scope, account.label)}</span>
                       {account.period && (
                         <span className={sheet.muted}>
                           {" "}
@@ -495,13 +652,16 @@ export function ReturnsInstrumentCard({
                           <th>Дата покупки</th>
                           <th>Куплено / осталось</th>
                           <th>Вложено</th>
-                          <th>Выручка / стоимость остатка</th>
+                          <th>Продажи / остаток</th>
                           <th>Результат без выплат</th>
                           <th>К первоначальной стоимости</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {account.purchases.map((purchase) => (
+                        {(expandedPurchases.includes(account.scope)
+                          ? account.purchases
+                          : account.purchases.slice(0, 5)
+                        ).map((purchase) => (
                           <tr key={purchase.id}>
                             <td>{dateLabel(purchase.date)}</td>
                             <td>
@@ -510,13 +670,32 @@ export function ReturnsInstrumentCard({
                                 ? "—"
                                 : formatQuantity(purchase.remaining_quantity)}
                             </td>
-                            <td>{money(purchase.cost_kopecks)}</td>
-                            <td>
-                              {money(purchase.sale_proceeds_kopecks)} /{" "}
-                              {money(purchase.value_kopecks)}
+                            <td title={money(purchase.cost_kopecks)}>
+                              {purchaseMoney(purchase.cost_kopecks)}
                             </td>
-                            <td data-tone={amountTone(purchase.price_result_kopecks)}>
-                              {money(purchase.price_result_kopecks)}
+                            <td>
+                              {purchase.sale_proceeds_kopecks !== "0" && (
+                                <span title={money(purchase.sale_proceeds_kopecks)}>
+                                  {purchaseMoney(purchase.sale_proceeds_kopecks)}
+                                  <small>продажи</small>
+                                </span>
+                              )}
+                              {purchase.value_kopecks !== "0" && (
+                                <span title={money(purchase.value_kopecks)}>
+                                  {purchaseMoney(purchase.value_kopecks)}
+                                  <small>остаток</small>
+                                </span>
+                              )}
+                              {purchase.sale_proceeds_kopecks === "0" &&
+                              purchase.value_kopecks === "0"
+                                ? purchaseMoney("0")
+                                : null}
+                            </td>
+                            <td
+                              data-tone={amountTone(purchase.price_result_kopecks)}
+                              title={money(purchase.price_result_kopecks)}
+                            >
+                              {purchaseMoney(purchase.price_result_kopecks, true)}
                               {purchase.status === "partial" &&
                                 purchase.reason_codes.join() !== "account_money_unattributed" && (
                                   <small>Данные неполные</small>
@@ -536,13 +715,34 @@ export function ReturnsInstrumentCard({
                                   </small>
                                 </span>
                               ) : (
-                                rate(purchase.return_fraction)
+                                displayCompactRate({
+                                  ...unavailable,
+                                  value: purchase.return_fraction,
+                                  unit: "fraction",
+                                })
                               )}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    {account.purchases.length > 5 && (
+                      <button
+                        className={styles.more}
+                        type="button"
+                        onClick={() =>
+                          setExpandedPurchases((shown) =>
+                            shown.includes(account.scope)
+                              ? shown.filter((scope) => scope !== account.scope)
+                              : [...shown, account.scope],
+                          )
+                        }
+                      >
+                        {expandedPurchases.includes(account.scope)
+                          ? "Свернуть покупки"
+                          : `Показать все ${account.purchases.length}`}
+                      </button>
+                    )}
                   </div>
                 ) : null,
               )}
@@ -554,139 +754,12 @@ export function ReturnsInstrumentCard({
               )}
             </section>
           )}
-          {!!data.accounts.length && (
-            <section className={styles.section} aria-label="Позиции и результат по счетам">
-              <div className={styles.sectionHead}>
-                <div>
-                  <p className={sheet.eyebrow}>Подробности</p>
-                  <h2>По счетам</h2>
-                </div>
-              </div>
-              <div className={styles.scroll}>
-                <table className={`${styles.table} ${resultStyles.list}`}>
-                  <thead>
-                    <tr>
-                      <th>Счёт</th>
-                      <th>Позиция</th>
-                      <th colSpan={2}>Результат и доходность за период</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.accounts.map((account) => (
-                      <tr
-                        key={account.scope}
-                        data-capital-context={
-                          matches.length === 1 && matches[0] === account ? "true" : undefined
-                        }
-                      >
-                        <td>
-                          <Link to={accountHref(account.scope, account.period)}>
-                            {accountLabels[account.scope] ?? account.label}
-                          </Link>
-                          {account.ai_account_ref && (
-                            <small>В отчёте AI: {account.ai_account_ref}</small>
-                          )}
-                          <ReturnsResultMeta
-                            period={account.period}
-                            valuationDate={account.valuation_date}
-                            accountLink={account.account_link}
-                          />
-                          {!account.included && <small>Не включён в общий результат</small>}
-                        </td>
-                        {account.clean ? (
-                          <>
-                            <td>
-                              {account.detail?.closing_quantity != null && (
-                                <span>{formatQuantity(account.detail.closing_quantity)} шт.</span>
-                              )}
-                              {account.clean.closing_value.value !== null && (
-                                <small>{money(account.clean.closing_value.value)}</small>
-                              )}
-                            </td>
-                            <td colSpan={2}>
-                              <ReturnsInstrumentResult
-                                result={{
-                                  pnl: cleanMetric(
-                                    account.clean.pnl.value !== null
-                                      ? account.clean.pnl
-                                      : account.clean.known_result,
-                                  ),
-                                  rate: cleanMetric(account.clean.modified_dietz, true),
-                                }}
-                                positionRates={
-                                  account.clean.simple_return
-                                    ? {
-                                        simple: account.clean.simple_return,
-                                        xirr: account.clean.xirr ?? null,
-                                      }
-                                    : null
-                                }
-                                reasonCodes={account.reason_codes.filter(
-                                  (code) => !shownCaveats.has(code),
-                                )}
-                              />
-                              <details className={styles.parts}>
-                                <summary>Составляющие результата</summary>
-                                {[
-                                  account.clean.buys,
-                                  account.clean.sells,
-                                  account.clean.coupons,
-                                  account.clean.dividends,
-                                  account.clean.redemption,
-                                ].some((part) => part.status === "partial") && (
-                                  <p>Включены не все операции.</p>
-                                )}
-                                {(
-                                  [
-                                    ["Покупки", account.clean.buys],
-                                    ["Продажи", account.clean.sells],
-                                    ["Купоны", account.clean.coupons],
-                                    ["Дивиденды", account.clean.dividends],
-                                    ["Погашение", account.clean.redemption],
-                                  ] as const
-                                )
-                                  .filter(([, part]) => part.value !== null)
-                                  .map(([label, part]) => (
-                                    <p key={label}>
-                                      {label}: {displayMetric(cleanMetric(part))}
-                                    </p>
-                                  ))}
-                              </details>
-                            </td>
-                          </>
-                        ) : (
-                          <td colSpan={3}>
-                            <ReturnsInstrumentResult
-                              result={null}
-                              reasonCodes={account.reason_codes}
-                            />
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {data.accounts.some((account) => account.ai_account_ref) && (
-                <p className={sheet.muted}>
-                  Номера счетов в отчёте AI относятся к текущему составу счетов.
-                </p>
-              )}
-              {data.accounts.some((account) => account.clean?.simple_return?.value != null) && (
-                <details className={styles.details}>
-                  <summary>Как читать процент</summary>
-                  <p>
-                    «На вложенное» — итог позиции, делённый на сумму покупок за доступную историю,
-                    без пересчёта на год. «Годовая» — XIRR по датам покупок, продаж и выплат. Она
-                    появляется, когда деньги в среднем пролежали в позиции не меньше года: для
-                    короткого срока годовой процент получается обманчиво большим.
-                  </p>
-                </details>
-              )}
-            </section>
-          )}
           {operations.length > 0 && (
-            <section className={styles.section} aria-label="Покупки и продажи">
+            <details
+              className={`${styles.section} ${styles.details}`}
+              aria-label="Покупки и продажи"
+            >
+              <summary>Сделки · {operations.length}</summary>
               <div className={styles.sectionHead}>
                 <h2>Покупки и продажи</h2>
                 <fieldset className={sheet.segmented} aria-label="Какие операции показать">
@@ -729,7 +802,7 @@ export function ReturnsInstrumentCard({
                           <td>{dateLabel(row.date)}</td>
                           <td>{row.side === "BUY" ? "Покупка" : "Продажа"}</td>
                           {data.accounts.length > 1 && (
-                            <td>{accountLabels[row.scope] ?? row.account}</td>
+                            <td>{accountName(row.scope, row.account)}</td>
                           )}
                           <td>{formatQuantity(row.quantity)}</td>
                           <td>{money(row.amount)}</td>
@@ -750,11 +823,14 @@ export function ReturnsInstrumentCard({
                   Ещё операции
                 </button>
               )}
-            </section>
+            </details>
           )}
           {payouts.length > 0 && (
             <details className={`${styles.section} ${styles.details}`}>
-              <summary>Выплаты · {payouts.length}</summary>
+              <summary>
+                Выплаты · {payouts.length}
+                {data.summary.payouts.value !== null && ` · ${displayWhole(data.summary.payouts)}`}
+              </summary>
               <div className={styles.scroll}>
                 <table className={`${styles.table} ${styles.operations}`}>
                   <thead>
@@ -770,7 +846,7 @@ export function ReturnsInstrumentCard({
                       <tr key={`${scope}/${event.event_key}`}>
                         <td>{dateLabel(event.event_date as string)}</td>
                         <td>{event.kind === "COUPON" ? "Купон" : "Дивиденд"}</td>
-                        {data.accounts.length > 1 && <td>{accountLabels[scope] ?? account}</td>}
+                        {data.accounts.length > 1 && <td>{accountName(scope, account)}</td>}
                         <td>{money(event.net_payout_kopecks)}</td>
                       </tr>
                     ))}
@@ -787,7 +863,7 @@ export function ReturnsInstrumentCard({
               <summary>Что ограничивает расчёт</summary>
               {limitedAccounts.map(({ account, codes }) => (
                 <section key={account.scope}>
-                  <h3>{accountLabels[account.scope] ?? account.label}</h3>
+                  <h3>{accountName(account.scope, account.label)}</h3>
                   <Explanation
                     context={{ account: account.label, instrument: data.name }}
                     codes={codes.length ? codes : ["all_history_source_proof_unavailable"]}

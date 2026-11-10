@@ -250,13 +250,12 @@
 
 .leaderList {
   display: grid;
-  grid-template-columns: 1.5ch minmax(0, 1.3fr) minmax(60px, 1fr) max-content;
-  column-gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) max-content;
+  column-gap: var(--skeleton-gap);
   margin: 0;
   padding: 0;
   list-style: none;
 }
-
 .leaderRow {
   display: grid;
   grid-column: 1 / -1;
@@ -293,21 +292,34 @@
 }
 
 .barTrack {
-  display: block;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--line-2);
+  position: relative;
+  display: flex;
+  height: var(--returns-cell-padding);
+  justify-content: flex-end;
+  border-left: 1px solid var(--line);
+  background: linear-gradient(
+    to right,
+    transparent 49.5%,
+    var(--line) 49.5%,
+    var(--line) 50.5%,
+    transparent 50.5%
+  );
 }
-
+.barTrack[data-tone="positive"] {
+  padding-right: 0;
+  justify-content: flex-start;
+}
 .bar {
   display: block;
-  min-width: 2px;
   height: 100%;
-  border-radius: inherit;
   background: var(--pos);
 }
-
+.barTrack[data-tone="positive"] .bar {
+  margin-left: 50%;
+}
+.barTrack[data-tone="negative"] .bar {
+  margin-right: 50%;
+}
 .bar[data-tone="negative"] {
   background: var(--neg);
 }
@@ -351,32 +363,82 @@
   font-size: var(--t-sm);
 }
 
-.list td,
-.list th {
-  vertical-align: middle !important;
+.list {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
 }
-
-.list th small {
-  display: block;
-  margin-top: 3px;
+.list col:nth-child(1) {
+  width: 31%;
+}
+.list col:nth-child(2) {
+  width: 19%;
+}
+.list col:nth-child(3) {
+  width: 15%;
+}
+.list col:nth-child(4) {
+  width: 14%;
+}
+.list col:nth-child(5) {
+  width: 21%;
+}
+.list.list td,
+.list.list th {
+  padding: var(--returns-cell-padding);
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: middle;
+}
+.list.list thead th {
   color: var(--muted);
   font-size: var(--t-xs);
+}
+.list.list th {
+  text-align: left;
   font-weight: var(--w-regular);
 }
-
-.list > tbody > tr > th > a {
+.list.list td {
+  text-align: right;
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.list thead th:not(:first-child) {
+  text-align: right;
+}
+.list.list thead button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: inherit;
+}
+.list th small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list tbody th a {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
   color: var(--ink);
-  font-size: var(--t-md);
   font-weight: var(--w-semibold);
   text-decoration: none;
 }
-
-.list > tbody > tr > th > a:hover {
+.list a:hover {
   color: var(--accent);
   text-decoration: underline;
-  text-underline-offset: 3px;
 }
-
 .instrumentAccount {
   min-width: 0;
 }
@@ -521,4 +583,25 @@
   color: var(--accent);
   font-size: var(--t-xs);
   font-weight: var(--w-regular);
+}
+
+.list.list tbody th,
+.list.list tbody td {
+  line-height: var(--returns-line-height);
+}
+.instrumentTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--returns-cell-padding);
+}
+.instrumentTitle a {
+  min-width: 0;
+}
+.instrumentTitle > span {
+  flex: none;
+}
+.payoutLabel {
+  display: inline;
+  font-size: var(--t-xs);
+  color: var(--muted);
 }

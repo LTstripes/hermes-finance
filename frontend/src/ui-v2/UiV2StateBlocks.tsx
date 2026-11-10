@@ -63,6 +63,36 @@ export function UiV2Loading({ label }: { label: string }) {
   );
 }
 
+/** Stable page geometry while the first authoritative read is in flight. */
+export function UiV2Skeleton({
+  label,
+  expectedTime = false,
+}: {
+  label: string;
+  expectedTime?: boolean;
+}) {
+  return (
+    <div className={styles.skeleton} role="status" aria-busy="true" aria-label={label}>
+      <span className={styles.skeletonLabel}>{label}</span>
+      <div aria-hidden="true">
+        <div className={styles.skeletonNumber} />
+        <div className={styles.skeletonTiles}>
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className={styles.skeletonRows}>
+          {Array.from({ length: 5 }, (_, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: Fixed decorative placeholders.
+            <span key={index} />
+          ))}
+        </div>
+      </div>
+      {expectedTime && <p>Обычно до 15 секунд.</p>}
+    </div>
+  );
+}
+
 export function UiV2ReportContext({
   children,
   kind = "current",

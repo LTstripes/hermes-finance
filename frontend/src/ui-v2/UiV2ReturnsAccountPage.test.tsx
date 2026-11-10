@@ -132,7 +132,7 @@ test("refresh reads context, overview and basket once in parallel and exposes co
         })
       : undefined,
   );
-  setup("/v2/returns/account?scope=source:SYNTH-A&categories=gold");
+  setup("/v2/returns/account?scope=source:SYNTH-A&categories=gold&diagnostics=performance");
   await screen.findByRole("region", { name: "Результат периода" });
   hold = true;
   fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
@@ -151,16 +151,14 @@ test("refresh reads context, overview and basket once in parallel and exposes co
   expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
 });
 
-test("account opening leaves portfolio month diagnostics unrequested until disclosure", async () => {
+test("account opening keeps diagnostics outside the ordinary path", async () => {
   const calls = install();
   setup();
   await screen.findByRole("region", { name: "Результат периода" });
   expect(calls.filter((c) => c.includes("/basket?"))).toHaveLength(0);
   expect(screen.queryByRole("region", { name: "Моя доходность" })).toBeNull();
-  const summary = screen.getByText("Дополнительная диагностика портфеля за выбранный период");
-  fireEvent.click(summary);
-  await screen.findByRole("region", { name: "Моя доходность" });
-  await waitFor(() => expect(calls.filter((c) => c.includes("/basket?"))).toHaveLength(1));
+  expect(screen.queryByText("Дополнительная диагностика портфеля за выбранный период")).toBeNull();
+  expect(screen.queryByText("Подробнее о данных")).toBeNull();
 });
 
 test("account authority is explicit in links and has no source/accepted selector", async () => {
@@ -168,7 +166,7 @@ test("account authority is explicit in links and has no source/accepted selector
   setup();
   await screen.findByRole("region", { name: "Результат периода" });
   const accounts = screen.getByRole("combobox", { name: "Счёт" });
-  expect(within(accounts).queryByRole("option", { name: "Общий портфель" })).toBeNull();
+  expect(within(accounts).getByRole("option", { name: "Общий портфель" })).toHaveValue("portfolio");
   expect(screen.queryByRole("combobox", { name: "Представление" })).toBeNull();
 });
 
@@ -369,9 +367,7 @@ test("pins CLOSED default in URL and loads trades only on expansion", async () =
   await screen.findByRole("region", { name: "Результат периода" });
   expect(screen.getByTestId("location")).toHaveTextContent("start=2030-04-30&end=2030-05-31");
   expect(calls.filter((c) => c.includes("/instrument?"))).toHaveLength(0);
-  expect(
-    within(screen.getByRole("region", { name: "За всю историю" })).getByText("—"),
-  ).toBeVisible();
+  expect(screen.queryByRole("region", { name: "За всю историю" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /Горизонт — проданная/ }));
   await screen.findByText("Продажа");
   expect(screen.getByText("Количество: 10 → 0")).toBeVisible();
@@ -432,8 +428,7 @@ test("late account response cannot populate the new scope; error hides cached fi
   fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
   await screen.findByRole("alert");
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText("Подробнее о данных"));
-  expect(screen.getByText("Подробнее о данных", { exact: true })).toBeVisible();
+  expect(screen.queryByText("Подробнее о данных")).toBeNull();
 });
 
 test("legacy bond deep link preserves exact account and month", async () => {
@@ -526,8 +521,7 @@ test("without CLOSED months source intervals remain selectable without silently 
   expect(screen.getByTestId("location")).not.toHaveTextContent("start=");
   expect(screen.getByTestId("location")).not.toHaveTextContent("end=");
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText("Подробнее о данных"));
-  expect(screen.getByText("Подробнее о данных", { exact: true })).toBeVisible();
+  expect(screen.queryByText("Подробнее о данных")).toBeNull();
   fireEvent.change(screen.getByRole("combobox", { name: "Период" }), {
     target: { value: `${may.start}/${may.end}` },
   });
@@ -647,9 +641,8 @@ test("accepted net payments remain visible when the result and percentage are un
   const payouts = await screen.findByRole("region", { name: "Разложение выплат" });
   expect(within(payouts).getByText(/покрытие периода частичное/)).toBeVisible();
   expect(within(payouts).getByText(/Учебная акция/)).toBeVisible();
-  expect(
-    within(screen.getByRole("region", { name: "Результат периода" })).getAllByText("—"),
-  ).toHaveLength(1);
+  expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Полученные дивиденды" })).toHaveTextContent("104,40");
   expect(within(payouts).queryByText("Оценка")).toBeNull();
 });
 
@@ -667,4 +660,135 @@ test("instrument row exposes both server metrics and visible missing-evidence re
     "Не хватает стоимости на границе периода.",
   );
   expect(missing).toHaveTextContent("30.04.2030 — 31.05.2030");
+});
+
+test("true absence has one empty state; a pending read has a skeleton instead", async () => {
+  let started = false;
+  let finish: (response: Response) => void = () => {};
+  install((url) =>
+    url.pathname.endsWith("overview")
+      ? new Promise((resolve) => {
+          started = true;
+          finish = resolve;
+        })
+      : undefined,
+  );
+  setup();
+  await screen.findByRole("status", { name: "Загружаем доходность…" });
+  expect(screen.queryByRole("region", { name: "Нет данных о доходности" })).toBeNull();
+  await waitFor(() => expect(started).toBe(true));
+  const data = overviewFixture();
+  for (const row of [data.selected, ...data.history])
+    for (const name of ["pnl", "rate", "coupons", "dividends"] as const)
+      row[name] = { ...row[name], value: null, reason_codes: ["missing_endpoint"] };
+  for (const row of data.history) {
+    row.coupons.value = "0";
+    row.dividends.value = "0";
+  }
+  data.all_history = null;
+  data.available_months_total = null;
+  data.selected_available_months_total = null;
+  data.instruments = [];
+  data.breakdown = null;
+  data.accepted_income = null;
+  await act(async () => finish(response(data)));
+  const empty = await screen.findByRole("region", { name: "Нет данных о доходности" });
+  expect(empty).not.toHaveTextContent("—");
+  expect(empty).toHaveTextContent("Не хватает стоимости на границе периода.");
+  expect(within(empty).getByRole("link", { name: "Открыть итог за всю историю" })).toHaveAttribute(
+    "href",
+    "/v2/returns",
+  );
+  expect(screen.queryByRole("region", { name: "Результат по месяцам" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Лидеры и отстающие" })).toBeNull();
+  expect(screen.queryByRole("table")).toBeNull();
+});
+
+test("a genuine zero remains a known monthly value rather than an empty screen", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    for (const name of ["pnl", "rate", "coupons", "dividends"] as const)
+      data.selected[name] = { ...data.selected[name], value: name === "pnl" ? "0" : null };
+    data.all_history = null;
+    data.history = [];
+    data.instruments = [];
+    data.breakdown = null;
+    return Promise.resolve(response(data));
+  });
+  setup();
+  expect(await screen.findByRole("region", { name: "Результат периода" })).toHaveTextContent("0 ₽");
+  expect(screen.queryByRole("region", { name: "Нет данных о доходности" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Полученные купоны" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Результат по месяцам" })).toBeNull();
+});
+
+test("known historical percentages stay in a visible table without an empty money chart", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    data.history = data.history.map((row) => ({
+      ...row,
+      pnl: { ...row.pnl, value: null },
+      rate: { ...row.rate, value: "0.1" },
+    }));
+    return Promise.resolve(response(data));
+  });
+  setup();
+  const history = await screen.findByRole("region", { name: "Результат по месяцам" });
+  expect(within(history).queryByRole("group", { name: "История результата в рублях" })).toBeNull();
+  expect(within(history).getByRole("table")).toBeVisible();
+  expect(history).toHaveTextContent("10,00%");
+});
+
+test("a partially known history preserves unknown month gaps and instrument identities", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    data.history[0] = {
+      ...data.history[0],
+      pnl: { ...data.history[0].pnl, value: null },
+      rate: { ...data.history[0].rate, value: null },
+    };
+    data.instruments = data.instruments.map((row) => ({
+      ...row,
+      pnl: { ...row.pnl, value: null },
+      rate: { ...row.rate, value: null },
+      coupons: { ...row.coupons, value: null },
+      dividends: { ...row.dividends, value: null },
+    }));
+    return Promise.resolve(response(data));
+  });
+  setup();
+  const history = await screen.findByRole("region", { name: "Результат по месяцам" });
+  const chart = within(history).getByRole("group", { name: "История результата в рублях" });
+  expect(within(chart).getAllByRole("button")[0]).toHaveAttribute("title", "—");
+  expect(screen.getByRole("region", { name: "По инструментам" })).toHaveTextContent(
+    "Учебная облигация",
+  );
+  expect(screen.queryByRole("region", { name: "Лидеры и отстающие" })).toBeNull();
+});
+
+test("a direct accepted-account URL keeps its identity without offering accounts lacking source periods", async () => {
+  install((url) =>
+    url.pathname.endsWith("context")
+      ? Promise.resolve(
+          response({
+            ...contextFixture,
+            accounts: [
+              ...contextFixture.accounts,
+              { id: "account:1", label: "Сохранённый счёт", basis: "accepted" },
+            ],
+          }),
+        )
+      : undefined,
+  );
+  setup(`/v2/returns/account?scope=account:1&start=${may.start}&end=${may.end}`);
+  await screen.findByRole("region", { name: "Результат периода" });
+  const selector = screen.getByRole("combobox", { name: "Счёт" });
+  expect(selector).toHaveValue("account:1");
+  const selected = selector.querySelector('option[value="account:1"]');
+  expect(selected).toHaveAttribute("disabled");
+  expect(selected).toHaveAttribute("hidden");
+  expect(within(selector).getByRole("option", { name: "Общий портфель" })).toHaveValue("portfolio");
 });

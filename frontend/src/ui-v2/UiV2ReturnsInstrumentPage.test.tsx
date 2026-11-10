@@ -54,7 +54,7 @@ test("selected scope and exact period show only that account's known return", as
   expect(result).toHaveTextContent("+12 ₽");
   expect(result).not.toHaveTextContent("+8 ₽");
   const accounts = within(screen.getByRole("region", { name: "Позиции и результат по счетам" }));
-  expect(accounts.getByText("Учебный счёт А")).toBeVisible();
+  expect(accounts.getByRole("link", { name: "Учебный счёт А" })).toBeVisible();
   expect(accounts.queryByText("Учебный счёт Б")).toBeNull();
 });
 
@@ -184,8 +184,8 @@ test("selected account shows supported purchase price changes and true zero", as
   );
   expect(region.getByText("Учебный счёт А")).toBeVisible();
   expect(region.queryByText("Учебный счёт Б")).toBeNull();
-  expect(region.getAllByText(/150,00 ₽/).length).toBeGreaterThan(0);
-  expect(region.getByText("0,00 ₽")).toBeVisible();
+  expect(region.getAllByText(/150 ₽/).length).toBeGreaterThan(0);
+  expect(region.getByText("0 ₽")).toBeVisible();
   expect(region.getByText(/самые ранние покупки \(FIFO\)/)).toBeVisible();
 });
 
@@ -231,9 +231,9 @@ test("closed purchase remains visible when the open purchase has no valuation", 
   const region = within(
     await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
   );
-  expect(region.getByText("80,00 ₽")).toBeVisible();
-  expect(region.getByText("80 %")).toBeVisible();
-  expect(region.getAllByText("Неизвестно").length).toBeGreaterThan(0);
+  expect(region.getByText("+80 ₽")).toBeVisible();
+  expect(region.getByText("+80,0%")).toBeVisible();
+  expect(region.getAllByText("—", { exact: false }).length).toBeGreaterThan(0);
   expect(region.getByText("Данные неполные")).toBeVisible();
 });
 
@@ -265,9 +265,9 @@ test("unclassified account activity leaves observed purchase cost visible as par
   const region = within(
     await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
   );
-  expect(region.getByText("100,00 ₽")).toBeVisible();
+  expect(region.getByText("100 ₽")).toBeVisible();
   expect(region.getByText("Данные неполные")).toBeVisible();
-  expect(region.queryByText("80,00 ₽")).toBeNull();
+  expect(region.queryByText("+80 ₽")).toBeNull();
 });
 
 test("bond purchase keeps a provisional result without a face value warning", async () => {
@@ -298,7 +298,7 @@ test("bond purchase keeps a provisional result without a face value warning", as
   const region = within(
     await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
   );
-  expect(region.getByText("10,00 ₽")).toBeVisible();
+  expect(region.getByText("+10 ₽")).toBeVisible();
   expect(region.queryByText("Номинал не подтверждён")).not.toBeInTheDocument();
   expect(region.getByText("Данные неполные")).toBeVisible();
 });
@@ -331,7 +331,7 @@ test("account-level note does not mark each purchase incomplete", async () => {
   const region = within(
     await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
   );
-  expect(region.getByText("10,00 ₽")).toBeVisible();
+  expect(region.getByText("+10 ₽")).toBeVisible();
   expect(region.queryByText("Данные неполные")).not.toBeInTheDocument();
   expect(
     region.getByText(
@@ -368,7 +368,7 @@ test("shows known purchase result and explains conflicting NKD", async () => {
   const region = within(
     await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
   );
-  expect(region.getByText("10,00 ₽")).toBeVisible();
+  expect(region.getByText("+10 ₽")).toBeVisible();
   expect(region.getByText("Расхождение по НКД")).toBeVisible();
   expect(region.getByText("Данные неполные")).toBeVisible();
 });
@@ -415,8 +415,8 @@ test("same-day buys sold together show both supported price results", async () =
   const region = within(
     await screen.findByRole("region", { name: "Результат сохранённых покупок" }),
   );
-  expect(region.getByText("50,00 ₽")).toBeVisible();
-  expect(region.getByText("−50,00 ₽")).toBeVisible();
+  expect(region.getByText("+50 ₽")).toBeVisible();
+  expect(region.getByText("−50 ₽")).toBeVisible();
   expect(region.queryByText("Данные неполные")).toBeNull();
 });
 
@@ -448,6 +448,8 @@ test("selected scope shows producer-owned price, payouts and result with redempt
     region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
   ).toHaveTextContent("+70 ₽");
   expect(region.getByText(/Погашение включено в стоимость и сделки/)).toBeVisible();
+  expect(screen.getByText("В отчёте AI: source-account-2")).not.toBeVisible();
+  fireEvent.click(screen.getByText("Подробнее о расчёте по счетам"));
   expect(screen.getByText("В отчёте AI: source-account-2")).toBeVisible();
 });
 
@@ -496,7 +498,7 @@ test("older v2 card without additive payouts field leaves it unknown", async () 
 });
 
 test.each([
-  [null, "50", "partial", "+0,50 ₽"],
+  [null, "50", "partial", "+1 ₽"],
   ["0", "0", "supported", "0 ₽"],
 ] as const)(
   "selected account keeps its partial value or genuine zero",
@@ -552,7 +554,7 @@ test("background refresh keeps the card and signals that data is updating", asyn
   vi.stubGlobal("fetch", fetch);
   setup("/v2/returns/instrument/RU000A000002", client);
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
-  void client.invalidateQueries({ queryKey: ["returns", "instrument-card"] });
+  void client.refetchQueries({ queryKey: ["returns", "instrument-card"] });
   expect(await screen.findByText("Обновляем данные…")).toBeVisible();
   expect(screen.getByRole("heading", { level: 1, name: "Учебная акция" })).toBeVisible();
   await act(async () => finish(response(instrumentCardFixture())));
@@ -590,7 +592,11 @@ test("standalone entry fetches one card only, renders compact native trades and 
   expect(calls).toEqual(["/api/returns/instrument-card?isin=RU000A000002"]);
   expect(screen.queryByRole("heading", { name: "Полученные купоны" })).toBeNull();
   expect(screen.queryByText("source:SYNTH-A")).toBeNull();
-  const trades = within(screen.getByRole("region", { name: "Покупки и продажи" }));
+  const disclosure = screen.getByText(/^Сделки ·/).closest("details");
+  expect(disclosure).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByText(/^Сделки ·/));
+  if (!disclosure) throw new Error("Missing trades disclosure");
+  const trades = within(disclosure);
   expect(trades.getAllByRole("row")).toHaveLength(3);
   expect(trades.getAllByText("10")).toHaveLength(2);
   expect(trades.queryByText("cash-only-nkd")).toBeNull();
@@ -662,12 +668,16 @@ test("known clean result remains visible when the account proof is stale", async
   );
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
-  const accounts = within(screen.getByRole("region", { name: "Позиции и результат по счетам" }));
-  expect(accounts.getByText("0 шт.")).toBeVisible();
+  const accounts = within(
+    within(screen.getByRole("region", { name: "Позиции и результат по счетам" })).getByRole(
+      "table",
+    ),
+  );
+  expect(accounts.getByText("0", { exact: true })).toBeVisible();
   expect(accounts.getByText("+12 ₽")).toBeVisible();
-  expect(accounts.getByText("12,00%")).toBeVisible();
+  expect(accounts.getAllByText("—").length).toBeGreaterThan(0);
   expect(accounts.getByText("−4 ₽")).toBeVisible();
-  expect(accounts.getByText("−4,00%")).toBeVisible();
+  expect(accounts.getAllByText("—")).toHaveLength(5);
   expect(accounts.queryByText("Не все показатели доступны")).toBeNull();
 });
 
@@ -682,8 +692,8 @@ test.each(["0", "-1", "3.5", "03", "9007199254740992", "3&capital_account=4"])(
     await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
     expect(screen.getByText(/Связь с выбранным счётом капитала не подтверждена/)).toBeVisible();
     expect(document.querySelector('[data-capital-context="true"]')).toBeNull();
-    expect(screen.getByText("Учебный счёт А")).toBeVisible();
-    expect(screen.getByText("Учебный счёт Б")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Учебный счёт А" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Учебный счёт Б" })).toBeVisible();
   },
 );
 
@@ -695,7 +705,7 @@ test("Capital entry highlights exact identity but keeps both accounts and its Ba
   expect(document.querySelector('[data-capital-context="true"]')).toHaveTextContent(
     "Учебный счёт А",
   );
-  expect(screen.getByText("Учебный счёт Б")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Учебный счёт Б" })).toBeVisible();
   expect(fetch).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "К капиталу" }));
   expect(screen.getByTestId("location")).toHaveTextContent("/v2/capital?month=91");
@@ -969,9 +979,71 @@ test("one account card leads with the simple return and annual XIRR, not Modifie
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   const result = screen.getByRole("heading", { name: "Сумма по данным" }).closest("section");
-  expect(result).toHaveTextContent("+10,04%");
-  expect(result).toHaveTextContent("на вложенное · +12,12% годовых");
+  expect(result).toHaveTextContent("+10,0%");
+  expect(result).toHaveTextContent("на вложенное · +12,1% годовых");
   expect(screen.queryByText(/Modified Dietz/)).toBeNull();
   expect(screen.queryByText(/1\s?572/)).toBeNull();
-  expect(screen.getByText("Как читать процент")).toBeInTheDocument();
+  expect(screen.getByText("Подробнее о расчёте по счетам")).toBeInTheDocument();
+});
+
+test("purchases start at five per account, follow account rates and retain exact kopecks in titles", async () => {
+  const card = instrumentCardFixture();
+  card.accounts[0].purchases = Array.from({ length: 12 }, (_, index) => ({
+    id: `synthetic-${index}`,
+    date: "2030-05-01",
+    settlement_date: "2030-05-02",
+    quantity: "1",
+    remaining_quantity: "0",
+    cost_kopecks: "10049",
+    sale_proceeds_kopecks: "11099",
+    value_kopecks: "0",
+    price_result_kopecks: "1050",
+    return_fraction: "0.10449",
+    status: "supported" as const,
+    reason_codes: [],
+  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const purchases = await screen.findByRole("region", { name: "Результат сохранённых покупок" });
+  const accounts = screen.getByRole("region", { name: "Позиции и результат по счетам" });
+  expect(
+    accounts.compareDocumentPosition(purchases) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  const table = within(purchases).getByRole("table");
+  expect(within(table).getAllByRole("row")).toHaveLength(6);
+  expect(within(table).getAllByText("+11 ₽")).toHaveLength(5);
+  expect(within(table).getAllByText("+10,4%")).toHaveLength(5);
+  expect(table.querySelector('td[title="10,50 ₽"]')).toBeTruthy();
+  fireEvent.click(within(purchases).getByRole("button", { name: "Показать все 12" }));
+  expect(within(table).getAllByRole("row")).toHaveLength(13);
+  fireEvent.click(within(purchases).getByRole("button", { name: "Свернуть покупки" }));
+  expect(within(table).getAllByRole("row")).toHaveLength(6);
+});
+
+test("an invalidated card hides the previous success until the authoritative refresh succeeds", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let finish: (value: Response) => void = () => {};
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(response(instrumentCardFixture()))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+  );
+  setup("/v2/returns/instrument/RU000A000002", client);
+  await screen.findByRole("heading", { name: "Сумма по данным" });
+  void client.invalidateQueries({ queryKey: ["returns", "instrument-card"] });
+  await screen.findByRole("status", { name: "Загружаем инструмент…" });
+  expect(screen.queryByRole("heading", { name: "Сумма по данным" })).toBeNull();
+  expect(screen.getByRole("button", { name: "К доходности" })).toBeVisible();
+  await act(async () => finish(response(instrumentCardFixture())));
+  await screen.findByRole("heading", { name: "Сумма по данным" });
 });
