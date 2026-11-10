@@ -185,7 +185,9 @@ def _native_trade_issue_scopes(view):
         return {}
 
 
-def _source_money_attribution(view, saved, raw, identities, native_issues):
+def _source_money_attribution(
+    view, saved, raw, identities, native_issues, *, attribute_reader=None
+):
     """Frozen full issue/B-ID attribution; it supplies no Money occurrence owner."""
     from hermes_finance.services.source_instrument_returns import _attribute
 
@@ -223,7 +225,10 @@ def _source_money_attribution(view, saved, raw, identities, native_issues):
         if len(candidates) == 1 and None not in candidates:
             return next(iter(candidates)), "source_issue" if nkd else "native_repo_reference"
         return None, "source_identity_unresolved"
-    return _attribute(saved["operation"] + " " + saved["narrative"], identities), "legacy_text"
+    text = saved["operation"] + " " + saved["narrative"]
+    return (
+        attribute_reader(text) if attribute_reader else _attribute(text, identities)
+    ), "legacy_text"
 
 
 def payout_attribution(
@@ -238,6 +243,8 @@ def payout_attribution(
     historical_evidence=None,
     canonical_matches=None,
     analytical_payouts=None,
+    overlap_index=None,
+    attribute_reader=None,
 ):
     """Preserve the saved decision while projecting independently proved links."""
     from hermes_finance.services.source_instrument_returns import _attribute
@@ -259,6 +266,7 @@ def payout_attribution(
             return None, "current_source_proof", ("source_payout_evidence_conflict",)
         if proven is not None:
             return proven, "current_source_proof", ()
+    attribute = attribute_reader or (lambda text: _attribute(text, identities))
     status = saved.get("instrument_link_status")
     if status != "linked" and session is not None and view is not None and raw is not None:
         from hermes_finance.services.source_return_evidence import (
@@ -271,7 +279,14 @@ def payout_attribution(
             effective_payout_instrument(session, view, raw, saved, resolver)
             if views is None or payout_source_unambiguous(views, view, raw["date"])
             else effective_overlapping_payout(
-                session, views, view, raw, saved, resolver, canonical_matches=canonical_matches
+                session,
+                views,
+                view,
+                raw,
+                saved,
+                resolver,
+                canonical_matches=canonical_matches,
+                overlap_index=overlap_index,
             )
         )
         if proven is not None:
@@ -336,7 +351,7 @@ def payout_attribution(
         if security is not None:
             if security.kind != "dividend":
                 return None, "clean_dividend_unattributed", ("payout_classification_conflict",)
-            legacy_isin = _attribute(saved["operation"] + " " + saved["narrative"], identities)
+            legacy_isin = attribute(saved["operation"] + " " + saved["narrative"])
             target, current_status = resolver.resolve(security)
             instrument = resolver.instruments.get(target)
             explicit_isin = resolver.reg_isins.get(security.reg_number)
@@ -380,7 +395,7 @@ def payout_attribution(
         if isin and kinds | catalogue == {"bond"}:
             return isin, "clean_exact_coupon_identity", ()
         return None, "clean_coupon_unattributed", ("unattributed_income",)
-    isin = _attribute(saved["operation"] + " " + saved["narrative"], identities)
+    isin = attribute(saved["operation"] + " " + saved["narrative"])
     return isin, "legacy_text", () if isin else ("unattributed_income",)
 
 
@@ -450,6 +465,7 @@ def read_events(
 ):
     from hermes_finance.services.source_instrument_returns import (
         InstrumentReturnGap,
+        _attribute_reader,
         _bond_total_basis,
         _face_signature,
         _minor,
@@ -459,6 +475,7 @@ def read_events(
     )
 
     resolver = MoneyInstrumentResolver(session)
+    attribute_reader = _attribute_reader(identities)
     dependencies = _fingerprint(
         {
             "catalog": sorted(
@@ -482,9 +499,13 @@ def read_events(
         )
         for v in views
     )
-    from hermes_finance.services.source_return_evidence import canonical_payout_groups
+    from hermes_finance.services.source_return_evidence import (
+        canonical_payout_groups,
+        overlapping_payout_index,
+    )
 
     payout_groups = canonical_payout_groups(session, views, resolver)
+    overlap_index = overlapping_payout_index(views)
     occurrences = defaultdict(list)
     invalid_events = []
     for view in views:
@@ -513,6 +534,8 @@ def read_events(
                         views=views,
                         historical_evidence=historical_evidence,
                         canonical_matches=payout_groups,
+                        overlap_index=overlap_index,
+                        attribute_reader=attribute_reader,
                         analytical_payouts=analytical_payouts,
                     )
                     if basis in {"accepted_money", "current_source_proof"}:
@@ -542,7 +565,12 @@ def read_events(
                             metadata["names"].add(target.name)
                 else:
                     isin, basis = _source_money_attribution(
-                        view, row, raw[ref], identities, native_issues
+                        view,
+                        row,
+                        raw[ref],
+                        identities,
+                        native_issues,
+                        attribute_reader=attribute_reader,
                     )
                     reasons = ()
                 occurrences[key].append((view, flow, row, raw[ref], isin, basis, reasons))

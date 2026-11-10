@@ -267,8 +267,10 @@ def source_read_snapshot(session):
             session.info.pop(_SOURCE_SCOPE_READS, None)
 
 
-def _read_source_view(session, original, *, reserved, identity_only=False):
+def _read_source_view(session, original, *, reserved, identity_only=False, _borrow=False):
     if reserved:
+        if _borrow:
+            raise ValueError("private source inputs are read-only")
         if identity_only:
             raise ValueError("identity projection is only a read-only source selection")
         return source_intake._view(session, original)
@@ -287,10 +289,12 @@ def _read_source_view(session, original, *, reserved, identity_only=False):
             "document": {"filename_account": view["document"]["filename_account"]},
             "native_scope": frozenset(_native_scope(view["document"])),
         }
-    return deepcopy(view) if cache is not None else view
+    return deepcopy(view) if cache is not None and not _borrow else view
 
 
-def _selected_sources(session, source_account, *, reserved=False, identity_only=False):
+def _selected_sources(
+    session, source_account, *, reserved=False, identity_only=False, _borrow=False
+):
     """Resolve a filename alias only through its documents' single row account.
 
     This is local source selection, not a persisted Hermes account mapping.
@@ -306,7 +310,7 @@ def _selected_sources(session, source_account, *, reserved=False, identity_only=
             if not isinstance(aliases, list) or source_account not in aliases:
                 continue
             view = _read_source_view(
-                session, original, reserved=reserved, identity_only=identity_only
+                session, original, reserved=reserved, identity_only=identity_only, _borrow=_borrow
             )
             document = view["document"]
             native = view["native_scope"] if identity_only else _native_scope(document)
@@ -316,6 +320,21 @@ def _selected_sources(session, source_account, *, reserved=False, identity_only=
         except (MyBrokerError, ValueError, TypeError, KeyError, ArithmeticError):
             selected.append((original, None, "source_reader_unavailable"))
     return selected, scopes if len(scopes) == 1 else None
+
+
+def _source_read_inputs(session, source_account):
+    """Private, unmodified operands for synchronous source/evidence builders.
+
+    Public selection still returns owned mutable copies. These inputs never
+    escape in DTOs; the outer source snapshot discards them even on failure.
+    """
+    cache = session.info.get(_SOURCE_SCOPE_READS)
+    if cache is None:
+        return _selected_sources(session, source_account)
+    key = ("instrument_sources", source_account)
+    if key not in cache:
+        cache[key] = _selected_sources(session, source_account, _borrow=True)
+    return cache[key]
 
 
 def _saved_totals(document):
@@ -355,6 +374,52 @@ def _saved_totals(document):
 
 
 def _money(session, view, choices, gaps, *, selected_accounts=None, payout_groups=None):
+    if choices is not None or _SOURCE_SCOPE_READS not in session.info:
+        return _read_money(
+            session,
+            view,
+            choices,
+            gaps,
+            selected_accounts=selected_accounts,
+            payout_groups=payout_groups,
+        )
+
+    def build():
+        local_gaps = []
+        flows = _read_money(
+            session,
+            view,
+            None,
+            local_gaps,
+            selected_accounts=selected_accounts,
+            payout_groups=payout_groups,
+        )
+        return tuple(flows), tuple(local_gaps)
+
+    # Include every supplied Money operand; choices are read from this SQL
+    # snapshot. A changed document cannot borrow another projection's result.
+    key = (
+        digest(
+            {
+                key: view[key]
+                for key in ("id", "document_sha256", "covered_from", "covered_to", "document")
+            }
+        ),
+        None if selected_accounts is None else tuple(sorted(selected_accounts)),
+        None if payout_groups is None else digest(payout_groups),
+    )
+    cache = session.info[_SOURCE_SCOPE_READS]
+    key = ("returns_source_money", key)
+    if key not in cache:
+        cache[key] = build()
+    flows, local_gaps = cache[key]
+    # Flows, their identity pairs and gaps are frozen scalar-only records.
+    # Return an owned list without recursively copying immutable records.
+    gaps.extend(local_gaps)
+    return list(flows)
+
+
+def _read_money(session, view, choices, gaps, *, selected_accounts=None, payout_groups=None):
     persisted = {
         row.source_reference: row
         for row in session.scalars(
@@ -571,7 +636,7 @@ def _read_monthly_returns(
     conflicting_endpoint_dates = set()
     source_flow_reasons = defaultdict(set)
     pending_cancellations = set()
-    selected, native_scope = _selected_sources(session, source_account)
+    selected, native_scope = _source_read_inputs(session, source_account)
     from hermes_finance.services.source_return_proofs import resolve_proof
 
     saved_dates, proof_status = resolve_proof(session, source_account, selected, native_scope)

@@ -7485,6 +7485,15 @@ The scan does not search every pair of earlier ending dates. REPO inventory
 identity is reconstructed once per source in one coherent read, with no
 cross-request cache.
 
+The same read snapshot may reuse private verified source inputs, exact-source
+Money flows and gaps, receipt row selections and catalogue/import/trade indexes
+across instruments and periods. Every interval still evaluates its own endpoints,
+coverage and proof conflicts. Ordinary and clean preparations, cancellation
+coverage, outer-period catalogue eligibility, reviewed valuation basis and proof
+constraints remain distinct. Public mutable projections stay independently owned;
+the outer snapshot discards all reused inputs on success or failure. Configured
+valuation-file loading and currentness checks are not bypassed by this reuse.
+
 At the same account/issue/date/quantity and compatible source/EOD/valuation basis,
 an absent instrument boundary value may coexist with an independently known
 value without becoming a conflict. Different known values or quantities still

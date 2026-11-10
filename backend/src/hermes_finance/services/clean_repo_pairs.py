@@ -51,8 +51,9 @@ def _missing_fee_only(event, trade):
     )
 
 
-def without_proven_closed_repo(analysis, views, isin):
+def without_proven_closed_repo(analysis, views, isin, *, identity_reader=None):
     """Return a disposable copy only if every affected REPO is fully proven."""
+    identity_reader = identity_reader or repo_return_identities
     repo_events = [e for e in analysis.events if "repo_trade_unsupported" in e.reason_codes]
     if not repo_events:
         return analysis
@@ -96,7 +97,7 @@ def without_proven_closed_repo(analysis, views, isin):
     records, conflicted = {}, set()
     witnessed_by_view = []
     for view in views:
-        identities = repo_return_identities(view)
+        identities = identity_reader(view)
         witnessed_by_view.append((view, {item[0] for item in identities.values()}))
         for trade in view["document"].get("trades", ()):
             if not trade.get("repo_observed") or trade.get("section") != "completed":
@@ -275,8 +276,11 @@ class _RepoBarrierCoverage(dict):
         self.unresolved_cost_only = getattr(source, "unresolved_cost_only", False)
 
 
-def saved_proof_repo_evidence_complete(session, source_account, start, end, views, isin):
+def saved_proof_repo_evidence_complete(
+    session, source_account, start, end, views, isin, *, identity_reader=None
+):
     """Validate a matching current receipt's REPO ordinals without modifying it."""
+    identity_reader = identity_reader or repo_return_identities
     from hermes_finance.services.source_investment_proofs import _report_rows, read_reports
 
     if len(views) != 1:
@@ -298,7 +302,7 @@ def saved_proof_repo_evidence_complete(session, source_account, start, end, view
         ]
         if not trades:
             return True
-        identities = repo_return_identities(views[0])
+        identities = identity_reader(views[0])
         legs = plan.get("native", {}).get("repo_legs", [])
         if not isinstance(legs, list):
             return False
@@ -319,11 +323,12 @@ def saved_proof_repo_evidence_complete(session, source_account, start, end, view
     return True
 
 
-def _closed_historical_repo_tokens(views, account, isin, opening):
+def _closed_historical_repo_tokens(views, account, isin, opening, *, identity_reader=None):
     """Prove reciprocal, identical witnessed occurrences ended before opening."""
+    identity_reader = identity_reader or repo_return_identities
     occurrences = defaultdict(list)
     for view in views:
-        identities = repo_return_identities(view)
+        identities = identity_reader(view)
         for trade in view["document"].get("trades", ()):
             if trade.get("core", {}).get("source_account") != account:
                 continue
@@ -416,8 +421,11 @@ def _closed_historical_repo_tokens(views, account, isin, opening):
     return closed
 
 
-def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=True):
+def clean_and_purchase_repo_projections(
+    analysis, views, isin, *, allow_pair=True, identity_reader=None
+):
     """Prove a closed pair or preserve only FIFO facts before an uncertain REPO."""
+    identity_reader = identity_reader or repo_return_identities
     accounts = {
         event.native_source_account
         for event in analysis.events
@@ -430,11 +438,16 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
             for trade in view["document"].get("trades", ())
         ):
             return analysis, _barrier_analysis(
-                analysis, analysis.opening_date + timedelta(days=1), views
+                analysis,
+                analysis.opening_date + timedelta(days=1),
+                views,
+                identity_reader=identity_reader,
             )
         return analysis, analysis
     account = next(iter(accounts))
-    historical = _closed_historical_repo_tokens(views, account, isin, analysis.opening_date)
+    historical = _closed_historical_repo_tokens(
+        views, account, isin, analysis.opening_date, identity_reader=identity_reader
+    )
     source_trades = [
         trade
         for view in views
@@ -451,7 +464,10 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
         except (ValueError, TypeError, KeyError):
             # An undated obligation could affect the entire selected interval.
             return analysis, _barrier_analysis(
-                analysis, analysis.opening_date + timedelta(days=1), views
+                analysis,
+                analysis.opening_date + timedelta(days=1),
+                views,
+                identity_reader=identity_reader,
             )
         # A conflicting delivery can precede execution. Missing delivery has
         # no provable lower bound, even for an execution after this period.
@@ -475,7 +491,9 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
             barrier = analysis.opening_date + timedelta(days=1)
     barrier = max(barrier, analysis.opening_date + timedelta(days=1))
     if not allow_pair:
-        return analysis, _barrier_analysis(analysis, barrier, views)
+        return analysis, _barrier_analysis(
+            analysis, barrier, views, identity_reader=identity_reader
+        )
     raw_repo = [
         event for event in analysis.events if "repo_trade_unsupported" in event.reason_codes
     ]
@@ -486,13 +504,15 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
         # ephemeral custody witnesses from the same current source inventory.
         synthetic, seen = [], set()
         for view in views:
-            identities = repo_return_identities(view)
+            identities = identity_reader(view)
             for trade in view["document"].get("trades", ()):
                 if trade not in relevant or trade.get("section") != "completed":
                     continue
                 witness = identities.get(trade.get("ordinal"))
                 if witness is None:
-                    return analysis, _barrier_analysis(analysis, barrier, views)
+                    return analysis, _barrier_analysis(
+                        analysis, barrier, views, identity_reader=identity_reader
+                    )
                 identity = witness[0]
                 if identity in seen:
                     continue
@@ -502,7 +522,9 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
                     settlement = date.fromisoformat(trade["settlement_date"])
                     delivery = date.fromisoformat(trade["depo_settlement_date"])
                 except (ValueError, TypeError, KeyError, ArithmeticError):
-                    return analysis, _barrier_analysis(analysis, barrier, views)
+                    return analysis, _barrier_analysis(
+                        analysis, barrier, views, identity_reader=identity_reader
+                    )
                 synthetic.append(
                     InstrumentEvent(
                         event_key="clean-ephemeral:" + identity,
@@ -524,23 +546,26 @@ def clean_and_purchase_repo_projections(analysis, views, isin, *, allow_pair=Tru
                     )
                 )
         if not synthetic:
-            return analysis, _barrier_analysis(analysis, barrier, views)
+            return analysis, _barrier_analysis(
+                analysis, barrier, views, identity_reader=identity_reader
+            )
         candidate = replace(analysis, events=(*analysis.events, *synthetic))
-    proven = without_proven_closed_repo(candidate, views, isin)
+    proven = without_proven_closed_repo(candidate, views, isin, identity_reader=identity_reader)
     if proven is not candidate:
         return proven, proven
-    return analysis, _barrier_analysis(analysis, barrier, views)
+    return analysis, _barrier_analysis(analysis, barrier, views, identity_reader=identity_reader)
 
 
-def _barrier_analysis(analysis, barrier, views):
+def _barrier_analysis(analysis, barrier, views, *, identity_reader=None):
     """Isolate unknown REPO from FIFO only; keep unrelated blockers intact."""
+    identity_reader = identity_reader or repo_return_identities
     proven_local = set()
     conflicting_identities = {}
 
     def witnessed_conflict(event):
         refs = []
         for view in views:
-            identities = repo_return_identities(view)
+            identities = identity_reader(view)
             for observed in view["document"].get("trades", ()):
                 if observed.get("core", {}).get(
                     "source_account"
@@ -565,7 +590,7 @@ def _barrier_analysis(analysis, barrier, views):
         )
 
     for view in views:
-        identities = repo_return_identities(view)
+        identities = identity_reader(view)
         for trade in view["document"].get("trades", ()):
             witness = identities.get(trade.get("ordinal"))
             if not witness:
@@ -640,7 +665,7 @@ def _barrier_analysis(analysis, barrier, views):
             continue
         witnesses = []
         for view in views:
-            identities = repo_return_identities(view)
+            identities = identity_reader(view)
             for trade in view["document"].get("trades", ()):
                 if trade.get("core", {}).get(
                     "source_account"

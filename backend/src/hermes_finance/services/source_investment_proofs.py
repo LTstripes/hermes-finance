@@ -215,7 +215,13 @@ def _old_cost_meaning_unchanged(view):
 
 
 def _snapshot(session, account, start, end, *, reserved=False, read_dependency=None):
-    selected, native = _selected_sources(session, account, reserved=reserved)
+    from hermes_finance.services.source_monthly_returns import _source_read_inputs
+
+    selected, native = (
+        _selected_sources(session, account, reserved=True)
+        if reserved
+        else _source_read_inputs(session, account)
+    )
     if native is None or len(native) != 1:
         raise ProofError("investment_proof_scope_ambiguous")
     sources, money_ids, gift_dependencies = [], [], []
@@ -571,6 +577,19 @@ def _derive(
 
 
 def _report_rows(session, source_account=None):
+    from hermes_finance.database import snapshot_read_result
+
+    return iter(
+        snapshot_read_result(
+            session,
+            "returns_investment_report_rows",
+            source_account,
+            lambda: list(_uncached_report_rows(session, source_account)),
+        )
+    )
+
+
+def _uncached_report_rows(session, source_account=None):
     """Latest saved row per exact scope, without validating financial evidence."""
     query = select(SourceReturnProof).where(SourceReturnProof.proof_version == VERSION)
     if source_account is not None:

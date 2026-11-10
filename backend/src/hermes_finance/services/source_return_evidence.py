@@ -10,15 +10,14 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from hermes_finance.persistence import MyBrokerImport
 from hermes_finance.services.mybroker_money_candidates import _original_equal
 from hermes_finance.statement_import.mybroker import digest
 
 
 def bound_import(session, view):
-    source = session.scalar(
-        select(MyBrokerImport).where(MyBrokerImport.document_sha256 == view["document_sha256"])
-    )
+    from hermes_finance.services.returns_read_inputs import source_import
+
+    source = source_import(session, view["document_sha256"])
     if source is None:
         return None
     document = view["document"]
@@ -390,8 +389,22 @@ def canonical_payout_groups(session, views, resolver=None):
     return result
 
 
+def overlapping_payout_index(views):
+    """Index exact operands for one synchronous attribution pass, including duplicates."""
+    from collections import defaultdict
+
+    raw, choices = defaultdict(list), defaultdict(list)
+    for view in views:
+        for row in view["document"].get("money", []):
+            signature = {k: v for k, v in row.items() if k not in {"ordinal", "last_update"}}
+            raw[id(view), digest(signature)].append(row)
+        for row in view["money_classifications"]:
+            choices[id(view), row.get("source_reference")].append(row)
+    return raw, choices
+
+
 def effective_overlapping_payout(
-    session, views, view, row, saved, resolver, *, canonical_matches=None
+    session, views, view, row, saved, resolver, *, canonical_matches=None, overlap_index=None
 ):
     """Project one current receipt only across uniquely identical source rows."""
     from hermes_finance.services.source_money_classifications import source_reference
@@ -420,14 +433,24 @@ def effective_overlapping_payout(
     for candidate in covering:
         raw = [
             r
-            for r in candidate["document"].get("money", [])
+            for r in (
+                candidate["document"].get("money", [])
+                if overlap_index is None
+                else overlap_index[0].get((id(candidate), digest(signature)), ())
+            )
             if {k: v for k, v in r.items() if k not in {"ordinal", "last_update"}} == signature
         ]
         if len(raw) != 1:
             return None
         ref = source_reference(candidate["id"], raw[0])
         choices = [
-            r for r in candidate["money_classifications"] if r.get("source_reference") == ref
+            r
+            for r in (
+                candidate["money_classifications"]
+                if overlap_index is None
+                else overlap_index[1].get((id(candidate), ref), ())
+            )
+            if r.get("source_reference") == ref
         ]
         if (
             len(choices) != 1
@@ -519,14 +542,9 @@ def _source_allows_payout(session, view, isin):
 
     source = bound_import(session, view)
     if source is None:
-        return (
-            session.scalar(
-                select(MyBrokerImport).where(
-                    MyBrokerImport.document_sha256 == view["document_sha256"]
-                )
-            )
-            is None
-        )
+        from hermes_finance.services.returns_read_inputs import source_import
+
+        return source_import(session, view["document_sha256"]) is None
     dispositions = snapshot_read_result(
         session, "source_payout_dispositions", source.id, lambda: resolve(session, source)
     )

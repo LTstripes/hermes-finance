@@ -19,9 +19,11 @@ SEMANTIC_MODULES = (
     "services/clean_closed_position.py",
     "services/clean_instrument_return.py",
     "services/clean_purchase_returns.py",
+    "services/clean_repo_pairs.py",
     "services/clean_redemption.py",
     "services/clean_sale_nkd.py",
     "services/mybroker_money_candidates.py",
+    "services/returns_read_inputs.py",
     "services/source_investment_proofs.py",
     "services/source_account_history.py",
     "services/source_instrument_events.py",
@@ -46,12 +48,14 @@ SEMANTIC_MODULES = (
 )
 
 # Pin the revision alongside the digest so bumping either alone fails the guard.
+# Request-scoped read reuse retains V20: no financial interpretation or receipt
+# dependency changes. The implementation digest also covers its private indexes.
 # V5 carries dated redemption quantity and scopes structure-only confirmations;
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v20",
-    "aab3794a2251659b6014d8871e2b10203a7de5d801eaa4b048f57cd909eee0f5",
+    "bbb0cd52527a2005066aa746042bc6dc8a71cd7f880faa00929f6133393b356d",
 )
 
 

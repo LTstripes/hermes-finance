@@ -3,8 +3,6 @@
 from collections import Counter
 from decimal import Decimal, localcontext
 
-from sqlalchemy import select
-
 from hermes_finance.domain.broker_money import StockFeeClaims, TradeCashClaims
 from hermes_finance.persistence import ExecutedTrade, Instrument
 from hermes_finance.services.broker_money_ownership import conflicts, key
@@ -26,8 +24,9 @@ def effective_proof(session, identity):
     # Deliberately no canonical reader here: proof revalidation reads frozen
     # target revisions, avoiding a candidate -> receipt -> candidate cycle.
     from hermes_finance.services.broker_money import latest_proofs, proof_blockers
+    from hermes_finance.services.returns_read_inputs import executed_trade
 
-    trade = session.scalar(select(ExecutedTrade).where(ExecutedTrade.source_identity == identity))
+    trade = executed_trade(session, identity)
     if trade is None:
         return None
     entry = latest_proofs(session).get(("trade", trade.id))

@@ -82,28 +82,53 @@ def _instrument_identity(row: Instrument) -> _InstrumentIdentity:
     )
 
 
-def _exact_instruments(session: Session, isin: str) -> tuple[_InstrumentIdentity, ...]:
+def _source_catalogue(session):
+    from hermes_finance.services.source_monthly_returns import _SOURCE_SCOPE_READS
+
+    if _SOURCE_SCOPE_READS not in session.info:
+        return None
+    # Let SQLite normalize exactly as the original predicates did. Python's
+    # Unicode upper/strip rules are not SQLite upper/trim rules.
     return snapshot_read_result(
         session,
-        "mybroker_identity_exact_instruments",
-        isin,
+        "mybroker_identity_source_catalogue",
+        (),
         lambda: tuple(
-            _instrument_identity(row)
-            for row in session.scalars(
-                select(Instrument).where(func.upper(func.trim(Instrument.isin)) == isin)
+            (normalized, _instrument_identity(row))
+            for row, normalized in session.execute(
+                select(Instrument, func.upper(func.trim(Instrument.isin))).order_by(Instrument.id)
             )
         ),
     )
 
 
+def _exact_instruments(session: Session, isin: str) -> tuple[_InstrumentIdentity, ...]:
+    def build():
+        catalogue = _source_catalogue(session)
+        if catalogue is not None:
+            return tuple(card for normalized, card in catalogue if normalized == isin)
+        return tuple(
+            _instrument_identity(row)
+            for row in session.scalars(
+                select(Instrument).where(func.upper(func.trim(Instrument.isin)) == isin)
+            )
+        )
+
+    return snapshot_read_result(session, "mybroker_identity_exact_instruments", isin, build)
+
+
 def _instrument_candidates(
     session: Session, isin: str, source_name: str
 ) -> tuple[_InstrumentIdentity, ...]:
-    return snapshot_read_result(
-        session,
-        "mybroker_identity_instrument_candidates",
-        (isin, source_name),
-        lambda: tuple(
+    def build():
+        catalogue = _source_catalogue(session)
+        if catalogue is not None:
+            return tuple(
+                card
+                for normalized, card in catalogue
+                if normalized == isin or card.name == source_name
+            )
+        return tuple(
             _instrument_identity(row)
             for row in session.scalars(
                 select(Instrument)
@@ -113,7 +138,10 @@ def _instrument_candidates(
                 )
                 .order_by(Instrument.id)
             )
-        ),
+        )
+
+    return snapshot_read_result(
+        session, "mybroker_identity_instrument_candidates", (isin, source_name), build
     )
 
 
