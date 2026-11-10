@@ -67,7 +67,7 @@ test("ui-v2 final review keeps broker blockers, evidence and keyboard details @v
       .getByRole("navigation", { name: "Разделы месяца" })
       .getByRole("link", { name: /Закрыть месяц/ })
       .click();
-    await page.getByText("Подробнее об итогах и проверках", { exact: true }).click();
+    await page.getByText("Подробнее о проверках", { exact: true }).click();
     await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
     await expect(
       page.getByRole("region", { name: "Рабочая область: Закрыть месяц" }),

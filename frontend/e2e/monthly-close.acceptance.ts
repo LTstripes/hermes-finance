@@ -7,7 +7,7 @@ async function tile(page: Page, name: RegExp) {
     .click();
 }
 async function fullReview(page: Page) {
-  const summary = page.getByText("Подробнее об итогах и проверках", { exact: true });
+  const summary = page.getByText("Подробнее о проверках", { exact: true });
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
     await summary.click();
@@ -89,9 +89,7 @@ test("user-decided Close: unconfirmed Clone, warnings, lost ACK, reload and expl
   await page.unroute(workflowPattern);
   await page.reload();
   await expect(page.getByRole("button", { name: "Открыть месяц заново" })).toBeVisible();
-  await expect(
-    page.getByText("Месяц закрыт по вашему решению. Для исправлений сначала открой его заново."),
-  ).toBeVisible();
+  await expect(page.getByText("Чтобы исправить, открой месяц заново.")).toBeVisible();
   const closedReadiness = await (await request.get(readinessPath)).json();
   expect(closedReadiness.items).toContainEqual(
     expect.objectContaining({ code: "empty_manual_month", severity: "warning" }),
@@ -143,7 +141,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=1&step=final_review_close");
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   await tile(page, /Расходы и план/);
   await expect(page.getByRole("region", { name: "Рабочая область: Расходы и план" })).toBeVisible();
   await page.getByLabel("Категория расхода", { exact: true }).fill("Синтетический расход");
@@ -165,7 +163,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
     .getByRole("link", { name: /Закрыть месяц/ })
     .click();
   await expect(page).toHaveURL(/\/v2\/close\?.*panel=close/);
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   // A retained Month panel can reread immediately after Save, before returning.
   await expect.poll(() => workflowReads).toBeGreaterThan(readsBeforeSave);
   await fullReview(page);
@@ -237,7 +235,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   await page.getByRole("button", { name: "Закрыть месяц" }).click();
   await page.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   await expect(page.getByRole("link", { name: "Изменить" })).toHaveCount(0);
   expect((await (await request.get("/api/months/1")).json()).status).toBe("closed");
   await page.screenshot({ path: info.outputPath("closed-desktop.png"), fullPage: true });
@@ -284,13 +282,13 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
   ).toHaveAttribute("href", "/v2/close?month=1&step=next_month_outlook");
   await page.getByRole("link", { name: "Вернуться к закрытию исходного месяца" }).click();
   await expect(page).toHaveURL(/\/v2\/close\?month=1&step=next_month_outlook$/);
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   await expect(page.getByRole("list", { name: "Шаги закрытия" })).toHaveCount(0);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/v2/close?month=1&step=final_review_close");
   await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   );
@@ -320,7 +318,7 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
     ).restored_backup.id,
   ).toBe(backup.id);
   await page.reload();
-  await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+  await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
   expect((await (await request.get(workflowPath)).json()).month.status).toBe("draft");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
@@ -420,7 +418,7 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     });
     await tile(page, /Закрыть месяц/);
     await expect(page).toHaveURL(/panel=close/);
-    await expect(page.getByRole("group", { name: "Итоги месяца" })).toBeVisible();
+    await expect(page.locator('dl[aria-label="Итоги месяца"]')).toBeVisible();
     await expect(page.getByRole("button", { name: "Закрыть месяц", exact: true })).toBeInViewport();
     expect(closePosts).toBe(width === 1440 ? 0 : 1);
     await page.screenshot({

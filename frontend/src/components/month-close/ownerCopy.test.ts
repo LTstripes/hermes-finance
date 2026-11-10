@@ -1,8 +1,45 @@
 import { describe, expect, it } from "vitest";
 import type { CloseReadinessItem } from "../../api/types";
-import { closeOwnerActionFindings, closeOwnerFindings } from "./ownerCopy";
+import {
+  closedFindingCopy,
+  closeFindingPanel,
+  closeOwnerActionFindings,
+  closeOwnerFindings,
+} from "./ownerCopy";
 
 describe("closeOwnerFindings", () => {
+  it("maps known codes and freshness families without guessing unknown destinations", () => {
+    const item: CloseReadinessItem = {
+      code: "active_account_snapshot_missing",
+      severity: "warning",
+      message: "Нет остатка.",
+      context: {},
+    };
+    expect(closeFindingPanel(item)).toBe("positions");
+    expect(
+      closeFindingPanel({ ...item, code: "unknown", context: { family_id: "t_invest_payouts" } }),
+    ).toBe("payouts");
+    expect(closeFindingPanel({ ...item, code: "unknown" })).toBeUndefined();
+    expect(closeFindingPanel({ ...item, code: "toString" })).toBeUndefined();
+  });
+  it("removes repeated closed-month actions while retaining the finding", () => {
+    expect(
+      closedFindingCopy(
+        "Сверка не завершена. Открой «Месяц → Брокерские выписки» и проверь замечания.",
+      ),
+    ).toBe("Сверка не завершена.");
+    expect(closedFindingCopy("Для части цен нет подтверждения котировки. Открой позиции.")).toBe(
+      "Для части цен нет подтверждения котировки.",
+    );
+    expect(closedFindingCopy("Проверь обязательные расходы за месяц.")).toBe(
+      "Нужна проверка: обязательные расходы за месяц.",
+    );
+    expect(
+      closedFindingCopy(
+        "Для части цен нет подтверждения котировки на дату снимка. Проверь их в разделе «Месяц → Счета и позиции»; ручную цену можно оставить.",
+      ),
+    ).toBe("Для части цен нет подтверждения котировки на дату снимка. Ручную цену можно оставить.");
+  });
   it("keeps one next action per account in the ordinary review and preserves blocking severity", () => {
     const details = "Проверь подробности в разделе «Месяц → Брокерские выписки».";
     const items = [

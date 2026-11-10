@@ -84,11 +84,16 @@ function figureText(step: MonthChecklistStep): string {
   return figure.count == null ? "—" : forms ? countText(figure.count, forms) : String(figure.count);
 }
 
-function hintText(step: MonthChecklistStep | undefined, id: MonthChecklistStepId): string {
+function hintText(
+  step: MonthChecklistStep | undefined,
+  id: MonthChecklistStepId,
+  closed: boolean,
+): string {
   const base = MONTH_STEP_COPY[id].hint;
   if (!step) return base;
   if (step.state === "attention") {
     const count = step.attention_count;
+    if (closed) return countText(count, ["замечание", "замечания", "замечаний"]);
     return `${countText(count, ["замечание", "замечания", "замечаний"])} ${count === 1 ? "требует" : "требуют"} решения`;
   }
   if (step.state === "empty") return "Не заполнено";
@@ -104,10 +109,28 @@ function hintText(step: MonthChecklistStep | undefined, id: MonthChecklistStepId
   return base;
 }
 
-function StateMark({ state }: { state: MonthChecklistStep["state"] | undefined }) {
-  const symbol = state === "done" ? "✓" : state === "attention" ? "!" : "";
+function presentationState(state: MonthChecklistStep["state"] | undefined, closed: boolean) {
+  return closed && state === "attention" ? "noted" : state;
+}
+
+function stateText(state: MonthChecklistStep["state"], closed: boolean) {
+  return closed && state === "attention" ? "есть замечания" : STATE_TEXT[state];
+}
+
+function StateMark({
+  state,
+  closed = false,
+}: {
+  state: MonthChecklistStep["state"] | undefined;
+  closed?: boolean;
+}) {
+  const symbol = state === "done" ? "✓" : state === "attention" ? (closed ? "·" : "!") : "";
   return (
-    <span aria-hidden="true" className={styles.mark} data-state={state ?? "unknown"}>
+    <span
+      aria-hidden="true"
+      className={styles.mark}
+      data-state={presentationState(state, closed) ?? "unknown"}
+    >
       {symbol}
     </span>
   );
@@ -122,10 +145,12 @@ export function MonthStepStrip({
   checklist,
   current,
   pathFor,
+  closed = false,
 }: {
   checklist: MonthChecklist | undefined;
   current: string | null;
   pathFor: (panel: string) => string;
+  closed?: boolean;
 }) {
   const steps = stepsById(checklist);
   return (
@@ -136,14 +161,19 @@ export function MonthStepStrip({
           <Link
             aria-current={current === id ? "page" : undefined}
             className={styles.stripItem}
-            data-state={step?.state ?? "unknown"}
+            data-state={presentationState(step?.state, closed) ?? "unknown"}
             key={id}
             to={pathFor(id)}
           >
-            {id === "close" ? null : <StateMark state={step?.state} />}
+            {id === "close" ? null : <StateMark state={step?.state} closed={closed} />}
             {MONTH_STEP_COPY[id].label}
+            {closed && step?.state === "attention" ? (
+              <span className={styles.stripCount}>
+                {countText(step.attention_count, ["замечание", "замечания", "замечаний"])}
+              </span>
+            ) : null}
             {step && id !== "close" ? (
-              <span className={styles.visuallyHidden}>, {STATE_TEXT[step.state]}</span>
+              <span className={styles.visuallyHidden}>, {stateText(step.state, closed)}</span>
             ) : null}
           </Link>
         );
@@ -185,7 +215,13 @@ function deltaNote(value: MoneyValue | null | undefined, suffix: string) {
   return { note: `${moneyDeltaText(value)} ${suffix}`, tone: moneyTone(value) };
 }
 
-function MonthKpis({ workflow }: { workflow: MonthCloseWorkflow }) {
+export function MonthKpis({
+  workflow,
+  variant = "overview",
+}: {
+  workflow: MonthCloseWorkflow;
+  variant?: "overview" | "close";
+}) {
   const review = workflow.final_review;
   if (!review.available) return null;
   const { kpis } = review;
@@ -204,7 +240,7 @@ function MonthKpis({ workflow }: { workflow: MonthCloseWorkflow }) {
       ? countText(budget.secondary_count, ["статья", "статьи", "статей"])
       : undefined;
   return (
-    <dl aria-label="Итог месяца" className={styles.kpis}>
+    <dl aria-label={variant === "close" ? "Итоги месяца" : "Итог месяца"} className={styles.kpis}>
       <Kpi
         label="Ликвидный капитал"
         value={capitalUnknown ? "—" : moneyText(kpis.liquid_capital_net)}
@@ -221,17 +257,24 @@ function MonthKpis({ workflow }: { workflow: MonthCloseWorkflow }) {
         }
       />
       <Kpi label="Пассивный доход" value={moneyText(kpis.passive_income_actual)} {...passive} />
-      <Kpi
-        label="Обязательные расходы"
-        // No mandatory rows at all is "not entered", not a measured zero.
-        value={noExpenseRows ? "—" : moneyText(kpis.mandatory_expenses)}
-        note={noExpenseRows ? "не заполнено" : articles}
-      />
-      <Kpi
-        label="Покрытие расходов"
-        value={formatPercent(kpis.mandatory_expense_coverage_pct)}
-        note="пассивным доходом, по прогнозу"
-      />
+      {variant === "close" ? (
+        <Kpi label="Инвестиции" value={moneyText(review.investments.market_value)} />
+      ) : null}
+      {variant === "overview" || (kpis.mandatory_expenses != null && !noExpenseRows) ? (
+        <Kpi
+          label="Обязательные расходы"
+          // No mandatory rows at all is "not entered", not a measured zero.
+          value={noExpenseRows ? "—" : moneyText(kpis.mandatory_expenses)}
+          note={noExpenseRows ? "не заполнено" : articles}
+        />
+      ) : null}
+      {variant === "overview" ? (
+        <Kpi
+          label="Покрытие расходов"
+          value={formatPercent(kpis.mandatory_expense_coverage_pct)}
+          note="пассивным доходом, по прогнозу"
+        />
+      ) : null}
     </dl>
   );
 }
@@ -387,17 +430,19 @@ export function MonthOverview({
                     <li key={id}>
                       <Link
                         className={styles.row}
-                        data-state={step?.state ?? "unknown"}
+                        data-state={presentationState(step?.state, closed) ?? "unknown"}
                         to={pathFor(id)}
                       >
-                        <StateMark state={step?.state} />
+                        <StateMark state={step?.state} closed={closed} />
                         <span className={styles.rowText}>
                           <span className={styles.rowTitle}>{MONTH_STEP_COPY[id].label}</span>
-                          <span className={styles.rowHint}>{hintText(step, id)}</span>
+                          <span className={styles.rowHint}>{hintText(step, id, closed)}</span>
                         </span>
                         {step ? <span className={styles.rowFigure}>{figureText(step)}</span> : null}
                         {step ? (
-                          <span className={styles.visuallyHidden}>, {STATE_TEXT[step.state]}</span>
+                          <span className={styles.visuallyHidden}>
+                            , {stateText(step.state, closed)}
+                          </span>
                         ) : null}
                         <span aria-hidden="true" className={styles.chevron}>
                           ›
