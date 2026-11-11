@@ -38,7 +38,7 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
-async function installDataApi(page: Page) {
+async function installDataApi(page: Page, lockedTax = false) {
   const unexpected: string[] = [];
   const reads: string[] = [];
   const posts: string[] = [];
@@ -69,6 +69,13 @@ async function installDataApi(page: Page) {
       const response = syntheticApiResponse(url, request.method(), "content");
       if (!response) throw new Error(`Missing settings fixture: ${line}`);
       json = response.json;
+      if (lockedTax && /^\/api\/tax-brackets\/\d+$/.test(url.pathname)) {
+        json = {
+          ...(json as object),
+          mutable: false,
+          closed_months: [`${url.pathname.split("/").at(-1)}-01`],
+        };
+      }
       status = response.status ?? 200;
     } else if (url.pathname === "/api/months") {
       json = uiV2Months;
@@ -200,6 +207,9 @@ test("Settings sidebar remains visible and scrolls independently on a short desk
   await installDataApi(page);
   await page.setViewportSize({ width: 1440, height: 320 });
   await page.goto("/v2/data");
+  await expect(page.getByTestId("provider-capabilities")).not.toHaveAttribute("open");
+  await expect(page.getByTestId("freshness-clocks")).toBeHidden();
+  await page.getByText("Технические сведения", { exact: true }).click();
   await expect(page.getByTestId("freshness-clocks")).toBeVisible();
   const sidebar = page.locator("aside");
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -227,7 +237,11 @@ test("ui-v2 Data sources desktop: freshness clocks and handoff stay bounded", as
   await page.goto("/v2/data");
   await expect(page.getByRole("heading", { name: "Источники и актуальность" })).toBeVisible();
   await expect(page.getByTestId("data-month-context")).toContainText("Август 2031");
+  await expect(page.getByTestId("provider-capabilities")).not.toHaveAttribute("open");
+  await expect(page.getByTestId("freshness-clocks")).toBeHidden();
+  await page.getByText("Технические сведения", { exact: true }).click();
   await expect(page.getByTestId("freshness-clocks")).toBeVisible();
+  await page.getByText("Технические сведения", { exact: true }).click();
   await expect(page.getByTestId("freshness-family-market_quotes")).toBeVisible();
   await expect(page.getByRole("link", { name: "Настройки", exact: true })).toHaveAttribute(
     "aria-current",
@@ -343,6 +357,58 @@ test("ui-v2 Catalogs desktop: accounts, instruments and mappings stay bounded", 
   await expect(page.getByText("SYNTHETIC-ACCOUNT-001", { exact: true })).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-data-catalogs-desktop");
+  expect(evidence.posts).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("@viewport-owned ui-v2 settings tables fit desktop zoom and 720px content", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "Viewport matrix captured once");
+  const evidence = await installDataApi(page, true);
+  for (const route of ["catalogs", "catalogs?tab=instruments", "", "app"]) {
+    await page.goto(`/v2/data/${route}`);
+    const table = page.locator("#v2-main table").first();
+    await expect(table).toBeVisible();
+    for (const [width, zoom] of [
+      [1024, 1],
+      [1280, 1],
+      [1280, 1.25],
+      [1440, 1],
+      [1440, 1.25],
+      [1920, 1],
+      [1920, 1.25],
+    ]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate((value) => {
+        document.documentElement.style.zoom = String(value);
+      }, zoom);
+      await assertBounded(page);
+      expect(
+        await table.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      if (width === 1280 && zoom === 1.25)
+        await capture(
+          page,
+          testInfo,
+          `settings14-${route.replaceAll(/[^a-z]/g, "-") || "sources"}-zoom125`,
+        );
+    }
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = "1";
+      const main = document.querySelector<HTMLElement>("#v2-main");
+      if (main) {
+        main.style.width = "720px";
+        main.style.maxWidth = "720px";
+      }
+    });
+    for (const item of await page.locator("#v2-main table:visible").all()) {
+      expect(await item.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+        true,
+      );
+    }
+  }
   expect(evidence.posts).toEqual([]);
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);

@@ -41,6 +41,7 @@ import { AccountFormDialog } from "../components/AccountFormDialog";
 import { BrokerIdentityMappingsPanel } from "../components/BrokerIdentityMappingsPanel";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Button } from "../components/ui/Button";
+import { OverflowMenu, OverflowMenuItem } from "../components/ui/OverflowMenu";
 import { InstrumentFormDialog } from "../components/InstrumentFormDialog";
 import { InstrumentMappingDialog } from "../components/InstrumentMappingDialog";
 import { formatMoney } from "../lib/format";
@@ -81,14 +82,6 @@ function StatusPill({ label, tone }: { label: string; tone: string }) {
       {label}
     </span>
   );
-}
-
-function BooleanPill({ value }: { value: boolean }) {
-  return <StatusPill label={value ? "Да" : "Нет"} tone={value ? "ok" : "neutral"} />;
-}
-
-function accountCodeLabel(code: string): string {
-  return code.startsWith("legacy:") ? "Импортирован из прежней версии" : `Код: ${code}`;
 }
 
 function TabButton({
@@ -483,6 +476,9 @@ export default function UiV2DataCatalogsPage() {
 
   function renderAccountsTable(rows: Account[]) {
     if (rows.length === 0) return <div className={styles.empty}>Нет записей в этой группе.</div>;
+    const showAccounting = accounts.some(
+      (account) => !account.include_in_capital || !account.include_in_returns,
+    );
     return (
       <div className={styles.tableWrap}>
         <table className={styles.table}>
@@ -491,8 +487,7 @@ export default function UiV2DataCatalogsPage() {
               <th scope="col">Название</th>
               <th scope="col">Тип</th>
               <th scope="col">Статус</th>
-              <th scope="col">В капитале</th>
-              <th scope="col">В доходности</th>
+              {showAccounting ? <th scope="col">Учёт</th> : null}
               <th scope="col">Действия</th>
             </tr>
           </thead>
@@ -502,10 +497,8 @@ export default function UiV2DataCatalogsPage() {
                 <td>
                   <div className={styles.cellStack}>
                     <strong>{account.name}</strong>
-                    {account.external_code ? (
-                      <span className={styles.cellHint}>
-                        {accountCodeLabel(account.external_code)}
-                      </span>
+                    {account.external_code && !account.external_code.startsWith("legacy:") ? (
+                      <span className={styles.cellHint}>Код: {account.external_code}</span>
                     ) : null}
                   </div>
                 </td>
@@ -516,12 +509,16 @@ export default function UiV2DataCatalogsPage() {
                     tone={accountStatusTone(account.status)}
                   />
                 </td>
-                <td>
-                  <BooleanPill value={account.include_in_capital} />
-                </td>
-                <td>
-                  <BooleanPill value={account.include_in_returns} />
-                </td>
+                {showAccounting ? (
+                  <td className={styles.cellHint}>
+                    {[
+                      !account.include_in_capital ? "не в капитале" : null,
+                      !account.include_in_returns ? "не в доходности" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </td>
+                ) : null}
                 <td>
                   <div className={styles.rowActions}>
                     <Button
@@ -536,31 +533,30 @@ export default function UiV2DataCatalogsPage() {
                         Данные ИИС
                       </Button>
                     ) : null}
-                    {account.status === "hidden" ? (
-                      <Button
+                    <OverflowMenu label={`Действия для счёта ${account.name}`}>
+                      {account.status === "hidden" ? (
+                        <OverflowMenuItem
+                          disabled={actionBusy}
+                          onClick={() => void setAccountStatus(account, "active")}
+                        >
+                          Показать
+                        </OverflowMenuItem>
+                      ) : account.status !== "closed" ? (
+                        <OverflowMenuItem
+                          disabled={actionBusy}
+                          onClick={() => void setAccountStatus(account, "hidden")}
+                        >
+                          Скрыть
+                        </OverflowMenuItem>
+                      ) : null}
+                      <OverflowMenuItem
                         disabled={actionBusy}
-                        onClick={() => void setAccountStatus(account, "active")}
-                        size="sm"
+                        onClick={() => openAccountDelete(account)}
+                        danger
                       >
-                        Показать
-                      </Button>
-                    ) : account.status !== "closed" ? (
-                      <Button
-                        disabled={actionBusy}
-                        onClick={() => void setAccountStatus(account, "hidden")}
-                        size="sm"
-                      >
-                        Скрыть
-                      </Button>
-                    ) : null}
-                    <Button
-                      disabled={actionBusy}
-                      onClick={() => openAccountDelete(account)}
-                      size="sm"
-                      variant="danger"
-                    >
-                      Удалить
-                    </Button>
+                        Удалить
+                      </OverflowMenuItem>
+                    </OverflowMenu>
                   </div>
                 </td>
               </tr>
@@ -580,9 +576,7 @@ export default function UiV2DataCatalogsPage() {
             <tr>
               <th scope="col">Название</th>
               <th scope="col">Тип</th>
-              <th scope="col">Идентификатор</th>
               <th scope="col">Источник котировки</th>
-              <th scope="col">Валюта</th>
               <th scope="col">Статус</th>
               <th scope="col">Действия</th>
             </tr>
@@ -595,6 +589,9 @@ export default function UiV2DataCatalogsPage() {
                   <td>
                     <div className={styles.cellStack}>
                       <strong>{instrument.name}</strong>
+                      <span className={styles.cellHint}>
+                        {instrument.isin ?? instrument.ticker ?? "Идентификатор не задан"}
+                      </span>
                       {instrument.nominal_value ? (
                         <span className={styles.cellHint}>
                           Номинал:{" "}
@@ -608,11 +605,11 @@ export default function UiV2DataCatalogsPage() {
                       ) : null}
                     </div>
                   </td>
-                  <td>{labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)}</td>
                   <td>
-                    <span className={styles.cellHint}>
-                      {instrument.isin ?? instrument.ticker ?? "Идентификатор не задан"}
-                    </span>
+                    <div className={styles.cellStack}>
+                      <span>{labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)}</span>
+                      <span className={styles.cellHint}>{instrument.currency}</span>
+                    </div>
                   </td>
                   <td>
                     <div className={styles.sourceCell}>
@@ -630,16 +627,12 @@ export default function UiV2DataCatalogsPage() {
                               {formatMarketIdentity(mapping.identity)}
                             </span>
                           ) : null}
-                          <Button onClick={() => openMapping(instrument)} size="sm">
-                            Настроить источник
-                          </Button>
                         </>
                       ) : (
                         <span className={styles.cellHint}>Состояние источника не загружено</span>
                       )}
                     </div>
                   </td>
-                  <td>{instrument.currency}</td>
                   <td>
                     <StatusPill
                       label={instrument.is_active ? "Активен" : "Неактивен"}
@@ -655,21 +648,28 @@ export default function UiV2DataCatalogsPage() {
                       >
                         Изменить
                       </Button>
-                      <Button
-                        disabled={actionBusy}
-                        onClick={() => void setInstrumentActive(instrument, !instrument.is_active)}
-                        size="sm"
-                      >
-                        {instrument.is_active ? "Деактивировать" : "Активировать"}
-                      </Button>
-                      <Button
-                        disabled={actionBusy}
-                        onClick={() => openInstrumentDelete(instrument)}
-                        size="sm"
-                        variant="danger"
-                      >
-                        Удалить
-                      </Button>
+                      <OverflowMenu label={`Действия для инструмента ${instrument.name}`}>
+                        {mapping ? (
+                          <OverflowMenuItem onClick={() => openMapping(instrument)}>
+                            Настроить источник
+                          </OverflowMenuItem>
+                        ) : null}
+                        <OverflowMenuItem
+                          disabled={actionBusy}
+                          onClick={() =>
+                            void setInstrumentActive(instrument, !instrument.is_active)
+                          }
+                        >
+                          {instrument.is_active ? "Деактивировать" : "Активировать"}
+                        </OverflowMenuItem>
+                        <OverflowMenuItem
+                          disabled={actionBusy}
+                          onClick={() => openInstrumentDelete(instrument)}
+                          danger
+                        >
+                          Удалить
+                        </OverflowMenuItem>
+                      </OverflowMenu>
                     </div>
                   </td>
                 </tr>
@@ -869,14 +869,6 @@ export default function UiV2DataCatalogsPage() {
     >
       <div className={styles.catalogs} data-testid="catalogs-page">
         {monthContent}
-        <div className={dataStyles.semanticNote}>
-          <strong>Изменяет данные</strong>
-          <span>
-            Создание, редактирование, статус, проверка связанных данных и сопоставления выполняются
-            только по явному действию. Поиск инструмента во внешнем источнике запускается только
-            кнопкой.
-          </span>
-        </div>
         <div aria-label="Каталоги" className={styles.catalogTabs} role="tablist">
           <TabButton
             active={tab === "accounts"}

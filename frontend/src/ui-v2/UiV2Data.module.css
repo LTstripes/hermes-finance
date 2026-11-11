@@ -225,6 +225,34 @@
   gap: 12px;
 }
 
+.sourceTable {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  background: var(--surface);
+  font-size: var(--t-sm);
+}
+
+.sourceTable th,
+.sourceTable td {
+  padding: var(--t-xs);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.sourceTable thead {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.sourceWarning {
+  margin-bottom: var(--t-xs);
+  color: var(--fc-ink);
+  font-size: var(--t-sm);
+}
+
 .family {
   padding: 14px 16px;
   border: 1px solid var(--line);
@@ -294,6 +322,7 @@
 
 .provenance table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -304,12 +333,13 @@
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .provenance th {
   color: var(--muted);
   font-weight: 650;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .disclosure {

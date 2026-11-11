@@ -318,12 +318,6 @@ export default function UiV2DataAppPage() {
             <SettingsPanel />
 
             <div className={styles.compatPanel} data-testid="data-app-tax">
-              <div className={dataStyles.badgeRow}>
-                <span className={`${dataStyles.modeBadge} ${dataStyles.modeBadgeMutate}`}>
-                  Изменяет данные
-                </span>
-                <span className={styles.note}>Вся шкала сохраняется одной операцией.</span>
-              </div>
               <TaxBracketsPanel />
             </div>
           </div>
