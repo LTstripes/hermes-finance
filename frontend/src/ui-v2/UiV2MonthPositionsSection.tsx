@@ -870,10 +870,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
       <Panel
         action={
           <span className={styles.total}>
-            Итого:
             {!context.workspace ? (
               <span title={formatMoney(totals.market)}>
-                {moneyWholeText(totals.market === null ? null : rub(totals.market), "—")} ·{" "}
+                Итого: {moneyWholeText(totals.market === null ? null : rub(totals.market), "—")} ·{" "}
               </span>
             ) : null}
             {filteredPositions.length} поз.
