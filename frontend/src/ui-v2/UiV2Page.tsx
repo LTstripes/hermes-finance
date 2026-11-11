@@ -33,6 +33,7 @@ import {
   sortReportingMonths,
 } from "./monthSelection";
 import styles from "./UiV2Home.module.css";
+import { UiV2HomeReturns } from "./UiV2HomeReturns";
 import {
   CapitalAreaChart,
   type CapitalChartPoint,
@@ -933,6 +934,13 @@ export default function UiV2Page() {
             passiveGoal={passiveGoal}
             ready={passiveReady}
             retry={() => void passiveQuery.refetch()}
+          />
+          <UiV2HomeReturns
+            mainSettled={
+              ![comparisonQuery, compositionQuery, passiveQuery, goalsQuery].some(
+                (query) => query.isPending,
+              )
+            }
           />
           <AllocationBlock
             comparison={comparisonReady ? comparisonQuery.data : undefined}
