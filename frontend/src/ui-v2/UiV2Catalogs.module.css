@@ -131,9 +131,9 @@
 
 .table {
   width: 100%;
-  min-width: 760px;
+  table-layout: fixed;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .table th,
@@ -142,6 +142,7 @@
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .table tr:last-child td {
@@ -151,20 +152,20 @@
 .table th {
   background: var(--soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   font-weight: 700;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .cellStack {
   display: grid;
   gap: 4px;
-  min-width: 120px;
+  min-width: 0;
 }
 
 .cellHint {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   line-height: 1.35;
 }
 
@@ -172,18 +173,22 @@
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-  min-width: 210px;
+  align-items: center;
+}
+
+.rowActions button {
+  white-space: nowrap;
 }
 
 .sourceCell {
   display: grid;
   gap: 7px;
-  min-width: 180px;
+  min-width: 0;
 }
 
 .sourceIdentity {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
@@ -240,20 +245,8 @@
     text-align: left;
   }
 
-  .table {
-    min-width: 700px;
-  }
-
   .rowActions {
     padding: 3px;
-  }
-
-  .table td:last-child {
-    position: sticky;
-    right: 0;
-    z-index: 1;
-    background: white;
-    box-shadow: -6px 0 10px rgba(19, 35, 52, 0.08);
   }
 }
 

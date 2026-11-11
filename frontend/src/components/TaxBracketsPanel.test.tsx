@@ -96,7 +96,12 @@ describe("TaxBracketsPanel", () => {
     expect(await screen.findByText("Год зафиксирован")).toBeInTheDocument();
     expect(screen.getByText(/январь/)).toBeInTheDocument();
     expect(screen.getByText(/февраль/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Ставка ступени 1")).toBeDisabled();
+    expect(screen.queryByLabelText("Ставка ступени 1")).toBeNull();
+    expect(screen.getByRole("columnheader", { name: "Доход за год, ₽" })).toBeInTheDocument();
+    expect(screen.getByText("до 100 000")).toBeInTheDocument();
+    expect(screen.getByText("свыше 100 000")).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Действия" })).toBeNull();
+    expect(document.querySelector("button:disabled")).toBeNull();
     expect(screen.queryByRole("button", { name: "Сохранить налоговые ступени" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Открыть год" }));

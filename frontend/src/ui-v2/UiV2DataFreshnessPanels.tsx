@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import type { ReactNode } from "react";
 
 import type { ProviderCapabilities } from "../api/providerCapabilities";
 import type {
@@ -140,11 +141,72 @@ function itemHasDetailTable(family: FreshnessFamily): boolean {
 export function FreshnessBody({
   monthId,
   summary,
+  closeStep = "readiness",
 }: {
   monthId: number;
   summary: FreshnessProvenanceSummary;
+  closeStep?: GuidedCloseStepId;
 }) {
-  const warnings = summary.reasons.filter((reason) => reason.severity === "warning");
+  const warnings = [
+    ...new Set(
+      [...summary.reasons, ...summary.families.flatMap((family) => family.reasons)]
+        .filter((reason) => reason.severity === "warning")
+        .map((reason) => reason.message),
+    ),
+  ];
+  return (
+    <>
+      {warnings.length > 0 ? (
+        <p className={dataStyles.sourceWarning}>
+          {warnings.join(" · ")}{" "}
+          <Link
+            to={monthlyCloseReturnPath({ monthId, origin: "monthly-close-v2", step: closeStep })}
+          >
+            Проверить в шаге месяца →
+          </Link>
+        </p>
+      ) : null}
+      <table className={dataStyles.sourceTable} aria-label="Состояние источников">
+        <thead>
+          <tr>
+            <th scope="col">Источник</th>
+            <th scope="col">Состояние</th>
+            <th scope="col">Действие</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.families.map((family) => {
+            const savedState = familySavedState(family);
+            const step = FAMILY_CLOSE_STEP[family.family_id] ?? null;
+            return (
+              <tr key={family.family_id} data-testid={`freshness-family-${family.family_id}`}>
+                <th scope="row">{family.title}</th>
+                <td>
+                  <span className={dataStyles.statusBadge} data-tone={savedState.tone}>
+                    {savedState.label}
+                  </span>
+                </td>
+                <td>
+                  {step ? (
+                    <Link
+                      to={monthlyCloseReturnPath({ monthId, origin: "monthly-close-v2", step })}
+                    >
+                      Открыть шаг закрытия →
+                    </Link>
+                  ) : family.family_id === "broker_positions" ? null : (
+                    <Link to={`/v2/data/months/${monthId}`}>Открыть месяц →</Link>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+export function FreshnessTechnical({ summary }: { summary: FreshnessProvenanceSummary }) {
   return (
     <>
       <dl className={dataStyles.clocks} data-testid="freshness-clocks">
@@ -169,19 +231,9 @@ export function FreshnessBody({
           <span className={dataStyles.meta}>не финансовое наблюдение</span>
         </div>
       </dl>
-      {warnings.length > 0 ? (
-        <section className={dataStyles.resultPanel}>
-          <h2>Предупреждения</h2>
-          <ul className={dataStyles.reasonList}>
-            {warnings.map((reason) => (
-              <li key={reason.code}>{reason.message}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
       <div className={dataStyles.familyList}>
         {summary.families.map((family) => (
-          <FamilyCard family={family} key={family.family_id} monthId={monthId} />
+          <FamilyCard family={family} key={family.family_id} />
         ))}
       </div>
     </>
@@ -213,9 +265,6 @@ export function MonthToolbar({
           ))}
         </select>
       </div>
-      <p className={dataStyles.hint}>
-        Диагностика по выбранному месяцу. Явно неверный месяц скрывает числа.
-      </p>
     </div>
   );
 }
@@ -225,15 +274,18 @@ export function CapabilitiesDisclosure({
   ready,
   failed = false,
   retry,
+  children,
 }: {
   profiles: ProviderCapabilities[] | undefined;
   ready: boolean;
   failed?: boolean;
   retry: () => void;
+  children?: ReactNode;
 }) {
   return (
     <details className={dataStyles.disclosure} data-testid="provider-capabilities">
-      <summary>Технические сведения об источнике</summary>
+      <summary>Технические сведения</summary>
+      {children}
       {!ready ? (
         failed ? (
           <p className={dataStyles.muted}>
@@ -279,20 +331,15 @@ export function CapabilitiesDisclosure({
   );
 }
 
-function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: number }) {
-  const step = FAMILY_CLOSE_STEP[family.family_id] ?? null;
-  const savedState = familySavedState(family);
+function FamilyCard({ family }: { family: FreshnessFamily }) {
   const lastApplied = familyLastApplied(family);
   return (
-    <article className={dataStyles.family} data-testid={`freshness-family-${family.family_id}`}>
+    <article className={dataStyles.family} data-testid={`freshness-technical-${family.family_id}`}>
       <div className={dataStyles.familyHeader}>
         <div>
           <p className={dataStyles.familyMeta}>Происхождение: {familyOrigin(family)}</p>
           <h3>{family.title}</h3>
         </div>
-        <span className={dataStyles.statusBadge} data-tone={savedState.tone}>
-          {savedState.label}
-        </span>
       </div>
       <dl className={dataStyles.familyState}>
         <div>
@@ -378,15 +425,6 @@ function FamilyCard({ family, monthId }: { family: FreshnessFamily; monthId: num
           ))}
         </ul>
       ) : null}
-      <div className={dataStyles.familyActions}>
-        {step ? (
-          <Link to={monthlyCloseReturnPath({ monthId, origin: "monthly-close-v2", step })}>
-            Открыть шаг закрытия →
-          </Link>
-        ) : family.family_id === "broker_positions" ? null : (
-          <span className={dataStyles.muted}>Обновление — вручную в редакторе месяца</span>
-        )}
-      </div>
     </article>
   );
 }

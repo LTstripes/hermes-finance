@@ -178,11 +178,13 @@ describe("UiV2DataCatalogsPage", () => {
     expect(
       screen.getByRole("heading", { name: "Справочники и сопоставления" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("columnheader", { name: "В капитале" })).toHaveLength(2);
-    expect(screen.getAllByRole("columnheader", { name: "В доходности" })).toHaveLength(2);
+    expect(screen.getAllByRole("columnheader", { name: "Учёт" })).toHaveLength(2);
+    expect(screen.queryByRole("columnheader", { name: "В капитале" })).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "В доходности" })).toBeNull();
     const activeRow = screen.getByRole("row", { name: /Синтетический брокерский счёт/ });
-    expect(within(activeRow).getByText("Да")).toBeInTheDocument();
-    expect(within(activeRow).getByText("Нет")).toBeInTheDocument();
+    expect(within(activeRow).getByText("не в доходности")).toBeInTheDocument();
+    expect(within(activeRow).getAllByRole("button")).toHaveLength(2);
+    expect(screen.queryByRole("menuitem")).toBeNull();
     expect(discoverInstrumentMappingMock).not.toHaveBeenCalled();
   });
 
@@ -194,6 +196,17 @@ describe("UiV2DataCatalogsPage", () => {
       "true",
     );
     expect(screen.getByTestId("data-month-context")).toHaveTextContent("Август 2031");
+  });
+
+  it("omits accounting defaults and legacy import captions", async () => {
+    listAccountsMock.mockResolvedValue([
+      { ...account, include_in_returns: true, external_code: "legacy:synthetic" },
+    ]);
+    renderPage();
+    await screen.findByTestId("catalog-accounts");
+    expect(screen.queryByRole("columnheader", { name: "Учёт" })).toBeNull();
+    expect(screen.queryByText("Импортирован из прежней версии")).toBeNull();
+    expect(screen.queryByText("Изменяет данные")).toBeNull();
   });
 
   it("requires explicit account mutations and confirmation for deletion", async () => {
@@ -213,13 +226,15 @@ describe("UiV2DataCatalogsPage", () => {
       ),
     );
 
-    await user.click(screen.getByRole("button", { name: "Скрыть" }));
+    await user.click(screen.getByRole("button", { name: `Действия для счёта ${account.name}` }));
+    await user.click(screen.getByRole("menuitem", { name: "Скрыть" }));
     await waitFor(() =>
       expect(updateAccountMock).toHaveBeenCalledWith(account.id, { status: "hidden" }),
     );
 
     const accountRow = screen.getByRole("row", { name: /Синтетический брокерский счёт/ });
-    await user.click(within(accountRow).getByRole("button", { name: "Удалить" }));
+    await user.click(within(accountRow).getByRole("button", { name: /Действия для счёта/ }));
+    await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
     const dialog = screen.getByRole("alertdialog");
     expect(dialog).toHaveTextContent("явное удаление записи справочника");
     expect(deleteAccountMock).not.toHaveBeenCalled();
@@ -247,7 +262,8 @@ describe("UiV2DataCatalogsPage", () => {
 
     await user.click(await screen.findByRole("tab", { name: /Инструменты/ }));
     expect(await screen.findByText("Синтетическая облигация")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Настроить источник" }));
+    await user.click(screen.getByRole("button", { name: /Действия для инструмента/ }));
+    await user.click(screen.getByRole("menuitem", { name: "Настроить источник" }));
     expect(discoverInstrumentMappingMock).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Найти в T-Invest" }));
     await waitFor(() =>
@@ -256,7 +272,10 @@ describe("UiV2DataCatalogsPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Закрыть" }));
     const instrumentRow = screen.getByRole("row", { name: /Синтетическая облигация/ });
-    await user.click(within(instrumentRow).getByRole("button", { name: "Удалить" }));
+    await user.click(
+      within(instrumentRow).getByRole("button", { name: /Действия для инструмента/ }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Удалить" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent("Нельзя удалить");
     await user.click(within(dialog).getByRole("button", { name: "Понятно" }));
