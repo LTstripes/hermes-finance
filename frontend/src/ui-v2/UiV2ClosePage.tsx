@@ -38,21 +38,21 @@ import {
 import UiV2MonthEditorPage, { type EditorSection } from "./UiV2MonthEditorPage";
 import {
   figureText,
+  INCOMPLETE_MONTH_COPY,
+  isIncompleteMonthDraft,
   MONTH_STEP_COPY,
   MonthKpis,
   MonthOverview,
-  MonthStepStrip,
   MonthReadiness,
-  isIncompleteMonthDraft,
-  INCOMPLETE_MONTH_COPY,
+  MonthStepStrip,
 } from "./UiV2MonthOverview";
 import overviewStyles from "./UiV2MonthOverview.module.css";
 import { UiV2MonthSources } from "./UiV2MonthSources";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
 import styles from "./UiV2Page.module.css";
-import { moneyText, moneyWholeText } from "./valueFormat";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2Skeleton } from "./UiV2StateBlocks";
+import { moneyText, moneyWholeText } from "./valueFormat";
 
 const MANUAL_SECTIONS = [
   "general",
@@ -382,7 +382,10 @@ export default function UiV2ClosePage() {
               {panel !== "close" ? (
                 <strong className={monthStyles.workTotal}>
                   {panel === "payouts" ? "Купоны и дивиденды: " : null}
-                  {panel === "payouts" || panel === "budget" || panel === "positions" ? (
+                  {panel === "payouts" ||
+                  panel === "budget" ||
+                  panel === "positions" ||
+                  panel === "brokers" ? (
                     <span id="month-panel-total" />
                   ) : panelStep ? (
                     closed && panelStep.figure?.kind === "money" ? (
@@ -416,6 +419,19 @@ export default function UiV2ClosePage() {
                 key={`sources:${workflow.month.id}:${panel}:${discardVersion}`}
                 month={workflow.month}
                 step={workflow.checklist?.steps.find((step) => step.id === "brokers")}
+                readinessRemarks={
+                  workflow.final_review.available
+                    ? workflow.final_review.close_readiness.items.filter((item) => {
+                        const destination = closeFindingPanel(item);
+                        return (
+                          (item.severity === "warning" || item.severity === "hard_blocker") &&
+                          item.code !== "empty_manual_month" &&
+                          (destination === "brokers" ||
+                            (!destination && !item.code.startsWith("salary")))
+                        );
+                      })
+                    : []
+                }
                 canClose={workflowReady && workflow.readiness.can_close}
                 onPendingChange={setUploadPending}
                 onDirtyChange={setJournalDirty}

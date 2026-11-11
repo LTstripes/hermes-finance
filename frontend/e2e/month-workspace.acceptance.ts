@@ -88,7 +88,7 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
       (await request.get(`/api/synthetic-broker-source/workspace-october-${suffix}`)).body(),
     ),
   );
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(page.getByText("Проверяем сохранённые выписки…", { exact: true })).toHaveCount(0);
   let sourceReadHeld = false;
   let releaseSourceRead = () => {};
@@ -115,7 +115,7 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
     })),
   );
   await expect(page.getByText(/Брокерский 711490[12].*: Сохран[её]н$/)).toHaveCount(2);
-  await openDisclosure(page, "Подробности сверки XML с инвестиционным отчётом");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await page.getByText("Расшифровка купонов и дивидендов — PDF Альфы", { exact: true }).click();
   await expect(page.locator('input[type="file"][accept=".xml"]')).toHaveCount(1);
   // Per-file Save labels precede the final list GET. Keyboard activation must
@@ -154,6 +154,13 @@ test("XML plus one Alfa PDF preview retains historical scope without a financial
 });
 
 async function openDisclosure(page: Page, name: string) {
+  const parsing = page.getByText("Подробнее о разборе файлов", { exact: true });
+  if (
+    name !== "Подробнее о разборе файлов" &&
+    (await parsing.count()) &&
+    !(await parsing.evaluate((element) => element.closest("details")?.open))
+  )
+    await parsing.click();
   const summary = page.getByText(name, { exact: true });
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
@@ -357,7 +364,7 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   ).toBeVisible();
   const savedFiles = page.getByRole("list", { name: "Сохранённые файлы", exact: true });
   await expect(savedFiles.getByRole("listitem")).toHaveCount(2);
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   // Upload ACK also retires the pending-write history sentinel. Wait for its
   // asynchronous POP before starting a new account navigation (as after Save).
   await expect
@@ -458,10 +465,12 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
     expect(delayedIntakeReads).toBeGreaterThan(0);
     // The disclosure is rendered only after the intake query leaves isFetching.
     await expect(
-      page.getByText("Подробности инструментов и предварительных выплат", { exact: true }),
-    ).toBeVisible({ timeout: 15000 });
+      page.getByRole("heading", { name: "Инструменты и предварительные выплаты", exact: true }),
+    ).toBeVisible({
+      timeout: 15000,
+    });
     await page.unroute(intakeListUrl);
-    await openDisclosure(page, "Подробности инструментов и предварительных выплат");
+    await openDisclosure(page, "Подробнее о разборе файлов");
     for (const name of ["Synthetic stock", "Synthetic bond"]) {
       await page.getByRole("button", { name, exact: true }).click();
       await expect(page.getByText(/Наблюдаемое количество: 10 на 2040-10-31/)).toBeVisible();
@@ -606,7 +615,7 @@ for (const width of [1280, 1440, 1920])
       await expect(table.getByLabel(/^Баланс —/)).toHaveValue("12 345 678,9");
       await expect(table.getByLabel(/^Получено —/)).toHaveValue("12 345,67");
       await tile(page, /Брокерские выписки/);
-      const sourceDetails = page.getByText("Подробности", { exact: true });
+      const sourceDetails = page.getByText("Подробнее о разборе файлов", { exact: true });
       await expect(sourceDetails).toBeVisible();
       await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
       await expect(page.getByLabel("Выбрать файлы", { exact: true })).toBeVisible();

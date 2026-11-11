@@ -10,18 +10,20 @@ import {
   uploadBrokerSources,
 } from "../../api/brokerSources";
 import { listInstruments } from "../../api/instruments";
-import { readSourceIntake, type SourceIntake } from "../../api/sourceIntake";
 import type { MonthChecklistStep } from "../../api/monthCloseWorkflow";
-import type { ReportingMonth } from "../../api/types";
+import { readSourceIntake, type SourceIntake } from "../../api/sourceIntake";
+import type { CloseReadinessItem, ReportingMonth } from "../../api/types";
 import { formatDate, formatMoney } from "../../lib/format";
 import { brokerSourceTitle } from "../../lib/ownerCopy";
 import { UNAVAILABLE_REASON } from "../../lib/reasonCopy";
+import { MonthPanelTotal } from "../../ui-v2/MonthPanelTotal";
+import workspaceStyles from "../../ui-v2/UiV2MonthWorkspace.module.css";
 import { confirmStatementApply } from "../../ui-v2/UiV2StatementImportSection";
 import { SavedInvestmentReports } from "../SavedInvestmentReports";
 import { SourceReportPreviewPanel } from "../SourceReportPreviewPanel";
 import { StatementImportPanel } from "../StatementImportPanel";
 import { ConfirmDialog } from "../ui";
-import { brokerIntakeCopy as copy } from "./ownerCopy";
+import { closedFindingCopy, brokerIntakeCopy as copy } from "./ownerCopy";
 import styles from "./SourceIntakeUpload.module.css";
 
 type Original = { file: File; document_sha256: string; filename_digest: string };
@@ -29,6 +31,11 @@ type Attempt = { originals: Original[]; requestId: string };
 const matches = (item: BrokerSource, original: Original) =>
   item.document_sha256 === original.document_sha256 &&
   item.filename_digest === original.filename_digest;
+
+function countText(count: number, forms: [string, string, string]): string {
+  const form = new Intl.PluralRules("ru").select(count);
+  return `${count} ${forms[form === "one" ? 0 : form === "few" ? 1 : 2]}`;
+}
 
 function Issue({ issue }: { issue: BrokerSourceIssue }) {
   const message = brokerSourceTitle(issue.code);
@@ -62,6 +69,8 @@ export function BrokerSourcesIntake({
   step,
   accountByIntake,
   children,
+  detailsOpen = false,
+  readinessRemarks = [],
   reportXmlFiles,
   onXmlFilesChange,
   onSaved,
@@ -74,6 +83,8 @@ export function BrokerSourcesIntake({
   step?: MonthChecklistStep;
   accountByIntake?: Record<number, number | null>;
   children?: ReactNode;
+  detailsOpen?: boolean;
+  readinessRemarks?: CloseReadinessItem[];
   reportXmlFiles?: File[];
   onXmlFilesChange?: (files: File[]) => void;
   onSaved: (file: File, intake: SourceIntake) => void;
@@ -84,6 +95,7 @@ export function BrokerSourcesIntake({
   const client = useQueryClient();
   const mounted = useRef(true);
   const running = useRef(false);
+  const [showAllIssues, setShowAllIssues] = useState(false);
   const [busy, setBusy] = useState(false);
   const [proofPending, setProofPending] = useState(false);
   const [xmlFiles, setXmlFiles] = useState<File[]>([]);
@@ -262,8 +274,7 @@ export function BrokerSourcesIntake({
       : ((item.intake_id == null
           ? undefined
           : accounts.data?.find((account) => account.id === accountByIntake?.[item.intake_id ?? -1])
-              ?.name) ??
-        (item.source_accounts.join(" / ") || copy.unknownAccount));
+              ?.name) ?? "Счёт не сопоставлен");
   function review(item: BrokerSource) {
     if (blocked) return;
     if (item.intake_id !== null) {
@@ -278,8 +289,49 @@ export function BrokerSourcesIntake({
     setPdf({ file: original.file, key: Date.now() });
   }
 
+  const fileIssues = items.flatMap((item) =>
+    (item.review_issues ?? item.exceptions.map((code) => ({ code }))).map((issue, index) => ({
+      issue,
+      key: `${item.document_sha256}:${index}`,
+      label: slotLabel(item),
+    })),
+  );
+  const accountCount = new Set(items.flatMap((item) => item.source_accounts)).size;
+  const remarkRows = [
+    ...fileIssues.map(({ issue, key, label }) => (
+      <Issue
+        key={key}
+        issue={{ ...issue, source_account: label === "Счёт не сопоставлен" ? null : label }}
+      />
+    )),
+    ...readinessRemarks.map((item) => {
+      const reason = brokerSourceTitle(item.code);
+      // This is the existing account-prefixed broker-readiness message, not a
+      // new account resolver or readiness decision. Keep unknown copy intact.
+      const account =
+        /^(.*): .*\. Проверь подробности в разделе «Месяц → Брокерские выписки»\.$/.exec(
+          item.message,
+        )?.[1];
+      const message =
+        account && reason !== UNAVAILABLE_REASON
+          ? `${account}: ${reason}`
+          : closedFindingCopy(item.message) || reason;
+      return (
+        <li key={`readiness:${item.code}:${item.message}:${JSON.stringify(item.context)}`}>
+          {message}
+        </li>
+      );
+    }),
+  ];
   return (
     <section aria-label={copy.title}>
+      <MonthPanelTotal
+        value={
+          query.isPending || query.isFetching || query.isError
+            ? "—"
+            : `${countText(accountCount, ["счёт", "счёта", "счетов"])} · ${countText(items.length, ["файл", "файла", "файлов"])}`
+        }
+      />
       {month.status !== "closed" && (
         <fieldset
           disabled={blocked}
@@ -340,40 +392,30 @@ export function BrokerSourcesIntake({
       )}
       {confirmationCount > 0 && <p>{copy.partial}</p>}
       {items.length > 0 && (
-        <ul aria-label={copy.savedFiles}>
+        <ul aria-label={copy.savedFiles} className={workspaceStyles.statementFiles}>
           {items.map((item) => (
             <li key={item.document_sha256}>
-              <strong>{slotLabel(item)}</strong>
+              <div className={workspaceStyles.statementIdentity}>
+                <strong>{slotLabel(item)}</strong>
+                {item.kind !== "income_pdf" ? (
+                  <small className={styles.contractNumber}>
+                    Договор: {item.source_accounts.join(" / ") || copy.unknownAccount}
+                  </small>
+                ) : null}
+              </div>
               <span>
-                {" "}
-                · {formatDate(item.covered_from)} — {formatDate(item.covered_to)} ·{" "}
+                {formatDate(item.covered_from)} — {formatDate(item.covered_to)}
+              </span>
+              <span>
                 {item.state === "file_saved"
                   ? "Файл сохранён"
                   : item.state === "needs_decision"
                     ? "Нужна проверка"
                     : "Данные приняты"}
               </span>
-              {item.kind !== "income_pdf" ? (
-                <small className={styles.contractNumber}>
-                  Договор: {item.source_accounts.join(" / ") || copy.unknownAccount}
-                </small>
-              ) : null}
               {item.state === "needs_decision" && (
                 <>
-                  {item.kind === "income_pdf" ? (
-                    <p>{copy.pdfDecision}</p>
-                  ) : (
-                    <ul>
-                      {(item.review_issues ?? item.exceptions.map((code) => ({ code }))).map(
-                        (issue: BrokerSourceIssue) => (
-                          <Issue
-                            key={[issue.code, issue.isin, issue.section, issue.ordinal].join(":")}
-                            issue={issue}
-                          />
-                        ),
-                      )}
-                    </ul>
-                  )}
+                  {item.kind === "income_pdf" ? <p>{copy.pdfDecision}</p> : null}
                   <button type="button" disabled={blocked} onClick={() => review(item)}>
                     {copy.reviewAction}
                   </button>
@@ -401,6 +443,17 @@ export function BrokerSourcesIntake({
           ))}
         </ul>
       )}
+      {remarkRows.length > 0 && (
+        <section aria-label="Замечания к выпискам">
+          <h3>Замечания к выпискам: {remarkRows.length}</h3>
+          <ul>{showAllIssues ? remarkRows : remarkRows.slice(0, 5)}</ul>
+          {remarkRows.length > 5 && (
+            <button type="button" onClick={() => setShowAllIssues((value) => !value)}>
+              {showAllIssues ? "Свернуть замечания" : `Показать все ${remarkRows.length}`}
+            </button>
+          )}
+        </section>
+      )}
       {[...new Set(messages)].map((message) => (
         <p role="status" key={message}>
           {message}
@@ -421,8 +474,9 @@ export function BrokerSourcesIntake({
           {copy.refresh}
         </button>
       )}
-      <details>
-        <summary>{copy.investmentDetails}</summary>
+      <details open={detailsOpen || undefined}>
+        <summary>Подробнее о разборе файлов</summary>
+        <h3>{copy.investmentDetails}</h3>
         {month.status !== "closed" && (
           <fieldset disabled={busy || applying || disabled || !!pdf || !!uncertain}>
             <legend>{copy.investmentReport}</legend>
@@ -439,8 +493,8 @@ export function BrokerSourcesIntake({
         <SavedInvestmentReports
           period={`${String(month.year)}-${String(month.month).padStart(2, "0")}`}
         />
+        {children}
       </details>
-      {children}
       <ConfirmDialog
         open={finishPdf}
         title={copy.finishReview}

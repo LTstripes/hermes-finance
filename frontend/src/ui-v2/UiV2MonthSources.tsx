@@ -2,9 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
-import { listAllSourceIntakes, type SourceIntake } from "../api/sourceIntake";
 import type { MonthChecklistStep } from "../api/monthCloseWorkflow";
-import type { ReportingMonth } from "../api/types";
+import { listAllSourceIntakes, type SourceIntake } from "../api/sourceIntake";
+import type { CloseReadinessItem, ReportingMonth } from "../api/types";
 import { BrokerMonthReview } from "../components/month-close/BrokerMonthReview";
 import { BrokerSourcesIntake } from "../components/month-close/BrokerSourcesIntake";
 import { useBrokerOriginalSession } from "../components/month-close/brokerOriginalSession";
@@ -19,7 +19,7 @@ import { legacyReturnsHref } from "./returns/ReturnsLegacyRedirect";
 import { SourceMonthReturn } from "./SourceMonthReturn";
 import { UiV2MonthInstruments } from "./UiV2MonthInstruments";
 import styles from "./UiV2MonthWorkspace.module.css";
-import { UiV2Skeleton, UiV2Notice } from "./UiV2StateBlocks";
+import { UiV2Notice, UiV2Skeleton } from "./UiV2StateBlocks";
 
 function sourceAccounts(intake: SourceIntake): string[] {
   return [
@@ -32,6 +32,7 @@ export function UiV2MonthSources({
   onReview,
   canClose,
   step,
+  readinessRemarks,
   onPendingChange,
   onDirtyChange,
 }: {
@@ -39,6 +40,7 @@ export function UiV2MonthSources({
   onReview?: (id: number) => void;
   canClose?: boolean;
   step?: MonthChecklistStep;
+  readinessRemarks?: CloseReadinessItem[];
   onPendingChange?: (value: boolean) => void;
   onDirtyChange?: (value: boolean) => void;
 }) {
@@ -372,8 +374,10 @@ export function UiV2MonthSources({
         <div className={styles.stack}>
           <BrokerSourcesIntake
             key={month.id}
+            detailsOpen={reviewExpanded || unresolved}
             month={month}
             step={step}
+            readinessRemarks={readinessRemarks}
             accountByIntake={Object.fromEntries(
               history.map((intake) => [intake.id, intake.state.account_id]),
             )}
@@ -385,8 +389,8 @@ export function UiV2MonthSources({
             onSaved={rememberSource}
             onReview={openSource}
           >
-            <details>
-              <summary>Подробности</summary>
+            <div>
+              <h3>Сохранённые источники месяца</h3>
               <p>Загрузи выписки, выбери счёт и проверь распознанные бумаги.</p>
               <section aria-label="Состояние источников месяца">
                 {list.isPending || list.isFetching ? (
@@ -527,15 +531,15 @@ export function UiV2MonthSources({
                   )}
                 </>
               )}
-            </details>
+            </div>
             {!changingScope &&
               !list.isPending &&
               !list.isError &&
               !list.isFetching &&
               !invalidAccount &&
               (!!account || sources.length > 0) && (
-                <details>
-                  <summary>Подробности инструментов и предварительных выплат</summary>
+                <section>
+                  <h3>Инструменты и предварительные выплаты</h3>
                   {!changingScope &&
                   !list.isPending &&
                   !list.isError &&
@@ -560,7 +564,7 @@ export function UiV2MonthSources({
                   ) : !invalidAccount && !account && sources.length > 0 ? (
                     <p>Выбери счёт источника, чтобы открыть инструменты и операции этого месяца.</p>
                   ) : null}
-                </details>
+                </section>
               )}
             <div id="month-source-review" tabIndex={-1}>
               <details open={reviewExpanded || unresolved}>
@@ -608,14 +612,14 @@ export function UiV2MonthSources({
               !list.isPending &&
               !list.isError &&
               !list.isFetching && (
-                <details>
-                  <summary>Подробности предварительного результата</summary>
+                <section>
+                  <h3>Предварительный результат</h3>
                   <SourceMonthReturn
                     key={`${account}:${period}`}
                     account={account}
                     period={period}
                   />
-                </details>
+                </section>
               )}
           </BrokerSourcesIntake>
         </div>

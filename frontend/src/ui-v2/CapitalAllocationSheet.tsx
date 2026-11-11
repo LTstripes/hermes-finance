@@ -56,7 +56,7 @@ function isZero(value: RiskMoneyValue | null | undefined): boolean {
  * One muted line for everything that limits a slice: unallocated amount,
  * support reasons and excluded rows. Said once, not per table (AGENTS).
  */
-function Limits({ metric, title }: { metric: RiskAllocationMetric; title: string }) {
+export function Limits({ metric, title }: { metric: RiskAllocationMetric; title: string }) {
   // Unassigned cash is its own row in the account slice; the same sum is not repeated below it.
   const shownAsRow = metric.items.some(
     (item) =>

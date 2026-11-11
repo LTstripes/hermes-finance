@@ -8,7 +8,12 @@ import { UiV2MonthSources } from "./UiV2MonthSources";
 
 // The unified uploader has its own mixed-file/recovery contract tests.
 vi.mock("../components/month-close/BrokerSourcesIntake", () => ({
-  BrokerSourcesIntake: ({ children }: { children?: import("react").ReactNode }) => children,
+  BrokerSourcesIntake: ({ children }: { children?: import("react").ReactNode }) => (
+    <details>
+      <summary>Подробнее о разборе файлов</summary>
+      {children}
+    </details>
+  ),
 }));
 
 vi.mock("../components/month-close/BrokerMonthReview", () => ({ BrokerMonthReview: () => null }));
@@ -97,7 +102,7 @@ function mount(
     </QueryClientProvider>,
   );
   if (disclose) {
-    fireEvent.click(screen.getByText("Подробности"));
+    fireEvent.click(screen.getByText("Подробнее о разборе файлов"));
   }
   return { onReview, fetcher };
 }
@@ -182,7 +187,6 @@ it("retains historical source-account selection without treating its original as
   expect(missingClosing).toHaveTextContent(
     "Нет полного месячного оригинала. Нужны остатки на 2031-08-31; историческое пересечение не доказывает конец месяца.",
   );
-  fireEvent.click(screen.getByText("Подробности предварительного результата"));
   const result = screen.getByRole("region", { name: "Предварительная доходность месяца" });
   const unavailable = await within(result).findByText(/нет доказанных границ этого месяца/);
   expect(unavailable).toBeVisible();
@@ -206,17 +210,13 @@ it("keeps technical source panels collapsed on ordinary entry", async () => {
   const sources = screen.getByRole("region", { name: "Брокерские выписки" });
   expect(within(sources).getByRole("heading", { name: "Брокерские выписки" })).toBeVisible();
   expect(screen.queryByText("Подробнее о разборе")).not.toBeInTheDocument();
-  for (const title of [
-    "Подробности",
-    "Подробности инструментов и предварительных выплат",
-    "Подробности разбора и сохранение месяца",
-  ]) {
-    expect(screen.getByText(title)).toBeVisible();
-  }
-  expect(screen.getByText("Подробности").closest("details")).not.toHaveAttribute("open");
-  expect(
-    screen.getByText("Подробности инструментов и предварительных выплат").closest("details"),
-  ).not.toHaveAttribute("open");
+  expect(screen.getByText("Подробнее о разборе файлов")).toBeVisible();
+  expect(screen.getByText("Подробнее о разборе файлов").closest("details")).not.toHaveAttribute(
+    "open",
+  );
+  expect(screen.getByText("Подробности разбора и сохранение месяца")).not.toBeVisible();
+  fireEvent.click(screen.getByText("Подробнее о разборе файлов"));
+  expect(screen.getByText("Подробности разбора и сохранение месяца")).toBeVisible();
   expect(
     screen.getByText("Подробности разбора и сохранение месяца").closest("details"),
   ).not.toHaveAttribute("open");
@@ -227,7 +227,7 @@ it("retains historical XML intake behind details without a second investment-rep
   await screen.findByText("Источник #1 · ACCOUNT-A / ACCOUNT-A-native");
   const upload = screen.getByLabelText("XML-файлы");
   expect(upload).not.toBeVisible();
-  fireEvent.click(screen.getByText("Подробности"));
+  fireEvent.click(screen.getByText("Подробнее о разборе файлов"));
   expect(upload).not.toBeVisible();
   fireEvent.click(screen.getByText("Исходники и повторный выбор файла"));
   expect(upload).toBeVisible();

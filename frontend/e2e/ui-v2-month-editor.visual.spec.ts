@@ -1233,7 +1233,7 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
     );
   expect(order.indexOf("brokers")).toBeLessThan(order.indexOf("positions"));
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
-  const instrumentDetails = page.getByText("Подробности инструментов и предварительных выплат", {
+  const instrumentDetails = page.getByText("Подробнее о разборе файлов", {
     exact: true,
   });
   await expect(instrumentDetails.locator("..")).not.toHaveAttribute("open");
@@ -1266,6 +1266,11 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page.getByRole("region", { name: "Будущие кандидаты (future)" })).toHaveCount(0);
   expect(previewBodies).toHaveLength(0);
   await nav.getByRole("link", { name: /Брокерские выписки/ }).click();
+  {
+    const parsing = page.getByText("Подробнее о разборе файлов", { exact: true });
+    if (!(await parsing.evaluate((element) => element.closest("details")?.open)))
+      await parsing.click();
+  }
   await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).click();
   await page.getByLabel("Сохранённый разбор").selectOption("1");
   await page.getByLabel("Валюта предложения счёта").fill("RUB");
@@ -1277,6 +1282,11 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page).toHaveURL(/panel=payouts/);
   await page.goBack();
   await expect(page).toHaveURL(/panel=brokers/);
+  {
+    const parsing = page.getByText("Подробнее о разборе файлов", { exact: true });
+    if (!(await parsing.evaluate((element) => element.closest("details")?.open)))
+      await parsing.click();
+  }
   await page.getByText("Подробности разбора и сохранение месяца", { exact: true }).click();
   await expect(page.getByLabel("Валюта предложения счёта")).toHaveValue("");
   await nav.getByRole("link", { name: /^Выплаты/ }).click();
@@ -1393,7 +1403,7 @@ test("month sources collapse historical overlaps and isolate saved draft payouts
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/v2/close?month=7&panel=brokers");
-    const sourceDetails = page.getByText("Подробности", { exact: true });
+    const sourceDetails = page.getByText("Подробнее о разборе файлов", { exact: true });
     await expect(sourceDetails).toBeVisible();
     await expect(sourceDetails.locator("..")).not.toHaveAttribute("open");
     await sourceDetails.focus();
@@ -1599,6 +1609,83 @@ test("closed month internal panels fit all desktop widths and zoom @viewport-own
     }
   }
   expect(writes).toEqual([]);
+});
+
+test("closed statement remarks and file counts stay explicit at desktop zoom @viewport-owned", async ({
+  page,
+}, info) => {
+  const workflow = makeUiV2Workflow();
+  if (!workflow.final_review.available) throw new Error("Missing final review");
+  workflow.final_review.close_readiness.items = Array.from({ length: 7 }, (_, index) => ({
+    severity: "warning",
+    code: "commission_basis_unresolved",
+    context: {},
+    message: `Синтетический счёт ${index}: не подтверждено, включена ли комиссия в сумму сделки. Проверь подробности в разделе «Месяц → Брокерские выписки».`,
+  }));
+  const calls = await installApi(page, { workflow });
+  await page.route("**/api/broker-months/intakes?*", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/months/7/broker-sources", (route) =>
+    route.fulfill({
+      json: {
+        reporting_month_id: 7,
+        status: "ok",
+        confirmation_count: 0,
+        severity: null,
+        financial_effects: 0,
+        items: ["SYNTHETIC-A", "SYNTHETIC-B", null].map((account, index) => ({
+          document_sha256: `synthetic-${index}`,
+          filename_digest: `name-${index}`,
+          intake_id: null,
+          kind: account ? "mybroker_xml" : "income_pdf",
+          slot: "synthetic",
+          source_accounts: account ? [account] : [],
+          covered_from: "2030-04-01",
+          covered_to: "2030-04-30",
+          state: "financial_data_accepted",
+          exceptions: [],
+          review_issues: [],
+          head_seq: 1,
+          request_ids: [],
+        })),
+      },
+    }),
+  );
+  for (const [width, zoom] of [
+    [1024, 1],
+    [1280, 1],
+    [1280, 1.25],
+    [1440, 1],
+    [1440, 1.25],
+    [1920, 1],
+    [1920, 1.25],
+  ]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/v2/close?month=7&panel=brokers");
+    await page.evaluate((value) => {
+      document.documentElement.style.zoom = String(value);
+    }, zoom);
+    const remarks = page.getByRole("region", { name: "Замечания к выпискам" });
+    await expect(remarks.getByRole("heading")).toHaveText("Замечания к выпискам: 7");
+    await expect(remarks.getByRole("listitem")).toHaveCount(5);
+    await expect(page.locator("#month-panel-total")).toHaveText("2 счёта · 3 файла");
+    await expect(
+      page.getByRole("list", { name: "Сохранённые файлы" }).getByRole("listitem"),
+    ).toHaveCount(3);
+    for (const account of ["SYNTHETIC-A", "SYNTHETIC-B"])
+      await expect(page.getByText(`Договор: ${account}`, { exact: true })).toHaveCount(1);
+    await expect(
+      page.getByText("Подробнее о разборе файлов", { exact: true }).locator(".."),
+    ).not.toHaveAttribute("open");
+    await remarks.getByRole("button", { name: "Показать все 7" }).click();
+    await expect(remarks.getByRole("listitem")).toHaveCount(7);
+    await expect(page.locator('input[type="file"]')).toHaveCount(0);
+    await expectNoTableOverflow(page);
+    await page.screenshot({
+      path: info.outputPath(`closed-statements-${width}-${zoom}.png`),
+      fullPage: true,
+    });
+  }
+  expect(calls.every((call) => call.startsWith("GET "))).toBe(true);
 });
 
 test("month forms inline inputs fit desktop zoom and 720px with visible keyboard focus @viewport-owned", async ({

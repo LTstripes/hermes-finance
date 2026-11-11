@@ -27,7 +27,12 @@ import { UiV2MonthSources } from "./UiV2MonthSources";
 
 // The unified uploader has its own mixed-file/recovery contract tests.
 vi.mock("../components/month-close/BrokerSourcesIntake", () => ({
-  BrokerSourcesIntake: ({ children }: { children?: import("react").ReactNode }) => children,
+  BrokerSourcesIntake: ({ children }: { children?: import("react").ReactNode }) => (
+    <details>
+      <summary>Подробнее о разборе файлов</summary>
+      {children}
+    </details>
+  ),
 }));
 
 vi.mock("../api/accounts", () => ({ listAccounts: vi.fn() }));
@@ -205,7 +210,7 @@ function mount(closed = false, existingClient?: QueryClient, path = "/v2/close?s
     </QueryClientProvider>
   );
   const view = render(content);
-  fireEvent.click(screen.getByText("Подробности"));
+  fireEvent.click(screen.getByText("Подробнее о разборе файлов"));
   return { ...view, session, client };
 }
 const picker = () => screen.getByLabelText("Счёт источника месяца");

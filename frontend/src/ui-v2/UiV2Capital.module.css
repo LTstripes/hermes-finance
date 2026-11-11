@@ -62,80 +62,10 @@ section.top {
   gap: 8px 16px;
 }
 
-/* Property: mortgage share of the estimate as one bar. */
-.property {
-  display: grid;
-  gap: 18px;
-}
-
-.propertyList {
-  display: grid;
-  gap: 18px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.propertyList li {
-  display: grid;
-  gap: 8px;
-}
-
-.propertyHead {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  font-weight: var(--w-medium);
-}
-
-.propertyBar {
-  display: block;
-  height: 14px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px #cfdbeb;
-}
-
-.propertyBar span {
-  display: block;
-  height: 100%;
-  background: #8e99a8;
-}
-
-.propertyKey {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
-  color: var(--muted);
-  font-size: var(--t-xs);
-}
-
-.propertyKey i {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 4px;
-  border-radius: 3px;
-  vertical-align: -1px;
-}
-
-.propertyKey i[data-part="debt"] {
-  background: #8e99a8;
-}
-
-.propertyKey i[data-part="value"] {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px #cfdbeb;
-}
-
-.property .facts {
-  margin: 0;
-}
-
 /* Holdings */
 .filterBar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -158,20 +88,11 @@ section.top {
 
 .holdingGroups {
   display: grid;
-  gap: 22px;
+  gap: 0;
 }
 
 .holdingGroup {
-  display: grid;
-  gap: 4px;
-}
-
-.holdingGroup h3 {
-  color: var(--muted);
-  font-size: var(--t-xs);
-  font-weight: var(--w-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  display: block;
 }
 
 .holdingList {
@@ -183,11 +104,11 @@ section.top {
 
 .holdingRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
-  min-height: 52px;
-  padding: 8px 0;
+  min-height: 40px;
+  padding: 6px 0 6px 16px;
   border-bottom: 1px solid var(--line-2);
 }
 
@@ -211,23 +132,87 @@ section.top {
 .holdingMeta {
   color: var(--muted);
   font-size: var(--t-xs);
+  overflow-wrap: anywhere;
+}
+
+.filterBar > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .holdingAmount {
-  min-width: 120px;
-}
-
-.excludedBadge {
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--line-2);
-  color: var(--muted);
-  font-size: var(--t-xs);
-  white-space: nowrap;
+  min-width: 0;
 }
 
 @media (max-width: 1180px) {
   section.top {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.accountSummary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 64px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.accountSummary strong::before {
+  content: "▸ ";
+  color: var(--muted);
+}
+.holdingGroup[open] > .accountSummary strong::before {
+  content: "▾ ";
+}
+.accountSummary::-webkit-details-marker {
+  display: none;
+}
+.moreHoldings {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 8px 16px;
+  font: inherit;
+  cursor: pointer;
+}
+.propertyTiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.propertyTiles > div {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 16px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.propertyTiles span,
+.propertyTiles small {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.propertyTiles strong {
+  font-size: var(--t-lg);
+}
+.propertyTiles p {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.groupSwitch {
+  display: flex;
+  gap: 4px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.groupSwitch button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--surface);
 }

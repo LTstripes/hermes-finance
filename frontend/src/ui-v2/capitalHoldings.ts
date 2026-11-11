@@ -6,8 +6,9 @@ import type {
   MoneyValue,
   PositionSnapshot,
 } from "../api/types";
-import { canonicalId, validIsin } from "./returns/navigation";
+import { toKopecks } from "../lib/money";
 import { POSITION_TYPE_LABELS } from "./assetClasses";
+import { canonicalId, validIsin } from "./returns/navigation";
 
 /**
  * Observe-only holdings rows for the native Capital page.
@@ -42,6 +43,17 @@ export type HoldingFilter =
   | null;
 
 export const UNASSIGNED_CASH_KEY = "unassigned_cash";
+
+/** Sort existing amounts exactly; no monetary aggregate is derived. */
+export function rankedNonzeroHoldings(rows: HoldingRow[]): HoldingRow[] {
+  return rows
+    .filter((row) => toKopecks(row.amount.amount) !== 0n)
+    .sort((a, b) => {
+      const left = toKopecks(a.amount.amount),
+        right = toKopecks(b.amount.amount);
+      return left === right ? a.key.localeCompare(b.key) : left > right ? -1 : 1;
+    });
+}
 
 const RISK_POSITION_TYPES = new Set(["stock", "bond", "fund", "currency", "gold", "other"]);
 export function isRiskAssetClass(value: string): boolean {

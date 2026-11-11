@@ -79,6 +79,15 @@ function setup(path = "/v2/close") {
     const url = new URL(String(input), "http://localhost");
     const method = init?.method ?? "GET";
     if (url.pathname === "/api/months" && method === "GET") return jsonResponse(state.months);
+    if (url.pathname === "/api/months/12/broker-sources" && method === "GET")
+      return jsonResponse({
+        reporting_month_id: 12,
+        items: [],
+        confirmation_count: 0,
+        status: "empty",
+        severity: null,
+        financial_effects: 0,
+      });
     if (url.pathname === "/api/months/12/draft-payouts" && method === "GET")
       return jsonResponse({
         reporting_month_id: 12,
@@ -184,6 +193,50 @@ describe("native Monthly Close work mode", () => {
     expect(within(kpis).getByText("Инвестиции")).toBeVisible();
     expect(within(kpis).getByText("Обязательные расходы")).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Что осталось" })).toBeNull();
+  });
+
+  it("shows closed-month source readiness remarks without opening technical tools or changing readiness", async () => {
+    const { mount, state } = setup("/v2/close?month=12&panel=brokers");
+    state.workflow = closedFrom(state.workflow);
+    state.months = state.months.map((month) =>
+      month.id === 12 ? { ...month, status: "closed" } : month,
+    );
+    if (!state.workflow.final_review.available) throw new Error("Missing final review");
+    state.workflow.final_review.close_readiness.items = [
+      ...Array.from({ length: 7 }, (_, index) => ({
+        code: "commission_basis_unresolved",
+        severity: "warning" as const,
+        message: `Synthetic account ${index}: не подтверждено, включена ли комиссия в сумму сделки. Проверь подробности в разделе «Месяц → Брокерские выписки».`,
+        context: {},
+      })),
+      {
+        code: "active_account_snapshot_missing",
+        severity: "warning",
+        message: "Synthetic position-only finding",
+        context: {},
+      },
+      {
+        code: "salary_history_unknown",
+        severity: "warning",
+        message: "Synthetic salary-only finding",
+        context: {},
+      },
+    ];
+    mount();
+    const remarks = await screen.findByRole("region", { name: "Замечания к выпискам" });
+    expect(within(remarks).getByRole("heading")).toHaveTextContent("7");
+    expect(within(remarks).getAllByRole("listitem")).toHaveLength(5);
+    expect(remarks).toHaveTextContent("Synthetic account 0");
+    expect(remarks).toHaveTextContent("Учёт комиссии не подтверждён");
+    expect(remarks).not.toHaveTextContent("Проверь подробности");
+    expect(screen.queryByText("Synthetic position-only finding")).toBeNull();
+    expect(screen.queryByText("Synthetic salary-only finding")).toBeNull();
+    expect(screen.getByText("Подробнее о разборе файлов").closest("details")).not.toHaveAttribute(
+      "open",
+    );
+    fireEvent.click(within(remarks).getByRole("button", { name: "Показать все 7" }));
+    expect(within(remarks).getAllByRole("listitem")).toHaveLength(7);
+    expect(state.writes).toEqual([]);
   });
 
   it("shows the incomplete draft first while preserving explicit close confirmation", async () => {

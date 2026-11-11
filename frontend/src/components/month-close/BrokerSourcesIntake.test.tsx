@@ -61,6 +61,7 @@ function mount(closed = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={client}>
+      <strong id="month-panel-total" />
       <BrokerSourcesIntake
         month={{ ...month, status: closed ? "closed" : "draft" }}
         onSaved={onSaved}
@@ -207,6 +208,25 @@ it("keeps recognized structure information in details after remount without requ
   );
 });
 
+it("shows five file remarks in a closed month and expands the exact remaining count", async () => {
+  const item = source("SYNTHETIC-CONTRACT");
+  item.review_issues = Array.from({ length: 7 }, (_, index) => ({
+    code: "source_intake_currency_conflict",
+    name: `Synthetic instrument ${index}`,
+    ordinal: index,
+  }));
+  api.read.mockResolvedValue(state([item]));
+  mount(true);
+  const remarks = await screen.findByRole("region", { name: "Замечания к выпискам" });
+  expect(within(remarks).getByRole("heading")).toHaveTextContent("7");
+  expect(within(remarks).getAllByRole("listitem")).toHaveLength(5);
+  expect(screen.getByText("1 счёт · 1 файл")).toBeVisible();
+  expect(screen.getAllByText(/SYNTHETIC-CONTRACT/)).toHaveLength(1);
+  fireEvent.click(within(remarks).getByRole("button", { name: "Показать все 7" }));
+  expect(within(remarks).getAllByRole("listitem")).toHaveLength(7);
+  expect(api.upload).not.toHaveBeenCalled();
+});
+
 it("shows the witnessed operation and one review action while accepted siblings remain saved", async () => {
   api.read.mockResolvedValue(
     state([
@@ -232,7 +252,7 @@ it("shows the witnessed operation and one review action while accepted siblings 
   const { onReview } = mount();
   await screen.findByText("Нужен разбор файлов: 1");
   expect(screen.getByText(/Synthetic bond/)).toBeVisible();
-  expect(screen.getByText(/Счёт IIS.*17.01.2030.*Сумма:/)).toBeVisible();
+  expect(screen.getByText(/17.01.2030.*Сумма:/)).toBeVisible();
   expect(screen.getAllByRole("button", { name: "Разобрать операцию" })).toHaveLength(1);
   expect(screen.getByText(/Остальные данные сохранены/)).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Разобрать операцию" }));

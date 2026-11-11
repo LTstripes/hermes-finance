@@ -2,6 +2,13 @@ import { expect, type Page, type Locator, test } from "@playwright/test";
 import { displayMetric } from "../src/ui-v2/returns/model";
 
 async function openDisclosure(page: Page, name: string) {
+  const parsing = page.getByText("Подробнее о разборе файлов", { exact: true });
+  if (
+    name !== "Подробнее о разборе файлов" &&
+    (await parsing.count()) &&
+    !(await parsing.evaluate((element) => element.closest("details")?.open))
+  )
+    await parsing.click();
   const summary = page.getByText(name, { exact: true });
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
@@ -54,7 +61,7 @@ test("API Decimal boundary rates retain exact precision in Month and compact Ret
   ]) {
     fraction = value;
     await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
-    await openDisclosure(page, "Подробности предварительного результата");
+    await openDisclosure(page, "Подробнее о разборе файлов");
     const card = page.getByRole("region", { name: "Предварительная доходность месяца" });
     await expect(card).toContainText(expected);
     await card.getByText("Источники расчёта", { exact: true }).click();
@@ -70,7 +77,7 @@ test("API Decimal boundary rates retain exact precision in Month and compact Ret
     await expect(monthly).toContainText(compact);
     await expect(monthly.locator(`[title="${expected}"]`)).toBeVisible();
     await page.goBack();
-    await openDisclosure(page, "Подробности предварительного результата");
+    await openDisclosure(page, "Подробнее о разборе файлов");
     await expect(card).toContainText(expected);
   }
   await page.getByRole("region", { name: "Предварительная доходность месяца" }).screenshot({
@@ -150,7 +157,7 @@ test("source structure proof survives Back/Reload and unrelated financial ABA", 
   ).toHaveCount(knownMonths ? 1 : 0);
   await proof.screenshot({ path: info.outputPath("source-proof-current-reload.png") });
   await page.goto(`/v2/close?month=${inputs.month_id}&source_account=1234567&panel=brokers`);
-  await openDisclosure(page, "Подробности предварительного результата");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   const summary = page.getByRole("region", {
     name: "Предварительная доходность месяца",
     exact: true,
@@ -195,10 +202,10 @@ test("source structure proof survives Back/Reload and unrelated financial ABA", 
     await expect(history).toHaveAttribute("href", "/v2/returns");
   } else await expect(history).toHaveAttribute("href", "/v2/returns");
   await page.goBack();
-  await openDisclosure(page, "Подробности предварительного результата");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(summary).toContainText("600 ₽");
   await page.reload();
-  await openDisclosure(page, "Подробности предварительного результата");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(summary).toContainText("600 ₽");
   expect(writes).toEqual([
     "/api/source-returns/proofs/preview",
@@ -209,7 +216,7 @@ test("source structure proof survives Back/Reload and unrelated financial ABA", 
   );
   await request.post("/api/synthetic-proof-aba");
   await page.reload();
-  await openDisclosure(page, "Подробности предварительного результата");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(summary).toBeVisible();
   // Classification ABA retires financial evidence, not immutable source structure.
   await expect(summary).toContainText(/600\s*₽/);
@@ -376,7 +383,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   await page.goto(
     `/v2/close?month=${month.id}&source_account=2222222&instrument_isin=${stock}&panel=brokers`,
   );
-  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   const panel = page.getByRole("region", { name: "Бумаги и выплаты" });
   await expect(panel.getByRole("region", { name: `Инструмент ${stock}` })).toBeVisible();
   await expect(page.getByText(/снимок 01.06.2030/i)).toBeVisible();
@@ -441,9 +448,9 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   expect(
     (await (await request.get("/api/synthetic-month-state")).json()).provider_requests,
   ).toHaveLength(requestsAfterA);
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await page.getByLabel("Счёт источника месяца").selectOption("3333333");
-  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(panel.getByText(/Выбранный счёт: 3333333 · нативный: 3333333-000/)).toBeVisible();
   await panel.getByRole("button", { name: "Синтетическая акция месяца", exact: true }).click();
   await expect(panel.getByLabel("Сохранённая дата количества")).toHaveValue("2030-05-31");
@@ -488,7 +495,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   const providerCount = (await (await request.get("/api/synthetic-month-state")).json())
     .provider_requests.length;
   await page.reload();
-  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(panel.getByRole("region", { name: `Инструмент ${bond}` })).toBeVisible();
   await expect(
     panel.getByRole("table", { name: "Actual для сверки · включая события после даты количества" }),
@@ -498,7 +505,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   ).toHaveLength(providerCount);
   await panel.getByRole("button", { name: "Синтетическая акция месяца", exact: true }).click();
   await page.goBack();
-  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(panel.getByRole("region", { name: `Инструмент ${bond}` })).toBeVisible();
   await page.evaluate(() => {
     document.documentElement.style.zoom = "1.25";

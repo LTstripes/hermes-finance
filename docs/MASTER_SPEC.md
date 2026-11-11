@@ -91,6 +91,10 @@ exact amounts in tooltips, preserving the shared sub-ruble and UNKNOWN rules.
 The statements tile provides one multi-file XML/PDF intake with account-statement
 slots and an income-payment PDF slot. Three files are a typical example, not a
 required set. Type, account and payment period are detected by the existing readers.
+The statement panel header counts accounts and files from the displayed saved-file
+read. Rows show mapped account names, the contract once, period and saved state.
+File and source-readiness remarks are visible in plain language (five initially, with explicit expansion);
+technical parsing tools share one **Подробнее о разборе файлов** disclosure.
 Successful files survive a failed sibling; only problematic files need retry.
 The ordinary view shows **Всё в порядке**, a partial upload result or **Нужен разбор файлов: N**.
 Only unresolved findings offer one **Разобрать операцию** action opening the existing
@@ -427,8 +431,13 @@ source sections must not be presented as fixable merely by classifying cash rows
 C2 owns the formulas and evidence gates. The additive flow bridge preserves the legacy API
 decomposition; Capital uses the flow bridge with a legacy fallback.
 
-Capital places the existing allocation by asset class/account and largest
-positions below its main chart, followed by property and Где лежит капитал.
+Capital places the existing asset-class allocation below its main chart, then
+one **Счета и позиции** table grouped by account or class. Backend group amounts
+and shares stay authoritative; groups show three largest nonzero rows and an
+explicit expansion for the rest. The top-five backend total follows on one line.
+The first group opens initially; an explicit holding filter opens its matching groups.
+**Обзор · Распределение** tabs retain the month. Property value, mortgage balance
+and coverage are three separate tiles outside liquid capital.
 The duplicated current-snapshot, class-change, linked-pair and portfolio-performance
 blocks are removed from this page; their data, calculations and dedicated tools
 are retained. Instrument names lead directly to the standalone instrument page,
