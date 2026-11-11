@@ -571,7 +571,7 @@ export default function UiV2ReportPage() {
           <span className={styles.reportContextLinks}>
             {latestClosed ? (
               <Link to="/v2">
-                Текущий отчёт: {formatMonth(latestClosed.year, latestClosed.month)} →
+                Последний закрытый месяц: {formatMonth(latestClosed.year, latestClosed.month)} →
               </Link>
             ) : null}
             <Link to="/v2">Мои финансы</Link>

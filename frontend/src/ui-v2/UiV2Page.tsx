@@ -40,6 +40,7 @@ import {
   PassiveBarsChart,
   type PassiveChartPoint,
   shortRub,
+  shortWholeRub,
   type WaterfallStep,
 } from "./UiV2HomeCharts";
 import pageStyles from "./UiV2Page.module.css";
@@ -547,6 +548,9 @@ function AllocationBlock({
     color: CLASS_COLOR[item.asset_class] ?? "var(--c-cash)",
     amount: item.amount,
     share: shareable && total ? moneySharePercent(item.amount.amount, total.amount, 1) : null,
+    // Compare exact minor units before rounding a non-zero share to one decimal.
+    tinyShare:
+      shareable && total && toKopecks(item.amount.amount) * 1000n < toKopecks(total.amount),
   }));
   return (
     <section className={`${styles.block} ${styles.s5}`} aria-labelledby="composition-title">
@@ -588,7 +592,9 @@ function AllocationBlock({
                 <span>{row.label}</span>
                 <strong className="money">{whole(row.amount)}</strong>
                 <span className={styles.share}>
-                  {row.share === null ? "" : percentText(row.share, 1, { share: true })}
+                  {row.share === null
+                    ? ""
+                    : percentText(row.tinyShare ? "0.01" : row.share, 1, { share: true })}
                 </span>
               </li>
             ))}
@@ -623,7 +629,7 @@ function ChangeBlock({
       label: formatMonth(previous.year, previous.month).split(/\s/)[0],
       kind: "start",
       value: moneyToChartNumber(previous.liquid_capital_net.amount),
-      text: shortRub(moneyToChartNumber(previous.liquid_capital_net.amount)),
+      text: shortWholeRub(previous.liquid_capital_net.amount),
     });
     const push = (key: string, label: string, chartLabel: string, amount: MoneyValue) => {
       const value = moneyToChartNumber(amount.amount);
@@ -633,7 +639,7 @@ function ChangeBlock({
         label: chartLabel,
         kind: "step",
         value,
-        text: `${value > 0 ? "+" : value < 0 ? "−" : ""}${shortRub(Math.abs(value))}`,
+        text: shortWholeRub(amount.amount, true),
       });
     };
     for (const item of explanation.residual_asset_class_deltas) {
@@ -648,7 +654,7 @@ function ChangeBlock({
         label: pair.account_name,
         kind: "step",
         value,
-        text: `${value > 0 ? "+" : value < 0 ? "−" : ""}${shortRub(Math.abs(value))}`,
+        text: shortWholeRub(pair.net_contribution_delta.amount, true),
       });
     }
     steps.push({
@@ -656,7 +662,7 @@ function ChangeBlock({
       label: formatMonth(current.year, current.month).split(/\s/)[0],
       kind: "end",
       value: moneyToChartNumber(current.liquid_capital_net.amount),
-      text: shortRub(moneyToChartNumber(current.liquid_capital_net.amount)),
+      text: shortWholeRub(current.liquid_capital_net.amount),
     });
   }
   return (
