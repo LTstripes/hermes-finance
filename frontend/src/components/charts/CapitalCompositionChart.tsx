@@ -21,16 +21,17 @@ import {
   buildCapitalCompositionSeries,
   type CapitalCompositionDatum,
 } from "../../lib/capitalComposition";
+import { classMeta } from "../../ui-v2/assetClasses";
 import { EmptyState } from "../ui";
 
 export type CapitalCompositionMode = "amount" | "share";
 
-const CLASS_META: Record<string, { label: string; color: string }> = {
-  cash: { label: "Наличные", color: "#b9c4b9" },
-  deposits: { label: "Депозиты", color: "#6f786f" },
-  stocks: { label: "Акции", color: "#27734c" },
-  bonds: { label: "Облигации", color: "#9a6a1d" },
-  gold_other: { label: "Золото и прочее", color: "#172019" },
+const CLASS_META: Record<string, { color: string }> = {
+  cash: { color: "#b9c4b9" },
+  deposits: { color: "#6f786f" },
+  stocks: { color: "#27734c" },
+  bonds: { color: "#9a6a1d" },
+  gold_other: { color: "#172019" },
 };
 
 /** --ink of styles/tokens.css; SVG attributes need a literal colour. */
@@ -57,11 +58,10 @@ function metaFor(assetClass: string, index: number, classColors?: Record<string,
   const base =
     CLASS_META[assetClass] ??
     ({
-      label: assetClass,
       color: FALLBACK_COLORS[index % FALLBACK_COLORS.length],
-    } as { label: string; color: string });
+    } as { color: string });
   const override = classColors?.[assetClass];
-  return override ? { ...base, color: override } : base;
+  return { label: classMeta(assetClass).label, color: override ?? base.color };
 }
 
 function axisPercent(value: number) {

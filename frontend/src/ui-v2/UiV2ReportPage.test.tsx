@@ -160,10 +160,9 @@ describe("UI v2 historical report", () => {
     expect(context).toHaveTextContent("Май 2031");
     expect(context).toHaveTextContent("Снимок 31.05.2031");
     expect(context).toHaveTextContent("Источник: Вручную");
-    expect(within(context).getByRole("link", { name: /^Текущий отчёт: Июль/ })).toHaveAttribute(
-      "href",
-      "/v2",
-    );
+    expect(
+      within(context).getByRole("link", { name: /^Последний закрытый месяц: Июль/ }),
+    ).toHaveAttribute("href", "/v2");
     expect(within(context).getByRole("link", { name: "Капитал" })).toHaveAttribute(
       "href",
       "/v2/capital",

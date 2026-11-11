@@ -1117,7 +1117,7 @@ test("ui-v2 Capital desktop: closed composition, allocation and holdings stay bo
   await expect(page.getByRole("table", { name: "Крупнейшие позиции" })).toBeVisible();
   await expect(page.getByTestId("capital-class-cash")).toContainText("803 900 ₽");
   await expect(page.getByTestId("capital-bucket-unassigned_cash")).toContainText(
-    "Наличные без привязки к счёту",
+    "Деньги без привязки к счёту",
   );
   await expect(page.getByTestId("capital-holding-cash-702")).toContainText(
     "не входит в ликвидный капитал",

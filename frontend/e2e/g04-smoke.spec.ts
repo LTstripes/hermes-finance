@@ -17,18 +17,20 @@ test("G04 smoke: retired v1 entry redirects to the native UI", async ({ page }) 
   await expect(page.getByRole("heading", { level: 1, name: "Капитал" })).toBeVisible();
   await expect(page.getByRole("main")).toHaveAttribute("aria-busy", "false");
 
-  const settings = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === "/api/settings" && response.request().method() === "GET",
-  );
+  // Capture the body as soon as it arrives; Chromium may discard it during navigation.
+  const settings = page
+    .waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/settings" &&
+        response.request().method() === "GET",
+    )
+    .then(async (response) => ({ response, data: await response.json() }));
   await page.getByRole("link", { name: "Настройки", exact: true }).click();
   await expect(page).toHaveURL(/\/v2\/data\/app$/);
   await expect(page.getByRole("heading", { level: 1, name: "Настройки" })).toBeVisible();
-  const response = await settings;
+  const { response, data } = await settings;
   expect(response.ok()).toBe(true);
-  await expect(page.getByLabel("Локаль", { exact: true })).toHaveValue(
-    (await response.json()).locale,
-  );
+  await expect(page.getByLabel("Локаль", { exact: true })).toHaveValue(data.locale);
 });
 
 async function openBrokerReview(page: Page, accountId: number) {

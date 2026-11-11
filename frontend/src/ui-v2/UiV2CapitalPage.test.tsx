@@ -560,7 +560,7 @@ it("presents account buckets, rows and exclusion labels without summing rows", a
   mount();
 
   expect(await screen.findByTestId("capital-bucket-unassigned_cash")).toHaveTextContent(
-    "Наличные без привязки к счёту",
+    "Деньги без привязки к счёту",
   );
   expect(await screen.findByTestId("capital-holding-cash-701")).toHaveTextContent(
     "Синтетический кошелёк",

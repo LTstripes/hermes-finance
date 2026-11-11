@@ -14,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { toKopecks } from "../lib/money";
 import { formatMoney } from "../lib/format";
 import { rubleAxisTick } from "./rubleAxis";
 import styles from "./UiV2Home.module.css";
@@ -42,6 +43,14 @@ const TICK = { fontSize: 11, fill: C.muted };
 /** Short chart label: "5,2 млн", "128 тыс", "634". */
 export function shortRub(value: number): string {
   return rubleAxisTick(value).replace(/\s?₽$/, "").replace("тыс.", "тыс");
+}
+
+/** Whole-ruble bar labels; round the source string HALF_UP before compact display. */
+export function shortWholeRub(amount: string, signed = false): string {
+  const kopecks = toKopecks(amount);
+  const rubles = ((kopecks < 0n ? -kopecks : kopecks) + 50n) / 100n;
+  const sign = rubles === 0n ? "" : kopecks < 0n ? "−" : signed ? "+" : "";
+  return `${sign}${shortRub(Number(rubles))}`;
 }
 
 export type CapitalChartPoint = {
