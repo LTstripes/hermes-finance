@@ -22,14 +22,17 @@ export function UiV2HomeReturns({ mainSettled }: { mainSettled: boolean }) {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
     if (!mainSettled) return;
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const frame = requestAnimationFrame(() => {
       // A task after the frame lets the main widgets paint before this heavy read.
       timer = setTimeout(() => setEnabled(true), 0);
     });
+    // Hidden or background windows do not run animation frames; start anyway.
+    const fallback = setTimeout(() => setEnabled(true), 250);
     return () => {
       cancelAnimationFrame(frame);
       clearTimeout(timer);
+      clearTimeout(fallback);
     };
   }, [mainSettled]);
   const query = useQuery({
