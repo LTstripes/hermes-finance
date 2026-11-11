@@ -17,11 +17,12 @@ import type {
   ReportingMonth,
   SavingAllocation,
 } from "../api/types";
-import { ConfirmDialog, Table, Td, Th } from "../components/ui";
+import { ConfirmDialog, OverflowMenu, OverflowMenuItem, Table, Td, Th } from "../components/ui";
 import { formatMoney } from "../lib/format";
 import { EXPENSE_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, toKopecks, sumMoneyAmounts } from "../lib/money";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
+import { MonthMoneyInput } from "./MonthMoneyInput";
 import styles from "./UiV2MonthEditor.module.css";
 
 /** Leaf section id reserved for Integrator wiring (#563, after #558). */
@@ -163,13 +164,25 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
   const [delExpense, setDelExpense] = useState<ExpenseEntry | null>(null);
   const [delSaving, setDelSaving] = useState<SavingAllocation | null>(null);
   const [delPlan, setDelPlan] = useState<PlannedBudgetLine | null>(null);
+  const expenseEditRef = useRef<HTMLInputElement>(null);
   const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
   const [editExpense, setEditExpense] = useState<ExpenseDraft | null>(null);
+  const savingEditRef = useRef<HTMLInputElement>(null);
   const [editingSavingId, setEditingSavingId] = useState<number | null>(null);
   const [editSaving, setEditSaving] = useState<SavingDraft | null>(null);
+  const planEditRef = useRef<HTMLInputElement>(null);
   const [editingPlanId, setEditingPlanId] = useState<number | null>(null);
   const [editPlan, setEditPlan] = useState<PlanDraft | null>(null);
 
+  useEffect(() => {
+    if (editingExpenseId !== null) expenseEditRef.current?.focus();
+  }, [editingExpenseId]);
+  useEffect(() => {
+    if (editingSavingId !== null) savingEditRef.current?.focus();
+  }, [editingSavingId]);
+  useEffect(() => {
+    if (editingPlanId !== null) planEditRef.current?.focus();
+  }, [editingPlanId]);
   const operation = useRef(0);
 
   const localDirty =
@@ -803,7 +816,76 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
           const groups = budgetGroups.filter(
             (group) => (group.expenseType === "mandatory") === (expenseGroup.id === "mandatory"),
           );
-          if (!rows.length && !groups.length) return null;
+          if (readOnly && !rows.length && !groups.length) return null;
+          const addingHere = (expType === "mandatory") === (expenseGroup.id === "mandatory");
+          const addRow = !readOnly ? (
+            <tr>
+              <Td
+                colSpan={
+                  plan.length
+                    ? 3 + Number(editingExpenseId !== null)
+                    : 3 +
+                      Number(editingExpenseId !== null) +
+                      Number(rows.some((row) => row.notes?.trim()) || editingExpenseId !== null)
+                }
+              >
+                {addingHere ? (
+                  <form
+                    className={styles.addExpenseRow}
+                    onSubmit={(event) => void addExpense(event)}
+                  >
+                    <label>
+                      Категория расхода
+                      <input
+                        required
+                        value={expCategory}
+                        onChange={(event) => {
+                          setExpCategory(event.target.value);
+                          setExpenseDraftTouched(true);
+                        }}
+                      />
+                    </label>
+                    <label htmlFor={`budget-add-${expenseGroup.id}`}>
+                      Сумма расхода
+                      <MonthMoneyInput
+                        aria-label="Сумма расхода"
+                        id={`budget-add-${expenseGroup.id}`}
+                        required
+                        value={expAmount}
+                        onChange={(value) => {
+                          setExpAmount(value);
+                          setExpenseDraftTouched(true);
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Комментарий расхода
+                      <input
+                        value={expNotes}
+                        onChange={(event) => {
+                          setExpNotes(event.target.value);
+                          setExpenseDraftTouched(true);
+                        }}
+                      />
+                    </label>
+                    <button disabled={busy} type="submit">
+                      Добавить расход
+                    </button>
+                  </form>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || expenseDraftTouched}
+                    onClick={() =>
+                      setExpType(expenseGroup.id === "mandatory" ? "mandatory" : "other")
+                    }
+                  >
+                    + Добавить расход
+                  </button>
+                )}
+              </Td>
+            </tr>
+          ) : null;
           return (
             <section key={expenseGroup.id} aria-label={expenseGroup.title}>
               <h3>
@@ -856,12 +938,32 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                 >
                                   <summary>Расходы: {group.actual.length}</summary>
                                   {group.actual.map((row) => (
-                                    <div className={styles.budgetEntry} key={row.id}>
+                                    <fieldset
+                                      className={styles.budgetEntry}
+                                      key={row.id}
+                                      onKeyDown={(event) => {
+                                        if (busy) return;
+                                        if (event.key === "Escape") {
+                                          event.preventDefault();
+                                          setEditingExpenseId(null);
+                                          setEditExpense(null);
+                                        }
+                                        if (
+                                          event.key === "Enter" &&
+                                          event.target instanceof HTMLInputElement &&
+                                          editingExpenseId === row.id
+                                        ) {
+                                          event.preventDefault();
+                                          void handleSaveExpenseEdit();
+                                        }
+                                      }}
+                                    >
                                       {editingExpenseId === row.id && editExpense ? (
                                         <>
                                           <label>
                                             Категория расхода
                                             <input
+                                              ref={expenseEditRef}
                                               value={editExpense.category}
                                               onChange={(event) =>
                                                 setEditExpense({
@@ -887,15 +989,14 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                               <option value="other">Прочее</option>
                                             </select>
                                           </label>
-                                          <label>
+                                          <label htmlFor={`budget-expense-${row.id}`}>
                                             Сумма расхода
-                                            <input
+                                            <MonthMoneyInput
+                                              aria-label="Сумма расхода"
+                                              id={`budget-expense-${row.id}`}
                                               value={editExpense.amount}
-                                              onChange={(event) =>
-                                                setEditExpense({
-                                                  ...editExpense,
-                                                  amount: event.target.value,
-                                                })
+                                              onChange={(value) =>
+                                                setEditExpense({ ...editExpense, amount: value })
                                               }
                                             />
                                           </label>
@@ -917,7 +1018,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                               onClick={() => void handleSaveExpenseEdit()}
                                               type="button"
                                             >
-                                              OK
+                                              Готово
                                             </button>
                                           ) : null}
                                           {!readOnly ? (
@@ -939,9 +1040,9 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                             {formatMoney(moneyAmount(row.amount))}
                                             {row.notes ? ` · ${row.notes}` : ""}
                                           </span>
-                                          <div>
+                                          <OverflowMenu label="Действия строки">
                                             {!readOnly ? (
-                                              <button
+                                              <OverflowMenuItem
                                                 disabled={busy || readOnly}
                                                 onClick={() => {
                                                   setEditingExpenseId(row.id);
@@ -955,21 +1056,21 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                                 type="button"
                                               >
                                                 Изменить
-                                              </button>
+                                              </OverflowMenuItem>
                                             ) : null}
                                             {!readOnly ? (
-                                              <button
+                                              <OverflowMenuItem
                                                 disabled={busy || readOnly}
                                                 onClick={() => setDelExpense(row)}
                                                 type="button"
                                               >
                                                 Удалить
-                                              </button>
+                                              </OverflowMenuItem>
                                             ) : null}
-                                          </div>
+                                          </OverflowMenu>
                                         </>
                                       )}
-                                    </div>
+                                    </fieldset>
                                   ))}
                                 </details>
                               ) : null}
@@ -981,12 +1082,32 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                               <details open={group.planned.some((row) => row.id === editingPlanId)}>
                                 <summary>План: {group.planned.length}</summary>
                                 {group.planned.map((row) => (
-                                  <div className={styles.budgetEntry} key={row.id}>
+                                  <fieldset
+                                    className={styles.budgetEntry}
+                                    key={row.id}
+                                    onKeyDown={(event) => {
+                                      if (busy) return;
+                                      if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        setEditingPlanId(null);
+                                        setEditPlan(null);
+                                      }
+                                      if (
+                                        event.key === "Enter" &&
+                                        event.target instanceof HTMLInputElement &&
+                                        editingPlanId === row.id
+                                      ) {
+                                        event.preventDefault();
+                                        void handleSavePlanEdit();
+                                      }
+                                    }}
+                                  >
                                     {editingPlanId === row.id && editPlan ? (
                                       <>
                                         <label>
                                           Категория плана
                                           <input
+                                            ref={planEditRef}
                                             value={editPlan.category}
                                             onChange={(event) =>
                                               setEditPlan({
@@ -1012,15 +1133,14 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                             <option value="other">Прочее</option>
                                           </select>
                                         </label>
-                                        <label>
+                                        <label htmlFor={`budget-plan-${row.id}`}>
                                           Сумма плана
-                                          <input
+                                          <MonthMoneyInput
+                                            aria-label="Сумма плана"
+                                            id={`budget-plan-${row.id}`}
                                             value={editPlan.planned_amount}
-                                            onChange={(event) =>
-                                              setEditPlan({
-                                                ...editPlan,
-                                                planned_amount: event.target.value,
-                                              })
+                                            onChange={(value) =>
+                                              setEditPlan({ ...editPlan, planned_amount: value })
                                             }
                                           />
                                         </label>
@@ -1042,7 +1162,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                             onClick={() => void handleSavePlanEdit()}
                                             type="button"
                                           >
-                                            OK
+                                            Готово
                                           </button>
                                         ) : null}
                                         {!readOnly ? (
@@ -1064,9 +1184,9 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                           {formatMoney(moneyAmount(row.planned_amount))}
                                           {row.notes ? ` · ${row.notes}` : ""}
                                         </span>
-                                        <div>
+                                        <OverflowMenu label="Действия строки">
                                           {!readOnly ? (
-                                            <button
+                                            <OverflowMenuItem
                                               disabled={busy || readOnly}
                                               onClick={() => {
                                                 setEditingPlanId(row.id);
@@ -1080,21 +1200,21 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                               type="button"
                                             >
                                               Изменить
-                                            </button>
+                                            </OverflowMenuItem>
                                           ) : null}
                                           {!readOnly ? (
-                                            <button
+                                            <OverflowMenuItem
                                               disabled={busy || readOnly}
                                               onClick={() => setDelPlan(row)}
                                               type="button"
                                             >
                                               Удалить
-                                            </button>
+                                            </OverflowMenuItem>
                                           ) : null}
-                                        </div>
+                                        </OverflowMenu>
                                       </>
                                     )}
-                                  </div>
+                                  </fieldset>
                                 ))}
                               </details>
                             ) : null}
@@ -1102,10 +1222,9 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                         </tr>
                       );
                     })}
+                    {addRow}
                   </tbody>
                 </Table>
-              ) : expenses.length === 0 ? (
-                <p>Расходов пока нет.</p>
               ) : (
                 <Table className={styles.budgetTable}>
                   <thead>
@@ -1123,10 +1242,29 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                     {rows.map((row) => {
                       const editing = editingExpenseId === row.id && editExpense;
                       return (
-                        <tr key={row.id}>
+                        <tr
+                          key={row.id}
+                          onKeyDown={(event) => {
+                            if (busy) return;
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              setEditingExpenseId(null);
+                              setEditExpense(null);
+                            }
+                            if (
+                              event.key === "Enter" &&
+                              event.target instanceof HTMLInputElement &&
+                              editingExpenseId === row.id
+                            ) {
+                              event.preventDefault();
+                              void handleSaveExpenseEdit();
+                            }
+                          }}
+                        >
                           <Td>
                             {editing ? (
                               <input
+                                ref={expenseEditRef}
                                 aria-label="Категория расхода"
                                 onChange={(event) =>
                                   setEditExpense({ ...editExpense, category: event.target.value })
@@ -1161,12 +1299,12 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                           ) : null}
                           <Td numeric>
                             {editing ? (
-                              <input
+                              <MonthMoneyInput
                                 aria-label="Сумма расхода"
-                                onChange={(event) =>
-                                  setEditExpense({ ...editExpense, amount: event.target.value })
-                                }
                                 value={editExpense.amount}
+                                onChange={(value) =>
+                                  setEditExpense({ ...editExpense, amount: value })
+                                }
                               />
                             ) : (
                               formatMoney(moneyAmount(row.amount))
@@ -1197,7 +1335,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                       onClick={() => void handleSaveExpenseEdit()}
                                       type="button"
                                     >
-                                      OK
+                                      Готово
                                     </button>
                                   ) : null}
                                   {!readOnly ? (
@@ -1214,9 +1352,9 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                   ) : null}
                                 </>
                               ) : (
-                                <>
+                                <OverflowMenu label="Действия строки">
                                   {!readOnly ? (
-                                    <button
+                                    <OverflowMenuItem
                                       disabled={busy || readOnly}
                                       onClick={() => {
                                         setEditingExpenseId(row.id);
@@ -1230,83 +1368,31 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                       type="button"
                                     >
                                       Изменить
-                                    </button>
+                                    </OverflowMenuItem>
                                   ) : null}
                                   {!readOnly ? (
-                                    <button
+                                    <OverflowMenuItem
                                       disabled={busy || readOnly}
                                       onClick={() => setDelExpense(row)}
                                       type="button"
                                     >
                                       Удалить
-                                    </button>
+                                    </OverflowMenuItem>
                                   ) : null}
-                                </>
+                                </OverflowMenu>
                               )}
                             </Td>
                           ) : null}
                         </tr>
                       );
                     })}
+                    {addRow}
                   </tbody>
                 </Table>
               )}
             </section>
           );
         })}
-        {!readOnly ? (
-          <form className={styles.form} onSubmit={(event) => void addExpense(event)}>
-            <label>
-              Категория расхода
-              <input
-                onChange={(event) => {
-                  setExpCategory(event.target.value);
-                  setExpenseDraftTouched(true);
-                }}
-                required
-                value={expCategory}
-              />
-            </label>
-            <label>
-              Тип расхода
-              <select
-                onChange={(event) => {
-                  setExpType(event.target.value);
-                  setExpenseDraftTouched(true);
-                }}
-                value={expType}
-              >
-                <option value="mandatory">Обязательный</option>
-                <option value="comfortable">Комфортный</option>
-                <option value="other">Прочее</option>
-              </select>
-            </label>
-            <label>
-              Сумма расхода
-              <input
-                onChange={(event) => {
-                  setExpAmount(event.target.value);
-                  setExpenseDraftTouched(true);
-                }}
-                required
-                value={expAmount}
-              />
-            </label>
-            <label>
-              Комментарий расхода
-              <input
-                onChange={(event) => {
-                  setExpNotes(event.target.value);
-                  setExpenseDraftTouched(true);
-                }}
-                value={expNotes}
-              />
-            </label>
-            <button disabled={busy} type="submit">
-              Добавить расход
-            </button>
-          </form>
-        ) : null}
         <section aria-label="План бюджета месяца">
           {plan.length ? (
             <p>
@@ -1400,10 +1486,29 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                   {savings.map((row) => {
                     const editing = editingSavingId === row.id && editSaving;
                     return (
-                      <tr key={row.id}>
+                      <tr
+                        key={row.id}
+                        onKeyDown={(event) => {
+                          if (busy) return;
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setEditingSavingId(null);
+                            setEditSaving(null);
+                          }
+                          if (
+                            event.key === "Enter" &&
+                            event.target instanceof HTMLInputElement &&
+                            editingSavingId === row.id
+                          ) {
+                            event.preventDefault();
+                            void handleSaveSavingEdit();
+                          }
+                        }}
+                      >
                         <Td>
                           {editing ? (
                             <input
+                              ref={savingEditRef}
                               aria-label="Направление накопления"
                               onChange={(event) =>
                                 setEditSaving({ ...editSaving, destination: event.target.value })
@@ -1416,12 +1521,10 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                         </Td>
                         <Td numeric>
                           {editing ? (
-                            <input
+                            <MonthMoneyInput
                               aria-label="Сумма накопления"
-                              onChange={(event) =>
-                                setEditSaving({ ...editSaving, amount: event.target.value })
-                              }
                               value={editSaving.amount}
+                              onChange={(value) => setEditSaving({ ...editSaving, amount: value })}
                             />
                           ) : (
                             formatMoney(moneyAmount(row.amount))
@@ -1451,7 +1554,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                   onClick={() => void handleSaveSavingEdit()}
                                   type="button"
                                 >
-                                  OK
+                                  Готово
                                 </button>
                                 <button
                                   disabled={busy}
@@ -1465,8 +1568,8 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                 </button>
                               </>
                             ) : (
-                              <>
-                                <button
+                              <OverflowMenu label="Действия строки">
+                                <OverflowMenuItem
                                   disabled={busy || readOnly}
                                   onClick={() => {
                                     setEditingSavingId(row.id);
@@ -1479,15 +1582,15 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                   type="button"
                                 >
                                   Изменить
-                                </button>
-                                <button
+                                </OverflowMenuItem>
+                                <OverflowMenuItem
                                   disabled={busy || readOnly}
                                   onClick={() => setDelSaving(row)}
                                   type="button"
                                 >
                                   Удалить
-                                </button>
-                              </>
+                                </OverflowMenuItem>
+                              </OverflowMenu>
                             )}
                           </Td>
                         ) : null}

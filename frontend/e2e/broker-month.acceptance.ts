@@ -272,7 +272,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await expect(instruments.getByText(/Наблюдаемое количество: 10 на 2035-09-30/)).toBeVisible();
   expect(previews).toHaveLength(0);
   await expect(
-    instruments.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+    instruments.getByRole("button", { name: "Запросить предварительные выплаты Т-Инвест" }),
   ).toHaveCount(0);
   // Provider reconciliation remains in bond-source.acceptance; Month retains quantity/Back/Reload.
   await selectSourceAccount(page, "7113502");

@@ -79,6 +79,15 @@ actual payouts precede collapsed forecasts. The statements panel takes its
 warning count from the same checklist step as the month navigation; file Save
 status remains a separate fact. These changes do not replace section Save,
 readback, validation or the authoritative backend values.
+In open months, expense edits use **Готово**, Enter to save and Escape to cancel,
+with focus on the first field. Each expense group has an add row; uncommon row
+actions for expenses, debts and property use **⋯**. Position creation and its
+instrument mini-form open explicitly; manual prices are edited in the table and
+saved through the existing position writer. **Подтянуть котировки** opens the
+existing explicit preview and selected-row Apply. Closed month step marks use
+**✓** as a presentation of the closed lifecycle, while the separate remarks keep
+their authoritative checklist state. Month figures use whole-ruble display with
+exact amounts in tooltips, preserving the shared sub-ruble and UNKNOWN rules.
 The statements tile provides one multi-file XML/PDF intake with account-statement
 slots and an income-payment PDF slot. Three files are a typical example, not a
 required set. Type, account and payment period are detected by the existing readers.

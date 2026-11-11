@@ -618,7 +618,7 @@ for (const width of [1280]) {
       await tabs.getByRole("link", { name: "Активы", exact: true }).click();
       await expect(page.getByRole("alertdialog")).toBeVisible();
       await page.getByRole("button", { name: "Остаться", exact: true }).click();
-      await expect(page.getByLabel("Сумма расхода", { exact: true })).toHaveValue("123.45");
+      await expect(page.getByLabel("Сумма расхода", { exact: true })).toHaveValue("123,45");
       await page.getByRole("button", { name: "Добавить расход", exact: true }).click();
       await expect(page.getByText("Расход сохранён и подтверждён.")).toBeVisible();
       const write = calls.indexOf("POST /api/expenses");
@@ -750,7 +750,8 @@ for (const width of [1280]) {
       expect(await page.locator(".money").count()).toBeGreaterThan(0);
 
       // Open the stacked editor below the readonly row.
-      await page.getByRole("button", { name: /Изменить долг/ }).click();
+      await page.getByRole("button", { name: /Действия для долга/ }).click();
+      await page.getByRole("menuitem", { name: /Изменить долг/ }).click();
       const editor = page.getByRole("form", { name: /Редактирование долга/ });
       await expect(editor).toBeVisible();
       await expect(editor.getByLabel("Название долга")).toBeVisible();
@@ -792,7 +793,8 @@ for (const width of [1280]) {
 
       // Link editor keeps the same reachable treatment with a long account name.
       await editor.getByRole("button", { name: "Отмена" }).click();
-      await page.getByRole("button", { name: "Связать счёт" }).click();
+      await page.getByRole("button", { name: /Действия для долга/ }).click();
+      await page.getByRole("menuitem", { name: "Связать счёт" }).click();
       const linkEditor = page.getByRole("form", { name: /Связь долга/ });
       await expect(linkEditor).toBeVisible();
       await linkEditor.scrollIntoViewIfNeeded();
@@ -1067,7 +1069,8 @@ test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @vie
       expect(rateBox).not.toBeNull();
       expect(Math.abs((payBox?.y ?? 0) - (rateBox?.y ?? 0))).toBeLessThan(2);
       expect((payBox?.x ?? 0) + (payBox?.width ?? 0)).toBeLessThan(rateBox?.x ?? 0);
-      await page.getByRole("button", { name: /Изменить объект/ }).click();
+      await page.getByRole("button", { name: /Действия для объекта/ }).click();
+      await page.getByRole("menuitem", { name: /Изменить объект/ }).click();
       const editor = page.getByRole("region", { name: "Изменение объекта недвижимости" });
       await expect(editor.getByLabel("Ежемесячный платёж")).toBeVisible();
       await expectNoTableOverflow(page);
@@ -1247,7 +1250,7 @@ test("ui-v2 Month payout entry source actual forecast historical date Back Reloa
   await expect(page.getByText(/не заменяет закрывающий EOD 2030-05-31/)).toBeVisible();
   expect(previewBodies).toEqual([]);
   await expect(
-    page.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+    page.getByRole("button", { name: "Запросить предварительные выплаты Т-Инвест" }),
   ).toHaveCount(0);
   expect(previewBodies).toEqual([]);
   await page.screenshot({
@@ -1694,6 +1697,82 @@ test("month forms inline inputs fit desktop zoom and 720px with visible keyboard
           ),
       ).toBeGreaterThanOrEqual(3);
       await expectNoTableOverflow(page);
+    }
+  }
+});
+
+test("month positions keep three manual rows compact, disclosures explicit and prices cancellable @viewport-owned", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  await installMonthUx(page);
+  await page.route("**/api/positions?*", (route) =>
+    route.fulfill({
+      json: Array.from({ length: 3 }, (_, index) => ({
+        id: 31 + index,
+        reporting_month_id: 7,
+        account_id: 11,
+        instrument_id: 21,
+        quantity: "3.000000",
+        average_cost_per_unit: uxMoney("12345.67"),
+        market_price_per_unit: uxMoney("13456.78"),
+        market_value: uxMoney("40370.34"),
+        cost_basis: uxMoney("37037.01"),
+        unrealized_result: uxMoney("3333.33"),
+        accrued_interest: index === 0 ? uxMoney("12.34") : null,
+        price_source: "manual",
+        price_date: index === 0 ? "2030-04-30" : "2030-05-31",
+      })),
+    }),
+  );
+  for (const width of [1024, 1280, 1440, 1920]) {
+    for (const zoom of [1, 1.25]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/v2/close?month=7&panel=positions");
+      await page.evaluate((scale) => {
+        document.documentElement.style.zoom = String(scale);
+      }, zoom);
+      const area = page.locator("#month-work-area");
+      await expect(area.getByRole("textbox", { name: /^Цена позиции/ })).toHaveCount(3);
+      await expect(page.getByLabel("Название инструмента")).not.toBeVisible();
+      await expect(page.getByLabel("Количество", { exact: true })).not.toBeVisible();
+      await expect(page.getByRole("button", { name: "Обновить котировки" })).not.toBeVisible();
+      await expectNoTableOverflow(page);
+      const header = await page.getByRole("heading", { level: 1 }).boundingBox();
+      const refresh = await page
+        .getByRole("button", { name: "Обновить", exact: true })
+        .boundingBox();
+      expect(header).not.toBeNull();
+      expect(refresh).not.toBeNull();
+      expect(Math.abs((header?.y ?? 0) - (refresh?.y ?? 0))).toBeLessThan(20 * zoom);
+      if (width === 1440 && zoom === 1) {
+        expect(
+          await area.evaluate((node) => node.getBoundingClientRect().bottom),
+        ).toBeLessThanOrEqual(900);
+        await area.evaluate((node) => {
+          node.style.maxWidth = "720px";
+          node.style.fontFamily = "Arial, sans-serif";
+        });
+        await expectNoTableOverflow(page);
+        const heights = await area
+          .locator("tbody tr")
+          .evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
+        expect(Math.max(...heights)).toBeLessThanOrEqual(48);
+        const price = area.getByRole("textbox", { name: /^Цена позиции/ }).first();
+        await price.fill("14000");
+        await expect(page.getByRole("button", { name: "Сохранить цены" })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(price).toHaveValue("13456.78");
+        await expect(page.getByRole("button", { name: "Сохранить цены" })).toHaveCount(0);
+        await page.getByRole("button", { name: "+ Добавить позицию" }).click();
+        await expect(page.getByLabel("Количество", { exact: true })).toBeVisible();
+        await expect(page.getByLabel("НКД (облигации, необязательно)")).not.toBeVisible();
+        await expectNoTableOverflow(page);
+      }
+      await page.screenshot({
+        path: info.outputPath(`month-positions-${width}-${zoom}.png`),
+        fullPage: true,
+      });
     }
   }
 });

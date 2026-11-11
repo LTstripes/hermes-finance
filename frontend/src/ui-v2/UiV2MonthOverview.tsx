@@ -30,7 +30,7 @@ export const MONTH_STEP_COPY: Record<MonthChecklistStepId, StepCopy> = {
   liabilities: { label: "Долги, кредитка и недвижимость", hint: "Долг, ипотека и платежи" },
   positions: { label: "Счета и позиции", hint: "Количество и оценка" },
   brokers: { label: "Брокерские выписки", hint: "Загрузка и разбор источников" },
-  payouts: { label: "Выплаты", hint: "Полученные и прогноз T-Invest" },
+  payouts: { label: "Выплаты", hint: "Полученные и прогноз Т-Инвест" },
   budget: { label: "Расходы и план", hint: "Обязательные расходы и откладывание" },
   note: { label: "Комментарии", hint: "Пояснения к месяцу" },
   close: { label: "Закрыть месяц", hint: "Итоговая проверка" },
@@ -130,12 +130,13 @@ function StateMark({
   state: MonthChecklistStep["state"] | undefined;
   closed?: boolean;
 }) {
-  const symbol = state === "done" ? "✓" : state === "attention" ? (closed ? "·" : "!") : "";
+  const symbol =
+    closed || state === "done" ? "✓" : state === "attention" ? (closed ? "·" : "!") : "";
   return (
     <span
       aria-hidden="true"
       className={styles.mark}
-      data-state={presentationState(state, closed) ?? "unknown"}
+      data-state={closed ? "done" : (presentationState(state, closed) ?? "unknown")}
     >
       {symbol}
     </span>
@@ -262,15 +263,16 @@ export function MonthKpis({
   if (!review.available) return null;
   const { kpis } = review;
   const incomplete = isIncompleteMonthDraft(workflow);
-  const display = variant === "overview" ? moneyWholeText : moneyText;
+  const whole = variant === "overview" || workflow.month.status === "closed";
+  const display = whole ? moneyWholeText : moneyText;
   // Without capital snapshots the backend sum is 0.00 by construction, not a measured zero.
   const coverage = kpis.portfolio_source_coverage;
   const capitalUnknown = coverage?.status === "unavailable";
   const capital =
     capitalUnknown || kpis.liquid_capital_delta_coverage?.status === "unavailable"
       ? deltaNote(null, "")
-      : deltaNote(kpis.liquid_capital_delta, "за месяц", variant === "overview");
-  const passive = deltaNote(kpis.passive_income_delta, "к прошлому месяцу", variant === "overview");
+      : deltaNote(kpis.liquid_capital_delta, "за месяц", whole);
+  const passive = deltaNote(kpis.passive_income_delta, "к прошлому месяцу", whole);
   const budget = workflow.checklist?.steps.find((step) => step.id === "budget");
   const noExpenseRows = workflow.checklist?.expenses.mandatory_items.length === 0;
   const articles =

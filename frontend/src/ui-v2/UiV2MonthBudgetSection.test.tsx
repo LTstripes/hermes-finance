@@ -44,6 +44,15 @@ const draftMonth: ReportingMonth = {
   source: "manual",
 };
 
+async function rowAction(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: Pick<typeof screen, "getAllByRole">,
+  name: string,
+  index = 0,
+) {
+  await user.click(scope.getAllByRole("button", { name: /Действия/ })[index]);
+  return screen.getByRole("menuitem", { name });
+}
 function contextWith(overrides: Partial<MonthEditorContext> = {}): MonthEditorContext {
   return {
     month: { ...draftMonth },
@@ -112,6 +121,32 @@ beforeEach(() => {
   vi.mocked(deletePlannedBudget).mockReset().mockResolvedValue(undefined);
 });
 
+it("focuses an expense edit, cancels it with Escape and saves unchanged exact money with Enter", async () => {
+  const user = userEvent.setup();
+  vi.mocked(listExpenses).mockResolvedValue([expenseFoodMandatory]);
+  vi.mocked(updateExpense).mockResolvedValue(expenseFoodMandatory);
+  renderLeaf(contextWith());
+  const section = await screen.findByRole("region", { name: "Расходы месяца" });
+  await user.click(await rowAction(user, within(section), "Изменить"));
+  const category = screen.getByDisplayValue("Еда");
+  expect(category).toHaveFocus();
+  await user.type(category, " новая");
+  await user.keyboard("{Escape}");
+  expect(updateExpense).not.toHaveBeenCalled();
+  expect(screen.queryByDisplayValue("Еда новая")).toBeNull();
+  await user.click(await rowAction(user, within(section), "Изменить"));
+  await user.keyboard("{Enter}");
+  await waitFor(() =>
+    expect(updateExpense).toHaveBeenCalledWith(expenseFoodMandatory.id, {
+      category: expenseFoodMandatory.category,
+      expense_type: expenseFoodMandatory.expense_type,
+      amount: expenseFoodMandatory.amount,
+      notes: null,
+    }),
+  );
+  expect(await screen.findByText("Расход обновлён и подтверждён.")).toBeVisible();
+});
+
 describe("UiV2MonthBudgetSection plan/fact matrix", () => {
   it("presents both existing expense totals in the workspace header without a checklist figure", async () => {
     vi.mocked(listExpenses).mockResolvedValue([
@@ -151,7 +186,7 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     const cells = within(row).getAllByRole("cell");
     expect(cells[1].textContent).toBe("—");
     expect(cells[2].textContent).toMatch(/48\s*000/);
-    expect(within(expenseSection).getAllByRole("table")).toHaveLength(1);
+    expect(within(expenseSection).getAllByRole("table")).toHaveLength(2);
   });
 
   it("renders fact-only with a missing plan gap instead of zero", async () => {
@@ -243,7 +278,7 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     ]);
     renderLeaf(contextWith());
     const section = await screen.findByRole("region", { name: "Расходы месяца" });
-    const table = within(section).getByRole("table");
+    const table = within(section).getAllByRole("table")[0];
     const cells = within(within(table).getByText("Еда").closest("tr") as HTMLElement).getAllByRole(
       "cell",
     );
@@ -255,10 +290,10 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     expect(within(cells[1]).getByText(/Вторая покупка/)).toBeVisible();
     expect(within(cells[2]).getByText(/Основной план/)).toBeVisible();
     expect(within(cells[2]).getByText(/Дополнение/)).toBeVisible();
-    expect(within(cells[1]).getAllByRole("button", { name: "Удалить" })).toHaveLength(2);
-    expect(within(cells[2]).getAllByRole("button", { name: "Удалить" })).toHaveLength(2);
-    await user.click(within(cells[2]).getAllByRole("button", { name: "Изменить" })[1]);
-    expect(within(cells[2]).getByLabelText("Сумма плана")).toHaveValue("0.00");
+    expect(within(cells[1]).getAllByRole("button", { name: "Действия строки" })).toHaveLength(2);
+    expect(within(cells[2]).getAllByRole("button", { name: "Действия строки" })).toHaveLength(2);
+    await user.click(await rowAction(user, within(cells[2]), "Изменить", 1));
+    expect(within(cells[2]).getByLabelText("Сумма плана")).toHaveValue("0");
   });
 
   it("keeps row identity by id when category repeats with different expense_type", async () => {
@@ -266,8 +301,17 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
     renderLeaf(contextWith());
     const expenseSection = await screen.findByRole("region", { name: "Расходы месяца" });
     const rows = within(expenseSection).getAllByRole("row");
-    const bodyRows = rows.filter((row) => within(row).queryAllByRole("cell").length > 0);
-    expect(bodyRows).toHaveLength(2);
+    const bodyRows = rows.filter(
+      (row) =>
+        within(row).queryAllByRole("cell").length > 0 &&
+        !row.querySelector("form") &&
+        !row.textContent?.includes("+ Добавить расход"),
+    );
+    expect(
+      bodyRows.filter(
+        (row) => !row.querySelector("form") && !row.textContent?.includes("+ Добавить расход"),
+      ),
+    ).toHaveLength(2);
     expect(bodyRows[0].closest("section")).toHaveAccessibleName("Обязательные");
     expect(bodyRows[1].closest("section")).toHaveAccessibleName("Крупные и прочие");
   });
@@ -364,7 +408,7 @@ describe("UiV2MonthBudgetSection mutations and guards", () => {
     renderLeaf(contextWith());
 
     const savingSection = await screen.findByRole("region", { name: "Накопления месяца" });
-    await user.click(within(savingSection).getByRole("button", { name: "Удалить" }));
+    await user.click(await rowAction(user, within(savingSection), "Удалить"));
     const dialog = await screen.findByRole("alertdialog", { name: "Удалить накопление?" });
     await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
     await waitFor(() => expect(deleteSaving).toHaveBeenCalledWith(21));
@@ -459,7 +503,7 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
     expect(await screen.findByText(/отсутствует в перечитанных данных/)).toBeInTheDocument();
     expect(screen.queryByText("Расход сохранён и подтверждён.")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Категория расхода")).toHaveValue("Еда");
-    expect(screen.getByLabelText("Сумма расхода")).toHaveValue("50000");
+    expect(screen.getByLabelText("Сумма расхода")).toHaveValue("50 000");
   });
 
   it("fails a plan create when readback lacks the created id and keeps the draft", async () => {
@@ -502,16 +546,16 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
     renderLeaf(contextWith());
 
     const expenseSection = await screen.findByRole("region", { name: "Расходы месяца" });
-    await user.click(within(expenseSection).getByRole("button", { name: "Изменить" }));
+    await user.click(await rowAction(user, within(expenseSection), "Изменить"));
     const editingRow = screen.getByDisplayValue("Еда").closest("tr") as HTMLElement;
     const amount = within(editingRow).getByLabelText("Сумма расхода");
     await user.clear(amount);
     await user.type(amount, "51000");
-    await user.click(screen.getByRole("button", { name: "OK" }));
+    await user.click(screen.getByRole("button", { name: "Готово" }));
 
     expect(await screen.findByText(/не отражает запрошенные изменения/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
-    expect(within(editingRow).getByLabelText("Сумма расхода")).toHaveValue("51000");
+    expect(screen.getByRole("button", { name: "Готово" })).toBeInTheDocument();
+    expect(within(editingRow).getByLabelText("Сумма расхода")).toHaveValue("51 000");
   });
 
   it("fails a plan update when readback still shows old values and keeps the edit", async () => {
@@ -525,16 +569,16 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
 
     const section = await screen.findByRole("region", { name: "Расходы месяца" });
     await user.click(within(section).getByText("План: 1"));
-    await user.click(within(section).getByRole("button", { name: "Изменить" }));
+    await user.click(await rowAction(user, within(section), "Изменить"));
     const editingRow = screen.getByDisplayValue("Еда").closest("tr") as HTMLElement;
     const amount = within(editingRow).getByLabelText("Сумма плана");
     await user.clear(amount);
     await user.type(amount, "49000");
-    await user.click(screen.getByRole("button", { name: "OK" }));
+    await user.click(screen.getByRole("button", { name: "Готово" }));
 
     expect(await screen.findByText(/не отражает запрошенные изменения/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
-    expect(within(editingRow).getByLabelText("Сумма плана")).toHaveValue("49000");
+    expect(screen.getByRole("button", { name: "Готово" })).toBeInTheDocument();
+    expect(within(editingRow).getByLabelText("Сумма плана")).toHaveValue("49 000");
   });
 
   it("fails a saving update when readback still shows old values and keeps the edit", async () => {
@@ -547,16 +591,16 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
     renderLeaf(contextWith());
 
     const savingSection = await screen.findByRole("region", { name: "Накопления месяца" });
-    await user.click(within(savingSection).getByRole("button", { name: "Изменить" }));
+    await user.click(await rowAction(user, within(savingSection), "Изменить"));
     const editingRow = screen.getByDisplayValue("Подушка").closest("tr") as HTMLElement;
     const amount = within(editingRow).getByLabelText("Сумма накопления");
     await user.clear(amount);
     await user.type(amount, "21000");
-    await user.click(screen.getByRole("button", { name: "OK" }));
+    await user.click(screen.getByRole("button", { name: "Готово" }));
 
     expect(await screen.findByText(/не отражает запрошенные изменения/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "OK" })).toBeInTheDocument();
-    expect(within(editingRow).getByLabelText("Сумма накопления")).toHaveValue("21000");
+    expect(screen.getByRole("button", { name: "Готово" })).toBeInTheDocument();
+    expect(within(editingRow).getByLabelText("Сумма накопления")).toHaveValue("21 000");
   });
 
   it("fails an expense delete when readback still contains the row and keeps the dialog", async () => {
@@ -565,7 +609,7 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
     renderLeaf(contextWith());
 
     const expenseSection = await screen.findByRole("region", { name: "Расходы месяца" });
-    await user.click(within(expenseSection).getByRole("button", { name: "Удалить" }));
+    await user.click(await rowAction(user, within(expenseSection), "Удалить"));
     const dialog = await screen.findByRole("alertdialog", { name: "Удалить расход?" });
     await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
 
@@ -580,7 +624,7 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
     renderLeaf(contextWith());
 
     const savingSection = await screen.findByRole("region", { name: "Накопления месяца" });
-    await user.click(within(savingSection).getByRole("button", { name: "Удалить" }));
+    await user.click(await rowAction(user, within(savingSection), "Удалить"));
     const dialog = await screen.findByRole("alertdialog", { name: "Удалить накопление?" });
     await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
 
@@ -596,7 +640,7 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
 
     const section = await screen.findByRole("region", { name: "Расходы месяца" });
     await user.click(within(section).getByText("План: 1"));
-    await user.click(within(section).getByRole("button", { name: "Удалить" }));
+    await user.click(await rowAction(user, within(section), "Удалить"));
     const dialog = await screen.findByRole("alertdialog", { name: "Удалить план?" });
     await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
 

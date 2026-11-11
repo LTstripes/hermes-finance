@@ -255,10 +255,10 @@ export function QuotePreviewPanel({
       label="Рынок"
       title="Предпросмотр котировок"
     >
-      <p className="muted">
+      <HelpTip label="О котировках">
         Запрос к внешнему источнику идёт только по этой кнопке. Сохранённые цены месяца меняются
         только после явного применения выбранных строк.
-      </p>
+      </HelpTip>
       {mappingNotice ? (
         <div className="inline-alert inline-alert--warn" role="status">
           {mappingNotice}

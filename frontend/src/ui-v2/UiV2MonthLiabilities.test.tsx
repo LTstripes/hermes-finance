@@ -103,6 +103,15 @@ let nextPropertyId = 200;
 let client: QueryClient;
 let setDirty: Mock<(section: string, dirty: boolean) => void>;
 
+async function rowAction(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: Pick<typeof screen, "getAllByRole">,
+  name: string,
+  index = 0,
+) {
+  await user.click(scope.getAllByRole("button", { name: /Действия/ })[index]);
+  return screen.getByRole("menuitem", { name });
+}
 function findDebt(id: number): DebtEntry {
   for (const rows of debtsByMonth.values()) {
     const row = rows.find((candidate) => candidate.id === id);
@@ -439,9 +448,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    );
+    await user.click(await rowAction(user, within(debtTable), "Изменить долг «Основная карта»"));
     // #650: stacked editor below the readonly row keeps saved totals visible.
     expect(
       await screen.findByText("Итоги ниже посчитаны по сохранённым данным", { exact: false }),
@@ -477,9 +484,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    );
+    await user.click(await rowAction(user, within(debtTable), "Изменить долг «Основная карта»"));
     await user.clear(screen.getByDisplayValue("Основная карта"));
     const editor = screen.getByRole("form", { name: /Редактирование долга/ });
     await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
@@ -495,9 +500,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    );
+    await user.click(await rowAction(user, within(debtTable), "Изменить долг «Основная карта»"));
     const balance = screen.getByDisplayValue("123456.00");
     await user.clear(balance);
     await user.type(balance, "100000.00");
@@ -525,9 +528,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    );
+    await user.click(await rowAction(user, within(debtTable), "Изменить долг «Основная карта»"));
     await user.clear(screen.getByDisplayValue("19.90"));
     const editor = screen.getByRole("form", { name: /Редактирование долга/ });
     await user.click(within(editor).getByRole("button", { name: "Сохранить" }));
@@ -545,7 +546,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
+    await user.click(await rowAction(user, within(debtTable), "Связать счёт"));
     await user.selectOptions(screen.getByLabelText("Счёт для связи с долгом"), "11");
     await user.click(screen.getByRole("button", { name: "Сохранить связь" }));
 
@@ -555,10 +556,8 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(
       within(debtTableAfter).getByText(/Связан со счётом «Синтетический депозит»/),
     ).toBeInTheDocument();
-    expect(
-      within(debtTableAfter).getByRole("button", { name: "Изменить связь" }),
-    ).toBeInTheDocument();
-    expect(within(debtTableAfter).getByRole("button", { name: "Отвязать" })).toBeInTheDocument();
+    expect(await rowAction(user, within(debtTableAfter), "Изменить связь")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Отвязать" })).toBeInTheDocument();
   });
 
   it("offers only cash, deposit, and savings accounts that are included in capital", async () => {
@@ -566,7 +565,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(within(debtTable).getByRole("button", { name: "Связать счёт" }));
+    await user.click(await rowAction(user, within(debtTable), "Связать счёт"));
     const picker = screen.getByLabelText("Счёт для связи с долгом");
 
     expect(within(picker).getByRole("option", { name: /Синтетический депозит/ })).toBeEnabled();
@@ -580,6 +579,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
   });
 
   it("disables linking and explains it when no eligible account exists", async () => {
+    const user = userEvent.setup();
     vi.mocked(listAccounts).mockResolvedValue([
       brokerageAccount,
       iisAccount,
@@ -588,9 +588,9 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    expect(within(debtTable).getByRole("button", { name: "Связать счёт" })).toBeDisabled();
+    expect(await rowAction(user, within(debtTable), "Связать счёт")).toBeDisabled();
     expect(
-      within(debtTable).getByText("Нет доступных счетов для связи", { exact: false }),
+      screen.getByText("Нет доступных счетов для связи", { exact: false }),
     ).toBeInTheDocument();
     expect(
       within(debtTable).queryByText("Связь доступна для кредитки", { exact: false }),
@@ -606,7 +606,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(
       within(debtTable).getByText(/Связан со счётом «Синтетический брокерский счёт»/),
     ).toBeInTheDocument();
-    await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
+    await user.click(await rowAction(user, within(debtTable), "Изменить связь"));
 
     const picker = screen.getByLabelText("Счёт для связи с долгом");
     expect(within(picker).queryByRole("option", { name: /брокерский/i })).toBeNull();
@@ -621,7 +621,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(within(debtTable).getByRole("button", { name: "Отвязать" }));
+    await user.click(await rowAction(user, within(debtTable), "Отвязать"));
     const dialog = screen.getByRole("alertdialog", { name: "Отвязать счёт?" });
     expect(dialog).toHaveTextContent("Синтетический депозит");
     await user.click(within(dialog).getByRole("button", { name: "Отвязать" }));
@@ -630,9 +630,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(listDebts).toHaveBeenCalledTimes(2);
     const [debtTableAfter] = await tables();
     expect(within(debtTableAfter).queryByText(/Связан со счётом/)).not.toBeInTheDocument();
-    expect(
-      within(debtTableAfter).getByRole("button", { name: "Связать счёт" }),
-    ).toBeInTheDocument();
+    expect(await rowAction(user, within(debtTableAfter), "Связать счёт")).toBeInTheDocument();
   });
 
   it("confirms debt deletion and clears the row after the readback", async () => {
@@ -640,9 +638,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(
-      within(debtTable).getByRole("button", { name: "Удалить долг «Основная карта»" }),
-    );
+    await user.click(await rowAction(user, within(debtTable), "Удалить долг «Основная карта»"));
     const dialog = screen.getByRole("alertdialog", { name: "Удалить долг?" });
     expect(dialog).toHaveTextContent("Удалить долг «Основная карта»?");
     await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
@@ -659,16 +655,14 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const [, propertyTable] = await tables();
 
     await user.click(
-      within(propertyTable).getByRole("button", {
-        name: "Изменить объект «Синтетическая квартира»",
-      }),
+      await rowAction(user, within(propertyTable), "Изменить объект «Синтетическая квартира»"),
     );
     await user.clear(
       within(screen.getByRole("region", { name: "Изменение объекта недвижимости" })).getByLabelText(
         "Название объекта",
       ),
     );
-    await user.click(within(propertyTable).getByRole("button", { name: "OK" }));
+    await user.click(within(propertyTable).getByRole("button", { name: "Готово" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Заполни название, стоимость, остаток ипотеки и платёж",
@@ -687,7 +681,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       ),
       "-2",
     );
-    await user.click(within(propertyTable).getByRole("button", { name: "OK" }));
+    await user.click(within(propertyTable).getByRole("button", { name: "Готово" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Ставка ипотеки — неотрицательное число, пусто — неизвестно",
@@ -701,14 +695,12 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const [, propertyTable] = await tables();
 
     await user.click(
-      within(propertyTable).getByRole("button", {
-        name: "Изменить объект «Синтетическая квартира»",
-      }),
+      await rowAction(user, within(propertyTable), "Изменить объект «Синтетическая квартира»"),
     );
     const mortgage = screen.getByDisplayValue("3000000.00");
     await user.clear(mortgage);
     await user.type(mortgage, "2900000.00");
-    await user.click(within(propertyTable).getByRole("button", { name: "OK" }));
+    await user.click(within(propertyTable).getByRole("button", { name: "Готово" }));
 
     await waitFor(() =>
       expect(updateProperty).toHaveBeenCalledWith(2, {
@@ -722,7 +714,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(listProperties).toHaveBeenCalledTimes(2);
     const [, propertyTableAfter] = await tables();
     expect(propertyTableAfter).toHaveTextContent(/2\s*900\s*000\s*₽/);
-    expect(within(propertyTableAfter).queryByRole("button", { name: "OK" })).toBeNull();
+    expect(within(propertyTableAfter).queryByRole("button", { name: "Готово" })).toBeNull();
   });
 
   it("stays read-only for a closed month", async () => {
@@ -826,9 +818,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const [debtTable] = await tables();
 
     await waitFor(() => expect(setDirty).toHaveBeenCalledWith("liabilities", false));
-    await user.click(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    );
+    await user.click(await rowAction(user, within(debtTable), "Изменить долг «Основная карта»"));
     await waitFor(() => expect(setDirty).toHaveBeenLastCalledWith("liabilities", true));
     // #650: saved totals stay visible with an explicit dirty note, not optimistic totals.
     expect(
@@ -870,9 +860,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     await user.click(screen.getByRole("button", { name: "Повторить" }));
     expect(await screen.findByText("Основная карта")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    ).toBeInTheDocument();
+    expect(await rowAction(user, screen, "Изменить долг «Основная карта»")).toBeInTheDocument();
     expect(screen.queryByText("Долги относятся к другому месяцу: чтение отклонено.")).toBeNull();
   });
 
@@ -897,7 +885,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     const [debtTable] = await tables();
     expect(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
+      await rowAction(user, within(debtTable), "Изменить долг «Основная карта»"),
     ).toBeEnabled();
 
     await user.click(screen.getByRole("button", { name: "Повторить" }));
@@ -929,9 +917,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     await user.click(screen.getByRole("button", { name: "Повторить" }));
     expect(await screen.findByText("Основная карта")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    ).toBeInTheDocument();
+    expect(await rowAction(user, screen, "Изменить долг «Основная карта»")).toBeInTheDocument();
   });
 
   it("drops cached rows after a failed refresh instead of keeping them editable", async () => {
@@ -1002,9 +988,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const user = userEvent.setup();
     renderLeaf();
     const [debtTable] = await tables();
-    await user.click(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    );
+    await user.click(await rowAction(user, within(debtTable), "Изменить долг «Основная карта»"));
     const balance = screen.getByDisplayValue("123456.00");
     await user.clear(balance);
     await user.type(balance, "100000.00");
@@ -1107,14 +1091,12 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [, propertyTable] = await tables();
     await user.click(
-      within(propertyTable).getByRole("button", {
-        name: "Изменить объект «Синтетическая квартира»",
-      }),
+      await rowAction(user, within(propertyTable), "Изменить объект «Синтетическая квартира»"),
     );
     const mortgage = screen.getByDisplayValue("3000000.00");
     await user.clear(mortgage);
     await user.type(mortgage, "2900000.00");
-    await user.click(within(propertyTable).getByRole("button", { name: "OK" }));
+    await user.click(within(propertyTable).getByRole("button", { name: "Готово" }));
     await waitFor(() => expect(updateProperty).toHaveBeenCalledTimes(1));
 
     expect(
@@ -1126,14 +1108,14 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(pendingMortgage).toBeDisabled();
     await user.type(pendingMortgage, "9");
     expect(screen.getByDisplayValue("2900000.00")).toBeInTheDocument();
-    expect(within(propertyTable).getByRole("button", { name: "OK" })).toBeDisabled();
+    expect(within(propertyTable).getByRole("button", { name: "Готово" })).toBeDisabled();
 
     await act(async () => {
       release?.();
     });
 
     const [, propertyTableAfter] = await tables();
-    expect(within(propertyTableAfter).queryByRole("button", { name: "OK" })).toBeNull();
+    expect(within(propertyTableAfter).queryByRole("button", { name: "Готово" })).toBeNull();
     expect(propertyTableAfter).toHaveTextContent(/2\s*900\s*000\s*₽/);
     expect(updateProperty).toHaveBeenCalledTimes(1);
   });
@@ -1161,9 +1143,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const [debtTable] = await tables();
 
-    await user.click(
-      within(debtTable).getByRole("button", { name: "Изменить долг «Основная карта»" }),
-    );
+    await user.click(await rowAction(user, within(debtTable), "Изменить долг «Основная карта»"));
     const editor = await screen.findByRole("form", { name: /Редактирование долга/ });
     expect(within(editor).getByLabelText("Название долга")).toBeInTheDocument();
     expect(within(editor).getByLabelText("Тип долга")).toBeInTheDocument();
@@ -1202,7 +1182,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const [debtTable] = await tables();
 
     expect(within(debtTable).getByText(/очень длинный накопительный/)).toBeInTheDocument();
-    await user.click(within(debtTable).getByRole("button", { name: "Изменить связь" }));
+    await user.click(await rowAction(user, within(debtTable), "Изменить связь"));
     const linkEditor = await screen.findByRole("form", { name: /Связь долга/ });
     expect(within(linkEditor).getByLabelText("Счёт для связи с долгом")).toBeInTheDocument();
     expect(within(linkEditor).getByRole("button", { name: "Сохранить связь" })).toBeInTheDocument();

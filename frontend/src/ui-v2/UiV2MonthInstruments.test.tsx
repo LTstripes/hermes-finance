@@ -246,7 +246,7 @@ test("payout entry exposes source observations with unknown tax separately and r
     target: { value: "2030-04-30" },
   });
   fireEvent.click(
-    screen.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+    screen.getByRole("button", { name: "Запросить предварительные выплаты Т-Инвест" }),
   );
   await screen.findByRole("region", { name: "Фактические строки источника (actual)" });
   expect(posts(fetcher)).toHaveLength(1);
@@ -268,7 +268,7 @@ test("selects a saved historical quantity without substituting the month's closi
   expect(screen.getByText(/не заменяет закрывающий EOD 2030-05-31/)).toBeVisible();
   expect(posts(fetcher)).toHaveLength(0);
   fireEvent.click(
-    screen.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+    screen.getByRole("button", { name: "Запросить предварительные выплаты Т-Инвест" }),
   );
   await screen.findByRole("region", { name: "Фактические строки источника (actual)" });
   expect(JSON.parse(String(posts(fetcher)[0][1]?.body)).as_of).toBe("2030-04-30");
@@ -499,7 +499,7 @@ test("statements retain dated source quantities without a duplicate provider act
   fireEvent.change(dates, { target: { value: "2030-04-30" } });
   expect(await screen.findByText(/Наблюдаемое количество: 2.5 на 2030-04-30/)).toBeVisible();
   expect(
-    screen.queryByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+    screen.queryByRole("button", { name: "Запросить предварительные выплаты Т-Инвест" }),
   ).not.toBeInTheDocument();
   expect(screen.queryByLabelText("Дата количества из выписки")).not.toBeInTheDocument();
   expect(posts(fetcher)).toEqual([]);
