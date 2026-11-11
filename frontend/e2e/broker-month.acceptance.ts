@@ -32,7 +32,7 @@ async function uploadOriginal(
     await monthPanel(page, "brokers");
   let intakeId: number;
   if (historical) {
-    await openDisclosure(page, "Подробности");
+    await openDisclosure(page, "Подробнее о разборе файлов");
     const uploaded = page.waitForResponse(
       (r) => r.url().endsWith("/api/broker-months/intakes") && r.request().method() === "POST",
     );
@@ -64,7 +64,7 @@ async function uploadOriginal(
     expect(intakeId).toEqual(expect.any(Number));
     // The saved-source list identifies this exact original even when two
     // uploads have the same account. Opening it carries the retained File.
-    await openDisclosure(page, "Подробности");
+    await openDisclosure(page, "Подробнее о разборе файлов");
     const review = page.getByRole("button", {
       name: `Разобрать и исправить #${intakeId}`,
       exact: true,
@@ -124,6 +124,13 @@ function expectFinancialInventoryUnchanged(
   }
 }
 async function openDisclosure(page: Page, name: string) {
+  const parsing = page.getByText("Подробнее о разборе файлов", { exact: true });
+  if (
+    name !== "Подробнее о разборе файлов" &&
+    (await parsing.count()) &&
+    !(await parsing.evaluate((element) => element.closest("details")?.open))
+  )
+    await parsing.click();
   const summary = page.getByText(name, { exact: true });
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))
@@ -131,10 +138,11 @@ async function openDisclosure(page: Page, name: string) {
   await expect(summary.locator("..")).toHaveAttribute("open", "");
 }
 async function showSourceReview(page: Page) {
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await openDisclosure(page, "Подробности разбора и сохранение месяца");
 }
 async function selectSourceAccount(page: Page, value: string) {
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   const picker = page.getByLabel("Счёт источника месяца", { exact: true });
   await expect(picker).toBeEnabled();
   if ((await picker.inputValue()) === value) return;
@@ -153,7 +161,7 @@ async function selectSourceAccount(page: Page, value: string) {
 async function reloadWorkspace(page: Page) {
   await page.reload();
   if (new URL(page.url()).searchParams.get("panel") === "brokers") {
-    await openDisclosure(page, "Подробности");
+    await openDisclosure(page, "Подробнее о разборе файлов");
     await showSourceReview(page);
   }
 }
@@ -201,10 +209,10 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   const sources = page.getByRole("region", { name: "Брокерские выписки", exact: true });
   await expect(sources.getByRole("heading", { name: "Брокерские выписки" })).toBeVisible();
   await expect(page.getByLabel("Оригинальный XML MyBroker", { exact: true })).toBeHidden();
-  await expect(sources.getByText("Подробности", { exact: true }).locator("..")).not.toHaveAttribute(
-    "open",
-  );
-  await openDisclosure(page, "Подробности");
+  await expect(
+    sources.getByText("Подробнее о разборе файлов", { exact: true }).locator(".."),
+  ).not.toHaveAttribute("open");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(sources.getByText(/Для выбранного счёта выписок этого периода нет/)).toBeVisible();
   const manual = async () =>
     Promise.all(
@@ -250,7 +258,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
         row.opening_date === "2035-09-30" && row.closing_date === "2035-10-31",
     ),
   ).toEqual([]);
-  await openDisclosure(page, "Подробности предварительного результата");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   const monthlyReturn = page.getByRole("region", { name: "Предварительная доходность месяца" });
   const unavailable = monthlyReturn.getByText(/нет доказанных границ этого месяца/);
   await expect(unavailable).toBeVisible();
@@ -263,7 +271,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await expect(missingClosing).toHaveText(
     "Нет полного месячного оригинала. Нужны остатки на 2035-10-31; историческое пересечение не доказывает конец месяца.",
   );
-  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   const instruments = page.getByRole("region", { name: "Бумаги и выплаты" });
   await expect(instruments.getByText("RU000A000000 · Акция")).toBeVisible();
   await expect(instruments.getByText("RU000A000001 · Облигация")).toBeVisible();
@@ -276,7 +284,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   ).toHaveCount(0);
   // Provider reconciliation remains in bond-source.acceptance; Month retains quantity/Back/Reload.
   await selectSourceAccount(page, "7113502");
-  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await dates.selectOption("2035-09-30");
   await expect(instruments.getByText(/Наблюдаемое количество: 25 на 2035-09-30/)).toBeVisible();
   await page.goBack();
@@ -284,7 +292,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await page.goBack();
   await expect(picker).toHaveValue("7113501");
   await reloadWorkspace(page);
-  await openDisclosure(page, "Подробности инструментов и предварительных выплат");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(picker).toHaveValue("7113501");
   await expect(dates).toHaveValue("2035-09-30");
   await expect(
@@ -1839,7 +1847,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await expect(page.getByText(/снимок 01.06.2034/i)).toBeVisible();
   await monthPanel(page, "brokers");
   const sourcePanel = page.getByRole("region", { name: "Брокерские выписки", exact: true });
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   let failedRead = false;
   await page.route(/\/api\/broker-months\/intakes\/\d+$/, async (route) => {
     if (!failedRead && route.request().method() === "GET") {
@@ -1894,7 +1902,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await page.goBack();
   await expect(page).toHaveURL(sourceAccountAUrl);
   // Back restores URL scope; the disclosure may have remounted closed.
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(picker).toHaveValue("7452034");
   const reloadedSourceList = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -1912,7 +1920,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   expect(reloadedSources.map((row: { id: number }) => row.id)).toEqual(
     expect.arrayContaining(saved.map((row: { id: number }) => row.id)),
   );
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await showSourceReview(page);
   await expect(page).toHaveURL(sourceAccountAUrl);
   await expect(picker).toHaveValue("7452034");
@@ -1927,7 +1935,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
     .locator("..");
   await expect(position.getByText("Количество: 2 → 2", { exact: true })).toBeVisible();
   await page.goBack();
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(picker).toHaveValue("7452034");
   await page.getByRole("link", { name: /Снимок и общие данные/ }).click();
   await page.getByLabel("Дата снимка", { exact: true }).fill("2034-05-31");
@@ -2000,7 +2008,7 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
   await expect(journal.getByLabel("Сохранённый разбор")).toHaveValue("");
   await page.goBack();
   await expect(page).toHaveURL(sourceAccountAUrl);
-  await openDisclosure(page, "Подробности");
+  await openDisclosure(page, "Подробнее о разборе файлов");
   await expect(picker).toHaveValue("7452034");
   await reloadWorkspace(page);
   await expect(page).toHaveURL(sourceAccountAUrl);

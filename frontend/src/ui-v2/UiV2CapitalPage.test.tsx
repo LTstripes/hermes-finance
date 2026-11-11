@@ -111,6 +111,17 @@ function makeReadiness(performance: ReturnType<typeof makeUiV2Performance>) {
   };
 }
 
+async function showHolding(testId: string) {
+  const row = await screen.findByTestId(testId);
+  const group = row.closest("details");
+  if (group && !group.open) {
+    const summary = group.querySelector("summary");
+    if (!summary) throw new Error("Missing account disclosure");
+    fireEvent.click(summary);
+  }
+  return row;
+}
+
 function setup(path = "/v2/capital") {
   const client = createQueryClient();
   const reads: string[] = [];
@@ -294,22 +305,21 @@ it("places the structure after the chart, property before holdings and removes d
   const order = [
     chart,
     section("По классам активов"),
-    section("По счетам"),
-    section("Крупнейшие позиции"),
+    section("Счета и позиции"),
     section("Недвижимость"),
-    section("Где лежит капитал"),
   ];
   for (const [index, current] of order.slice(1).entries())
     expect(
       order[index].compareDocumentPosition(current) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   expect(within(section("По классам активов")).getByTestId("capital-class-cash")).toBeVisible();
-  expect(within(section("По счетам")).getByTestId("capital-bucket-account:1")).toBeVisible();
-  expect(
-    within(section("Крупнейшие позиции")).getByRole("table", { name: "Крупнейшие позиции" }),
-  ).toBeVisible();
+  expect(within(section("Счета и позиции")).getByTestId("capital-bucket-account:1")).toBeVisible();
+  expect(within(section("Счета и позиции")).getByTestId("capital-top-summary")).toBeVisible();
   // Accounts are listed once, not again above the holdings.
   expect(screen.getAllByTestId("capital-bucket-account:1")).toHaveLength(1);
+  expect(
+    screen.getAllByTestId("capital-holding-group").filter((group) => group.hasAttribute("open")),
+  ).toHaveLength(1);
   for (const name of ["Доходность портфеля", "Связанные пары", "Где изменились суммы", "Сейчас"])
     expect(screen.queryByRole("heading", { name })).toBeNull();
   expect(
@@ -441,7 +451,10 @@ it("shows overview sums in whole rubles and keeps kopecks in holdings and on hov
   expect(net.getAttribute("title")?.replaceAll(" ", " ")).toBe("2 803 900,45 ₽");
   expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 901 ₽");
   expect(await screen.findByTestId("capital-class-cash")).toHaveTextContent("803 901 ₽");
-  expect(await screen.findByTestId("capital-holding-cash-701")).toHaveTextContent("803 900,60 ₽");
+  expect(await showHolding("capital-holding-cash-701")).toHaveTextContent("803 901 ₽");
+  expect(
+    within(screen.getByTestId("capital-holding-cash-701")).getByTitle("803 900,60 ₽"),
+  ).toBeVisible();
 });
 
 it("keeps the closed snapshot while a newer draft exists and never duplicates the Home CTA", async () => {
@@ -523,7 +536,7 @@ it("retains current facts without a previous comparison and does not recreate re
   expect(screen.queryByText("Доходность портфеля")).toBeNull();
 });
 
-it("shows a genuine zero as zero and not as an unavailable share", async () => {
+it("keeps a genuine zero capital and omits zero allocation rows without inventing shares", async () => {
   const { mount, state } = setup();
   state.comparison = makeUiV2Comparison({ zero: true });
   state.composition = makeUiV2CapitalHistory({ zero: true });
@@ -537,9 +550,12 @@ it("shows a genuine zero as zero and not as an unavailable share", async () => {
   mount();
 
   expect(await screen.findByTestId("capital-net")).toHaveTextContent("0 ₽");
-  const cashRow = screen.getByTestId("capital-class-cash");
-  expect(cashRow).toHaveTextContent("0 ₽");
-  expect(cashRow).toHaveTextContent("—");
+  expect(screen.queryByTestId("capital-class-cash")).toBeNull();
+  expect(screen.getByTestId("capital-assets")).toHaveTextContent("0 ₽");
+  const classes = screen.getByRole("heading", { name: "По классам активов" }).closest("section");
+  if (!classes) throw new Error("Missing class section");
+  expect(classes).toHaveTextContent("Ненулевых строк нет.");
+  expect(classes).not.toHaveTextContent("0,0%");
 });
 
 it("switches the composition window and mode over closed reports with visible gaps", async () => {
@@ -562,10 +578,8 @@ it("presents account buckets, rows and exclusion labels without summing rows", a
   expect(await screen.findByTestId("capital-bucket-unassigned_cash")).toHaveTextContent(
     "Деньги без привязки к счёту",
   );
-  expect(await screen.findByTestId("capital-holding-cash-701")).toHaveTextContent(
-    "Синтетический кошелёк",
-  );
-  const excluded = screen.getByTestId("capital-holding-cash-702");
+  expect(await showHolding("capital-holding-cash-701")).toHaveTextContent("Синтетический кошелёк");
+  const excluded = await showHolding("capital-holding-cash-702");
   expect(excluded).toHaveAttribute("data-included", "false");
   expect(within(excluded).getByText("не входит в ликвидный капитал")).toBeVisible();
   expect(screen.getByTestId("capital-holding-position-503")).toHaveTextContent(
@@ -584,7 +598,7 @@ it("filters the holdings by a class row and an account bucket as presentation on
   const { mount } = setup();
   mount();
 
-  await screen.findByTestId("capital-holding-position-501");
+  await showHolding("capital-holding-position-501");
   fireEvent.click(within(screen.getByTestId("capital-class-stock")).getByRole("button"));
   expect(screen.getByText("Фильтр: Акции")).toBeVisible();
   expect(screen.getByTestId("capital-holding-position-501")).toBeVisible();
@@ -594,16 +608,15 @@ it("filters the holdings by a class row and an account bucket as presentation on
   fireEvent.click(screen.getByRole("button", { name: "Сбросить" }));
   expect(screen.queryByText("Фильтр: Акции")).toBeNull();
 
-  fireEvent.click(await screen.findByTestId("capital-bucket-account:3"));
-  expect(screen.getByText("Фильтр: Синтетический брокерский счёт")).toBeVisible();
-  expect(screen.getByTestId("capital-holding-position-502")).toBeVisible();
-  expect(screen.queryByTestId("capital-holding-cash-701")).toBeNull();
-  expect(screen.queryByTestId("capital-holding-deposit-601")).toBeNull();
-
-  fireEvent.click(screen.getByTestId("capital-bucket-account:1"));
-  expect(screen.getByTestId("capital-holding-deposit-601")).toBeVisible();
-  expect(screen.queryByTestId("capital-holding-position-502")).toBeNull();
-  expect(screen.queryByTestId("capital-holding-cash-701")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "По классам" }));
+  expect(await showHolding("capital-holding-position-502")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "По счетам" }));
+  expect(screen.getByTestId("capital-bucket-account:3").closest("details")).not.toHaveAttribute(
+    "open",
+  );
+  fireEvent.click(screen.getByTestId("capital-bucket-account:3"));
+  expect(await showHolding("capital-holding-position-502")).toBeVisible();
+  expect(await showHolding("capital-holding-deposit-601")).toBeVisible();
 });
 
 it("does not blank unrelated widgets when a single widget fails", async () => {
@@ -629,7 +642,7 @@ it("fails the concentration closed when the risk read model is unsupported", asy
   mount();
 
   expect(await screen.findByText(/оценка позиции непригодна для расчёта/i)).toBeVisible();
-  const nowPanel = screen.getByRole("heading", { name: "Крупнейшие позиции" }).closest("section");
+  const nowPanel = screen.getByTestId("capital-top-summary").closest("section");
   if (!nowPanel) throw new Error("Capital top positions panel is missing");
   expect(within(nowPanel).queryByTestId("capital-top-positions")).toBeNull();
 });
@@ -639,7 +652,7 @@ it("fails the row lists closed when a requested month no longer matches the clos
   for (const row of state.cash) row.reporting_month_id = 999;
   mount();
 
-  expect(await screen.findByTestId("capital-holding-deposit-601")).toBeVisible();
+  expect(await showHolding("capital-holding-deposit-601")).toBeVisible();
   expect(screen.queryByTestId("capital-holding-cash-701")).toBeNull();
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
 });
@@ -750,8 +763,8 @@ it("keeps cash, deposits and property when only the instrument catalog fails", a
   mount();
 
   await screen.findByTestId("capital-net");
-  expect(await screen.findByTestId("capital-holding-cash-701")).toBeVisible();
-  expect(screen.getByTestId("capital-holding-deposit-601")).toBeVisible();
+  expect(await showHolding("capital-holding-cash-701")).toBeVisible();
+  expect(await showHolding("capital-holding-deposit-601")).toBeVisible();
   expect(screen.queryByTestId("capital-pair-21")).toBeNull();
   expect(screen.queryByTestId("capital-holding-position-501")).toBeNull();
   expect(screen.queryByTestId("capital-holding-position-502")).toBeNull();
@@ -773,7 +786,7 @@ it("fails the account slice closed when its support status is not supported", as
   ).toBeVisible();
   expect(screen.queryByTestId("capital-bucket-account:1")).toBeNull();
   expect(screen.queryByTestId("capital-bucket-unassigned_cash")).toBeNull();
-  expect(screen.getByTestId("capital-holding-cash-701")).toBeVisible();
+  expect(await showHolding("capital-holding-cash-701")).toBeVisible();
   expect(screen.getByTestId("capital-net")).toHaveTextContent("2 803 900 ₽");
 
   cleanup();
@@ -789,13 +802,44 @@ it("links current capital to its native month data and archive", async () => {
   mount();
 
   await screen.findByTestId("capital-net");
-  expect(screen.getByRole("link", { name: "Все отчёты →" })).toHaveAttribute("href", "/v2/reports");
+  expect(screen.getByRole("link", { name: /^Распределение$/ })).toHaveAttribute(
+    "href",
+    "/v2/capital/allocation",
+  );
   expect(
     within(screen.getByTestId("v2-report-context")).queryByRole("link", {
       name: "Данные отчётного месяца →",
     }),
   ).toBeNull();
   expect(screen.queryByRole("link", { name: "Распределение и концентрация →" })).toBeNull();
+});
+
+it("ranks three nonzero positions once per group and expands the remaining rows without deriving totals", async () => {
+  const { mount, state } = setup();
+  const original = state.positions[0];
+  state.positions = ["0.00", "10.50", "9999999999999.99", "30.00", "20.00"].map(
+    (amount, index) => ({
+      ...original,
+      id: 850 + index,
+      market_value: { ...original.market_value, amount },
+    }),
+  );
+  mount();
+  await showHolding("capital-holding-position-852");
+  const group = screen.getByTestId("capital-bucket-account:3").closest("details");
+  if (!group) throw new Error("missing account group");
+  expect(within(group).getAllByRole("listitem")).toHaveLength(3);
+  expect(within(group).getAllByRole("listitem")[0]).toHaveAttribute(
+    "data-testid",
+    "capital-holding-position-852",
+  );
+  expect(screen.queryByTestId("capital-holding-position-850")).toBeNull();
+  expect(screen.queryByTestId("capital-holding-position-851")).toBeNull();
+  fireEvent.click(within(group).getByRole("button", { name: "ещё 1 позиция" }));
+  expect(screen.getAllByTestId("capital-holding-position-851")).toHaveLength(1);
+  expect(within(group).getAllByRole("listitem")).toHaveLength(4);
+  expect(screen.getByTestId("capital-top-summary")).toHaveTextContent("топ-5");
+  expect(screen.getByTestId("capital-bucket-account:3")).not.toHaveTextContent("9 999 999 999 999");
 });
 
 describe("UI v2 Capital isolation", () => {
@@ -825,14 +869,14 @@ it("links exact catalogue instruments from Capital and gives unsupported rows an
     isin: instrument.id === 10 ? "RU000A000010" : null,
   }));
   mount();
-  const position = await screen.findByTestId("capital-holding-position-501");
+  const position = await showHolding("capital-holding-position-501");
   expect(within(position).getByRole("link", { name: "Синтетическая акция" })).toHaveAttribute(
     "href",
-    "/v2/returns/instrument/RU000A000010?capital_account=3&back=%2Fv2%2Fcapital",
+    expect.stringContaining("/v2/returns/instrument/RU000A000010?capital_account=3&back="),
   );
   const noIsin = screen.getByTestId("capital-holding-position-502");
   expect(within(noIsin).queryByRole("link")).toBeNull();
-  expect(noIsin).toHaveTextContent("Точный ISIN не подтверждён");
+  expect(screen.getByText(/Без ссылки на разбор:/)).toHaveTextContent("Точный ISIN не подтверждён");
 });
 
 it("restores the Capital holding filter from a safe card Back target without changing totals", async () => {
@@ -867,6 +911,8 @@ it("restores exact raw risk-class Back context and clears it after reset", async
   }));
   mount();
   const stock = await screen.findByTestId("capital-holding-position-501");
+  expect(stock.closest("details")).toHaveAttribute("open");
+  expect(stock).toBeVisible();
   expect(screen.getByText("Фильтр: Акции")).toBeVisible();
   expect(screen.queryByText("Фильтр: MisleadingGold")).toBeNull();
   expect(screen.queryByTestId("capital-holding-position-502")).toBeNull();
@@ -876,10 +922,14 @@ it("restores exact raw risk-class Back context and clears it after reset", async
   expect(back).toContain("holding_kind=risk_class");
   expect(back).toContain("holding_value=stock");
   fireEvent.click(screen.getByRole("button", { name: "Сбросить" }));
-  const top = screen.getByRole("table", { name: "Крупнейшие позиции" });
-  const topHref =
-    within(top).getByRole("link", { name: "Синтетическая акция" }).getAttribute("href") ?? "";
-  expect(new URL(topHref, "http://localhost").searchParams.get("back")).toBe("/v2/capital");
+  const holding = screen.getByTestId("capital-holding-position-501");
+  const nextHref = within(holding).getByRole("link").getAttribute("href") ?? "";
+  const restored = new URL(
+    new URL(nextHref, "http://localhost").searchParams.get("back") ?? "",
+    "http://localhost",
+  );
+  expect(restored.searchParams.get("holding_kind")).toBe("risk_class");
+  expect(restored.searchParams.get("holding_value")).toBe("stock");
 });
 
 it.each(["position", "account", "instrument"])(
@@ -896,11 +946,11 @@ it.each(["position", "account", "instrument"])(
     else if (mismatch === "account") top.account_id = 9999;
     else top.instrument_id = 9999;
     mount();
-    const table = await screen.findByRole("table", { name: "Крупнейшие позиции" });
-    expect(within(table).getByText("Синтетическая акция")).toBeVisible();
+    const table = await screen.findByTestId("capital-top-summary");
+    await waitFor(() => expect(table).toHaveTextContent("топ-5"));
     expect(within(table).queryByRole("link", { name: "Синтетическая акция" })).toBeNull();
     expect(
-      within(await screen.findByTestId("capital-holding-position-501")).getByRole("link", {
+      within(await showHolding("capital-holding-position-501")).getByRole("link", {
         name: "Синтетическая акция",
       }),
     ).toBeVisible();

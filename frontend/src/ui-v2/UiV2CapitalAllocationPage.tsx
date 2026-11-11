@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
-
 import { listMonths } from "../api/months";
 import {
   getRiskAllocation,
   type RiskAllocationMetric,
-  type RiskConcentrationMetric,
   type RiskConcentrationItem,
+  type RiskConcentrationMetric,
   type RiskMetricSupport,
   type RiskMoneyValue,
   type RiskSupportIssue,
@@ -23,10 +22,11 @@ import {
 } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
 import { sortReportingMonths } from "./monthSelection";
-import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
-import { UiV2Shell } from "./UiV2Shell";
-import pageStyles from "./UiV2Page.module.css";
 import styles from "./UiV2CapitalAllocation.module.css";
+import pageStyles from "./UiV2Page.module.css";
+import { UiV2Shell } from "./UiV2Shell";
+import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
+import { UiV2Tabs } from "./UiV2Tabs";
 
 const TOP_N = 5;
 
@@ -435,9 +435,13 @@ export default function UiV2CapitalAllocationPage() {
           <p className={pageStyles.subtitle}>
             Срез ликвидного портфеля и будущих датированных событий.
           </p>
-          <p className={styles.backLink}>
-            <Link to="/v2/capital">← Капитал</Link>
-          </p>
+          <UiV2Tabs
+            label="Капитал"
+            tabs={[
+              { label: "Обзор", to: "/v2/capital", active: false },
+              { label: "Распределение", to: "/v2/capital/allocation", active: true },
+            ]}
+          />
         </>
       }
     >

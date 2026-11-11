@@ -37,6 +37,10 @@ async function openBrokerReview(page: Page, accountId: number) {
   await expect(
     page.getByRole("region", { name: "Рабочая область: Брокерские выписки", exact: true }),
   ).toBeVisible();
+  const parsing = page.getByText("Подробнее о разборе файлов", { exact: true });
+  await expect(parsing).toBeVisible();
+  if (!(await parsing.evaluate((element) => element.closest("details")?.open)))
+    await parsing.click();
   const summary = page.getByText("Подробности разбора и сохранение месяца", { exact: true });
   await expect(summary).toBeVisible();
   if (!(await summary.evaluate((element) => element.closest("details")?.open)))

@@ -1170,10 +1170,10 @@ test("ui-v2 Capital desktop: closed composition, allocation and holdings stay bo
   await expect(page.getByTestId("capital-draft-note")).toContainText("Август 2031 ещё не закрыт");
   await expect(page.getByTestId("capital-composition")).toHaveAttribute("data-point-count", "4");
   await expect(page.getByTestId("capital-change-list")).toHaveCount(0);
-  for (const name of ["По классам активов", "По счетам", "Крупнейшие позиции"]) {
+  for (const name of ["По классам активов", "Счета и позиции"]) {
     await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
   }
-  await expect(page.getByRole("table", { name: "Крупнейшие позиции" })).toBeVisible();
+  await expect(page.getByTestId("capital-top-summary")).toBeVisible();
   await expect(page.getByTestId("capital-class-cash")).toContainText("803 900 ₽");
   await expect(page.getByTestId("capital-bucket-unassigned_cash")).toContainText(
     "Деньги без привязки к счёту",
@@ -1192,14 +1192,70 @@ test("ui-v2 Capital desktop: closed composition, allocation and holdings stay bo
   ).toBeVisible();
   expect(await page.locator(".capital-composition-chart path[fill='#27734c']").count()).toBe(0);
   await expect(page.getByText("164,9%", { exact: false })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Все отчёты →" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Распределение", exact: true })).toHaveAttribute(
     "href",
-    "/v2/reports",
+    "/v2/capital/allocation",
   );
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-capital-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
   expect(evidence.reads.some((read) => read.includes("forecast_version=v1"))).toBe(true);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("@viewport-owned ui-v2 Capital groups fit 720px at desktop widths and zoom", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installCapitalApi(page);
+  await page.goto("/v2/capital");
+  await expect(page.getByTestId("capital-bucket-account:3")).toBeVisible();
+  const panel = page.getByTestId("capital-panel-capital-holdings-title");
+  await panel.evaluate((element) => {
+    element.style.maxWidth = "720px";
+  });
+  for (const [width, zoom] of [
+    [1024, 1],
+    [1280, 1],
+    [1280, 1.25],
+    [1440, 1],
+    [1440, 1.25],
+    [1920, 1],
+    [1920, 1.25],
+  ]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.evaluate((value) => {
+      document.documentElement.style.zoom = String(value);
+    }, zoom);
+    for (const mode of ["По счетам", "По классам"]) {
+      await panel.getByRole("button", { name: mode, exact: true }).click();
+      for (const group of await panel.getByTestId("capital-holding-group").all()) {
+        if (!(await group.evaluate((element) => (element as HTMLDetailsElement).open)))
+          await group.locator(":scope > summary").click();
+      }
+      const overflow = await panel.evaluate(
+        (element) =>
+          [...element.querySelectorAll("summary, li")].filter(
+            (row) => row.scrollWidth > row.clientWidth + 1,
+          ).length,
+      );
+      expect(overflow).toBe(0);
+      await expect(page.getByTestId("capital-net")).toHaveText("2 803 900 ₽");
+      await assertBounded(page);
+    }
+    await capture(page, testInfo, `capital-${width}-${zoom}`);
+  }
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const longLabel = "СинтетическийСчёт".repeat(5).slice(0, 80);
+  await page.goto(
+    `/v2/capital?${new URLSearchParams({ holding_kind: "account", holding_value: "account:3", holding_label: longLabel })}`,
+  );
+  await page.evaluate(() => {
+    document.documentElement.style.zoom = "1.25";
+  });
+  await expect(page.getByText(`Фильтр: ${longLabel}`, { exact: true })).toBeVisible();
+  await expect(page.getByTestId("capital-holding-position-501")).toBeVisible();
+  await assertBounded(page);
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
 });
@@ -1238,6 +1294,8 @@ test("ui-v2 Capital desktop long values: allocation filters stay operable", asyn
   const reset = page.getByRole("button", { name: "Сбросить" });
   await reset.focus();
   await page.keyboard.press("Enter");
+  await page.getByTestId("capital-bucket-account:3").focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByTestId("capital-holding-position-502")).toBeVisible();
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-capital-desktop-long-values");
@@ -1255,8 +1313,9 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
       await expect(page.getByTestId("capital-net")).toHaveCount(0);
     } else if (scene === "zero") {
       await expect(page.getByTestId("capital-net")).toHaveText("0 ₽");
-      await expect(page.getByTestId("capital-class-cash")).toContainText("0 ₽");
-      await expect(page.getByTestId("capital-class-cash")).toContainText("—");
+      await expect(page.getByTestId("capital-class-cash")).toHaveCount(0);
+      await expect(page.getByTestId("capital-assets")).toHaveText("0 ₽");
+      await expect(page.getByText("Ненулевых строк нет.", { exact: true })).toBeVisible();
     } else {
       await expect(page.getByTestId("capital-net")).toBeVisible();
       if (scene === "first-closed") {
@@ -1269,6 +1328,10 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
       if (scene === "partial") {
         await expect(page.getByText("Данные временно недоступны").first()).toBeVisible();
         await expect(page.getByTestId("capital-composition")).toBeVisible();
+        for (const group of await page.getByTestId("capital-holding-group").all()) {
+          if (!(await group.evaluate((element) => (element as HTMLDetailsElement).open)))
+            await group.locator(":scope > summary").click();
+        }
         await expect(page.getByTestId("capital-holding-cash-701")).toBeVisible();
         await expect(page.getByTestId("capital-holding-deposit-601")).toBeVisible();
         await expect(page.getByTestId("capital-holding-position-501")).toHaveCount(0);
@@ -1295,6 +1358,8 @@ test("ui-v2 Capital interactions: filters, windows and native navigation preserv
   await expect(page.getByText("Фильтр: Акции")).toBeVisible();
   await expect(page.getByTestId("capital-holding-position-501")).toBeVisible();
   await page.getByRole("button", { name: "Сбросить" }).click();
+  await page.getByTestId("capital-bucket-account:1").click();
+  await expect(page.getByTestId("capital-holding-deposit-601")).not.toBeVisible();
   await page.getByTestId("capital-bucket-account:1").click();
   await expect(page.getByTestId("capital-holding-deposit-601")).toBeVisible();
   await expect(

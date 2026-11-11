@@ -416,7 +416,10 @@ describe("App", () => {
       ),
     ).toBeVisible();
     expect(await screen.findByLabelText("Отчётный месяц", {}, { timeout: 5_000 })).toHaveValue("1");
-    expect(screen.getByRole("link", { name: "← Капитал" })).toHaveAttribute("href", "/v2/capital");
+    expect(screen.getByRole("link", { name: /^Обзор$/ })).toHaveAttribute(
+      "href",
+      "/v2/capital?month=1",
+    );
   });
 
   it("registers the native goals deep-link route with its selected report month", async () => {

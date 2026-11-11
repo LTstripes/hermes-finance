@@ -3,6 +3,29 @@
   gap: 16px;
   min-width: 0;
 }
+
+.statementFiles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.statementFiles > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.7fr);
+  gap: 8px 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+.statementFiles > li > details {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+.statementIdentity {
+  min-width: 0;
+}
 .sourceNav {
   display: flex;
   flex-wrap: wrap;

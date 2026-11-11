@@ -11,6 +11,7 @@ import { listInstruments } from "../api/instruments";
 import { listMonths } from "../api/months";
 import { listPositions } from "../api/positions";
 import { listProperties } from "../api/properties";
+import type { RiskAllocationResponse } from "../api/riskAllocation";
 import { getRiskAllocation } from "../api/riskAllocation";
 import type {
   CapitalChangeComponent,
@@ -19,7 +20,6 @@ import type {
   CapitalFlowBreakdown,
   ClosedReportComparison,
   DashboardMortgage,
-  MoneyValue,
   PortfolioSourceCoverage,
   PropertySnapshot,
 } from "../api/types";
@@ -30,10 +30,10 @@ import {
 import { MissingAccountNames, PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { HelpTip } from "../components/ui";
 import { formatMonth, formatPercent } from "../lib/format";
-import { ASSET_CLASS_LABELS } from "../lib/riskSupportCopy";
+import { ASSET_CLASS_LABELS, unsupportedMetricReason } from "../lib/riskSupportCopy";
 import { queryKeys } from "../queryClient";
 import { CLASS_COLORS } from "./assetClasses";
-import { AccountAllocation, ClassAllocation, TopPositions } from "./CapitalAllocationSheet";
+import { ClassAllocation, Limits } from "./CapitalAllocationSheet";
 import { type BridgeStep, CapitalBridgeChart } from "./CapitalBridgeChart";
 import { CapitalDraftValuation } from "./CapitalDraftValuation";
 import { ClosedReportTitle } from "./ClosedReportTitle";
@@ -45,6 +45,7 @@ import {
   holdingContextLabel,
   holdingReturnsNavigation,
   isRiskAssetClass,
+  rankedNonzeroHoldings,
   UNASSIGNED_CASH_KEY,
 } from "./capitalHoldings";
 import { selectNewestDraftAfterLatestClosed, sortReportingMonths } from "./monthSelection";
@@ -52,6 +53,7 @@ import sheet from "./ReportSheet.module.css";
 import capitalStyles from "./UiV2Capital.module.css";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
+import { UiV2Tabs } from "./UiV2Tabs";
 import { moneyText as money, moneyTone } from "./valueFormat";
 import { wholeMoneyText as whole, wholeMoneyDeltaText as wholeDelta } from "./wholeMoney";
 
@@ -67,6 +69,11 @@ function rowsMatchMonth(
 
 function isZeroAmount(amount: string): boolean {
   return /^-?0(?:\.0+)?$/.test(amount.trim());
+}
+
+function remainingPositions(count: number): string {
+  const form = new Intl.PluralRules("ru").select(count);
+  return `ещё ${count} ${form === "one" ? "позиция" : form === "few" ? "позиции" : "позиций"}`;
 }
 
 const MONTHS_DATIVE = [
@@ -97,12 +104,6 @@ function isIncomplete(coverage: PortfolioSourceCoverage | null | undefined): boo
     (coverage.status !== "complete" ||
       coverage.source_account_financial_coverage?.status === "partial")
   );
-}
-
-/** Geometry only: widths never feed a shown amount. */
-function coordinate(value: MoneyValue): number {
-  const number = Number(value.amount);
-  return Number.isFinite(number) ? number : 0;
 }
 
 function SheetSection({
@@ -495,76 +496,56 @@ function PropertyBlock({
   ready: boolean;
   retry: () => void;
 }) {
-  const mortgageClosed = mortgage !== null && isZeroAmount(mortgage.mortgage_balance.amount);
   return (
     <SheetSection
       eyebrow="Отдельно от ликвидного капитала"
+      id="capital-property-title"
+      title="Недвижимость"
       help={
         <HelpTip label="Сравнение капитала и ипотеки">
           Недвижимость и ипотека не входят в ликвидный капитал. Положительная разница — капитала
           больше остатка ипотеки, отрицательная — меньше.
         </HelpTip>
       }
-      id="capital-property-title"
-      title="Недвижимость"
     >
       {!ready ? (
         <UiV2WidgetState retry={retry} />
       ) : (
-        <div className={capitalStyles.property}>
-          <ul className={capitalStyles.propertyList}>
-            {properties.map((property) => {
-              const value = coordinate(property.estimated_value);
-              const debt = coordinate(property.mortgage_balance);
-              const debtWidth =
-                value > 0 ? `${Math.max(0, Math.min(100, (debt / value) * 100))}%` : "0%";
-              return (
-                <li key={property.id}>
-                  <div className={capitalStyles.propertyHead}>
-                    <span>{property.name}</span>
-                    <strong className={sheet.amount}>{whole(property.estimated_value)}</strong>
-                  </div>
-                  {value > 0 ? (
-                    <span aria-hidden="true" className={capitalStyles.propertyBar}>
-                      <span style={{ width: debtWidth }} />
-                    </span>
-                  ) : null}
-                  <span className={capitalStyles.propertyKey}>
-                    <span>
-                      <i data-part="debt" /> ипотека {whole(property.mortgage_balance)}
-                    </span>
-                    <span>
-                      <i data-part="value" /> оценка {whole(property.estimated_value)}
-                    </span>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          {mortgage ? (
-            <dl className={capitalStyles.facts}>
-              <div>
-                <dt>Остаток ипотеки по отчёту</dt>
-                <dd className={sheet.amount}>{whole(mortgage.mortgage_balance)}</dd>
-              </div>
-              <div>
-                <dt>Покрытие ипотеки капиталом</dt>
-                <dd className={sheet.amount}>
-                  {mortgageClosed
-                    ? "ипотека закрыта"
-                    : formatPercent(mortgage.coverage_pct, { digits: 1 })}
-                </dd>
-              </div>
-              {mortgageClosed ? null : (
-                <div>
-                  <dt>Разница: капитал − ипотека</dt>
-                  <dd className={sheet.amount} data-tone={moneyTone(mortgage.gap)}>
-                    {wholeDelta(mortgage.gap)}
-                  </dd>
-                </div>
-              )}
-            </dl>
-          ) : null}
+        <div className={capitalStyles.propertyTiles}>
+          <div>
+            <span>Стоимость недвижимости</span>
+            {properties.map((property) => (
+              <p key={property.id}>
+                <span>{property.name}</span>
+                <strong className={sheet.amount} title={money(property.estimated_value)}>
+                  {whole(property.estimated_value)}
+                </strong>
+              </p>
+            ))}
+          </div>
+          <div>
+            <span>Остаток ипотеки по отчёту</span>
+            <strong
+              className={sheet.amount}
+              title={mortgage ? money(mortgage.mortgage_balance) : undefined}
+            >
+              {whole(mortgage?.mortgage_balance)}
+            </strong>
+          </div>
+          <div>
+            <span>Покрытие ипотеки капиталом</span>
+            <strong className={sheet.amount}>
+              {mortgage && isZeroAmount(mortgage.mortgage_balance.amount)
+                ? "ипотека закрыта"
+                : formatPercent(mortgage?.coverage_pct, { digits: 1 })}
+            </strong>
+            {mortgage && !isZeroAmount(mortgage.mortgage_balance.amount) ? (
+              <small>
+                <span>Разница: капитал − ипотека</span>{" "}
+                <span data-tone={moneyTone(mortgage.gap)}>{wholeDelta(mortgage.gap)}</span>
+              </small>
+            ) : null}
+          </div>
         </div>
       )}
     </SheetSection>
@@ -577,122 +558,253 @@ function HoldingsBlock({
   resetFilter,
   rows,
   lists,
+  risk,
+  retryRisk,
 }: {
   filter: HoldingFilter;
-  lists: Record<"cash" | "deposit" | "position", { ready: boolean; retry: () => void }>;
   monthId: number;
   resetFilter: () => void;
   rows: HoldingRow[];
+  lists: Record<"cash" | "deposit" | "position", { ready: boolean; retry: () => void }>;
+  risk: RiskAllocationResponse | undefined;
+  retryRisk: () => void;
 }) {
   const location = useLocation();
-  const backParams = new URLSearchParams(location.search);
-  if (filter) {
-    backParams.set("holding_kind", filter.kind);
-    backParams.set("holding_value", filter.value);
-    backParams.set("holding_label", filter.label);
-  } else {
-    for (const key of ["holding_kind", "holding_value", "holding_label"]) backParams.delete(key);
-  }
-  const back = `${location.pathname}${backParams.size ? `?${backParams}` : ""}`;
-  const visible = filterHoldingRows(rows, filter);
-  const sections: Array<{ kind: HoldingRow["kind"]; title: string }> = [
-    { kind: "cash", title: "Деньги" },
-    { kind: "deposit", title: "Вклады" },
-    { kind: "position", title: "Позиции" },
-  ];
-  const shown = sections.filter((section) => {
-    const list = lists[section.kind];
-    return !list.ready || visible.some((row) => row.kind === section.kind);
-  });
-  const noLinkReasons = Array.from(
-    new Set(
-      visible
-        .filter((row) => row.kind === "position" && !holdingReturnsNavigation(row, back).href)
-        .map((row) => holdingReturnsNavigation(row).reason)
-        .filter((reason): reason is string => Boolean(reason)),
-    ),
+  const [mode, setMode] = useState<"account" | "risk_class">(
+    filter?.kind === "risk_class" ? "risk_class" : "account",
   );
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const visible = rankedNonzeroHoldings(
+    filterHoldingRows(rows, filter).filter((row) => lists[row.kind].ready),
+  );
+  const metric = mode === "account" ? risk?.allocation_by_account : risk?.allocation_by_asset_class;
+  const unsupported = metric
+    ? unsupportedMetricReason(metric.support.status, metric.support.reason_codes)
+    : null;
+  const groups = !unsupported
+    ? (metric?.items ?? [])
+        .filter((item) => !isZeroAmount(item.amount.amount))
+        .map((item) => ({
+          key: item.key,
+          label:
+            mode === "account"
+              ? item.key === UNASSIGNED_CASH_KEY
+                ? "Деньги без привязки к счёту"
+                : item.label
+              : (ASSET_CLASS_LABELS[item.key] ?? item.label),
+          amount: item.amount,
+          share: item.share_pct,
+          rows: filterHoldingRows(visible, { kind: mode, value: item.key, label: item.label }),
+        }))
+    : [];
+  const assigned = new Set(groups.flatMap((group) => group.rows.map((row) => row.key)));
+  const other = visible.filter((row) => !assigned.has(row.key));
+  const allGroups = [
+    ...groups,
+    ...(other.length
+      ? [
+          {
+            key: "other",
+            label: "Остальные строки · вне распределения",
+            amount: null,
+            share: null,
+            rows: other,
+          },
+        ]
+      : []),
+  ];
+  const noLinkReasons = [
+    ...new Set(
+      visible
+        .filter((row) => row.kind === "position")
+        .map((row) => holdingReturnsNavigation(row).reason)
+        .filter(Boolean),
+    ),
+  ];
+  const top = risk?.top_positions;
+  const topReason = top
+    ? unsupportedMetricReason(top.support.status, top.support.reason_codes)
+    : null;
   return (
     <SheetSection
       actions={<Link to={`/v2/data/months/${monthId}`}>Данные отчётного месяца →</Link>}
-      eyebrow="Строки отчёта"
+      eyebrow="Структура"
       id="capital-holdings-title"
-      title="Где лежит капитал"
+      title="Счета и позиции"
     >
-      {filter ? (
-        <div className={capitalStyles.filterBar}>
-          <span>Фильтр: {filter.label}</span>
-          <button onClick={resetFilter} type="button">
-            Сбросить
+      <div className={capitalStyles.filterBar}>
+        <fieldset className={capitalStyles.groupSwitch} aria-label="Группировка позиций">
+          <button
+            type="button"
+            aria-pressed={mode === "account"}
+            onClick={() => setMode("account")}
+          >
+            По счетам
           </button>
-        </div>
+          <button
+            type="button"
+            aria-pressed={mode === "risk_class"}
+            onClick={() => setMode("risk_class")}
+          >
+            По классам
+          </button>
+        </fieldset>
+        {filter ? (
+          <>
+            <span>Фильтр: {filter.label}</span>
+            <button onClick={resetFilter} type="button">
+              Сбросить
+            </button>
+          </>
+        ) : null}
+      </div>
+      {!risk ? (
+        <UiV2WidgetState retry={retryRisk} />
+      ) : unsupported ? (
+        <UiV2WidgetState title={unsupported} />
       ) : null}
-      {shown.length === 0 ? (
+      {Object.entries(lists)
+        .filter(([, list]) => !list.ready)
+        .map(([kind, list]) => (
+          <div key={kind}>
+            <h3>{kind === "position" ? "Позиции" : kind === "cash" ? "Деньги" : "Вклады"}</h3>
+            <UiV2WidgetState retry={list.retry} />
+          </div>
+        ))}
+      <div className={capitalStyles.holdingGroups}>
+        {allGroups.map((group, index) => (
+          <details
+            className={capitalStyles.holdingGroup}
+            data-testid="capital-holding-group"
+            key={`${mode}:${group.key}`}
+            open={filter ? group.rows.length > 0 : index === 0}
+          >
+            <summary
+              className={capitalStyles.accountSummary}
+              data-testid={
+                mode === "account" && group.key !== "other"
+                  ? `capital-bucket-${group.key}`
+                  : undefined
+              }
+            >
+              <strong>{group.label}</strong>
+              <span className={sheet.amount} title={group.amount ? money(group.amount) : undefined}>
+                {group.amount ? whole(group.amount) : "—"}
+              </span>
+              <span className={sheet.share}>
+                {formatPercent(group.share, { digits: 1, share: true })}
+              </span>
+            </summary>
+            <ul className={capitalStyles.holdingList}>
+              {(expanded[`${mode}:${group.key}`] ? group.rows : group.rows.slice(0, 3)).map(
+                (row) => {
+                  const backParams = new URLSearchParams(location.search);
+                  const returnFilter =
+                    filter ??
+                    (group.key === "other"
+                      ? null
+                      : { kind: mode, value: group.key, label: group.label });
+                  if (returnFilter) {
+                    backParams.set("holding_kind", returnFilter.kind);
+                    backParams.set("holding_value", returnFilter.value);
+                    backParams.set("holding_label", returnFilter.label.slice(0, 80));
+                  } else
+                    for (const key of ["holding_kind", "holding_value", "holding_label"])
+                      backParams.delete(key);
+                  const target = holdingReturnsNavigation(
+                    row,
+                    `${location.pathname}${backParams.size ? `?${backParams}` : ""}`,
+                  );
+                  return (
+                    <li
+                      className={capitalStyles.holdingRow}
+                      data-included={row.includeInCapital ? "true" : "false"}
+                      data-testid={`capital-holding-${row.key}`}
+                      key={row.key}
+                    >
+                      <div className={capitalStyles.holdingMain}>
+                        {target.href ? (
+                          <Link className={capitalStyles.holdingName} to={target.href}>
+                            {row.name}
+                          </Link>
+                        ) : (
+                          <span className={capitalStyles.holdingName}>{row.name}</span>
+                        )}
+                        <span className={capitalStyles.holdingMeta}>
+                          {holdingContextLabel(row)}
+                          {(mode === "risk_class" || group.key === "other") && row.accountName
+                            ? ` · ${row.accountName}`
+                            : ""}
+                        </span>
+                        {!row.includeInCapital ? (
+                          <span className={capitalStyles.holdingMeta}>
+                            не входит в ликвидный капитал
+                          </span>
+                        ) : null}
+                      </div>
+                      <strong
+                        className={`${sheet.amount} ${capitalStyles.holdingAmount}`}
+                        title={money(row.amount)}
+                      >
+                        {whole(row.amount)}
+                      </strong>
+                    </li>
+                  );
+                },
+              )}
+            </ul>
+            {group.rows.length > 3 ? (
+              <button
+                className={capitalStyles.moreHoldings}
+                type="button"
+                onClick={() =>
+                  setExpanded((old) => ({
+                    ...old,
+                    [`${mode}:${group.key}`]: !old[`${mode}:${group.key}`],
+                  }))
+                }
+              >
+                {expanded[`${mode}:${group.key}`]
+                  ? "Свернуть"
+                  : remainingPositions(group.rows.length - 3)}
+              </button>
+            ) : null}
+          </details>
+        ))}
+      </div>
+      {visible.length === 0 && Object.values(lists).every((list) => list.ready) ? (
         <p className={sheet.muted}>
           {filter ? "В фильтре нет строк." : "В закрытом отчёте нет строк капитала."}
         </p>
       ) : null}
-      <div className={capitalStyles.holdingGroups}>
-        {shown.map((section) => {
-          const list = lists[section.kind];
-          const sectionRows = visible.filter((row) => row.kind === section.kind);
-          return (
-            <div className={capitalStyles.holdingGroup} key={section.kind}>
-              <h3>{section.title}</h3>
-              {!list.ready ? (
-                <UiV2WidgetState retry={list.retry} />
-              ) : (
-                <ul className={capitalStyles.holdingList}>
-                  {sectionRows.map((row) => {
-                    const target =
-                      row.kind === "position" ? holdingReturnsNavigation(row, back) : null;
-                    return (
-                      <li
-                        className={capitalStyles.holdingRow}
-                        data-included={row.includeInCapital ? "true" : "false"}
-                        data-testid={`capital-holding-${row.key}`}
-                        key={row.key}
-                      >
-                        <div className={capitalStyles.holdingMain}>
-                          {target?.href ? (
-                            <Link className={capitalStyles.holdingName} to={target.href}>
-                              {row.name}
-                            </Link>
-                          ) : (
-                            <span className={capitalStyles.holdingName}>{row.name}</span>
-                          )}
-                          {target && !target.href && target.reason ? (
-                            <span className={sheet.visuallyHidden}>{target.reason}</span>
-                          ) : null}
-                          <span className={capitalStyles.holdingMeta}>
-                            {holdingContextLabel(row)}
-                            {row.accountName === null ? "" : ` · ${row.accountName}`}
-                          </span>
-                        </div>
-                        {row.includeInCapital ? (
-                          <span />
-                        ) : (
-                          <span className={capitalStyles.excludedBadge}>
-                            не входит в ликвидный капитал
-                          </span>
-                        )}
-                        <strong className={`${sheet.amount} ${capitalStyles.holdingAmount}`}>
-                          {money(row.amount)}
-                        </strong>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {section.kind === "position" && noLinkReasons.length > 0 ? (
-                <p aria-hidden="true" className={sheet.gapNote}>
-                  Без ссылки на разбор: {noLinkReasons.join(" ")}
-                </p>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
+      {noLinkReasons.length ? (
+        <p className={sheet.gapNote}>Без ссылки на разбор: {noLinkReasons.join(" ")}</p>
+      ) : null}
+      {metric && !unsupported ? (
+        <Limits
+          metric={{
+            ...metric,
+            support: {
+              ...metric.support,
+              reason_codes: metric.support.reason_codes.filter(
+                (reason) => mode !== "account" || reason !== "cash_not_account_linked",
+              ),
+            },
+          }}
+          title={mode === "account" ? "По счетам" : "По классам активов"}
+        />
+      ) : null}
+      <p className={sheet.gapNote} data-testid="capital-top-summary">
+        Крупнейшие позиции:{" "}
+        {top && !topReason ? (
+          <>
+            топ-{top.top_n} — <span title={money(top.top_amount)}>{whole(top.top_amount)}</span> ·{" "}
+            {formatPercent(top.top_share_pct, { digits: 1, share: true })}
+          </>
+        ) : (
+          (topReason ?? "Данные временно недоступны")
+        )}
+      </p>
     </SheetSection>
   );
 }
@@ -843,24 +955,7 @@ export default function UiV2CapitalPage() {
     if (isRiskAssetClass(value))
       setFilter({ kind: "risk_class", value, label: ASSET_CLASS_LABELS[value] });
   };
-  const pickAccount = (key: string, label: string) =>
-    setFilter({
-      kind: "account",
-      label: key === UNASSIGNED_CASH_KEY ? "наличные без привязки к счёту" : label,
-      value: key,
-    });
   const resetFilter = () => setFilter(null);
-
-  const capitalBackParams = new URLSearchParams(params);
-  if (filter) {
-    capitalBackParams.set("holding_kind", filter.kind);
-    capitalBackParams.set("holding_value", filter.value);
-    capitalBackParams.set("holding_label", filter.label);
-  } else {
-    for (const key of ["holding_kind", "holding_value", "holding_label"])
-      capitalBackParams.delete(key);
-  }
-  const capitalBack = `/v2/capital${capitalBackParams.size ? `?${capitalBackParams}` : ""}`;
 
   let content: ReactNode;
   if (monthsQuery.isError) {
@@ -911,67 +1006,39 @@ export default function UiV2CapitalPage() {
               : undefined
           }
         />
-        <div className={sheet.columns}>
-          <SheetSection
-            eyebrow="Структура · ликвидные активы"
-            id="capital-allocation-title"
-            title="По классам активов"
-          >
-            {!riskReady ? (
-              <UiV2WidgetState retry={() => void riskQuery.refetch()} />
-            ) : (
-              <ClassAllocation
-                metric={risk?.allocation_by_asset_class}
-                onSelect={pickRiskClass}
-                selected={filter?.kind === "risk_class" ? filter.value : null}
-              />
-            )}
-          </SheetSection>
-          <SheetSection eyebrow="Структура" id="capital-accounts-title" title="По счетам">
-            {!riskReady ? (
-              <UiV2WidgetState retry={() => void riskQuery.refetch()} />
-            ) : (
-              <AccountAllocation
-                metric={risk?.allocation_by_account}
-                onSelect={pickAccount}
-                retry={() => void riskQuery.refetch()}
-                selected={filter?.kind === "account" ? filter.value : null}
-              />
-            )}
-          </SheetSection>
-        </div>
-        <div className={sheet.columns}>
-          <SheetSection eyebrow="Концентрация" id="capital-top-title" title="Крупнейшие позиции">
-            {!riskReady ? (
-              <UiV2WidgetState retry={() => void riskQuery.refetch()} />
-            ) : (
-              <TopPositions
-                metric={risk?.top_positions}
-                renderLabel={(item) => {
-                  const row = holdingRows.find(
-                    (r) =>
-                      r.key === `position-${item.position_id}` &&
-                      r.accountId === item.account_id &&
-                      r.instrumentId === item.instrument_id,
-                  );
-                  const target = row ? holdingReturnsNavigation(row, capitalBack) : null;
-                  return target?.href ? <Link to={target.href}>{item.label}</Link> : item.label;
-                }}
-              />
-            )}
-          </SheetSection>
-          {propertiesQuery.isError ||
-          (propertiesReady && (propertiesQuery.data?.length ?? 0) > 0) ? (
-            <PropertyBlock
-              mortgage={mortgage}
-              properties={propertiesReady ? (propertiesQuery.data ?? []) : []}
-              ready={propertiesReady}
-              retry={() => void propertiesQuery.refetch()}
+        <SheetSection
+          eyebrow="Структура · ликвидные активы"
+          id="capital-allocation-title"
+          title="По классам активов"
+        >
+          {!riskReady ? (
+            <UiV2WidgetState retry={() => void riskQuery.refetch()} />
+          ) : risk?.allocation_by_asset_class.support.status === "supported" &&
+            risk.allocation_by_asset_class.items.every((item) =>
+              isZeroAmount(item.amount.amount),
+            ) ? (
+            <p className={sheet.muted}>Ненулевых строк нет.</p>
+          ) : (
+            <ClassAllocation
+              metric={
+                risk
+                  ? {
+                      ...risk.allocation_by_asset_class,
+                      items: risk.allocation_by_asset_class.items.filter(
+                        (item) => !isZeroAmount(item.amount.amount),
+                      ),
+                    }
+                  : undefined
+              }
+              onSelect={pickRiskClass}
+              selected={filter?.kind === "risk_class" ? filter.value : null}
             />
-          ) : null}
-        </div>
+          )}
+        </SheetSection>
         <HoldingsBlock
           filter={filter}
+          risk={risk}
+          retryRisk={() => void riskQuery.refetch()}
           lists={{
             cash: { ready: cashReady, retry: () => void cashQuery.refetch() },
             deposit: { ready: depositsReady, retry: () => void depositsQuery.refetch() },
@@ -981,6 +1048,14 @@ export default function UiV2CapitalPage() {
           resetFilter={resetFilter}
           rows={holdingRows}
         />
+        {propertiesQuery.isError || (propertiesReady && (propertiesQuery.data?.length ?? 0) > 0) ? (
+          <PropertyBlock
+            mortgage={mortgage}
+            properties={propertiesReady ? (propertiesQuery.data ?? []) : []}
+            ready={propertiesReady}
+            retry={() => void propertiesQuery.refetch()}
+          />
+        ) : null}
       </div>
     );
   }
@@ -991,17 +1066,13 @@ export default function UiV2CapitalPage() {
       busy={!monthsReady}
       header={
         <>
-          <ClosedReportTitle
-            links={
-              latestClosed ? (
-                <>
-                  <Link to="/v2/returns">Доходность в целом →</Link>
-                  <Link to="/v2/reports">Все отчёты →</Link>
-                </>
-              ) : null
-            }
-            month={latestClosed}
-            title="Капитал"
+          <ClosedReportTitle month={latestClosed} title="Капитал" />
+          <UiV2Tabs
+            label="Капитал"
+            tabs={[
+              { label: "Обзор", to: "/v2/capital", active: true },
+              { label: "Распределение", to: "/v2/capital/allocation", active: false },
+            ]}
           />
           {newerDraft ? (
             <p className={sheet.draftNote} data-testid="capital-draft-note">
