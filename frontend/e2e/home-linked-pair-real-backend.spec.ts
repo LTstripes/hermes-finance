@@ -4,8 +4,8 @@ import { expect, test } from "@playwright/test";
 test("Home linked pair: real backend correction, reclose and readback", async ({
   page,
   request,
-}) => {
-  const api = "http://127.0.0.1:8000/api";
+}, testInfo) => {
+  const api = new URL("/api", testInfo.project.use.baseURL).href;
   const money = (amount: string) => ({ amount, currency: "RUB" });
   async function write(path: string, data: unknown = {}, method = "POST", status = 201) {
     const response = await request.fetch(`${api}${path}`, { method, data });

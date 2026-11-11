@@ -366,7 +366,7 @@ describe("UiV2CapitalAllocationPage", () => {
     await user.click(screen.getByText("По счетам", { selector: "span" }));
     const accounts = screen.getByRole("table", { name: "По счетам" });
     const accountDetails = accounts.closest("details") as HTMLElement;
-    expect(within(accounts).getByText("Наличные без привязки к счёту")).toBeInTheDocument();
+    expect(within(accounts).getByText("Деньги без привязки к счёту")).toBeInTheDocument();
     expect(within(accounts).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
     expect(within(accounts).getByText(/20,0%/)).toBeInTheDocument();
     expect(within(accountDetails).getByText("⚠ часть сумм не распределена")).toBeInTheDocument();

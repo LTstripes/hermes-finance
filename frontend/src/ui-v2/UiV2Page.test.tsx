@@ -16,6 +16,7 @@ import {
 } from "../test/uiV2Fixtures";
 import { UiV2ErrorBoundary, UiV2LoadingFallback } from "./UiV2Entry";
 import UiV2Page from "./UiV2Page";
+import { shortWholeRub } from "./UiV2HomeCharts";
 
 function LocationProbe() {
   const location = useLocation();
@@ -669,4 +670,32 @@ it("never shows 100 % for a capital goal that is not reached, in the facts or th
   const goals = screen.getByRole("heading", { name: "Цели" }).closest("section");
   if (!goals) throw new Error("Goals panel is missing");
   expect(within(goals).getAllByText("99%").length).toBeGreaterThan(0);
+});
+
+it.each(["0.01", "40.00", "99.99"])(
+  "keeps a positive share under 0.1 percent visible (%s)",
+  async (amount) => {
+    const { mount, state } = setup();
+    const current = state.comparison.current;
+    if (!current) throw new Error("Missing synthetic snapshot");
+    current.liquid_assets_total.amount = "100000.00";
+    current.allocation = [{ asset_class: "cash", amount: { amount, currency: "RUB" } }];
+    mount();
+    const panel = (await screen.findByRole("heading", { name: "Где лежат деньги" })).closest(
+      "section",
+    );
+    if (!panel) throw new Error("Missing composition panel");
+    expect(await within(panel).findByText("<0,1%")).toBeVisible();
+    expect(within(panel).getByText("Деньги")).toBeVisible();
+  },
+);
+
+it.each([
+  ["634.49", "634"],
+  ["634.50", "635"],
+  ["-634.50", "−635"],
+  ["0.01", "0"],
+  ["-0.49", "0"],
+])("rounds waterfall labels to whole rubles (%s)", (amount, label) => {
+  expect(shortWholeRub(amount)).toBe(label);
 });

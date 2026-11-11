@@ -17,7 +17,7 @@ export const ASSET_CLASS_LABELS: Record<string, string> = {
   gold: ASSET_CLASS_NAMES.gold_other,
   other: "Прочее",
   unknown_asset_class: "Неизвестный класс активов",
-  unassigned_cash: "Наличные без привязки к счёту",
+  unassigned_cash: "Деньги без привязки к счёту",
 };
 
 export const SOURCE_KIND_LABELS: Record<string, string> = {

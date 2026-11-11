@@ -189,7 +189,7 @@ export function AccountAllocation({
               type="button"
             >
               <span className={styles.barLabel}>
-                {item.key === UNASSIGNED_CASH_KEY ? "Наличные без привязки к счёту" : item.label}
+                {item.key === UNASSIGNED_CASH_KEY ? ASSET_CLASS_LABELS.unassigned_cash : item.label}
               </span>
               <strong className={sheet.amount}>{money(item.amount)}</strong>
               <span className={sheet.share}>{percent(item.share_pct)}</span>

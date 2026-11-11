@@ -84,6 +84,10 @@ describe("CapitalCompositionChart", () => {
     expect(screen.getByText("Всего активов")).toBeInTheDocument();
     expect(screen.getByText("Капитал нетто")).toBeInTheDocument();
     expect(screen.getByText("Включённые долги")).toBeInTheDocument();
+    expect(screen.getByText("Деньги")).toBeInTheDocument();
+    expect(screen.getByText("Золото")).toBeInTheDocument();
+    expect(screen.queryByText("Наличные")).not.toBeInTheDocument();
+    expect(screen.queryByText("Золото и прочее")).not.toBeInTheDocument();
   });
 
   it("shows the missing account in the history tooltip", async () => {
