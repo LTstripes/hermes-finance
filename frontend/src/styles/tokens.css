@@ -24,6 +24,8 @@
   /* Returns tables and their loading placeholders share compact geometry. */
   --returns-cell-padding: 6px;
   --returns-row-height: 44px;
+  --returns-month-row-height: 28px;
+  --returns-chart-row-height: 28px;
   --returns-line-height: 16px;
   --skeleton-figure-height: 64px;
   --skeleton-tile-height: 90px;

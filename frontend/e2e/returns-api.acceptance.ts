@@ -1,4 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function accountButton(page: Page, id: string) {
+  const context = await (await page.request.get("/api/returns/context")).json();
+  const account = context.accounts.find((a: { id: string }) => a.id === id);
+  if (account.account_link?.source_account_id)
+    return page
+      .getByRole("group", { name: "Счета" })
+      .locator(`button[title="${account.account_link.source_account_id}"]`);
+  return page
+    .getByRole("group", { name: "Счета" })
+    .getByRole("button", { name: account.label, exact: true });
+}
 
 test("basket actual API: all/one/none, signed source-only coverage, separate interest, Back/Reload", async ({
   page,
@@ -60,7 +72,7 @@ test("duplicate alias scope fails closed without an overview request", async ({
     "/v2/returns?scope=source:1234567&scope=source:7654321-000&start=2030-03-31&end=2030-04-30";
   await page.goto(path);
   await expect(
-    page.getByRole("combobox", { name: "Счёт" }).locator("option:not([disabled])"),
+    page.getByRole("group", { name: "Счета" }).locator("button:not([disabled])"),
   ).toHaveCount(3);
   await expect(page).toHaveURL(/scope=source:1234567&scope=source:7654321-000&start=/);
   await expect(page.getByRole("region", { name: "Результат периода" })).toHaveCount(0);
@@ -84,13 +96,13 @@ test("real synthetic API → desktop: CLOSED before DRAFT, same ISIN in two acco
   });
   page.on("request", (r) => expect(r.method()).toBe("GET"));
   await page.goto("/v2/returns/account");
-  await expect(page.getByRole("region", { name: "Нет данных о доходности" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Результат периода" })).toContainText("+100 ₽");
   await expect(page).toHaveURL(/start=2030-03-31&end=2030-04-30/);
   await expect(
-    page.getByRole("combobox", { name: "Счёт" }).locator("option:not([disabled])"),
+    page.getByRole("group", { name: "Счета" }).locator("button:not([disabled])"),
   ).toHaveCount(3);
-  await expect(page.getByRole("combobox", { name: "Счёт" })).not.toContainText("Учебный депозит");
-  await page.getByRole("combobox", { name: "Счёт" }).selectOption("source:1234567-000");
+  await expect(page.getByRole("group", { name: "Счета" })).not.toContainText("Учебный депозит");
+  await (await accountButton(page, "source:1234567-000")).click();
   await expect(page.getByRole("region", { name: "Результат периода" })).toContainText("+100 ₽");
   await expect(page.getByRole("region", { name: "За доступные месяцы", exact: true })).toHaveCount(
     0,
@@ -98,20 +110,28 @@ test("real synthetic API → desktop: CLOSED before DRAFT, same ISIN in two acco
   const instruments = page.getByRole("region", { name: "По инструментам" });
   const tops = page.getByRole("region", { name: "Лидеры и отстающие" });
   await expect(tops.locator("li")).toHaveCount(1);
-  await expect(tops.locator("li > span")).toHaveText("Учебная акция из каталогаRU000A000000");
-  await expect(tops.locator("small")).toHaveText("RU000A000000");
+  await expect(tops.locator("li > button")).toHaveText("Учебная акция из каталога");
+  await expect(instruments.getByRole("row", { name: /Учебная акция из каталога/ })).toContainText(
+    "RU000A000000",
+  );
   await expect(instruments.getByRole("cell", { name: /\+100/ })).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("returns-catalogue-account-a.png"),
     fullPage: true,
   });
-  await page.getByRole("combobox", { name: "Счёт" }).selectOption("source:7654321-000");
+  await (await accountButton(page, "source:7654321-000")).click();
   await expect(instruments.getByRole("cell", { name: /−100/ })).toBeVisible();
-  await expect(tops.locator("li > span")).toHaveText("Учебная акция из каталогаRU000A000000");
-  await instruments.getByRole("button").click();
+  await expect(tops.locator("li > button")).toHaveText("Учебная акция из каталога");
+  await instruments
+    .getByRole("table")
+    .getByRole("button", { name: "Учебная акция из каталога", exact: true })
+    .click();
   await expect(page.getByText("Количество: 10 → 10")).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:7654321-000");
+  await expect(await accountButton(page, "source:7654321-000")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(instruments.getByRole("cell", { name: /−100/ })).toBeVisible();
   const overview = await request.get(
     "/api/returns/overview?scope=source:7654321-000&start=2030-03-31&end=2030-04-30",
@@ -137,7 +157,7 @@ test("alias history preserves clean UNKNOWN, monthly gaps, legacy coverage and a
   await page.goto("/v2/capital/monthly-returns?source_account=1234567#bond-slice");
   await expect(page).toHaveURL(/scope=source%3A1234567-000.*start=2030-03-31&end=2030-06-30/);
   const result = page.getByRole("region", { name: "Результат периода", exact: true });
-  const history = page.getByRole("region", { name: "Результат по месяцам" });
+  const history = page.getByRole("region", { name: /(?:Результат|Известная часть) по месяцам/ });
   const chart = history.getByRole("group", { name: "История результата в рублях" });
   await expect(result).toHaveCount(0);
   await expect(page.getByRole("region", { name: "За доступные месяцы", exact: true })).toHaveCount(
@@ -153,8 +173,7 @@ test("alias history preserves clean UNKNOWN, monthly gaps, legacy coverage and a
     "title",
     "−20\u00a0₽",
   );
-  await history.getByText("Месяцы таблицей", { exact: true }).focus();
-  await page.keyboard.press("Enter");
+  await expect(history.getByRole("table")).toBeVisible();
   const gap = history
     .getByRole("row")
     .filter({ hasText: /май.*2030/ })
@@ -195,7 +214,7 @@ test("alias history preserves clean UNKNOWN, monthly gaps, legacy coverage and a
     path: testInfo.outputPath("returns-partial-coverage.png"),
     fullPage: true,
   });
-  await page.getByRole("combobox", { name: "Счёт" }).selectOption("source:7654321-000");
+  await (await accountButton(page, "source:7654321-000")).click();
   await expect(result).toHaveCount(0);
   await expect(chart.getByRole("button", { name: /апр.*2030/ })).toHaveAttribute(
     "title",
@@ -212,7 +231,7 @@ test("alias history preserves clean UNKNOWN, monthly gaps, legacy coverage and a
     (account: { label: string }) => account.label === "Учебный депозит",
   ).id;
   await page.goto(`/v2/returns?scope=${acceptedScope}&start=2030-03-31&end=2030-06-30`);
-  await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue(acceptedScope);
+  await expect(await accountButton(page, acceptedScope)).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("combobox", { name: "Представление" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: "Доходность" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(

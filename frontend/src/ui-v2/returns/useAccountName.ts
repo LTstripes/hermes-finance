@@ -11,11 +11,18 @@ export function useAccountName(links: readonly (AccountLink | null | undefined)[
     enabled: links.some((link) => link?.status === "linked" && link.financial_account_id != null),
   });
   return (link: AccountLink | null | undefined, fallback: string) => {
-    if (link?.status !== "linked") return fallback;
+    if (!link) return fallback;
     const account =
-      !query.isError && Array.isArray(query.data)
+      link.status === "linked" && !query.isError && Array.isArray(query.data)
         ? query.data.find((account) => account.id === link.financial_account_id)
         : undefined;
-    return account?.name ?? link.label;
+    return (
+      account?.name ??
+      (link.account_type === "iis"
+        ? "ИИС"
+        : link.account_type === "brokerage"
+          ? "Брокерский"
+          : "Счёт")
+    );
   };
 }
