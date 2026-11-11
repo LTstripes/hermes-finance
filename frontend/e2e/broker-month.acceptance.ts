@@ -1340,7 +1340,7 @@ test("lost source POST response reads old key first, exact replay is duplicate, 
   await page.getByRole("link", { name: "Настройки", exact: true }).click();
   await page.getByRole("button", { name: "Перейти без сохранения", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Настройки", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Справочники и сопоставления", exact: true }).click();
+  await page.getByRole("link", { name: "Счета и инструменты", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Справочники и сопоставления", exact: true }),
   ).toBeVisible();

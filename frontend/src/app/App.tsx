@@ -12,6 +12,7 @@ import {
   UiV2DataCatalogsEntry,
   UiV2DataFilesEntry,
   UiV2DataSourcesEntry,
+  UiV2DataOverviewEntry,
   UiV2Entry,
   UiV2GoalsEntry,
   UiV2IncomeEntry,
@@ -70,6 +71,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/reports/:monthId" element={<UiV2ReportEntry />} />
           <Route path="v2/close" element={<UiV2CloseEntry />} />
           <Route path="v2/data" element={<UiV2DataSourcesEntry />} />
+          <Route path="v2/data/overview" element={<UiV2DataOverviewEntry />} />
           <Route path="v2/data/source-intake" element={<UiV2SourceIntakeEntry />} />
           <Route path="v2/data/months" element={<UiV2MonthsEntry />} />
           <Route path="v2/data/months/:monthId" element={<UiV2MonthEditorEntry />} />

@@ -110,6 +110,19 @@ describe("App", () => {
     );
   });
 
+  it.each([
+    ["/v2/data/overview?month=2", "Настройки"],
+    ["/v2/data?month=2", "Источники и актуальность"],
+    ["/v2/data/app?month=2#diagnostics", "Настройки"],
+  ])("keeps settings addresses available at %s", async (path, title) => {
+    window.history.pushState({}, "", path);
+    vi.stubGlobal("fetch", mockFetchRouter({}));
+    render(<App />);
+    expect(await screen.findByRole("heading", { level: 1, name: title })).toBeVisible();
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(path);
+    expect(screen.getByRole("navigation", { name: "Разделы настроек" })).toBeVisible();
+  });
+
   it.each(["/v2/data/months?month=2", "/v2/reports?month=2"])(
     "keeps the unified month list available at %s",
     async (path) => {

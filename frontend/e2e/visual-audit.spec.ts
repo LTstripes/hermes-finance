@@ -16,6 +16,7 @@ const routes: AuditRoute[] = [
   { slug: "ui-v2-capital", path: "/v2/capital" },
   { slug: "ui-v2-capital-allocation", path: "/v2/capital/allocation?month=12" },
   { slug: "ui-v2-data", path: "/v2/data?month=12" },
+  { slug: "ui-v2-settings-overview", path: "/v2/data/overview?month=12" },
   { slug: "ui-v2-months", path: "/v2/data/months" },
   { slug: "ui-v2-month-editor", path: "/v2/data/months/12" },
   { slug: "ui-v2-payouts", path: "/v2/data/payouts?month=12" },

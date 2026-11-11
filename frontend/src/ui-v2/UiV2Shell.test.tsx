@@ -322,11 +322,14 @@ describe("UiV2Shell native navigation", () => {
     expect(screen.queryByText(/предыдущем интерфейсе/i)).not.toBeInTheDocument();
   });
 
-  it.each([["Настройки", "/v2/data/app"]])("links %s to its native workspace", (label, href) => {
-    renderShell();
-    expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
-    expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
-  });
+  it.each([["Настройки", "/v2/data/overview"]])(
+    "links %s to its native workspace",
+    (label, href) => {
+      renderShell();
+      expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
+      expect(screen.queryByRole("link", { name: /UI v1/ })).not.toBeInTheDocument();
+    },
+  );
 
   it("groups data tools under one Settings navigation entry while preserving their native deep links", () => {
     render(
@@ -341,21 +344,41 @@ describe("UiV2Shell native navigation", () => {
     const primary = screen.getByRole("navigation", { name: "Основная навигация" });
     expect(within(primary).getByRole("link", { name: "Настройки" })).toHaveAttribute(
       "href",
-      "/v2/data/app",
+      "/v2/data/overview",
     );
     expect(within(primary).queryByRole("link", { name: "Данные" })).toBeNull();
     for (const [name, href] of [
-      ["Разбор источника", "/v2/data/source-intake"],
+      ["Обзор", "/v2/data/overview"],
+      ["Источники данных", "/v2/data"],
+      ["Приложение", "/v2/data/app"],
       ["Экспорт и копии", "/v2/data/files"],
-      ["Отчётные месяцы", "/v2/data/months"],
-      ["Справочники и сопоставления", "/v2/data/catalogs"],
+      ["Счета и инструменты", "/v2/data/catalogs"],
     ])
       expect(
         within(screen.getByRole("navigation", { name: "Разделы настроек" })).getByRole("link", {
           name,
         }),
       ).toHaveAttribute("href", href);
+    const settings = screen.getByRole("navigation", { name: "Разделы настроек" });
+    expect(within(settings).getAllByRole("link")).toHaveLength(5);
+    for (const name of ["Отчётные месяцы", "Выплаты", "Разбор источника"])
+      expect(within(settings).queryByRole("link", { name })).toBeNull();
   });
+
+  it.each(["?month=0", "?month=12&month=91"])(
+    "preserves invalid month parameters in settings tabs: %s",
+    (query) => {
+      render(
+        <MemoryRouter initialEntries={[`/v2/data${query}#diagnostics`]}>
+          <UiV2DataSubnav active="sources" monthId={12} />
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole("link", { name: "Приложение" })).toHaveAttribute(
+        "href",
+        `/v2/data/app${query}#diagnostics`,
+      );
+    },
+  );
 });
 
 describe("UiV2MonthPlate", () => {

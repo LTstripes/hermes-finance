@@ -283,14 +283,14 @@ describe("UI v2 Data sources", () => {
     expect(within(alfa).queryByText("Актуально")).toBeNull();
   });
 
-  it("shows mode-grouped Data/App subnav with native data links", async () => {
+  it("shows settings tabs with the native application diagnostics destination", async () => {
     const { mount } = setup();
     mount();
     expect(await screen.findByRole("navigation", { name: /Разделы настроек/ })).toBeTruthy();
     await screen.findByTestId("data-month-context");
-    expect(screen.getByRole("link", { name: "Разбор источника" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Приложение" })).toHaveAttribute(
       "href",
-      "/v2/data/source-intake?month=12",
+      "/v2/data/app?month=12",
     );
     expect(screen.getByRole("link", { name: "Проверка данных →" })).toHaveAttribute(
       "href",
@@ -309,9 +309,9 @@ describe("UI v2 Data sources", () => {
       "href",
       "/v2/close?month=12&step=market_quotes",
     );
-    expect(screen.getByRole("link", { name: "Разбор источника" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Приложение" })).toHaveAttribute(
       "href",
-      `/v2/data/source-intake?month=12&from=${origin}&step=market_quotes&monthId=12`,
+      `/v2/data/app?month=12&from=${origin}&step=market_quotes&monthId=12`,
     );
     expect(reads.filter((item) => item.includes("freshness-provenance"))).toEqual([
       "GET /api/months/12/freshness-provenance",

@@ -61,6 +61,7 @@ describe("Data/App diagnostic month", () => {
 
   it("builds Data/App paths with optional month identity", () => {
     expect(dataAppPath("sources")).toBe("/v2/data");
+    expect(dataAppPath("overview", 91)).toBe("/v2/data/overview?month=91");
     expect(dataAppPath("source-intake")).toBe("/v2/data/source-intake");
     expect(dataAppPath("catalogs")).toBe("/v2/data/catalogs");
     expect(dataAppPath("files")).toBe("/v2/data/files");

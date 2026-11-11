@@ -969,7 +969,7 @@ export default function UiV2IncomePage() {
           <ClosedReportTitle
             links={
               latestClosed ? (
-                <Link to={`/v2/data/months/${latestClosed.id}`}>Данные отчётного месяца →</Link>
+                <Link to={`/v2/close?month=${latestClosed.id}`}>Данные отчётного месяца →</Link>
               ) : null
             }
             month={latestClosed}

@@ -10,7 +10,7 @@ import {
   uiV2Instruments,
   uiV2Months,
 } from "../src/test/uiV2Fixtures";
-import { fulfillMonthPlate } from "./visual-fixtures";
+import { fulfillMonthPlate, syntheticApiResponse } from "./visual-fixtures";
 
 async function assertBounded(page: Page) {
   expect(
@@ -62,7 +62,15 @@ async function installDataApi(page: Page) {
     if (request.method() === "POST") posts.push(line);
     let json: unknown;
     let status = 200;
-    if (url.pathname === "/api/months") {
+    if (
+      ["/api/health", "/api/backups", "/api/settings"].includes(url.pathname) ||
+      /^\/api\/tax-brackets\/\d+$/.test(url.pathname)
+    ) {
+      const response = syntheticApiResponse(url, request.method(), "content");
+      if (!response) throw new Error(`Missing settings fixture: ${line}`);
+      json = response.json;
+      status = response.status ?? 200;
+    } else if (url.pathname === "/api/months") {
       json = uiV2Months;
     } else if (url.pathname === "/api/months/12/freshness-provenance") {
       json = makeUiV2Freshness(uiV2Months[1]);
@@ -232,6 +240,35 @@ test("ui-v2 Data sources desktop: freshness clocks and handoff stay bounded", as
   expect(evidence.errors).toEqual([]);
 });
 
+test("ui-v2 settings overview stays bounded at desktop widths and zoom @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "1440x900", "Viewport matrix captured once");
+  const evidence = await installDataApi(page);
+  for (const [width, zoom] of [
+    [1024, 1],
+    [1280, 1],
+    [1280, 1.25],
+    [1440, 1],
+    [1440, 1.25],
+    [1920, 1],
+    [1920, 1.25],
+  ]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/v2/data/overview?month=12");
+    await expect(page.getByText(/Версия 0.7.0-synthetic/)).toBeVisible();
+    await page.evaluate((value) => {
+      document.documentElement.style.zoom = String(value);
+    }, zoom);
+    await assertBounded(page);
+    await expect(page.locator("#v2-main h2")).toHaveCount(5);
+    await capture(page, testInfo, `settings-overview-${width}-${zoom}`);
+  }
+  expect(evidence.posts).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
 test("ui-v2 Data navigation keeps native Close context through keyboard, back and refresh", async ({
   page,
 }, testInfo) => {
@@ -248,9 +285,13 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
   );
   await expect(page.getByRole("link", { name: "Настройки", exact: true }).first()).toHaveAttribute(
     "href",
-    "/v2/data/app",
+    "/v2/data/overview",
   );
   await expect(page.getByRole("link", { name: "Диагностика", exact: true })).toHaveCount(0);
+  const appPath = "/v2/data/app?month=12&from=monthly-close-v2&step=readiness&monthId=12";
+  await page.getByRole("link", { name: "Приложение", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${appPath.replaceAll("?", "\\?")}$`));
+  await page.getByRole("link", { name: "Диагностика", exact: true }).click();
   const intake = page.getByRole("link", { name: "Разбор источника" });
   await intake.focus();
   await expect(intake).toBeFocused();
@@ -260,7 +301,9 @@ test("ui-v2 Data navigation keeps native Close context through keyboard, back an
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Разбор источника" })).toBeVisible();
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`${sourcePath.replaceAll("?", "\\?")}$`));
+  await expect(page).toHaveURL(new RegExp(`${appPath.replaceAll("?", "\\?")}#diagnostics$`));
+  await page.getByRole("link", { name: "Источники данных", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${sourcePath.replaceAll("?", "\\?")}#diagnostics$`));
   await expect(page.getByRole("link", { name: "Открыть закрытие месяца →" })).toHaveAttribute(
     "href",
     "/v2/close?month=12&step=readiness",

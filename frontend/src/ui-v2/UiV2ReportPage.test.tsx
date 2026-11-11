@@ -300,7 +300,7 @@ describe("UI v2 historical report", () => {
     const handoff = await screen.findByTestId("report-workspace-links");
     expect(
       within(handoff).getByRole("link", { name: "Данные отчётного месяца →" }),
-    ).toHaveAttribute("href", `/v2/data/months/${historicalId}`);
+    ).toHaveAttribute("href", `/v2/close?month=${historicalId}`);
     expect(within(handoff).getByRole("link", { name: "Доходность →" })).toHaveAttribute(
       "href",
       "/v2/returns",

@@ -619,7 +619,7 @@ function HoldingsBlock({
     : null;
   return (
     <SheetSection
-      actions={<Link to={`/v2/data/months/${monthId}`}>Данные отчётного месяца →</Link>}
+      actions={<Link to={`/v2/close?month=${monthId}`}>Данные отчётного месяца →</Link>}
       eyebrow="Структура"
       id="capital-holdings-title"
       title="Счета и позиции"

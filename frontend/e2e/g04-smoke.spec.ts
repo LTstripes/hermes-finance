@@ -26,6 +26,9 @@ test("G04 smoke: retired v1 entry redirects to the native UI", async ({ page }) 
     )
     .then(async (response) => ({ response, data: await response.json() }));
   await page.getByRole("link", { name: "Настройки", exact: true }).click();
+  await expect(page).toHaveURL(/\/v2\/data\/overview$/);
+  await expect(page.getByRole("heading", { level: 2, name: "Резервная копия" })).toBeVisible();
+  await page.getByRole("link", { name: "Приложение", exact: true }).click();
   await expect(page).toHaveURL(/\/v2\/data\/app$/);
   await expect(page.getByRole("heading", { level: 1, name: "Настройки" })).toBeVisible();
   const { response, data } = await settings;
