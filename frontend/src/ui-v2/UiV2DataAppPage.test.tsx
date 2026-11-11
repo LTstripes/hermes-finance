@@ -113,7 +113,8 @@ describe("UI v2 Data/App", () => {
     expect(screen.getByText("Российский рубль")).toBeInTheDocument();
     expect(screen.getAllByText("Только локально").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Только чтение").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("Изменяет данные").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Изменяет данные")).toHaveLength(1);
+    expect(within(screen.getByTestId("data-app-tax")).queryByText("Изменяет данные")).toBeNull();
   });
 
   it("keeps the diagnostics deep link selected and focused without a duplicate sidebar entry", async () => {
@@ -250,7 +251,8 @@ describe("UI v2 Data/App", () => {
     renderPage();
 
     expect(await screen.findByText("Год зафиксирован")).toBeInTheDocument();
-    expect(screen.getByLabelText("Ставка ступени 1")).toBeDisabled();
+    expect(screen.queryByLabelText("Ставка ступени 1")).toBeNull();
+    expect(screen.getByRole("columnheader", { name: "Доход за год, ₽" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Сохранить налоговые ступени" })).toBeNull();
     expect(await screen.findByText("Недоступно")).toBeInTheDocument();
 

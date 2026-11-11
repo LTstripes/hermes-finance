@@ -13,7 +13,12 @@ import {
 import { queryKeys } from "../queryClient";
 import { DataMonthContext, resolveDataMonth, UiV2DataFrame } from "./UiV2DataShell";
 import dataStyles from "./UiV2Data.module.css";
-import { CapabilitiesDisclosure, FreshnessBody, MonthToolbar } from "./UiV2DataFreshnessPanels";
+import {
+  CapabilitiesDisclosure,
+  FreshnessBody,
+  FreshnessTechnical,
+  MonthToolbar,
+} from "./UiV2DataFreshnessPanels";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import { sortReportingMonths } from "./monthSelection";
 
@@ -97,12 +102,6 @@ export default function UiV2DataSourcesPage() {
         <DataMonthContext automatic={resolution.automatic} month={month}>
           <Link to={`/v2/data?month=${month.id}`}>Проверка данных →</Link>
         </DataMonthContext>
-        <div className={dataStyles.badgeRow}>
-          <span className={dataStyles.readOnlyBadge}>Только чтение</span>
-          <span className={dataStyles.muted}>
-            Без обращения к внешнему источнику · без универсальной оценки актуальности
-          </span>
-        </div>
         <MonthToolbar months={months} onSelect={selectMonth} selected={month} />
         {!freshnessReady ? (
           freshnessQuery.isError ? (
@@ -121,7 +120,7 @@ export default function UiV2DataSourcesPage() {
             <UiV2Loading label="Читаем сохранённую актуальность и происхождение…" />
           )
         ) : freshnessQuery.data ? (
-          <FreshnessBody monthId={month.id} summary={freshnessQuery.data} />
+          <FreshnessBody monthId={month.id} summary={freshnessQuery.data} closeStep={closeStep} />
         ) : (
           <UiV2Loading label="Читаем сохранённую актуальность и происхождение…" />
         )}
@@ -130,10 +129,15 @@ export default function UiV2DataSourcesPage() {
           profiles={capabilitiesReady ? capabilitiesQuery.data : undefined}
           ready={capabilitiesReady}
           retry={() => void capabilitiesQuery.refetch()}
-        />
-        <p className={dataStyles.muted} style={{ marginTop: 14 }}>
-          Импорт и применение выполняются только при закрытии месяца. Здесь показано состояние
-          данных; изменения выполняются в закрытии.{" "}
+        >
+          {freshnessReady && freshnessQuery.data ? (
+            <FreshnessTechnical summary={freshnessQuery.data} />
+          ) : null}
+          <p className={dataStyles.muted}>
+            Без обращения к внешнему источнику · без универсальной оценки актуальности
+          </p>
+        </CapabilitiesDisclosure>
+        <p className={dataStyles.muted}>
           <Link
             to={monthlyCloseReturnPath({
               monthId: month.id,

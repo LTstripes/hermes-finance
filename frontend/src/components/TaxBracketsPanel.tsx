@@ -8,6 +8,7 @@ import {
   type TaxBracketYearConfig,
 } from "../api/taxBrackets";
 import { normalizeMoneyInput, rub, toKopecks } from "../lib/money";
+import { formatQuantity } from "../lib/format";
 import { Badge, Button, Field, Input, Panel, Table, Td, Th } from "./ui";
 
 type EditableBracket = {
@@ -253,93 +254,123 @@ export function TaxBracketsPanel() {
                   верхней границей предыдущей.
                 </p>
               ) : (
-                <p className="inline-alert inline-alert--info">
-                  Ставки нельзя менять, пока в этом году есть закрытые месяцы:{" "}
-                  {config.closed_months.map(monthCodeLabel).join(", ")}. Чтобы намеренно пересчитать
-                  историю, сначала открой все закрытые месяцы этого года.
-                </p>
+                <>
+                  <p className="muted">Шкала зафиксирована: в этом году есть закрытые месяцы</p>
+                  <details>
+                    <summary>Как изменить</summary>
+                    <p>
+                      Чтобы намеренно пересчитать историю, сначала открой все закрытые месяцы этого
+                      года: {config.closed_months.map(monthCodeLabel).join(", ")}.
+                    </p>
+                  </details>
+                </>
               )}
             </div>
 
-            <form className="stack-18" onSubmit={handleSave}>
+            {!config.mutable ? (
               <Table>
                 <thead>
                   <tr>
-                    <Th>От, ₽</Th>
-                    <Th>До, ₽</Th>
-                    <Th>Ставка, %</Th>
-                    <Th>Действия</Th>
+                    <Th>Доход за год, ₽</Th>
+                    <Th>Ставка</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, index) => {
-                    const isLast = index === rows.length - 1;
-                    return (
-                      <tr key={row.id}>
-                        <Td>{lowerBounds[index]}</Td>
-                        <Td>
-                          {isLast ? (
-                            "Без верхней границы"
-                          ) : (
+                  {config.brackets.map((bracket, index) => (
+                    <tr key={bracket.threshold_from.amount}>
+                      <Td>
+                        {bracket.threshold_to === null
+                          ? `свыше ${formatQuantity(bracket.threshold_from.amount)}`
+                          : index === 0
+                            ? `до ${formatQuantity(bracket.threshold_to.amount)}`
+                            : `свыше ${formatQuantity(bracket.threshold_from.amount)} до ${formatQuantity(bracket.threshold_to.amount)}`}
+                      </Td>
+                      <Td>{rateBpsToPercent(bracket.rate_bps).replace(".", ",")}%</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            ) : (
+              <form className="stack-18" onSubmit={handleSave}>
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>От, ₽</Th>
+                      <Th>До, ₽</Th>
+                      <Th>Ставка, %</Th>
+                      <Th>Действия</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, index) => {
+                      const isLast = index === rows.length - 1;
+                      return (
+                        <tr key={row.id}>
+                          <Td>{lowerBounds[index]}</Td>
+                          <Td>
+                            {isLast ? (
+                              "Без верхней границы"
+                            ) : (
+                              <Input
+                                aria-label={`Верхняя граница ступени ${index + 1}`}
+                                disabled={!config.mutable}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setRows((current) =>
+                                    current.map((item, rowIndex) =>
+                                      rowIndex === index ? { ...item, to: value } : item,
+                                    ),
+                                  );
+                                  setSuccess(null);
+                                }}
+                                value={row.to}
+                              />
+                            )}
+                          </Td>
+                          <Td>
                             <Input
-                              aria-label={`Верхняя граница ступени ${index + 1}`}
+                              aria-label={`Ставка ступени ${index + 1}`}
                               disabled={!config.mutable}
                               onChange={(event) => {
                                 const value = event.target.value;
                                 setRows((current) =>
                                   current.map((item, rowIndex) =>
-                                    rowIndex === index ? { ...item, to: value } : item,
+                                    rowIndex === index ? { ...item, rate: value } : item,
                                   ),
                                 );
                                 setSuccess(null);
                               }}
-                              value={row.to}
+                              value={row.rate}
                             />
-                          )}
-                        </Td>
-                        <Td>
-                          <Input
-                            aria-label={`Ставка ступени ${index + 1}`}
-                            disabled={!config.mutable}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setRows((current) =>
-                                current.map((item, rowIndex) =>
-                                  rowIndex === index ? { ...item, rate: value } : item,
-                                ),
-                              );
-                              setSuccess(null);
-                            }}
-                            value={row.rate}
-                          />
-                        </Td>
-                        <Td>
-                          <Button
-                            disabled={!config.mutable || rows.length <= 1}
-                            onClick={() => removeBracket(index)}
-                            type="button"
-                            variant="danger"
-                          >
-                            Удалить
-                          </Button>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </Table>
+                          </Td>
+                          <Td>
+                            <Button
+                              disabled={!config.mutable || rows.length <= 1}
+                              onClick={() => removeBracket(index)}
+                              type="button"
+                              variant="danger"
+                            >
+                              Удалить
+                            </Button>
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
 
-              {config.mutable ? (
-                <div className="button-row">
-                  <Button onClick={addBracket} type="button">
-                    Добавить ступень
-                  </Button>
-                  <Button disabled={saving} type="submit" variant="primary">
-                    {saving ? "Сохраняем…" : "Сохранить налоговые ступени"}
-                  </Button>
-                </div>
-              ) : null}
-            </form>
+                {config.mutable ? (
+                  <div className="button-row">
+                    <Button onClick={addBracket} type="button">
+                      Добавить ступень
+                    </Button>
+                    <Button disabled={saving} type="submit" variant="primary">
+                      {saving ? "Сохраняем…" : "Сохранить налоговые ступени"}
+                    </Button>
+                  </div>
+                ) : null}
+              </form>
+            )}
           </>
         ) : null}
 
