@@ -605,3 +605,31 @@
   font-size: var(--t-xs);
   color: var(--muted);
 }
+
+@media (min-width: 1024px) {
+  .figures {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 16px;
+  }
+  .figures > section:has(h2):first-child:nth-last-child(4) {
+    grid-column: 1 / -1;
+  }
+}
+
+.list.list .accountRow th,
+.list.list .accountRow td {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: var(--t-xs);
+}
+.list.list .accountRow th {
+  padding-left: 24px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list.list .instrumentRow th,
+.list.list .instrumentRow td {
+  border-bottom: 0;
+}

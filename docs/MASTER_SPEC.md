@@ -449,6 +449,20 @@ total, such as unattributed account money, is stated once beside it and once
 above the purchases, never on each row. Exact kopecks stay on the instrument
 page and in titles.
 
+The overview table, chart and counts use one exact ISIN as one instrument.
+Its existing guarded summary supplies the result and payments; multiple accounts
+are always visible as indented rows below that total. Only account rows show
+percentages. Rate sorting uses the account with the greatest absolute result;
+missing values sort last. The first ten entries and expansion count instruments.
+Known zero results are counted separately from missing or partial totals.
+Linked accounts use catalogue names, with source identifiers in titles and the
+existing label as fallback. The overview period appears once in the header;
+an account valuation date remains visible when it differs from its period end.
+Missing annual rates share one explanation from their most frequent reason code.
+On the instrument page, the short name stays in the heading, the full name stays
+with its type and ISIN, and an entirely unavailable annual column is omitted.
+Default payout classification is explained through the result information control.
+
 Performance separates capability from data readiness and separates portfolio, account, class and instrument scopes. XIRR is annualized; TWRR is period return; statement S3 and WHAT-IF use nonannualized `rate_fraction`. Readiness explains each metric independently with its required evidence and supported next action. PERF04 is a money bridge, not a percentage return or automatic profit/loss. The instrument readers show known net payouts, comparable EOD observations and executions with partial coverage; they do not promise a complete stock/bond economic result.
 
 Exact historical performance uses historical membership, dated cash/in-kind coverage, exact endpoints and required PRE/POST observations. Current holdings, empty XML or matching totals cannot establish missing flows. Hard reasons remain visible in hypothetical results; solver failure is distinct from missing evidence. Preparation forms protect unsaved edits, use exact identity/currentness and independently reread saved evidence. See C6–C7 for the complete metric contracts.
@@ -464,7 +478,7 @@ separate amount and period percentage labelled **Без нераспределё
 счёта**. Keep the full result unknown and retain those expense rows; do not turn
 unknown valuations or movements into zero to obtain this estimate.
 
-The ordinary `/v2/returns` entry opens **В целом** for all available history.
+The ordinary `/v2/returns` entry opens **Обзор** for all available history.
 The main journey follows the compact account layout: result cards, a graph of
 supported observations, searchable instruments and leaders. Both available broker
 accounts are selected initially; a selector chooses one or both, each with its own
@@ -474,8 +488,8 @@ its instrument or payout explanations again, sum rates or average different
 account periods. A changed account must select its own supported interval rather
 than retain another account's inception dates. Private runtime/browser display names are
 labels only and never alter source identity, mappings or financial records.
-Each account result displays its explicitly linked ИИС/Брокерский type and native
-account id, its own period and last valuation date. Missing or ambiguous links
+Each account result retains its explicitly linked ИИС/Брокерский type and native
+account id as identity metadata, its own period and last valuation date. Missing or ambiguous links
 say that the account connection is unconfirmed; equal amounts never choose a
 financial account. Instrument and monthly results retain their individual dates.
 Account history continues through newer saved months under the

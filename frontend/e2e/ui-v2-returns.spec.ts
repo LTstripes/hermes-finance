@@ -575,9 +575,10 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
     await page.goto("/v2/returns");
     const instruments = page.getByRole("region", { name: /^Все бумаги/ });
     const rows = instruments.getByRole("row").filter({ hasText: "Учебная акция" });
-    const a = rows.filter({ hasText: "Учебный счёт А" });
-    const b = rows.filter({ hasText: "Учебный счёт Б" });
-    await expect(rows).toHaveCount(2);
+    const a = instruments.getByRole("row", { name: /^Учебный счёт А/ });
+    const b = instruments.getByRole("row", { name: /^Учебный счёт Б/ });
+    await expect(rows).toHaveCount(1);
+    await expect(rows).toContainText("неполный");
     await expect(a).toContainText("0 ₽");
     await expect(a.getByRole("cell").nth(1)).toHaveText("—");
     await expect(b).toContainText("−4 ₽");
@@ -589,7 +590,7 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
     await instruments.screenshot({
       path: testInfo.outputPath(`instrument-results-overview-${width}.png`),
     });
-    await a.getByRole("link", { name: "Учебная акция", exact: true }).click();
+    await rows.getByRole("link", { name: "Учебная акция", exact: true }).click();
     const accounts = page.getByRole("region", { name: "Позиции и результат по счетам" });
     await expect(accounts).toContainText("+12 ₽");
     cardReads = calls.filter((call) => call.endsWith("instrument-card")).length;
@@ -646,7 +647,7 @@ test("ui-v2 Returns table fits 720px with wide fonts, separate accounts and comp
       await route.fulfill({ json: body });
     },
   );
-  for (const width of [1280, 1440, 1920])
+  for (const width of [1024, 1280, 1440, 1920])
     for (const zoom of [1, 1.25]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/v2/returns?show=all&sort=pnl-desc");
@@ -655,7 +656,7 @@ test("ui-v2 Returns table fits 720px with wide fonts, separate accounts and comp
       }, zoom);
       await page.addStyleTag({ content: ":root { --f-num: Arial; --f-ui: Arial; }" });
       const table = page.getByRole("table", { name: "Все бумаги", exact: true });
-      await expect(table.getByRole("row")).toHaveCount(25);
+      await expect(table.getByRole("row")).toHaveCount(37);
       const geometry = await table.evaluate((element) => {
         const parent = element.parentElement;
         if (!parent) throw new Error("Missing table container");
@@ -733,7 +734,7 @@ test("ui-v2 instrument tables fit 720px and keep long purchase histories collaps
       await route.fulfill({ json: card });
     },
   );
-  for (const width of [1280, 1440, 1920])
+  for (const width of [1024, 1280, 1440, 1920])
     for (const zoom of [1, 1.25]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/v2/returns/instrument/RU000A000002");
