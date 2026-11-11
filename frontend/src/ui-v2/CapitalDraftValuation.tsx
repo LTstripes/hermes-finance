@@ -137,10 +137,16 @@ function DraftFacts({ saved }: { saved: BrokerMonthReadback }) {
         <caption>Позиции DRAFT по исходной выписке · RUB</caption>
         <thead>
           <tr>
-            <Th>Исходный счёт / ISIN</Th>
-            <Th numeric>Количество в конце</Th>
-            <Th numeric>Начальная оценка</Th>
-            <Th numeric>Конечная оценка</Th>
+            <Th scope="col">Исходный счёт / ISIN</Th>
+            <Th scope="col" numeric>
+              Количество в конце
+            </Th>
+            <Th scope="col" numeric>
+              Начальная оценка
+            </Th>
+            <Th scope="col" numeric>
+              Конечная оценка
+            </Th>
           </tr>
         </thead>
         <tbody>
@@ -163,9 +169,13 @@ function DraftFacts({ saved }: { saved: BrokerMonthReadback }) {
         <caption>Отдельный RUB cash DRAFT</caption>
         <thead>
           <tr>
-            <Th>Исходный счёт</Th>
-            <Th numeric>В начале</Th>
-            <Th numeric>В конце</Th>
+            <Th scope="col">Исходный счёт</Th>
+            <Th scope="col" numeric>
+              В начале
+            </Th>
+            <Th scope="col" numeric>
+              В конце
+            </Th>
           </tr>
         </thead>
         <tbody>

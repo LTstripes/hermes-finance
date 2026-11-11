@@ -362,7 +362,7 @@ function EquityDrawdownDetail({ evaluation }: { evaluation: EquityEvaluation }) 
         Просадка применяется к позициям с типом инструмента «Акции». Дивиденды, купоны, погашения и
         вкладные проценты не пересчитываются.
       </p>
-      <Table>
+      <Table aria-label="Стоимость акций в сценарии">
         <thead>
           <tr>
             <Th scope="col">Позиция</Th>
@@ -450,7 +450,7 @@ function DepositRateDetail({ evaluation }: { evaluation: DepositEvaluation }) {
           </span>
         ) : null}
       </div>
-      <Table>
+      <Table aria-label="Проценты по вкладам в сценарии">
         <thead>
           <tr>
             <Th scope="col">Вклад</Th>
@@ -540,7 +540,7 @@ function InflationRealValueDetail({ evaluation }: { evaluation: InflationEvaluat
           : "помесячная ставка по конвенции v1"}
         ).
       </p>
-      <Table>
+      <Table aria-label="Денежные потоки сценария">
         <thead>
           <tr>
             <Th scope="col">Месяц</Th>
@@ -673,7 +673,7 @@ function FxTranslationDetail({ evaluation }: { evaluation: FxEvaluation }) {
         </span>
       </div>
 
-      <Table>
+      <Table aria-label="Позиции вне расчёта сценария">
         <thead>
           <tr>
             <Th scope="col">Позиция</Th>
@@ -754,7 +754,7 @@ function SupportPanel({ evaluation }: { evaluation: ScenarioLabEvaluation }) {
         «Рассчитано» — точное значение по данным снимка; «Неизвестно» — данных не хватает;
         «Недоступно» — сценарий не определяет точную метрику (см. причины).
       </p>
-      <Table>
+      <Table aria-label="Доступность метрик сценария">
         <thead>
           <tr>
             <Th scope="col">Метрика</Th>

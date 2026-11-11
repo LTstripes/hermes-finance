@@ -150,6 +150,46 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
+for (const route of ["/v2", "/v2/capital"]) {
+  test(`ui-v2 charts use CSS pixels at desktop zoom: ${route} @viewport-owned`, async ({
+    page,
+  }, testInfo) => {
+    const evidence = route === "/v2" ? await installApi(page) : await installCapitalApi(page);
+    await page.goto(route);
+    await expect(page.locator(".recharts-surface").first()).toBeVisible();
+    for (const width of [1024, 1280, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const zoom of [1, 1.25]) {
+        await page.evaluate((scale) => {
+          document.documentElement.style.zoom = String(scale);
+        }, zoom);
+        await expect
+          .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), {
+            message: `${route} fits ${width}px at CSS zoom ${zoom}`,
+          })
+          .toBe(true);
+        // Also prove that the SVG fits its container, rather than merely clipping overflow.
+        await expect
+          .poll(() =>
+            page.locator(".recharts-responsive-container").evaluateAll((containers) =>
+              containers.every((container) => {
+                const svg = container.querySelector("svg.recharts-surface");
+                return (
+                  !svg ||
+                  Number(svg.getAttribute("width")) <= container.parentElement!.clientWidth + 1
+                );
+              }),
+            ),
+          )
+          .toBe(true);
+      }
+    }
+    await capture(page, testInfo, route === "/v2" ? "home-chart-zoom125" : "capital-chart-zoom125");
+    expect(evidence.errors).toEqual([]);
+    expect(evidence.unexpected).toEqual([]);
+  });
+}
+
 test("ui-v2 Home Returns: ranking and charts fit desktop zoom @viewport-owned", async ({
   page,
 }, testInfo) => {
@@ -411,6 +451,7 @@ test("ui-v2 back to top desktop: appears after meaningful scroll and restores ma
   await expect(page.getByRole("heading", { name: "Мои финансы" })).toBeVisible();
 
   const backToTop = page.getByRole("button", { name: "Наверх" });
+  await expect(page.getByTestId("v2-capital")).toHaveText("2 803 900 ₽");
   await expect(backToTop).toHaveCount(0);
   await page.evaluate(() => window.scrollTo({ top: 360, behavior: "auto" }));
   await expect(backToTop).toBeVisible();

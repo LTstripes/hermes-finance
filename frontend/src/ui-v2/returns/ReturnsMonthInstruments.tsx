@@ -123,6 +123,7 @@ export function ReturnsMonthInstruments({
                   ["rate", "За период"],
                 ].map(([key, title]) => (
                   <th
+                    scope="col"
                     key={key}
                     aria-sort={
                       field === key ? (direction === "asc" ? "ascending" : "descending") : "none"
@@ -138,7 +139,7 @@ export function ReturnsMonthInstruments({
                     </button>
                   </th>
                 ))}
-                <th>Купоны и дивиденды, ₽</th>
+                <th scope="col">Купоны и дивиденды, ₽</th>
               </tr>
             </thead>
             <tbody>

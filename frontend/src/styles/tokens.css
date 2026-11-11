@@ -22,6 +22,12 @@
   --w-semibold: 600;
 
   /* Returns tables and their loading placeholders share compact geometry. */
+  --month-content-max: 960px;
+  --returns-content-max: 1120px;
+  --action-target-min: 24px;
+  --focus-width: 3px;
+  --focus-offset: 3px;
+
   --returns-cell-padding: 6px;
   --returns-row-height: 44px;
   --returns-month-row-height: 28px;

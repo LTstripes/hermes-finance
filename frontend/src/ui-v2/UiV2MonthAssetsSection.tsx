@@ -1134,18 +1134,37 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 />
               ) : (
                 <Table
+                  aria-label="Вклады месяца"
                   className={`month-deposits-table ${styles.depositsTable} ${!readOnly ? styles.editable : ""}`}
                 >
                   <thead>
                     <tr>
-                      <Th className="month-deposits-table__name">Название</Th>
-                      {showDepositType ? <Th className="month-deposits-table__type">Тип</Th> : null}
-                      <Th numeric>Баланс</Th>
-                      <Th numeric>Ставка</Th>
-                      <Th numeric>Прогноз в месяц</Th>
-                      <Th numeric>Получено</Th>
+                      <Th scope="col" className="month-deposits-table__name">
+                        Название
+                      </Th>
+                      {showDepositType ? (
+                        <Th scope="col" className="month-deposits-table__type">
+                          Тип
+                        </Th>
+                      ) : null}
+                      <Th scope="col" numeric>
+                        Баланс
+                      </Th>
+                      <Th scope="col" numeric>
+                        Ставка
+                      </Th>
+                      <Th scope="col" numeric>
+                        Прогноз в месяц
+                      </Th>
+                      <Th scope="col" numeric>
+                        Получено
+                      </Th>
                       {!readOnly ? (
-                        <Th className="month-deposits-table__actions" aria-label="Действия" />
+                        <Th
+                          scope="col"
+                          className="month-deposits-table__actions"
+                          aria-label="Действия"
+                        />
                       ) : null}
                     </tr>
                   </thead>
@@ -1564,13 +1583,22 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
               ) : cashRows.length === 0 ? (
                 <EmptyState description="Наличных позиций нет." inline title="Пусто" />
               ) : (
-                <Table className={`month-cash-table ${styles.cashTable}`}>
+                <Table
+                  aria-label="Деньги по счетам"
+                  className={`month-cash-table ${styles.cashTable}`}
+                >
                   <thead>
                     <tr>
-                      <Th>Название</Th>
-                      <Th numeric>Сумма</Th>
-                      {showCashCapital ? <Th>В капитале</Th> : null}
-                      {!readOnly ? <Th className="month-cash-table__actions">Действия</Th> : null}
+                      <Th scope="col">Название</Th>
+                      <Th scope="col" numeric>
+                        Сумма
+                      </Th>
+                      {showCashCapital ? <Th scope="col">В капитале</Th> : null}
+                      {!readOnly ? (
+                        <Th scope="col" className="month-cash-table__actions">
+                          Действия
+                        </Th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>

@@ -141,8 +141,8 @@
 }
 
 .labels small {
-  color: var(--faint);
-  font-size: 11px;
+  color: var(--muted);
+  font-size: var(--t-xs);
 }
 
 .key {

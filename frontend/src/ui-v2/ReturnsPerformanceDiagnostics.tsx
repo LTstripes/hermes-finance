@@ -258,7 +258,11 @@ function ReadinessBody({
             </p>
           ) : (
             <div className={styles.accountsTableWrap}>
-              <table className={styles.accountsTable} data-testid="performance-accounts-table">
+              <table
+                aria-label="Доходность по счетам"
+                className={styles.accountsTable}
+                data-testid="performance-accounts-table"
+              >
                 <thead>
                   <tr>
                     <th scope="col">Счёт</th>

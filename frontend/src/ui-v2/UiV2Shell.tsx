@@ -1,10 +1,12 @@
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 import { subscribeApiWrites } from "../api/client";
 import { Button } from "../components/ui";
 import { queryKeys } from "../queryClient";
 
+import { screenTitle } from "./screenTitle";
+import { rememberInstrumentScroll, restoreInstrumentScroll } from "./instrumentScroll";
 import { UiV2BackToTop } from "./UiV2BackToTop";
 import { UiV2MonthPlate } from "./UiV2MonthPlate";
 import styles from "./UiV2Page.module.css";
@@ -82,7 +84,15 @@ export function UiV2Shell({
   showRefresh?: boolean;
   sidebarExtra?: ReactNode;
 }) {
-  const { pathname } = useLocation();
+  const { pathname, search, hash } = useLocation();
+  const main = useRef<HTMLElement>(null);
+  useEffect(() => {
+    document.title = `${screenTitle(pathname)} — Hermes Finance`;
+  }, [pathname]);
+  useEffect(() => {
+    if (main.current && !busy)
+      return restoreInstrumentScroll(pathname + search + hash, main.current);
+  }, [pathname, search, hash, busy]);
   const queryClient = useQueryClient();
   const fetching = useIsFetching();
   useEffect(
@@ -121,7 +131,8 @@ export function UiV2Shell({
         ? pathname === "/v2" || pathname === "/"
         : section.id === "data"
           ? (pathname === "/v2/data" || pathname.startsWith("/v2/data/")) &&
-            !["/v2/data/months", "/v2/data/payouts"].includes(pathname)
+            !pathname.startsWith("/v2/data/months") &&
+            pathname !== "/v2/data/payouts"
           : pathname === section.to || pathname.startsWith(`${section.to}/`),
     )?.id ?? active;
   return (
@@ -162,7 +173,18 @@ export function UiV2Shell({
         <UiV2MonthPlate />
       </aside>
       <div className={styles.workspace}>
-        <main aria-busy={busy} className={styles.main} id="v2-main" tabIndex={-1}>
+        <main
+          ref={main}
+          onClickCapture={(event) => {
+            const link = (event.target as HTMLElement).closest("a");
+            if (link && new URL(link.href).pathname.startsWith("/v2/returns/instrument/"))
+              rememberInstrumentScroll();
+          }}
+          aria-busy={busy}
+          className={styles.main}
+          id="v2-main"
+          tabIndex={-1}
+        >
           <header className={styles.header}>
             {header}
             {showRefresh ? (

@@ -149,9 +149,13 @@ export function Allocation({
             <caption>{title}</caption>
             <thead>
               <tr>
-                <Th>{account ? "Счёт" : "Класс активов"}</Th>
-                <Th numeric>Сумма</Th>
-                <Th numeric>Доля ликвидных активов</Th>
+                <Th scope="col">{account ? "Счёт" : "Класс активов"}</Th>
+                <Th scope="col" numeric>
+                  Сумма
+                </Th>
+                <Th scope="col" numeric>
+                  Доля ликвидных активов
+                </Th>
               </tr>
             </thead>
             <tbody>
@@ -249,10 +253,18 @@ export function Concentration({
             <caption className={styles.visuallyHidden}>{title}</caption>
             <thead>
               <tr>
-                <Th>{event ? "Событие / инструмент" : "Позиция"}</Th>
-                <Th numeric>Сумма</Th>
-                <Th numeric>Доля от основы</Th>
-                {event ? <Th numeric>Событий</Th> : null}
+                <Th scope="col">{event ? "Событие / инструмент" : "Позиция"}</Th>
+                <Th scope="col" numeric>
+                  Сумма
+                </Th>
+                <Th scope="col" numeric>
+                  Доля от основы
+                </Th>
+                {event ? (
+                  <Th scope="col" numeric>
+                    Событий
+                  </Th>
+                ) : null}
               </tr>
             </thead>
             <tbody>

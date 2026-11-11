@@ -145,9 +145,9 @@ export default function BrokerStatementReturnDiagnostics({
               <caption>Оценки брокера и отдельный cash</caption>
               <thead>
                 <tr>
-                  <th>Компонент</th>
-                  <th>{formatDate(data.t0)} · EOD</th>
-                  <th>{formatDate(data.t1)} · EOD</th>
+                  <th scope="col">Компонент</th>
+                  <th scope="col">{formatDate(data.t0)} · EOD</th>
+                  <th scope="col">{formatDate(data.t1)} · EOD</th>
                 </tr>
               </thead>
               <tbody>

@@ -1,8 +1,12 @@
 import { Component, lazy, type ReactNode, Suspense } from "react";
-import { Link, Navigate, useLocation, useSearchParams } from "react-router";
+import { Navigate, useLocation, useSearchParams } from "react-router";
 import { ReturnsMonthRedirect } from "./returns/ReturnsMonthRedirect";
 import { validIsin } from "./returns/navigation";
 import { readDisplayNames } from "./returns/dashboard";
+
+import { UiV2Shell } from "./UiV2Shell";
+import { UiV2Skeleton } from "./UiV2StateBlocks";
+import { screenTitle } from "./screenTitle";
 
 const UiV2PayoutForecastPage = lazy(() => import("./UiV2PayoutForecastPage"));
 
@@ -52,11 +56,11 @@ export class UiV2ErrorBoundary extends Component<{ children: ReactNode }, { fail
 }
 
 export function UiV2LoadingFallback() {
+  const { pathname } = useLocation();
   return (
-    <section className="state-block" role="status">
-      <p>Загружаем основной интерфейс…</p>
-      <Link to="/v2">Мои финансы</Link>
-    </section>
+    <UiV2Shell busy header={<h1>{screenTitle(pathname)}</h1>} showRefresh={false}>
+      <UiV2Skeleton label="Загружаем раздел…" />
+    </UiV2Shell>
   );
 }
 

@@ -35,9 +35,9 @@ function ScheduleRows({ title, rows }: { title: string; rows: SourcePayoutPrevie
           <table className={styles.table} aria-label={title}>
             <thead>
               <tr>
-                <th>Дата / вид</th>
-                <th>Объявленная сумма · не личный net</th>
-                <th>Состояние / происхождение</th>
+                <th scope="col">Дата / вид</th>
+                <th scope="col">Объявленная сумма · не личный net</th>
+                <th scope="col">Состояние / происхождение</th>
               </tr>
             </thead>
             <tbody>
@@ -356,10 +356,10 @@ export function MonthInstrumentPayouts({
                   <caption>Actual для сверки · включая события после даты количества</caption>
                   <thead>
                     <tr>
-                      <th>Дата / вид</th>
-                      <th>Зачислено net</th>
-                      <th>Gross / налог</th>
-                      <th>Атрибуция и источник</th>
+                      <th scope="col">Дата / вид</th>
+                      <th scope="col">Зачислено net</th>
+                      <th scope="col">Gross / налог</th>
+                      <th scope="col">Атрибуция и источник</th>
                     </tr>
                   </thead>
                   <tbody>

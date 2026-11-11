@@ -481,7 +481,7 @@ export default function UiV2DataCatalogsPage() {
     );
     return (
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
+        <table aria-label="Счета" className={styles.table}>
           <thead>
             <tr>
               <th scope="col">Название</th>
@@ -571,7 +571,7 @@ export default function UiV2DataCatalogsPage() {
     if (rows.length === 0) return <div className={styles.empty}>Нет записей в этой группе.</div>;
     return (
       <div className={styles.tableWrap}>
-        <table className={styles.table}>
+        <table aria-label="Инструменты" className={styles.table}>
           <thead>
             <tr>
               <th scope="col">Название</th>

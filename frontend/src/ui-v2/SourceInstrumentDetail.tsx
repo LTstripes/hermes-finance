@@ -151,22 +151,22 @@ function Events({
         </caption>
         <thead>
           <tr>
-            <th>Дата / состояние</th>
+            <th scope="col">Дата / состояние</th>
             {coupons ? (
               <>
-                <th>Зачислено (net)</th>
-                <th>Gross / налог</th>
-                <th>Сопоставление</th>
+                <th scope="col">Зачислено (net)</th>
+                <th scope="col">Gross / налог</th>
+                <th scope="col">Сопоставление</th>
               </>
             ) : (
               <>
-                <th>Операция / количество</th>
-                <th>Цена / единица</th>
-                <th>Сумма по источнику</th>
-                <th>НКД / комиссия</th>
+                <th scope="col">Операция / количество</th>
+                <th scope="col">Цена / единица</th>
+                <th scope="col">Сумма по источнику</th>
+                <th scope="col">НКД / комиссия</th>
               </>
             )}
-            <th>Источники и ограничения</th>
+            <th scope="col">Источники и ограничения</th>
           </tr>
         </thead>
         <tbody>

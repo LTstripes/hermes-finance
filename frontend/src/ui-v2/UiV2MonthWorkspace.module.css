@@ -235,3 +235,10 @@
 .workArea input[type="date"] {
   max-width: 150px;
 }
+
+/* Keep the existing laptop layout; limit long rows on wide desktops. */
+@media (min-width: 1600px) {
+  .workArea {
+    max-width: var(--month-content-max);
+  }
+}

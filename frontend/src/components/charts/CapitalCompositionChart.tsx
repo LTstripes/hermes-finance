@@ -7,12 +7,12 @@ import {
   Legend,
   Line,
   ReferenceLine,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
+import { CssResponsiveContainer as ResponsiveContainer } from "./CssResponsiveContainer";
 import type { CapitalCompositionPoint } from "../../api/types";
 import { PortfolioCoverageNote } from "../PortfolioCoverageNote";
 import { axisMoney } from "../../lib/chartData";
@@ -207,7 +207,7 @@ export function CapitalCompositionChart({
       className="capital-composition-chart"
       data-highlight-key={highlightKey ?? undefined}
     >
-      <ResponsiveContainer height={height} width="100%">
+      <ResponsiveContainer height={height}>
         <AreaChart
           accessibilityLayer
           data={chartData}

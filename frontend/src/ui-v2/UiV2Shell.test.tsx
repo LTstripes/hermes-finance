@@ -284,7 +284,7 @@ describe("UiV2Shell native navigation", () => {
     expect(navigation.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
   });
 
-  it.each(["/v2/data/months?month=7", "/v2/reports"])(
+  it.each(["/v2/close?month=7", "/v2/data/months/7", "/v2/reports/7"])(
     "marks the month plate at %s without selecting Settings",
     async (path) => {
       respondWith(draftStatus);
@@ -433,4 +433,31 @@ describe("UiV2MonthPlate", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.monthWorkingStatus });
     expect(queryKeys.monthWorkingStatus.slice(0, 1)).toEqual([...queryKeys.months]);
   });
+});
+
+it.each([
+  "/v2/close?month=8",
+  "/v2/close?month=7&month=8",
+  "/v2/close?month=0",
+  "/v2/data/months/8",
+  "/v2/reports/8",
+  "/v2/reports",
+  "/v2/data/months",
+])("does not mark the working month as the current page at %s", async (path) => {
+  respondWith(draftStatus);
+  renderShell(path);
+  expect(await screen.findByRole("link", { name: /Рабочий месяц/ })).not.toHaveAttribute(
+    "aria-current",
+  );
+});
+it.each([
+  ["/v2", "Мои финансы"],
+  ["/v2/capital", "Капитал"],
+  ["/v2/returns", "Доходность"],
+  ["/v2/returns/account", "Доходность по месяцам"],
+  ["/v2/data/files", "Экспорт и копии"],
+  ["/v2/income/goals", "Цели"],
+])("names the browser tab for %s", (path, title) => {
+  renderShell(path);
+  expect(document.title).toBe(`${title} — Hermes Finance`);
 });
