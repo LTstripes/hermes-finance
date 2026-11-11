@@ -446,12 +446,32 @@
 }
 
 /* Month heading */
+.headingMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .titleRow {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 10px 16px;
+  gap: 8px;
   margin-top: 6px;
+}
+
+.titleRow > :global(.button),
+.titleRow > :global(.btn) {
+  margin-left: auto;
+}
+
+.titleRow h1 {
+  white-space: nowrap;
+  font-size: var(--t-xl);
+}
+
+.titleRow .allMonths {
+  white-space: nowrap;
 }
 
 .stepper {

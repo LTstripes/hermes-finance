@@ -235,7 +235,7 @@ describe("Month overview (#1079 stage 2)", () => {
     );
   });
 
-  it("uses neutral marks without duplicated warnings for closed attention steps on overview and strip", () => {
+  it("uses completed marks without duplicated warnings for closed attention steps on overview and strip", () => {
     const workflow = makeUiV2Workflow({ monthId: 91 });
     workflow.checklist = makeUiV2Checklist({ attention: true });
     render(
@@ -251,7 +251,7 @@ describe("Month overview (#1079 stage 2)", () => {
       expect(link).toHaveAttribute("data-state", "noted");
       expect(link).not.toHaveTextContent("1 замечание");
       expect(link).not.toHaveTextContent(/!|требует решения|требуют решения/);
-      expect(link.querySelector('[aria-hidden="true"]')).toHaveTextContent("·");
+      expect(link.querySelector('[aria-hidden="true"]')).toHaveTextContent("✓");
     }
   });
 

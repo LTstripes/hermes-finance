@@ -466,7 +466,7 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
       await page.getByRole("button", { name, exact: true }).click();
       await expect(page.getByText(/Наблюдаемое количество: 10 на 2040-10-31/)).toBeVisible();
       await expect(
-        page.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+        page.getByRole("button", { name: "Запросить предварительные выплаты Т-Инвест" }),
       ).toHaveCount(0);
     }
   }

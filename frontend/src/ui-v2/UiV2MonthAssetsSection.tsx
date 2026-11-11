@@ -79,7 +79,7 @@ const CASH_FOREIGN_MESSAGE =
   "Ответ API по денежным позициям принадлежит другому месяцу: список отклонён и не показывается пустым снимком.";
 /** Row mutation confirmed, aggregate not: kept apart on purpose (Integrator B1). */
 const CASH_TOTAL_WARNING =
-  "Итог наличных не перечитан: прежнее значение не показывается как текущее. Строки подтверждаются отдельным перечитыванием списка.";
+  "Итог денег не перечитан: прежнее значение не показывается как текущее. Строки подтверждаются отдельным перечитыванием списка.";
 
 /** API currency code → suffix used by formatMoney; unknown codes stay verbatim. */
 function currencySuffix(currency: string | null | undefined): string {
@@ -1096,7 +1096,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       ) : null}
 
       {loading ? (
-        <LoadingState description="Загружаем депозиты и наличные…" inline />
+        <LoadingState description="Загружаем депозиты и деньги…" inline />
       ) : loadError ? (
         <ErrorState
           description={formatApiError(loadError.error)}
@@ -1548,9 +1548,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
           {!readOnly || cashRows.length > 0 || cashForeign ? (
             <Panel
               action={
-                <Badge>
-                  наличные {cashTotalText} · в капитале {cashInCapitalText}
-                </Badge>
+                cashTotalText !== cashInCapitalText ? (
+                  <Badge>
+                    деньги {cashTotalText} · в капитале {cashInCapitalText}
+                  </Badge>
+                ) : undefined
               }
               label=""
               title="Денежные средства"
@@ -1643,9 +1645,26 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr>
+                      <Td>Всего денег</Td>
+                      <Td numeric>{cashTotalText}</Td>
+                      {readOnly && showCashCapital ? (
+                        <Td>В капитале: {cashInCapitalText}</Td>
+                      ) : null}
+                      {!readOnly ? (
+                        <Td>{showCashCapital ? `В капитале: ${cashInCapitalText}` : null}</Td>
+                      ) : null}
+                    </tr>
+                  </tfoot>
                 </Table>
               )}
 
+              {cashRows.length === 0 || cashForeign ? (
+                <p>
+                  Всего денег: <strong>{cashTotalText}</strong>
+                </p>
+              ) : null}
               {!readOnly
                 ? cashRows
                     .filter((row) => cashEdits[row.id] !== undefined)
@@ -1662,21 +1681,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                       </MonthSaveBar>
                     ))
                 : null}
-              <div className="totals-bar">
-                <span>
-                  Всего наличных: <strong>{cashTotalText}</strong>
-                </span>
-                {showCashCapital ? (
-                  <span>
-                    В ликвидном капитале: <strong>{cashInCapitalText}</strong>
-                  </span>
-                ) : null}
-              </div>
               {!cashTotalQuery.isPending &&
               !totalUnconfirmed &&
               !(cashTotal && cashTotalQuery.isSuccess) ? (
                 <div className="inline-alert inline-alert--warn" role="status">
-                  Итоги наличных за выбранный месяц недоступны: сумма не подменяется нулём, полнота
+                  Итоги денег за выбранный месяц недоступны: сумма не подменяется нулём, полнота
                   капитала не утверждается.{" "}
                   <Button
                     disabled={cashTotalQuery.isFetching}
@@ -1727,7 +1736,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                         value={cashDraft.name}
                       />
                     </Field>
-                    <Field htmlFor="cash-amount" label="Сумма наличных">
+                    <Field htmlFor="cash-amount" label="Сумма денег">
                       <MonthMoneyInput
                         className="input--money"
                         disabled={busy}

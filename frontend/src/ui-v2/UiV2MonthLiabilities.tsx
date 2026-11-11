@@ -25,6 +25,8 @@ import { LinkedPairContext } from "../components/LinkedPairContext";
 import {
   Badge,
   Button,
+  OverflowMenu,
+  OverflowMenuItem,
   ConfirmDialog,
   Field,
   Input,
@@ -519,6 +521,7 @@ function DebtBlock({
       next_due_date: row.next_due_date ?? "",
       contract_end_date: row.contract_end_date ?? "",
     });
+    requestAnimationFrame(() => document.getElementById(`debt-edit-${row.id}-name`)?.focus());
   }
 
   async function confirmReadback(rows: DebtEntry[]): Promise<void> {
@@ -722,69 +725,66 @@ function DebtBlock({
                   </Td>
                   {!readOnly ? (
                     <Td>
-                      <div className={leafStyles.rowActions}>
-                        <Button
-                          aria-label={`Изменить долг «${row.name}»`}
-                          disabled={busy || readOnly}
-                          onClick={() => startEditingDebt(row)}
-                          size="sm"
-                          type="button"
-                        >
-                          Изменить
-                        </Button>
-                        <Button
-                          aria-label={`Удалить долг «${row.name}»`}
-                          disabled={busy || readOnly}
-                          onClick={() => setDeleteTarget(row)}
-                          size="sm"
-                          type="button"
-                        >
-                          Удалить
-                        </Button>
-                      </div>
-                      {row.linked_account_id != null ? (
-                        <div className={leafStyles.rowActions}>
-                          <Button
-                            disabled={busy || readOnly || editingId !== null}
-                            onClick={() => startLinkingDebt(row)}
-                            size="sm"
+                      <OverflowMenu label={`Действия для долга «${row.name}»`}>
+                        <>
+                          <OverflowMenuItem
+                            aria-label={`Изменить долг «${row.name}»`}
+                            disabled={busy || readOnly}
+                            onClick={() => startEditingDebt(row)}
                             type="button"
                           >
-                            Изменить связь
-                          </Button>
-                          <Button
-                            disabled={busy || readOnly || editingId !== null}
-                            onClick={() => setUnlinkTarget(row)}
-                            size="sm"
+                            Изменить
+                          </OverflowMenuItem>
+                          <OverflowMenuItem
+                            aria-label={`Удалить долг «${row.name}»`}
+                            disabled={busy || readOnly}
+                            onClick={() => setDeleteTarget(row)}
                             type="button"
                           >
-                            Отвязать
-                          </Button>
-                        </div>
-                      ) : row.debt_type === "credit_card" && row.include_in_liquid_capital ? (
-                        <div className={leafStyles.linkControl}>
-                          <div className={leafStyles.rowActions}>
-                            <Button
-                              disabled={
-                                busy ||
-                                readOnly ||
-                                editingId !== null ||
-                                eligibleAccounts.length === 0
-                              }
+                            Удалить
+                          </OverflowMenuItem>
+                        </>
+                        {row.linked_account_id != null ? (
+                          <>
+                            <OverflowMenuItem
+                              disabled={busy || readOnly || editingId !== null}
                               onClick={() => startLinkingDebt(row)}
-                              size="sm"
                               type="button"
                             >
-                              Связать счёт
-                            </Button>
-                          </div>
-                          {eligibleAccounts.length === 0 ? (
-                            <span className={leafStyles.hint}>{LINK_ACCOUNT_EMPTY_HINT}</span>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className={leafStyles.hint}>{LINK_AVAILABLE_HINT}</span>
-                      )}
+                              Изменить связь
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
+                              disabled={busy || readOnly || editingId !== null}
+                              onClick={() => setUnlinkTarget(row)}
+                              type="button"
+                            >
+                              Отвязать
+                            </OverflowMenuItem>
+                          </>
+                        ) : row.debt_type === "credit_card" && row.include_in_liquid_capital ? (
+                          <>
+                            <>
+                              <OverflowMenuItem
+                                disabled={
+                                  busy ||
+                                  readOnly ||
+                                  editingId !== null ||
+                                  eligibleAccounts.length === 0
+                                }
+                                onClick={() => startLinkingDebt(row)}
+                                type="button"
+                              >
+                                Связать счёт
+                              </OverflowMenuItem>
+                            </>
+                            {eligibleAccounts.length === 0 ? (
+                              <span className={leafStyles.hint}>{LINK_ACCOUNT_EMPTY_HINT}</span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className={leafStyles.hint}>{LINK_AVAILABLE_HINT}</span>
+                        )}
+                      </OverflowMenu>
                     </Td>
                   ) : null}
                 </tr>
@@ -803,6 +803,14 @@ function DebtBlock({
               <form
                 aria-label={`Редактирование долга «${editingRow.name}»`}
                 className={leafStyles.stackedEditor}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && !busy) {
+                    event.preventDefault();
+                    setEditingId(null);
+                    setEditDraft(null);
+                    setLinkingId(null);
+                  }
+                }}
                 onSubmit={(event) => {
                   event.preventDefault();
                   void saveDebtEdit();
@@ -949,6 +957,14 @@ function DebtBlock({
               <form
                 aria-label={`Связь долга «${linkingRow.name}» со счётом`}
                 className={leafStyles.stackedEditor}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && !busy) {
+                    event.preventDefault();
+                    setEditingId(null);
+                    setEditDraft(null);
+                    setLinkingId(null);
+                  }
+                }}
                 onSubmit={(event) => {
                   event.preventDefault();
                   void saveDebtLink(linkingRow);
@@ -1221,6 +1237,7 @@ function PropertyBlock({
       monthly_payment: moneyAmount(row.monthly_payment),
       mortgage_annual_rate: row.mortgage_annual_rate ?? "",
     });
+    requestAnimationFrame(() => document.getElementById("prop-edit-name")?.focus());
   }
 
   async function confirmReadback(rows: PropertySnapshot[]): Promise<void> {
@@ -1387,7 +1404,7 @@ function PropertyBlock({
                               type="button"
                               variant="primary"
                             >
-                              OK
+                              Готово
                             </Button>
                             <Button
                               disabled={busy}
@@ -1402,26 +1419,24 @@ function PropertyBlock({
                             </Button>
                           </>
                         ) : (
-                          <>
-                            <Button
+                          <OverflowMenu label={`Действия для объекта «${row.name}»`}>
+                            <OverflowMenuItem
                               aria-label={`Изменить объект «${row.name}»`}
                               disabled={busy || readOnly}
                               onClick={() => startEditingProperty(row)}
-                              size="sm"
                               type="button"
                             >
                               Изменить
-                            </Button>
-                            <Button
+                            </OverflowMenuItem>
+                            <OverflowMenuItem
                               aria-label={`Удалить объект «${row.name}»`}
                               disabled={busy || readOnly}
                               onClick={() => setDeleteTarget(row)}
-                              size="sm"
                               type="button"
                             >
                               Удалить
-                            </Button>
-                          </>
+                            </OverflowMenuItem>
+                          </OverflowMenu>
                         )}
                       </div>
                     </Td>
@@ -1433,7 +1448,21 @@ function PropertyBlock({
         </Table>
       )}
       {editingId !== null && editDraft && (
-        <section className={leafStyles.stackedEditor} aria-label="Изменение объекта недвижимости">
+        <section
+          className={leafStyles.stackedEditor}
+          aria-label="Изменение объекта недвижимости"
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !busy) {
+              event.preventDefault();
+              setEditingId(null);
+              setEditDraft(null);
+            }
+            if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+              event.preventDefault();
+              void savePropertyEdit();
+            }
+          }}
+        >
           <h3>Изменение объекта недвижимости</h3>
           <div className={leafStyles.propertyValues}>
             <Field htmlFor="prop-edit-name" label="Название объекта">
