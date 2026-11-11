@@ -1,6 +1,7 @@
 """Typed reviewed posted BUY cash, never a cost, coupon or endpoint projection."""
 
 from collections import Counter
+from copy import deepcopy
 from decimal import Decimal, localcontext
 
 from hermes_finance.domain.broker_money import StockFeeClaims, TradeCashClaims
@@ -23,16 +24,16 @@ def exact_minor(value):
 def effective_proof(session, identity):
     # Deliberately no canonical reader here: proof revalidation reads frozen
     # target revisions, avoiding a candidate -> receipt -> candidate cycle.
-    from hermes_finance.services.broker_money import latest_proofs, proof_blockers
-    from hermes_finance.services.returns_read_inputs import executed_trade
+    from hermes_finance.services.broker_money import proof_blockers
+    from hermes_finance.services.returns_read_inputs import executed_trade, money_proof_head
 
     trade = executed_trade(session, identity)
     if trade is None:
         return None
-    entry = latest_proofs(session).get(("trade", trade.id))
+    entry = money_proof_head(session, ("trade", trade.id))
     if entry is None or proof_blockers(session, *entry):
         return None
-    return entry[2]["cash_proof"]
+    return deepcopy(entry[2]["cash_proof"])
 
 
 STOCK_FEE = "stock_buy_separate_fee_v1"

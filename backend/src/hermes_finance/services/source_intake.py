@@ -782,7 +782,10 @@ def _view(session, original, *, include_money_classifications=True):
     if (
         len(inventory) != manifest["inventory_count"]
         or digest(inventory) != manifest["observations_digest"]
-        or any(digest(json.loads(o.facts_json)) != o.row_fingerprint for o in observations)
+        or any(
+            digest(item[4]) != observation.row_fingerprint
+            for item, observation in zip(inventory, observations, strict=True)
+        )
     ):
         raise MyBrokerError("source_intake_inventory_invalid")
     evidence = manifest["identity_evidence"]
@@ -865,9 +868,9 @@ def _view(session, original, *, include_money_classifications=True):
                 "locator": o.locator,
                 "row_class": o.row_class,
                 "row_fingerprint": o.row_fingerprint,
-                "facts": json.loads(o.facts_json),
+                "facts": item[4],
             }
-            for o in observations
+            for o, item in zip(observations, inventory, strict=True)
         ],
         "exceptions": sorted(reasons),
         "financial_authority": "none",

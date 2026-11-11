@@ -5,6 +5,7 @@ import layout from "./Dashboard.module.css";
 import { dateLabel, displayMetric, displayWhole, isPartialResult } from "./model";
 import type { CouponIncome } from "./overall";
 import styles from "./Returns.module.css";
+import { useAccountName } from "./useAccountName";
 
 const titles = { coupon: "Полученные купоны", dividend: "Полученные дивиденды" };
 function Breakdown({
@@ -23,6 +24,9 @@ function Breakdown({
     queryFn: ({ signal }) => getIncome(kind, signal),
     staleTime: 5 * 60 * 1000,
   });
+  const catalogueName = useAccountName(
+    query.data?.summary.accounts.map((account) => account.account_link) ?? [],
+  );
   if (query.isError)
     return (
       <p role="alert">
@@ -36,7 +40,7 @@ function Breakdown({
   const data = query.data;
   const accountLabel = (scope: string, fallback: string) => {
     const link = data.summary.accounts.find((account) => account.scope === scope)?.account_link;
-    return link?.status === "linked" ? link.label : fallback;
+    return catalogueName(link, fallback);
   };
   const included = (s: string) => !scopes || scopes.includes(s);
   const rows = data.instruments

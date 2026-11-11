@@ -1717,10 +1717,16 @@ def test_identity_revision_is_shared_only_within_one_committed_snapshot(db, monk
             assert build.call_count == 2
 
 
+@pytest.mark.parametrize("reader", ["account", "overall", "income", "card", "overview", "detail"])
 def test_clean_account_queries_do_not_scale_with_instruments(
-    tmp_path, source_returns_database_factory
+    tmp_path, source_returns_database_factory, reader
 ):
     from hermes_finance.services.clean_instrument_return import read_clean_account
+    from hermes_finance.services.returns_overall import (
+        read_clean_income,
+        read_clean_instrument_card,
+        read_clean_overall,
+    )
     from hermes_finance.statement_import.mybroker import NS
 
     counts = []
@@ -1753,14 +1759,179 @@ def test_clean_account_queries_do_not_scale_with_instruments(
         event.listen(database.engine, "before_cursor_execute", query)
         try:
             with database.session_factory() as session, source_read_snapshot(session):
-                result = read_clean_account(session, ACCOUNT, START, END, include_purchases=True)
-            assert len(result["instruments"]) == size
+                if reader == "account":
+                    result = read_clean_account(
+                        session, ACCOUNT, START, END, include_purchases=True
+                    )
+                    assert len(result["instruments"]) == size
+                elif reader == "overall":
+                    result = read_clean_overall(session, include_instrument_details=True)
+                    assert len(result["instruments"]) == size
+                elif reader == "income":
+                    result = read_clean_income(session, kind="coupon")
+                    assert len(result["instruments"]) == size
+                elif reader == "card":
+                    assert read_clean_instrument_card(session, "RU0000000000")["accounts"]
+                elif reader == "overview":
+                    result = returns_view.read_clean_source_overview(
+                        session, scope=SCOPE, start=START, end=END
+                    )
+                    assert len(result["instruments"]) == size
+                else:
+                    assert (
+                        returns_view.read_clean_source_detail(
+                            session, scope=SCOPE, start=START, end=END, isin="RU0000000000"
+                        )["isin"]
+                        == "RU0000000000"
+                    )
             counts.append(len(statements))
             query_shapes.append(Counter(statements))
         finally:
             event.remove(database.engine, "before_cursor_execute", query)
             database.engine.dispose()
     assert counts[0] == counts[1], (counts, query_shapes[1] - query_shapes[0])
+
+
+def test_money_ownership_inventory_is_batched_owned_and_revalidated(db, monkeypatch):
+    from hermes_finance.persistence import BrokerMonthApply
+    from hermes_finance.services import broker_money_ownership as ownership
+
+    statements = []
+
+    def query(*args):
+        statements.append(args[2])
+
+    event.listen(db.engine, "before_cursor_execute", query)
+    try:
+        with db.session_factory() as session, source_read_snapshot(session):
+            for ordinal in range(12):
+                assert (
+                    ownership.owners(
+                        session, [{"import_id": 1, "section": "money", "ordinal": ordinal}]
+                    )
+                    == []
+                )
+            for table in (
+                "broker_money_occurrence_owners",
+                "historical_owner_flow_occurrences",
+                "executed_trade_occurrences",
+                BrokerMonthApply.__tablename__,
+            ):
+                assert sum(f"FROM {table}" in sql for sql in statements) == 1
+    finally:
+        event.remove(db.engine, "before_cursor_execute", query)
+
+    calls = []
+    rows = [
+        {"key": [1, "money", ordinal], "role": "coupon", "target_id": ordinal}
+        for ordinal in (2, 1, 2)
+    ]
+
+    def inventory(_session, **_selection):
+        calls.append(1)
+        return deepcopy(rows)
+
+    monkeypatch.setattr(ownership, "_owner_inventory", inventory)
+    selected = [{"import_id": 1, "section": "money", "ordinal": n} for n in (1, 2)]
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            value = ownership.owners(session, selected)
+            assert value == rows  # Preserve duplicates and original cross-table order.
+            value[0]["key"].clear()
+            assert ownership.owners(session, selected) == rows
+            assert len(calls) == 1
+            rows[0]["role"] = "dividend"
+            assert ownership.owners(session, selected)[0]["role"] == "coupon"
+        with source_read_snapshot(session):
+            assert ownership.owners(session, selected) == rows
+            assert len(calls) == 2
+        ownership.owners(session, selected)
+        ownership.owners(session, selected)
+        assert len(calls) == 4  # Ordinary sessions never reuse the inventory.
+
+
+def test_trade_checks_share_money_inventory_without_exposing_cash_proof(db, monkeypatch):
+    from types import SimpleNamespace
+
+    from hermes_finance.services import broker_money, broker_trade_money, returns_read_inputs
+
+    calls = []
+
+    def latest(_session):
+        calls.append(1)
+        return {
+            ("trade", identity): (None, {}, {"cash_proof": {"identity": identity}})
+            for identity in range(12)
+        }
+
+    monkeypatch.setattr(broker_money, "latest_proofs", latest)
+    monkeypatch.setattr(broker_money, "proof_blockers", lambda *a: [])
+    monkeypatch.setattr(returns_read_inputs, "executed_trade", lambda s, i: SimpleNamespace(id=i))
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            for identity in range(12):
+                result = broker_trade_money.effective_proof(session, identity)
+                assert result == {"identity": identity}
+                result["identity"] = -1
+                assert broker_trade_money.effective_proof(session, identity) == {
+                    "identity": identity
+                }
+            assert len(calls) == 1
+        with source_read_snapshot(session):
+            broker_trade_money.effective_proof(session, 0)
+            assert len(calls) == 2
+        broker_trade_money.effective_proof(session, 0)
+        broker_trade_money.effective_proof(session, 0)
+        assert len(calls) == 4
+
+
+def test_clean_overall_omits_only_replaced_legacy_instrument_work(db, monkeypatch):
+    from hermes_finance.api.returns_overall import Overall
+    from hermes_finance.services import returns_overall
+
+    _named_investment(db, monkeypatch, source_labels=("Synthetic title",))
+    save(db, 2)
+    read = returns_overall.read_overall
+
+    def full(session, **kwargs):
+        return read(session, **{**kwargs, "native_instruments": True})
+
+    with monkeypatch.context() as patch:
+        patch.setattr(returns_overall, "read_overall", full)
+        with db.session_factory() as session:
+            baseline = Overall.model_validate(
+                returns_overall.read_clean_overall(session, include_instrument_details=True)
+            ).model_dump_json()
+    with db.session_factory() as session:
+        candidate = Overall.model_validate(
+            returns_overall.read_clean_overall(session, include_instrument_details=True)
+        ).model_dump_json()
+    assert candidate == baseline
+
+
+def test_clean_card_matches_full_legacy_index(db, monkeypatch):
+    from test_statement_import_mybroker import ISIN
+
+    from hermes_finance.api.returns_overall import InstrumentCard
+    from hermes_finance.services import returns_overall
+
+    save(db)
+    read = returns_overall._source_accounts
+
+    def full(session, **kwargs):
+        return read(session, **{**kwargs, "requested_isin": None})
+
+    with monkeypatch.context() as patch:
+        patch.setattr(returns_overall, "_source_accounts", full)
+        with db.session_factory() as session:
+            baseline = InstrumentCard.model_validate(
+                returns_overall.read_clean_instrument_card(session, ISIN)
+            ).model_dump_json(exclude_unset=True)
+    with db.session_factory() as session:
+        candidate = InstrumentCard.model_validate(
+            returns_overall.read_clean_instrument_card(session, ISIN)
+        ).model_dump_json(exclude_unset=True)
+    assert candidate == baseline
 
 
 def test_instrument_preparation_reused_across_periods_without_exposing_mutable_state(
