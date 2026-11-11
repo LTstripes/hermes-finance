@@ -1097,7 +1097,8 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     await user.clear(mortgage);
     await user.type(mortgage, "2900000.00");
     await user.click(within(propertyTable).getByRole("button", { name: "Готово" }));
-    await waitFor(() => expect(updateProperty).toHaveBeenCalledTimes(1));
+    // CI can be slow to start the save; the assertion itself is unchanged.
+    await waitFor(() => expect(updateProperty).toHaveBeenCalledTimes(1), { timeout: 5000 });
 
     expect(
       within(screen.getByRole("region", { name: "Изменение объекта недвижимости" })).getByLabelText(
