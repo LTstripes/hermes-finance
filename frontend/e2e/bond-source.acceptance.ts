@@ -332,7 +332,8 @@ test("two-account bond desktop: reported holdings, linked coupons, eligible esti
 
   await page.getByRole("group", { name: "Счета" }).locator('button[title="8765432-000"]').click();
   await panel.getByLabel("Период облигаций").selectOption("2030-05-01");
-  await expect(panel.getByText("8765432-000", { exact: true })).toBeVisible();
+  // The previous account stays on screen until the new source read returns.
+  await expect(panel.getByText("8765432-000", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(withinTable().getByRole("cell", { name: "8", exact: true })).toBeVisible();
   await expect(panel.getByRole("table", { name: "Сделки по строкам источников" })).toContainText(
     "% от номинала",
