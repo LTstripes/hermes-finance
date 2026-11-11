@@ -438,11 +438,7 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole(
-        "heading",
-        { level: 1, name: "Распределение и концентрация" },
-        { timeout: 5_000 },
-      ),
+      await screen.findByRole("heading", { level: 1, name: "Капитал" }, { timeout: 5_000 }),
     ).toBeVisible();
     expect(await screen.findByLabelText("Отчётный месяц", {}, { timeout: 5_000 })).toHaveValue("1");
     expect(screen.getByRole("link", { name: /^Обзор$/ })).toHaveAttribute(
@@ -464,8 +460,8 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Цели" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "← Доход и планы" })).toHaveAttribute(
+    expect(await screen.findByRole("heading", { level: 1, name: "Доход и планы" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Обзор" })).toHaveAttribute(
       "href",
       "/v2/income?month=1",
     );
@@ -511,7 +507,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Налоги и ИИС" })).toBeVisible();
+    expect(await screen.findByRole("heading", { level: 1, name: "Доход и планы" })).toBeVisible();
     expect(screen.getByRole("link", { name: "← Доход и планы" })).toHaveAttribute(
       "href",
       "/v2/income?month=1",

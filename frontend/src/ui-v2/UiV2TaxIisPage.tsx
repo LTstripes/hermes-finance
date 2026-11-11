@@ -85,7 +85,7 @@ function Metric({
     <div className={styles.metric}>
       <dt>{label}</dt>
       <dd data-testid={testId}>{value}</dd>
-      <p>{meta}</p>
+      {meta ? <p>{meta}</p> : null}
     </div>
   );
 }
@@ -212,40 +212,22 @@ function PlannerContent({
             }
           />
           <Metric
-            label="Текущая предельная ступень"
-            meta={bracket ? "Границы по шкале НДФЛ" : "Ступень не определена"}
-            testId="tax-iis-marginal-bracket"
-            value={bracketValue}
-          />
-          <Metric
             label="Текущая предельная ставка"
             meta={
               salary.current_marginal_rate_bps === null && bracket
                 ? "Ставка указана в текущей ступени"
                 : salary.available
-                  ? "По ответу налогового планировщика"
+                  ? ""
                   : "Недоступно по текущему контексту"
             }
             testId="tax-iis-marginal-rate"
             value={rateBps === null ? unavailableValue(salary.available) : formatRateBps(rateBps)}
           />
           <Metric
-            label="Следующий порог"
-            meta={
-              salary.next_threshold
-                ? "По настроенной шкале НДФЛ"
-                : salary.available
-                  ? "Открытая финальная ступень"
-                  : "Не определяется"
-            }
-            testId="tax-iis-next-threshold"
-            value={nextThresholdValue}
-          />
-          <Metric
             label="Расстояние до порога"
             meta={
               salary.next_threshold
-                ? "Значение из ответа налогового планировщика"
+                ? ""
                 : salary.available
                   ? "У финальной ступени нет следующего порога"
                   : "Не определяется"
@@ -253,21 +235,66 @@ function PlannerContent({
             testId="tax-iis-threshold-distance"
             value={distanceValue}
           />
+          <div className={styles.metric}>
+            <dt>Взнос на ИИС · {taxYear ?? "год недоступен"}</dt>
+            {planner.iis_accounts.length === 0 ? (
+              <dd>Нет профилей ИИС</dd>
+            ) : (
+              planner.iis_accounts.map((account) => {
+                const contribution = account.contributions_by_tax_year.find(
+                  (row) => row.tax_year === taxYear,
+                );
+                return (
+                  <div key={account.account_id}>
+                    <p>{account.account_name}</p>
+                    <dd>
+                      {contribution
+                        ? formatMoney(contribution.amount.amount)
+                        : "Нет сохранённого взноса"}
+                    </dd>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </dl>
 
-        <div className={styles.salaryMeta}>
-          <span className={styles.metaItem}>
-            Зарплатный контекст: {salary.available ? "доступен" : "недоступен"}
-          </span>
-          <span className={styles.metaItem}>История НДФЛ: {historyLabel}</span>
-          <span className={styles.metaItem}>
-            Начальный контекст: {salary.opening_context_available ? "задан" : "не задан"}
-          </span>
-          <span className={styles.sourceBadge}>
-            Источник шкалы: {sourceLabel(salary.tax_bracket_source)}
-          </span>
-        </div>
-        <WarningList codes={salary.warning_codes} />
+        <details>
+          <summary>Подробнее о налоговой шкале и истории</summary>
+          <dl className={styles.salaryGrid}>
+            {" "}
+            <Metric
+              label="Текущая предельная ступень"
+              meta={bracket ? "Границы по шкале НДФЛ" : "Ступень не определена"}
+              testId="tax-iis-marginal-bracket"
+              value={bracketValue}
+            />
+            <Metric
+              label="Следующий порог"
+              meta={
+                salary.next_threshold
+                  ? "По настроенной шкале НДФЛ"
+                  : salary.available
+                    ? "Открытая финальная ступень"
+                    : "Не определяется"
+              }
+              testId="tax-iis-next-threshold"
+              value={nextThresholdValue}
+            />
+          </dl>
+          <div className={styles.salaryMeta}>
+            <span className={styles.metaItem}>История НДФЛ: {historyLabel}</span>
+            <span className={styles.metaItem}>
+              Начальный контекст: {salary.opening_context_available ? "задан" : "не задан"}
+            </span>
+            <span className={styles.sourceBadge}>
+              Источник шкалы: {sourceLabel(salary.tax_bracket_source)}
+            </span>
+          </div>
+        </details>
+        <WarningList
+          codes={salary.warning_codes.filter((code) => !planner.warnings.includes(code))}
+        />
       </UiV2Panel>
 
       <UiV2Panel
@@ -310,6 +337,9 @@ function IisAccountCard({
     ["rejected", benefits.rejected],
   ] as const;
 
+  const visibleBenefits = benefitRows.filter(
+    ([, value]) => !/^-?0+(?:\.0+)?$/.test(value.amount ?? ""),
+  );
   return (
     <article className={styles.accountCard}>
       <header className={styles.accountHeader}>
@@ -320,8 +350,10 @@ function IisAccountCard({
         <span className={styles.accountType}>ИИС</span>
       </header>
       <p className={styles.accountMeta}>
-        Открыт {formatDate(account.opened_at)} · Закрытие доступно с{" "}
-        {formatDate(account.eligible_close_at, { empty: "не рассчитано" })}
+        Открыт {formatDate(account.opened_at)}
+        {account.eligible_close_at ? (
+          <> · Закрытие доступно с {formatDate(account.eligible_close_at)}</>
+        ) : null}
       </p>
       <Link
         className={styles.accountEditLink}
@@ -370,24 +402,26 @@ function IisAccountCard({
         )}
       </section>
 
-      <section
-        aria-labelledby={`iis-benefits-${account.account_id}`}
-        className={styles.accountSection}
-      >
-        <h4 id={`iis-benefits-${account.account_id}`}>Льготы по статусам</h4>
-        <dl className={styles.benefitsGrid}>
-          {benefitRows.map(([status, amount]) => (
-            <div className={styles.benefit} key={status}>
-              <dt>{labelOf(BENEFIT_STATUS_LABELS, status)}</dt>
-              <dd>{formatMoney(amount.amount)}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className={styles.nonAggregateNote}>
-          Запланировано, подано, получено и отклонено показаны отдельно; эти статусы не
-          складываются.
-        </p>
-      </section>
+      {visibleBenefits.length > 0 ? (
+        <section
+          aria-labelledby={`iis-benefits-${account.account_id}`}
+          className={styles.accountSection}
+        >
+          <h4 id={`iis-benefits-${account.account_id}`}>Льготы по статусам</h4>
+          <dl className={styles.benefitsGrid}>
+            {visibleBenefits.map(([status, amount]) => (
+              <div className={styles.benefit} key={status}>
+                <dt>{labelOf(BENEFIT_STATUS_LABELS, status)}</dt>
+                <dd>{formatMoney(amount.amount)}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className={styles.nonAggregateNote}>
+            Запланировано, подано, получено и отклонено показаны отдельно; эти статусы не
+            складываются.
+          </p>
+        </section>
+      ) : null}
     </article>
   );
 }
@@ -503,16 +537,7 @@ export default function UiV2TaxIisPage() {
       showRefresh={false}
       active="income"
       busy={monthsLoading || plannerLoading}
-      header={
-        <>
-          <p className={sharedStyles.eyebrow}>Сохранённые налоговые данные</p>
-          <h1>Налоги и ИИС</h1>
-          <p className={sharedStyles.subtitle}>
-            Зарплатный НДФЛ и профили ИИС по выбранному отчётному контексту, без прогноза зарплаты и
-            расчётов по ценным бумагам.
-          </p>
-        </>
-      }
+      header={<h1>Доход и планы</h1>}
     >
       <IncomeTabs active="tax" monthId={selectedMonthId} />
       <section className={styles.page}>

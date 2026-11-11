@@ -1,6 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createQueryClient } from "../queryClient";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -153,7 +153,7 @@ describe("UiV2TaxIisPage", () => {
   it("renders backend tax thresholds, source, as-of, IIS contributions and separate benefit statuses", async () => {
     renderTaxIisPage("/v2/income/tax-iis?month=2");
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Налоги и ИИС" })).toBeVisible();
+    expect(await screen.findByRole("heading", { level: 1, name: "Доход и планы" })).toBeVisible();
     expect(await screen.findByTestId("tax-iis-as-of")).toHaveTextContent(
       /Налоговый год 2031\s*Срез Февраль 2031 · Закрыт · снимок 28\.02\.2031/,
     );
@@ -164,6 +164,7 @@ describe("UiV2TaxIisPage", () => {
     );
     expect(screen.getByTestId("tax-iis-next-threshold")).toHaveTextContent(/5\s000\s000/);
     expect(screen.getByTestId("tax-iis-threshold-distance")).toHaveTextContent(/1\s111\s111/);
+    fireEvent.click(screen.getByText("Подробнее о налоговой шкале и истории"));
     expect(screen.getByText("Источник шкалы: Официальная шкала")).toBeVisible();
 
     const account = screen.getByRole("article");
@@ -193,12 +194,13 @@ describe("UiV2TaxIisPage", () => {
     vi.mocked(getTaxIisPlanner).mockResolvedValue(unavailablePlanner());
     renderTaxIisPage("/v2/income/tax-iis?month=2");
 
-    expect(await screen.findAllByText(/История зарплатного НДФЛ неполна/)).toHaveLength(2);
+    expect(await screen.findAllByText(/История зарплатного НДФЛ неполна/)).toHaveLength(1);
     expect(screen.getByTestId("tax-iis-taxable-gross-ytd")).toHaveTextContent("Недоступно");
     expect(screen.getByTestId("tax-iis-marginal-rate")).toHaveTextContent("Недоступно");
     expect(screen.getByTestId("tax-iis-marginal-bracket")).toHaveTextContent("Недоступно");
     expect(screen.getByTestId("tax-iis-next-threshold")).toHaveTextContent("Недоступно");
     expect(screen.getByTestId("tax-iis-threshold-distance")).toHaveTextContent("Недоступно");
+    fireEvent.click(screen.getByText("Подробнее о налоговой шкале и истории"));
     expect(screen.getByText("Источник шкалы: Источник шкалы не указан")).toBeVisible();
     expect(screen.getByText(/История НДФЛ: Недоступна/)).toBeVisible();
     for (const code of ["salary_tax_history_incomplete", "tax_brackets_unavailable"]) {

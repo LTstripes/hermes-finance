@@ -9,8 +9,6 @@ import {
   type ReactNode,
 } from "react";
 
-import { Link } from "react-router";
-
 import { formatApiError } from "../api/client";
 import {
   createGoal,
@@ -41,11 +39,12 @@ import {
   Panel,
   Select,
 } from "../components/ui";
+import { moneyWholeText } from "./valueFormat";
+import { rub } from "../lib/money";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
 import { UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Shell } from "./UiV2Shell";
-import sharedStyles from "./UiV2Page.module.css";
 import v2Styles from "./UiV2Goals.module.css";
 import {
   GOAL_STATUS_LABELS,
@@ -73,7 +72,6 @@ export function GoalsWorkspace({
   presentation = "legacy",
   monthContext,
   monthContextError,
-  incomeReturnTo,
   onMonthContextChange,
 }: GoalsWorkspaceProps = {}) {
   const isV2 = presentation === "v2";
@@ -336,6 +334,7 @@ export function GoalsWorkspace({
     <ul className="goal-card-grid">
       {activeGoals.map((goal) => (
         <GoalCard
+          wholeRubles={isV2}
           goal={goal}
           key={goal.id}
           onDelete={setPendingDelete}
@@ -429,6 +428,7 @@ export function GoalsWorkspace({
           {inactiveGoals.map((goal) => (
             <GoalCard
               compact
+              wholeRubles={isV2}
               goal={goal}
               key={goal.id}
               onDelete={setPendingDelete}
@@ -509,26 +509,12 @@ export function GoalsWorkspace({
   );
 
   if (isV2) {
-    const backToIncome =
-      incomeReturnTo ??
-      `/v2/income${selectedMonthIdForView === null ? "" : `?month=${selectedMonthIdForView}`}`;
     return (
       <UiV2Shell
         showRefresh={false}
         active="income"
         busy={goalsLoading || summaryLoading}
-        header={
-          <div className={v2Styles.header}>
-            <p className={sharedStyles.eyebrow}>Доход и планы</p>
-            <h1>Цели</h1>
-            <p className={sharedStyles.subtitle}>
-              Активные цели, архив и прогресс на выбранный отчётный месяц.
-            </p>
-            <Link className={sharedStyles.contextLink} to={backToIncome}>
-              ← Доход и планы
-            </Link>
-          </div>
-        }
+        header={<h1>Доход и планы</h1>}
       >
         <IncomeTabs active="goals" monthId={selectedMonthIdForView} />
         <div className={v2Styles.content}>
@@ -567,6 +553,7 @@ type GoalCardProps = {
   summary: GoalSummary | undefined;
   summaryLoading: boolean;
   compact?: boolean;
+  wholeRubles?: boolean;
   onEdit: (goal: Goal, trigger: HTMLButtonElement) => void;
   onDelete: (goal: Goal) => void;
   onPatch: (goal: Goal, payload: GoalUpdatePayload) => Promise<void>;
@@ -577,6 +564,7 @@ function GoalCard({
   summary,
   summaryLoading,
   compact = false,
+  wholeRubles = false,
   onEdit,
   onDelete,
   onPatch,
@@ -634,10 +622,19 @@ function GoalCard({
       {compact ? (
         <div className="goal-card__compact-value">
           <span>Цель</span>
-          <strong>{formatMoney(goal.target_value.amount)}</strong>
+          <strong title={formatMoney(goal.target_value.amount)}>
+            {wholeRubles
+              ? moneyWholeText(goal.target_value)
+              : formatMoney(goal.target_value.amount)}
+          </strong>
         </div>
       ) : (
-        <GoalMetrics goal={goal} forecast={forecast} loading={summaryLoading} />
+        <GoalMetrics
+          wholeRubles={wholeRubles}
+          goal={goal}
+          forecast={forecast}
+          loading={summaryLoading}
+        />
       )}
 
       {!compact ? <GoalForecast forecast={forecast} goal={goal} loading={summaryLoading} /> : null}
@@ -648,14 +645,18 @@ function GoalCard({
 }
 
 function GoalMetrics({
+  wholeRubles,
   goal,
   forecast,
   loading,
 }: {
   goal: Goal;
+  wholeRubles: boolean;
   forecast: GoalSummary["achievement_forecast"] | undefined;
   loading: boolean;
 }) {
+  const money = (amount: string) =>
+    wholeRubles ? moneyWholeText(rub(amount)) : formatMoney(amount);
   const progress = !loading ? (forecast?.progress_pct ?? null) : null;
   const current = !loading ? (forecast?.current_value?.amount ?? null) : null;
   const remaining = !loading ? (forecast?.remaining_amount?.amount ?? null) : null;
@@ -664,7 +665,9 @@ function GoalMetrics({
     <div className="goal-card__metrics">
       <div className="goal-card__progress-row">
         <span>Прогресс</span>
-        <strong>{loading ? "…" : progress ? formatPercent(progress, { digits: 1 }) : "—"}</strong>
+        <strong>
+          {loading ? "…" : progress != null ? formatPercent(progress, { digits: 1 }) : "—"}
+        </strong>
       </div>
       <progress
         aria-label={`Прогресс цели «${goal.name}»`}
@@ -673,11 +676,11 @@ function GoalMetrics({
         value={progress ?? 0}
       />
       <div className="goal-card__values">
-        <DataValue label="Сейчас" value={loading ? "…" : current ? formatMoney(current) : "—"} />
-        <DataValue label="Цель" value={formatMoney(goal.target_value.amount)} />
+        <DataValue label="Сейчас" value={loading ? "…" : current != null ? money(current) : "—"} />
+        <DataValue label="Цель" value={money(goal.target_value.amount)} />
         <DataValue
           label="Осталось"
-          value={loading ? "…" : remaining ? formatMoney(remaining) : "—"}
+          value={loading ? "…" : remaining != null ? money(remaining) : "—"}
         />
       </div>
     </div>
@@ -712,7 +715,11 @@ function GoalForecast({
     );
   }
 
-  if (forecast.status === "inactive") return null;
+  if (
+    forecast.status !== "not_projectable" ||
+    !["monthly_net_passive_income", "liquid_capital_net"].includes(goal.calculation_mode)
+  )
+    return null;
 
   return (
     <div className="goal-card__forecast goal-card__forecast--muted">

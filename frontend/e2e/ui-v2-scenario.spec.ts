@@ -1,4 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
+import {
+  MONTHS,
+  equityEnvelope,
+  depositEnvelope,
+  inflationEnvelope,
+  fxEnvelope,
+} from "../src/test/scenarioLabFixtures";
 
 const months = [
   { id: 2, year: 2030, month: 6, status: "draft", snapshot_date: "2030-06-12", source: "manual" },
@@ -61,6 +68,74 @@ function result(monthId: number) {
   };
 }
 
+test("ui-v2 scenarios: all four results fit desktop widths and zoom @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const envelopes = {
+    equity_drawdown: equityEnvelope(),
+    deposit_rate_assumption: depositEnvelope(),
+    inflation_real_value: inflationEnvelope(),
+    fx_translation_shock: fxEnvelope(),
+  };
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      const request = route.request();
+      const pathname = new URL(request.url()).pathname;
+      if (pathname === "/api/months") return route.fulfill({ json: MONTHS });
+      if (request.method() === "POST" && pathname === "/api/months/1/scenario-lab") {
+        const type = Object.keys(request.postDataJSON().shock)[0] as keyof typeof envelopes;
+        return route.fulfill({ json: envelopes[type] });
+      }
+      return route.fulfill({ status: 404, json: {} });
+    },
+  );
+  const choices = [
+    ["Падение акций", "Размер просадки акций, %"],
+    ["Ставка по вкладам", "Гипотетическая годовая ставка по вкладам, %"],
+    ["Инфляция и реальная стоимость", "Годовая инфляция, %"],
+    ["Валютный шок", "Изменение стоимости в отчёте, %"],
+  ];
+  for (const [scenario, parameter] of choices) {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/v2/income/scenario-lab?month=1");
+    await page.getByRole("radio", { name: new RegExp(`^${scenario}`) }).check();
+    await expect(page.getByRole("button", { name: "Скачать расчёт (JSON)" })).toHaveCount(0);
+    await expect(page.locator("button:disabled")).toHaveCount(0);
+    await page.getByRole("textbox", { name: parameter }).fill("10");
+    await page.getByRole("button", { name: "Рассчитать сценарий" }).click();
+    const answer = page.locator(".scenario-lab__answer");
+    await expect(answer).toBeVisible();
+    expect((await answer.boundingBox())?.y).toBeLessThan(500);
+    for (const width of [1024, 1280, 1440, 1920]) {
+      for (const zoom of [1, 1.25]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate((value) => {
+          document.documentElement.style.zoom = String(value);
+        }, zoom);
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+          ),
+        ).toBe(true);
+        for (const table of await page.locator("table:visible").all()) {
+          expect(
+            await table.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+          ).toBe(true);
+        }
+        await page.screenshot({
+          path: testInfo.outputPath(`${scenario}-${width}-${zoom}.png`),
+          fullPage: true,
+        });
+      }
+    }
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = "1";
+    });
+  }
+});
+
 async function installSyntheticApi(page: Page) {
   const calls: string[] = [];
   await page.route(
@@ -94,7 +169,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const calls = await installSyntheticApi(page);
     await page.goto("/v2/income/scenario-lab?month=2");
-    await expect(page.getByRole("heading", { level: 1, name: "Сценарии" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Доход и планы" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Отчётный месяц" })).toHaveValue("2");
     expect(calls.filter((call) => call.includes("scenario-lab"))).toHaveLength(0);
     await page.screenshot({
@@ -106,7 +181,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await page.getByRole("textbox", { name: "Размер просадки акций, %" }).press("Tab");
     await expect(page.getByRole("button", { name: "Рассчитать сценарий" })).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { name: /Июнь.*2030.*Падение акций/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Падение акций" })).toBeVisible();
     await expect(page.getByText("Синтетическая акция")).toBeVisible();
     await page.screenshot({
       path: testInfo.outputPath(`${viewport.name}-result.png`),
@@ -115,14 +190,16 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
 
     await page.getByRole("combobox", { name: "Отчётный месяц" }).selectOption("1");
     await expect(page).toHaveURL(/month=1$/);
-    await expect(page.getByRole("heading", { name: /Июнь.*2030.*Падение акций/ })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Скачать JSON" })).toBeDisabled();
+    await expect(page.getByRole("heading", { name: "Падение акций" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Скачать расчёт (JSON)" })).toHaveCount(0);
     await page.reload();
     await expect(page.getByRole("combobox", { name: "Отчётный месяц" })).toHaveValue("1");
     await page.goBack();
     await expect(page.getByRole("combobox", { name: "Отчётный месяц" })).toHaveValue("2");
     await page.goto("/v2/income/scenario-lab?month=bad");
     await expect(page.getByRole("alert")).toContainText("недействителен");
-    await expect(page.getByRole("button", { name: "Рассчитать сценарий" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Рассчитать сценарий" })).toBeEnabled();
+    await page.getByRole("button", { name: "Рассчитать сценарий" }).click();
+    await expect(page.getByText("Выберите отчётный месяц.", { exact: true })).toBeVisible();
   });
 }

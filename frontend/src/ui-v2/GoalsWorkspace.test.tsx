@@ -334,8 +334,8 @@ describe("GoalsWorkspace R03-09 cards", () => {
     );
 
     await screen.findByRole("heading", { level: 3, name: "Пассивный доход" });
-    expect(screen.getByRole("heading", { level: 1, name: "Цели" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "← Доход и планы" })).toHaveAttribute(
+    expect(screen.getByRole("heading", { level: 1, name: "Доход и планы" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Обзор" })).toHaveAttribute(
       "href",
       "/v2/income?month=10",
     );

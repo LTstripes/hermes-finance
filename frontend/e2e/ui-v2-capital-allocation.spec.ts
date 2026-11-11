@@ -174,9 +174,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await syntheticApi(page);
     await page.goto("/v2/capital/allocation?month=2");
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Распределение и концентрация" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Капитал" })).toBeVisible();
     await expect(page.getByLabel("Отчётный месяц")).toHaveValue("2");
     const classes = page
       .locator("details")
@@ -185,6 +183,8 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await expect(classesSummary).toHaveCount(1);
     await classesSummary.focus();
     await expect(classesSummary).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(classes).not.toHaveAttribute("open");
     await page.keyboard.press("Enter");
     await expect(classes.getByRole("table", { name: "По классам активов" })).toBeVisible();
     await expect(
@@ -212,7 +212,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     const redemptions = page
       .locator("details")
       .filter({ has: page.locator("summary", { hasText: "Погашения" }) });
-    await redemptions.locator(":scope > summary").click();
+    await expect(redemptions).toHaveAttribute("open");
     await expect(redemptions.getByText("Погашение облигации")).toBeVisible();
     await expect(page.getByText(/Погашение — не доход/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(

@@ -212,7 +212,9 @@ describe("UiV2CapitalAllocationPage", () => {
     setup();
     expect(await screen.findByText(/Ликвидные активы/)).toBeInTheDocument();
     expect(getRiskAllocation).toHaveBeenCalledWith(2, 5, "v1", expect.any(AbortSignal));
-    await user.click(screen.getByText("По классам активов", { selector: "span" }));
+    expect(
+      screen.getByText("По классам активов", { selector: "span" }).closest("details"),
+    ).toHaveAttribute("open");
     const classes = screen.getByRole("table", { name: "По классам активов" });
     expect(within(classes).getByText("Облигации")).toBeInTheDocument();
     expect(within(classes).getByText("Неизвестный класс активов")).toBeInTheDocument();
@@ -238,19 +240,27 @@ describe("UiV2CapitalAllocationPage", () => {
     expect(
       within(classDetails).getByText(/Не отнесено к известным группам · в составе основы/),
     ).toBeInTheDocument();
-    await user.click(screen.getByText("По счетам", { selector: "span" }));
+    expect(screen.getByText("По счетам", { selector: "span" }).closest("details")).toHaveAttribute(
+      "open",
+    );
     const accounts = screen.getByRole("table", { name: "По счетам" });
     expect(within(accounts).getByText("Счёт А")).toBeInTheDocument();
     expect(within(accounts).getByText("Счёт Б")).toBeInTheDocument();
-    await user.click(screen.getByText("Выплаты", { selector: "span" }));
+    expect(screen.getByText("Выплаты", { selector: "span" }).closest("details")).toHaveAttribute(
+      "open",
+    );
     expect(screen.getByText("Основа долей · включённые выплаты")).toBeInTheDocument();
     expect(screen.getAllByText(/1\s*200\s*₽/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Погашение — не доход/)).toBeInTheDocument();
     expect(screen.getAllByText(/Топ-5/)).toHaveLength(3);
     expect(screen.getByText("Часть сумм приблизительна")).toBeInTheDocument();
-    await user.click(screen.getByText("Крупнейшие позиции", { selector: "span" }));
+    expect(
+      screen.getByText("Крупнейшие позиции", { selector: "span" }).closest("details"),
+    ).toHaveAttribute("open");
     expect(screen.getByRole("table", { name: "Крупнейшие позиции" })).toBeInTheDocument();
-    await user.click(screen.getByText("Погашения", { selector: "span" }));
+    expect(screen.getByText("Погашения", { selector: "span" }).closest("details")).toHaveAttribute(
+      "open",
+    );
     expect(
       within(screen.getByRole("table", { name: "Погашения" })).getByText("Погашение облигации"),
     ).toBeInTheDocument();
@@ -262,7 +272,6 @@ describe("UiV2CapitalAllocationPage", () => {
   });
 
   it("keeps explicit zero separate from null and unavailable event data", async () => {
-    const user = userEvent.setup();
     const empty = response();
     empty.payout_concentration = concentration({
       denominator: cash("0.00"),
@@ -280,13 +289,17 @@ describe("UiV2CapitalAllocationPage", () => {
     vi.mocked(getRiskAllocation).mockResolvedValue(empty);
     setup();
     await screen.findByText("Выплаты", { selector: "span" });
-    await user.click(screen.getByText("Выплаты", { selector: "span" }));
+    expect(screen.getByText("Выплаты", { selector: "span" }).closest("details")).toHaveAttribute(
+      "open",
+    );
     const payouts = screen.getByText("Выплаты", { selector: "span" }).closest("details");
     expect(payouts).not.toBeNull();
     expect(within(payouts as HTMLElement).getByText("Нет данных")).toBeInTheDocument();
     expect(within(payouts as HTMLElement).getByText("—")).toBeInTheDocument();
     expect(within(payouts as HTMLElement).getAllByText(/0\s*₽/).length).toBeGreaterThan(0);
-    await user.click(screen.getByText("Погашения", { selector: "span" }));
+    expect(screen.getByText("Погашения", { selector: "span" }).closest("details")).toHaveAttribute(
+      "open",
+    );
     const redemptions = screen.getByText("Погашения", { selector: "span" }).closest("details");
     expect(within(redemptions as HTMLElement).getByText("Нет данных")).toBeInTheDocument();
     expect(within(redemptions as HTMLElement).getByText("Недоступно")).toBeInTheDocument();
@@ -316,7 +329,9 @@ describe("UiV2CapitalAllocationPage", () => {
     vi.mocked(getRiskAllocation).mockResolvedValue(empty);
     const mounted = setup();
     expect(await screen.findByText("Портфель пуст")).toBeInTheDocument();
-    await user.click(screen.getByText("По классам активов", { selector: "span" }));
+    expect(
+      screen.getByText("По классам активов", { selector: "span" }).closest("details"),
+    ).toHaveAttribute("open");
     const zeroDetails = screen
       .getByText("По классам активов", { selector: "span" })
       .closest("details") as HTMLElement;
@@ -339,7 +354,6 @@ describe("UiV2CapitalAllocationPage", () => {
   });
 
   it("shows unassigned cash within account rows and distinguishes unavailable support", async () => {
-    const user = userEvent.setup();
     const data = response();
     data.allocation_by_account = {
       ...data.allocation_by_account,
@@ -363,7 +377,9 @@ describe("UiV2CapitalAllocationPage", () => {
     vi.mocked(getRiskAllocation).mockResolvedValue(data);
     setup();
     await screen.findByText("По счетам", { selector: "span" });
-    await user.click(screen.getByText("По счетам", { selector: "span" }));
+    expect(screen.getByText("По счетам", { selector: "span" }).closest("details")).toHaveAttribute(
+      "open",
+    );
     const accounts = screen.getByRole("table", { name: "По счетам" });
     const accountDetails = accounts.closest("details") as HTMLElement;
     expect(within(accounts).getByText("Деньги без привязки к счёту")).toBeInTheDocument();
