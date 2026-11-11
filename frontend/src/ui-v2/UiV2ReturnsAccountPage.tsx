@@ -1,6 +1,6 @@
 import { useAccountName } from "./returns/useAccountName";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import sheet from "./ReportSheet.module.css";
 import layout from "./returns/Dashboard.module.css";
@@ -8,271 +8,31 @@ import { reasonCopy } from "../lib/reasonCopy";
 import { breakdownRows } from "./returns/breakdown";
 import { UiV2Skeleton } from "./UiV2StateBlocks";
 import { UiV2Tabs } from "./UiV2Tabs";
-import resultStyles from "./returns/InstrumentResult.module.css";
+import { ReturnsMonthInstruments as Instruments } from "./returns/ReturnsMonthInstruments";
 import {
-  compareDecimal,
-  displayMetric,
   getContext,
   getOverview,
-  type Instrument,
   isPartialResult,
   type Period,
   type Result,
   periodKey,
   periodLabel,
-  ranked,
-  unavailable,
   validDate,
+  unavailable,
 } from "./returns/model";
 import styles from "./returns/Returns.module.css";
 import { ReturnsAcceptedIncome } from "./returns/ReturnsAcceptedIncome";
-import { MissingName, ReturnsAvailable } from "./returns/ReturnsAvailable";
+import { ReturnsAvailable } from "./returns/ReturnsAvailable";
 import { ReturnsBasket } from "./returns/ReturnsBasket";
 import { ReturnsBreakdown } from "./returns/ReturnsBreakdown";
-import { ReturnsDetail } from "./returns/ReturnsDetail";
 import { ReturnsHistory } from "./returns/ReturnsHistory";
-import { Explanation, Info, Value } from "./returns/ReturnsInfo";
-import { ReturnsInstrumentResult } from "./returns/ReturnsInstrumentResult";
+import { CompactValue, Info, Value } from "./returns/ReturnsInfo";
 import { ReturnsResultMeta } from "./returns/ReturnsResultMeta";
 import { UiV2Shell } from "./UiV2Shell";
 
 const ReturnsSourceDiagnostics = lazy(() => import("./ReturnsSourceDiagnostics"));
 const ReturnsPerformanceDiagnostics = lazy(() => import("./ReturnsPerformanceDiagnostics"));
 const BrokerStatementReturnDiagnostics = lazy(() => import("./BrokerStatementReturnDiagnostics"));
-
-function Instruments({
-  rows,
-  period,
-  scope,
-  revision,
-  reasonCodes,
-  initialIsin,
-}: {
-  rows: Instrument[];
-  period: Period;
-  scope: string;
-  revision: number;
-  reasonCodes: string[];
-  initialIsin: string | null;
-}) {
-  const [search, setSearch] = useState("");
-  const [kind, setKind] = useState("all");
-  const [sort, setSort] = useState("pnl-desc");
-  const [expanded, setExpanded] = useState<string | null>(initialIsin);
-  const [limit, setLimit] = useState(20);
-  const accountName = useAccountName(rows.map((row) => row.account_link));
-  const [mode, setMode] = useState<"pnl" | "rate">(() =>
-    ranked(rows, period, "pnl", true).length || ranked(rows, period, "pnl", false).length
-      ? "pnl"
-      : "rate",
-  );
-  const hasLeaders = (["pnl", "rate"] as const).some((metric) =>
-    [true, false].some((positive) => ranked(rows, period, metric, positive).length > 0),
-  );
-  const filtered = rows.filter(
-    (r) =>
-      (kind === "all" || r.kind === kind) &&
-      `${r.name} ${r.isin}`.toLocaleLowerCase("ru").includes(search.toLocaleLowerCase("ru")),
-  );
-  const [field, direction] = sort.split("-");
-  filtered.sort((a, b) => {
-    if (field === "name") return a.name.localeCompare(b.name, "ru");
-    const x = a[field as "pnl" | "rate"].value;
-    const y = b[field as "pnl" | "rate"].value;
-    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
-    return compareDecimal(x, y) * (direction === "asc" ? 1 : -1) || a.isin.localeCompare(b.isin);
-  });
-  return (
-    <>
-      <section className={styles.panel} aria-labelledby="returns-instruments">
-        <div className={styles.sectionHead}>
-          <h2 id="returns-instruments">По инструментам</h2>
-          <span>{rows.length} бумаг</span>
-        </div>
-        <div className={styles.filters}>
-          <label>
-            Поиск
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setLimit(20);
-              }}
-              placeholder="Название или ISIN"
-            />
-          </label>
-          <label>
-            Тип
-            <select
-              value={kind}
-              onChange={(e) => {
-                setKind(e.target.value);
-                setLimit(20);
-              }}
-            >
-              <option value="all">Все бумаги</option>
-              <option value="stock">Акции</option>
-              <option value="bond">Облигации</option>
-            </select>
-          </label>
-          <label>
-            Сортировка
-            <select value={sort} onChange={(e) => setSort(e.target.value)}>
-              <option value="pnl-desc">Результат ₽: больше</option>
-              <option value="pnl-asc">Результат ₽: меньше</option>
-              <option value="rate-desc">Доходность %: больше</option>
-              <option value="rate-asc">Доходность %: меньше</option>
-              <option value="name-asc">Название</option>
-            </select>
-          </label>
-        </div>
-        {!filtered.length ? (
-          <div>
-            Бумаги не найдены.{" "}
-            {!!reasonCodes.length && (
-              <Info label="Инструменты">
-                <Explanation codes={reasonCodes} />
-              </Info>
-            )}
-          </div>
-        ) : (
-          <table className={`${styles.instruments} ${resultStyles.list}`}>
-            <thead>
-              <tr>
-                <th>Инструмент</th>
-                <th colSpan={2}>Результат ₽ и доходность %</th>
-                <th>Купоны / дивиденды</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.slice(0, limit).map((row) => (
-                <Fragment key={row.isin}>
-                  <tr>
-                    <th>
-                      <button
-                        type="button"
-                        className={styles.instrumentName}
-                        aria-expanded={expanded === row.isin}
-                        onClick={() => setExpanded(expanded === row.isin ? null : row.isin)}
-                      >
-                        {expanded === row.isin ? "▾" : "▸"} {row.name}
-                      </button>
-                      <MissingName name={row.name} isin={row.isin} />
-                      <small>
-                        {row.isin} ·{" "}
-                        {row.kind === "bond"
-                          ? "Облигация"
-                          : row.kind === "stock"
-                            ? "Акция"
-                            : "Бумага"}
-                      </small>
-                    </th>
-                    <td colSpan={2}>
-                      <ReturnsInstrumentResult result={row} />
-                      <ReturnsResultMeta
-                        period={row.period}
-                        valuationDate={row.valuation_date}
-                        accountLink={row.account_link}
-                        accountLabel={accountName(row.account_link, "")}
-                      />
-                    </td>
-                    <td>
-                      <Value metric={row.coupons} label={`${row.name}: купоны`} />
-                      <span className={styles.divider}> / </span>
-                      <Value metric={row.dividends} label={`${row.name}: дивиденды`} />
-                    </td>
-                  </tr>
-                  {expanded === row.isin && (
-                    <tr>
-                      <td colSpan={4}>
-                        <ReturnsDetail
-                          scope={scope}
-                          period={period}
-                          isin={row.isin}
-                          revision={revision}
-                        />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {filtered.length > limit && (
-          <button type="button" onClick={() => setLimit(limit + 20)}>
-            Показать ещё
-          </button>
-        )}
-      </section>
-      {hasLeaders && (
-        <section className={styles.panel} aria-labelledby="returns-leaders">
-          <div className={styles.sectionHead}>
-            <div>
-              <h2 id="returns-leaders">Лидеры и отстающие</h2>
-              <p>{periodLabel(period)}</p>
-            </div>
-            <fieldset className={styles.toggle} aria-label="Показатель топов">
-              <button type="button" aria-pressed={mode === "pnl"} onClick={() => setMode("pnl")}>
-                P&amp;L ₽
-              </button>
-              <button type="button" aria-pressed={mode === "rate"} onClick={() => setMode("rate")}>
-                %
-              </button>
-            </fieldset>
-          </div>
-          <div className={styles.tops}>
-            {mode === "pnl" && rows.some((row) => isPartialResult(row.pnl)) && (
-              <p>
-                Порядок основан на показанных суммах; * — известная часть результата, не полный
-                итог.
-              </p>
-            )}
-            {[true, false].map((positive) => {
-              const top = ranked(rows, period, mode, positive);
-              if (!top.length) return null;
-              return (
-                <div key={String(positive)}>
-                  <h3>{positive ? "Топ-5 прибыльных" : "Топ-5 убыточных"}</h3>
-                  {!top.length ? (
-                    <p className={styles.empty}>
-                      Нет {positive ? "положительных" : "отрицательных"} результатов.
-                    </p>
-                  ) : (
-                    <ol>
-                      {top.map((r) => (
-                        <li key={r.isin}>
-                          <span>
-                            {r.name}
-                            <MissingName name={r.name} isin={r.isin} />
-                            {r.name !== r.isin && <small>{r.isin}</small>}
-                          </span>
-                          <strong className={positive ? styles.positive : styles.negative}>
-                            {displayMetric(r[mode], true)}
-                            {mode === "pnl" && isPartialResult(r.pnl) && (
-                              <>
-                                <sup aria-hidden="true">*</sup>
-                                <span className={sheet.visuallyHidden}>
-                                  {" "}
-                                  (известная часть, не полный итог)
-                                </span>
-                              </>
-                            )}
-                          </strong>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-    </>
-  );
-}
 
 export default function UiV2ReturnsAccountPage() {
   const [params, setParams] = useSearchParams();
@@ -306,18 +66,22 @@ export default function UiV2ReturnsAccountPage() {
     const next = new URLSearchParams(params);
     const canonical = context.data.scope_aliases?.[scope];
     if (canonical) next.set("scope", canonical);
-    const defaultAccount =
-      params.get("period") !== "history" && context.data.closed_periods.length
+    const defaultAccount = params.has("diagnostics")
+      ? params.get("period") !== "history" && context.data.closed_periods.length
         ? context.data.accounts.find((a) => a.id === "portfolio")
-        : context.data.accounts.find((a) => a.basis === "statements");
+        : context.data.accounts.find((a) => a.basis === "statements")
+      : (context.data.accounts.find(
+          (a) => a.id !== "portfolio" && (context.data.source_periods[a.id]?.length ?? 0) > 0,
+        ) ?? context.data.accounts.find((a) => a.id === "portfolio"));
     if (!params.has("scope") && defaultAccount) next.set("scope", defaultAccount.id);
     const sourcePeriods = context.data.source_periods[next.get("scope") ?? ""] ?? [];
-    // Without a CLOSED default, only an explicitly selected source period may
-    // drive the account result. Do not silently default to a DRAFT interval.
+    // Explicit URLs and diagnostics retain their CLOSED/history defaults.
+    // An ordinary fresh entry can use its own last saved source interval.
     const defaultPeriod =
       params.get("period") === "history"
         ? (context.data.source_history_periods?.[next.get("scope") ?? ""] ?? sourcePeriods.at(-1))
-        : context.data.default_period;
+        : (context.data.default_period ??
+          (!params.has("scope") && !params.has("diagnostics") ? sourcePeriods.at(-1) : null));
     if (!params.has("start") && !params.has("end") && defaultPeriod) {
       next.set("start", defaultPeriod.start);
       next.set("end", defaultPeriod.end);
@@ -343,16 +107,6 @@ export default function UiV2ReturnsAccountPage() {
     next.delete("month");
     setParams(next);
   };
-  const options = [
-    ...(scope.startsWith("source:")
-      ? (context.data?.source_periods[scope] ?? [])
-      : (context.data?.closed_periods ?? [])),
-    ...(data?.periods ?? []),
-  ]
-    .filter(
-      (p, i, all) => p.start < p.end && all.findIndex((v) => periodKey(v) === periodKey(p)) === i,
-    )
-    .sort((a, b) => b.end.localeCompare(a.end) || b.start.localeCompare(a.start));
   const hasResult = (row: Result | null | undefined) =>
     !!row &&
     [row.pnl, row.rate, row.coupons, row.dividends].some((metric) => metric.value !== null);
@@ -387,8 +141,106 @@ export default function UiV2ReturnsAccountPage() {
     ) ?? [];
   const currentAccount = context.data?.accounts.find((account) => account.id === scope);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["returns"] });
+  const summary =
+    data && !empty ? (
+      <>
+        <div className={styles.cards}>
+          {(data.selected.pnl.value !== null ||
+            data.selected.rate.value !== null ||
+            data.selected_available_months_total?.pnl.value != null) && (
+            <section
+              className={`${styles.card} ${styles.primaryCard}`}
+              aria-label="Результат периода"
+            >
+              {data.selected.pnl.value === null &&
+              data.selected_available_months_total?.pnl.value != null ? (
+                <>
+                  <ReturnsAvailable value={data.selected_available_months_total} />
+                  {data.selected.rate.value !== null && (
+                    <div>
+                      Доходность выбранного периода: <CompactValue metric={data.selected.rate} />
+                    </div>
+                  )}
+                </>
+              ) : data.selected.pnl.value === null ? (
+                <>
+                  <h2>Доходность периода</h2>
+                  <CompactValue metric={data.selected.rate} />
+                  <p className={styles.basisNote}>
+                    {
+                      reasonCopy(
+                        data.selected.pnl.reason_codes[0] ?? "selected_components_incomplete",
+                        { surface: "returns" },
+                      ).message
+                    }
+                  </p>
+                  {data.selected_available_months_total && (
+                    <small>
+                      Месяцы: {data.selected_available_months_total.covered_months} из{" "}
+                      {data.selected_available_months_total.total_months}
+                    </small>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h2>
+                    {data.contract_version === "returns_capital_v1"
+                      ? "Изменение капитала за период"
+                      : isPartialResult(data.selected.pnl)
+                        ? "Известная часть за период"
+                        : "Результат периода"}
+                  </h2>
+                  <div className={styles.mainValue}>
+                    <CompactValue metric={data.selected.pnl} signed />
+                  </div>
+                  {data.contract_version !== "returns_capital_v1" &&
+                    data.selected.rate.value !== null && (
+                      <CompactValue metric={data.selected.rate} />
+                    )}
+                </>
+              )}
+              <ReturnsResultMeta
+                period={data.selected.period}
+                valuationDate={data.selected.valuation_date}
+                accountLink={
+                  data.account_link?.status === "unlinked" ? data.account_link : undefined
+                }
+                accountLabel={accountName(data.account_link, currentAccount?.label ?? "")}
+              />
+            </section>
+          )}
+          {data.selected.coupons.value !== null && data.selected.coupons.value !== "0" && (
+            <section className={styles.card} aria-label="Полученные купоны">
+              <h2>Купоны</h2>
+              <div className={styles.mainValue}>
+                <CompactValue metric={data.selected.coupons} />
+              </div>
+            </section>
+          )}
+          {data.selected.dividends.value !== null && data.selected.dividends.value !== "0" && (
+            <section className={styles.card} aria-label="Полученные дивиденды">
+              <h2>Дивиденды</h2>
+              <div className={styles.mainValue}>
+                <CompactValue metric={data.selected.dividends} />
+              </div>
+            </section>
+          )}
+        </div>
+        <Link className={layout.quiet} to="/v2/returns">
+          За всю историю →
+        </Link>
+        {data.accepted_income?.net_kopecks != null ? (
+          <ReturnsAcceptedIncome value={data.accepted_income} />
+        ) : data.breakdown && hasBreakdown ? (
+          <details className={layout.income}>
+            <summary>Из чего сложился результат</summary>
+            <ReturnsBreakdown value={data.breakdown} total={data.selected.pnl} />
+          </details>
+        ) : null}
+      </>
+    ) : null;
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${styles.monthPage}`}>
       <UiV2Shell
         showRefresh={false}
         active="returns"
@@ -412,77 +264,52 @@ export default function UiV2ReturnsAccountPage() {
           ]}
         />
         <div className={styles.controls}>
-          <label>
-            Счёт
-            <select
-              aria-label="Счёт"
-              value={scope}
-              onChange={(e) => {
-                const next = new URLSearchParams(params);
-                next.set("scope", e.target.value);
-                // A different account has its own exact proof interval. Never
-                // retain another account's inception dates as a valid selection.
-                const periods = context.data?.source_periods[e.target.value] ?? [];
-                const available = periods.some((p) => periodKey(p) === periodKey(period));
-                if (!available) {
-                  const own =
-                    context.data?.source_history_periods?.[e.target.value] ??
-                    periods.at(-1) ??
-                    context.data?.default_period;
-                  if (own) {
-                    next.set("start", own.start);
-                    next.set("end", own.end);
-                  } else {
-                    next.delete("start");
-                    next.delete("end");
+          <fieldset className={sheet.segmented} aria-label="Счета">
+            {currentAccount && !selectableAccounts.includes(currentAccount) && (
+              <button
+                type="button"
+                aria-pressed="true"
+                disabled
+                title={currentAccount.account_link?.source_account_id}
+              >
+                {accountName(currentAccount.account_link, currentAccount.label)}
+              </button>
+            )}
+            {selectableAccounts.map((account) => (
+              <button
+                type="button"
+                key={account.id}
+                aria-pressed={scope === account.id}
+                title={account.account_link?.source_account_id}
+                onClick={() => {
+                  const next = new URLSearchParams(params);
+                  next.set("scope", account.id);
+                  // A different account has its own exact proof interval. Never
+                  // retain another account's inception dates as a valid selection.
+                  const periods = context.data?.source_periods[account.id] ?? [];
+                  const available = periods.some((p) => periodKey(p) === periodKey(period));
+                  if (!available) {
+                    const own =
+                      context.data?.source_history_periods?.[account.id] ??
+                      periods.at(-1) ??
+                      context.data?.default_period;
+                    if (own) {
+                      next.set("start", own.start);
+                      next.set("end", own.end);
+                    } else {
+                      next.delete("start");
+                      next.delete("end");
+                    }
                   }
-                }
-                for (const key of ["isin", "source_account", "bond_isin", "bond_period"])
-                  next.delete(key);
-                setParams(next);
-              }}
-            >
-              <option value="" disabled>
-                Выберите счёт
-              </option>
-              {currentAccount && !selectableAccounts.includes(currentAccount) && (
-                <option value={scope} disabled hidden>
-                  {accountName(currentAccount.account_link, currentAccount.label)}
-                </option>
-              )}
-              {selectableAccounts.map((account) => (
-                <option
-                  key={account.id}
-                  value={account.id}
-                  title={account.account_link?.source_account_id}
-                >
-                  {accountName(account.account_link, account.label)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Период
-            <select
-              aria-label="Период"
-              value={
-                options.some((p) => periodKey(p) === periodKey(period)) ? periodKey(period) : ""
-              }
-              onChange={(e) => {
-                const [start, end] = e.target.value.split("/");
-                if (validDate(start) && validDate(end) && start < end) choose({ start, end });
-              }}
-            >
-              <option value="" disabled>
-                Выберите период
-              </option>
-              {options.map((p) => (
-                <option key={periodKey(p)} value={periodKey(p)}>
-                  {periodLabel(p)}
-                </option>
-              ))}
-            </select>
-          </label>
+                  for (const key of ["isin", "source_account", "bond_isin", "bond_period"])
+                    next.delete(key);
+                  setParams(next);
+                }}
+              >
+                {accountName(account.account_link, account.label)}
+              </button>
+            ))}
+          </fieldset>
           <details className={styles.dates}>
             <summary>Свой интервал</summary>
             <form
@@ -505,20 +332,6 @@ export default function UiV2ReturnsAccountPage() {
             </form>
           </details>
         </div>
-        <p className={styles.basisNote}>
-          {scope.startsWith("source:") ? (
-            <>
-              Основа подробностей — сохранённые выписки выбранного счёта. Это предварительная
-              оценка; сохранение источника не означает принятия финансового месяца.
-            </>
-          ) : (
-            <>
-              Основа подробностей — принятые данные закрытых месяцев. Закрытие сохраняет факты, но
-              само по себе не подтверждает полноту потоков для расчёта процента.{" "}
-              <Link to="/v2/data/months">Открыть отчёты месяцев</Link>
-            </>
-          )}
-        </p>
         {params.has("diagnostics") && (
           <details
             className={styles.diagnostics}
@@ -576,130 +389,7 @@ export default function UiV2ReturnsAccountPage() {
         )}
         {data && !empty && (
           <>
-            <div className={styles.cards}>
-              {(data.selected.pnl.value !== null ||
-                data.selected.rate.value !== null ||
-                data.selected_available_months_total?.pnl.value != null) && (
-                <section
-                  className={`${styles.card} ${styles.primaryCard}`}
-                  aria-label="Результат периода"
-                >
-                  {data.selected.pnl.value === null &&
-                  data.selected_available_months_total?.pnl.value != null ? (
-                    <>
-                      <ReturnsAvailable value={data.selected_available_months_total} />
-                      {data.selected.rate.value !== null && (
-                        <div>
-                          Доходность выбранного периода:{" "}
-                          <Value metric={data.selected.rate} label="Доходность периода" />
-                        </div>
-                      )}
-                    </>
-                  ) : data.selected.pnl.value === null ? (
-                    <>
-                      <h2>Доходность периода</h2>
-                      <Value metric={data.selected.rate} label="Доходность периода" />
-                      <p className={styles.basisNote}>
-                        {
-                          reasonCopy(
-                            data.selected.pnl.reason_codes[0] ?? "selected_components_incomplete",
-                            { surface: "returns" },
-                          ).message
-                        }
-                      </p>
-                      {data.selected_available_months_total && (
-                        <small>
-                          Месяцы: {data.selected_available_months_total.covered_months} из{" "}
-                          {data.selected_available_months_total.total_months}
-                        </small>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <h2>
-                        {data.contract_version === "returns_capital_v1"
-                          ? "Изменение капитала за период"
-                          : data.selected.pnl.reason_codes.includes("clean_partial_result")
-                            ? "Известная часть за период"
-                            : "Результат периода"}
-                      </h2>
-                      <div className={styles.mainValue}>
-                        <Value metric={data.selected.pnl} label="Результат периода" signed />
-                      </div>
-                      {data.contract_version !== "returns_capital_v1" && (
-                        <Value metric={data.selected.rate} label="Доходность периода" />
-                      )}
-                    </>
-                  )}
-                  <ReturnsResultMeta
-                    period={data.selected.period}
-                    valuationDate={data.selected.valuation_date}
-                    accountLink={data.account_link}
-                    accountLabel={accountName(data.account_link, currentAccount?.label ?? "")}
-                  />
-                </section>
-              )}
-              {(data.available_months_total?.pnl.value != null ||
-                data.all_history?.pnl.value != null) && (
-                <section
-                  className={styles.card}
-                  aria-label={
-                    data.available_months_total ? "За доступные месяцы" : "За всю историю"
-                  }
-                >
-                  {data.available_months_total ? (
-                    <ReturnsAvailable value={data.available_months_total} />
-                  ) : (
-                    <>
-                      <h2>
-                        {data.contract_version === "returns_capital_v1"
-                          ? "Изменение капитала за историю"
-                          : data.all_history?.pnl.reason_codes.includes("clean_partial_result")
-                            ? "Известная часть за историю"
-                            : "За всю историю"}
-                      </h2>
-                      <div className={styles.mainValue}>
-                        <Value
-                          metric={data.all_history?.pnl ?? unavailable}
-                          label="Результат за историю"
-                          signed
-                        />
-                      </div>
-                      {data.all_history && (
-                        <ReturnsResultMeta
-                          period={data.all_history.period}
-                          valuationDate={data.all_history.valuation_date}
-                        />
-                      )}
-                      {!data.all_history && <small>Границы истории не установлены</small>}
-                    </>
-                  )}
-                </section>
-              )}
-              {data.selected.coupons.value !== null && (
-                <section className={styles.card} aria-label="Полученные купоны">
-                  <h2>Полученные купоны</h2>
-                  <div className={styles.mainValue}>
-                    <Value metric={data.selected.coupons} label="Полученные купоны" />
-                  </div>
-                  <small>За выбранный период</small>
-                </section>
-              )}
-              {data.selected.dividends.value !== null && (
-                <section className={styles.card} aria-label="Полученные дивиденды">
-                  <h2>Полученные дивиденды</h2>
-                  <div className={styles.mainValue}>
-                    <Value metric={data.selected.dividends} label="Полученные дивиденды" />
-                  </div>
-                  <small>За выбранный период</small>
-                </section>
-              )}
-            </div>
-            {data.accepted_income?.net_kopecks != null ? (
-              <ReturnsAcceptedIncome value={data.accepted_income} />
-            ) : data.breakdown && hasBreakdown ? (
-              <ReturnsBreakdown value={data.breakdown} total={data.selected.pnl} />
-            ) : null}
+            {!hasHistoryValues && summary}
             {hasHistoryValues && (
               <ReturnsHistory
                 key={`${scope}/${periodKey(period)}`}
@@ -713,6 +403,7 @@ export default function UiV2ReturnsAccountPage() {
                 }
                 selected={period}
                 choose={choose}
+                summary={summary}
               />
             )}
             {instrumentRows.length > 0 && (
@@ -727,6 +418,43 @@ export default function UiV2ReturnsAccountPage() {
               />
             )}
           </>
+        )}
+        {!!scope && !params.has("diagnostics") && !error && !busy && (
+          <details className={layout.footer}>
+            <summary>Подробнее о данных</summary>
+            <p className={styles.basisNote}>
+              {scope.startsWith("source:") ? (
+                <>
+                  Основа подробностей — сохранённые выписки выбранного счёта. Это предварительная
+                  оценка; сохранение источника не означает принятия финансового месяца.
+                </>
+              ) : (
+                <>
+                  Основа подробностей — принятые данные закрытых месяцев. Закрытие сохраняет факты,
+                  но само по себе не подтверждает полноту потоков для расчёта процента.{" "}
+                  <Link to="/v2/data/months">Открыть отчёты месяцев</Link>
+                </>
+              )}
+            </p>
+
+            <p>
+              Процент по бумагам — Modified Dietz за выбранный период, без пересчёта на год. Прочерк
+              означает отсутствие подтверждённого значения.
+            </p>
+            {data && (
+              <>
+                <Value metric={data.selected.pnl} label="Результат периода" signed />
+                <Value metric={data.selected.rate} label="Доходность периода" />
+                <Value metric={data.selected.coupons} label="Полученные купоны" />
+                <Value metric={data.selected.dividends} label="Полученные дивиденды" />
+                {data.available_months_total && (
+                  <section aria-label="За доступные месяцы">
+                    <ReturnsAvailable value={data.available_months_total} />
+                  </section>
+                )}
+              </>
+            )}
+          </details>
         )}
         {!!scope && params.has("diagnostics") && (
           <details

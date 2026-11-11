@@ -96,11 +96,15 @@ test("ui-v2 returns: URL, chart, both accounts, short tops, lazy sales and retry
   );
   expect(calls.filter((c) => c.endsWith("/instrument"))).toHaveLength(0);
   const tops = page.getByRole("region", { name: "Лидеры и отстающие" });
-  await expect(tops.locator("ol").nth(0).locator("li")).toHaveCount(2);
-  await expect(tops.locator("ol").nth(1).locator("li")).toHaveCount(1);
-  await tops.getByRole("button", { name: "%", exact: true }).click();
-  await expect(tops.locator("ol").first().locator("li").first()).toContainText("Горизонт");
-  await page.getByRole("button", { name: /Горизонт — проданная бумага/ }).click();
+  await expect(tops.locator("ol li")).toHaveCount(3);
+  await expect(tops.locator('li strong[data-tone="positive"]')).toHaveCount(2);
+  await expect(tops.locator('li strong[data-tone="negative"]')).toHaveCount(1);
+  await expect(tops.locator("ol li").first()).toContainText("Северные технологии");
+  await expect(tops.getByRole("button", { name: "%", exact: true })).toHaveCount(0);
+  await page
+    .getByRole("table", { name: "Бумаги за период" })
+    .getByRole("button", { name: /Горизонт — проданная бумага/ })
+    .click();
   await expect(page.getByText("Количество: 10 → 0")).toBeVisible();
   await page.getByText("Сделки и выплаты (1)", { exact: true }).click();
   await expect(page.getByText("Продажа", { exact: true })).toBeVisible();
@@ -114,15 +118,24 @@ test("ui-v2 returns: URL, chart, both accounts, short tops, lazy sales and retry
   await expect(page.getByRole("region", { name: "Лидеры и отстающие" })).toContainText(
     "31.03.2030 — 30.04.2030",
   );
-  await page.getByRole("combobox", { name: "Счёт" }).selectOption("source:SYNTH-B");
-  await expect(page.getByRole("region", { name: "Результат периода" })).toContainText("−1 750,25");
+  await page
+    .getByRole("group", { name: "Счета" })
+    .getByRole("button", { name: "Учебный счёт Б", exact: true })
+    .click();
+  await expect(page.getByRole("region", { name: "Результат периода" })).toContainText("−1 750 ₽");
   await page.reload();
-  await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-B");
+  await expect(
+    page
+      .getByRole("group", { name: "Счета" })
+      .getByRole("button", { name: "Учебный счёт Б", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await page.goBack();
-  await expect(page.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-A");
-  await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(
-    `${april.start}/${april.end}`,
-  );
+  await expect(
+    page
+      .getByRole("group", { name: "Счета" })
+      .getByRole("button", { name: "Учебный счёт А", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(new RegExp(`start=${april.start}&end=${april.end}`));
   state.error = true;
   await page.getByRole("button", { name: "Обновить" }).click();
   await expect(page.getByRole("alert")).toContainText("Не удалось загрузить");
@@ -146,9 +159,7 @@ test("ui-v2 returns: absent legacy period remains history through Reload and Bac
   await install(page);
   await page.goto("/v2/returns?scope=source:SYNTH-A");
   await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(
-    `${may.start}/${may.end}`,
-  );
+  await expect(page).toHaveURL(new RegExp(`start=${may.start}&end=${may.end}`));
   // Intentional retired URL: assert compatibility redirect, not ordinary navigation.
   await page.goto(
     "/v2/capital/monthly-returns?source_account=SYNTH-A&bond_isin=RU000A000002#bond-slice",
@@ -158,9 +169,7 @@ test("ui-v2 returns: absent legacy period remains history through Reload and Bac
       /isin=RU000A000002.*start=2030-03-31&end=2030-05-31#returns-instruments/,
     );
     await expect(page.getByText("Количество: 10 → 0")).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(
-      "2030-03-31/2030-05-31",
-    );
+    await expect(page).toHaveURL(/start=2030-03-31&end=2030-05-31/);
     await expect(page.getByRole("region", { name: "Результат периода" })).toContainText(
       "31.03.2030 — 31.05.2030",
     );
@@ -172,9 +181,7 @@ test("ui-v2 returns: absent legacy period remains history through Reload and Bac
   await page.reload();
   await expectHistory();
   await page.goBack();
-  await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(
-    `${may.start}/${may.end}`,
-  );
+  await expect(page).toHaveURL(new RegExp(`start=${may.start}&end=${may.end}`));
 });
 
 test("ui-v2 returns: 24-month selection stays visible and synchronized through load Back Reload @viewport-owned", async ({
@@ -215,7 +222,7 @@ test("ui-v2 returns: 24-month selection stays visible and synchronized through l
   ) => {
     const p = longHistoryPeriods[index];
     const dates = `${p.start.split("-").reverse().join(".")} — ${p.end.split("-").reverse().join(".")}`;
-    await expect(page.getByRole("combobox", { name: "Период" })).toHaveValue(`${p.start}/${p.end}`);
+    await expect(page).toHaveURL(new RegExp(`start=${p.start}&end=${p.end}`));
     const card = page.getByRole("region", { name: "Результат периода" });
     await expect(card).toContainText(dates);
     await expect(card).toContainText(pnl);
@@ -225,8 +232,7 @@ test("ui-v2 returns: 24-month selection stays visible and synchronized through l
     );
     await expect(chart.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
     await expect(chart.getByRole("button")).toHaveCount(12);
-    if (!(await history.getByRole("table").isVisible()))
-      await history.getByText("Месяцы таблицей", { exact: true }).click();
+    await expect(history.getByRole("table")).toBeVisible();
     await expect(history.getByRole("row", { name })).toContainText(pnl);
     const instruments = page.getByRole("region", { name: "По инструментам" });
     await expect(instruments.getByRole("row").filter({ hasText: "RU000A000001" })).toContainText(
@@ -235,12 +241,11 @@ test("ui-v2 returns: 24-month selection stays visible and synchronized through l
     const tops = page.getByRole("region", { name: "Лидеры и отстающие" });
     await expect(tops).toContainText(dates);
     await expect(tops.locator("ol").first()).toContainText(pnl);
-    await expect(tops.locator("ol").last()).toContainText(loss);
+    await expect(tops.locator("ol")).toContainText(loss);
   };
   await expectSelection(0, /янв.*2029/, "+100 ₽", "−50 ₽", "1 ₽", "2 ₽");
-  await page
-    .getByRole("combobox", { name: "Период" })
-    .selectOption(`${longHistoryPeriods[12].start}/${longHistoryPeriods[12].end}`);
+  await history.getByRole("button", { name: "Более поздние месяцы" }).click();
+  await chart.getByRole("button", { name: /янв.*2030/ }).click();
   await expectSelection(12, /янв.*2030/, "+1 300 ₽", "−650 ₽", "13 ₽", "26 ₽");
   await page.goBack();
   await expectSelection(0, /янв.*2029/, "+100 ₽", "−50 ₽", "1 ₽", "2 ₽");
@@ -304,15 +309,16 @@ test("ui-v2 returns: nine desktop size and zoom screenshots @viewport-owned", as
       if (width === 1280 && zoom === 1.5) {
         state.unavailable = true;
         await page.getByRole("button", { name: "Обновить" }).click();
-        const info = page.getByLabel("Подробнее: Доходность периода", { exact: true });
+        await page.getByText("Подробнее о данных", { exact: true }).click();
+        const info = page.getByLabel("Подробнее: Результат периода", { exact: true });
         await info.focus();
         await page.keyboard.press("Enter");
         const explanation = page
           .getByText("Не хватает стоимости на границе периода.", { exact: true })
           .first();
         await expect(explanation).toBeVisible();
-        await expect(page.getByLabel("Подробнее: Результат периода", { exact: true })).toHaveCount(
-          0,
+        await expect(page.getByRole("region", { name: "Результат периода" })).toContainText(
+          "+1,7%",
         );
         await page.screenshot({ path: path.join(directory, "returns-null-info-1280-150.png") });
         const box = await explanation.boundingBox();
@@ -335,11 +341,11 @@ test("returns accepted basis and category keyboard controls @viewport-owned", as
     await page.goto("/v2/returns/account?scope=portfolio&diagnostics=performance");
     await expect(
       page
-        .getByRole("combobox", { name: "Счёт", exact: true })
-        .filter({ has: page.locator('option[value="portfolio"]') }),
-    ).toHaveValue("portfolio");
+        .getByRole("group", { name: "Счета" })
+        .getByRole("button", { name: "Общий портфель", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("combobox", { name: "Представление" })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Открыть отчёты месяцев" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Обзор", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "Моя доходность" })).toHaveCount(0);
     await page
       .getByText("Дополнительная диагностика портфеля за выбранный период", { exact: true })
@@ -360,9 +366,9 @@ test("returns accepted basis and category keyboard controls @viewport-owned", as
     await page.goto("/v2/returns/account?scope=source:SYNTH-A");
     await expect(
       page
-        .getByRole("combobox", { name: "Счёт", exact: true })
-        .filter({ has: page.locator('option[value="portfolio"]') }),
-    ).toHaveValue("source:SYNTH-A");
+        .getByRole("group", { name: "Счета" })
+        .getByRole("button", { name: "Учебный счёт А", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("region", { name: "Результат периода" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
@@ -611,7 +617,12 @@ test("ui-v2 returns instrument results: separate accounts, assumptions and narro
     await expect(instruments).toBeVisible();
     await page.goto("/v2/returns/account?scope=source:SYNTH-A");
     const missing = page.getByRole("row").filter({ hasText: "Учебная облигация" });
-    await expect(missing).toContainText("Не хватает стоимости на границе периода");
+    await expect(missing).toContainText("—");
+    await expect(missing.locator("details")).toHaveCount(0);
+    await page.getByText("Подробнее о бумагах", { exact: true }).click();
+    await expect(
+      page.getByText("Не хватает стоимости на границе периода.", { exact: true }),
+    ).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );
