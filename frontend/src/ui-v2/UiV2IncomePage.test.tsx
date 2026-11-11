@@ -280,6 +280,54 @@ afterEach(() => {
 });
 
 describe("UI v2 Income and plans", () => {
+  it("replaces an absent plan with month navigation and hides only confirmed zero savings", async () => {
+    const { mount, state } = setup();
+    state.budget = state.budget.map((row) => ({ ...row, planned: null }));
+    state.savings = state.savings.map((row) => ({ ...row, amount: money("0.00") }));
+    state.summary.cash_balance.breakdown.saving_allocations = money("0.00");
+    mount();
+    const link = await screen.findByRole("link", { name: "Статьи расходов — в месяце" });
+    expect(link).toHaveAttribute("href", "/v2/close?month=91&panel=budget");
+    expect(screen.queryByRole("table", { name: "План и факт расходов" })).toBeNull();
+    expect(screen.getByTestId("income-coverage")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Накопления" })).toBeNull();
+  });
+
+  it("keeps nonzero savings total visible even when individual rows are zero", async () => {
+    const { mount, state } = setup();
+    state.savings = state.savings.map((row) => ({ ...row, amount: money("0.00") }));
+    mount();
+    expect(await screen.findByRole("heading", { name: "Накопления" })).toBeVisible();
+    expect(await screen.findByText("Всего за месяц")).toBeVisible();
+  });
+
+  it("hides zero deposit estimates and shows a repeated deposit name once", async () => {
+    const { mount, state } = setup();
+    state.ladder.upcoming_30_days.deposit_estimates = [
+      {
+        deposit_id: 1,
+        name: "Вклад А",
+        account_name: "Вклад А",
+        amount: money("321.00"),
+        included_in_forecast: true,
+      },
+      {
+        deposit_id: 2,
+        name: "Нулевой вклад",
+        account_name: "Банк",
+        amount: money("0.00"),
+        included_in_forecast: true,
+      },
+    ];
+    mount();
+    const details = await screen.findByLabelText("Ожидаемые проценты по вкладам");
+    expect(details).not.toHaveAttribute("open");
+    fireEvent.click(within(details).getByText("Проценты по вкладам · 30 дней"));
+    expect(within(details).getByRole("cell", { name: "Вклад А" })).toBeVisible();
+    expect(within(details).queryByText("Нулевой вклад")).toBeNull();
+    expect(details).not.toHaveTextContent("Вклад А · Вклад А");
+  });
+
   it("renders the passive income figures, removes forecast/goals and keeps principal separate", async () => {
     const { mount, reads } = setup();
     mount();
@@ -330,12 +378,18 @@ describe("UI v2 Income and plans", () => {
     expect(
       screen.getByTestId("income-upcoming-passive").getAttribute("title")?.replaceAll(" ", " "),
     ).toBe("9 734,56 ₽");
-    const table = await screen.findByRole("region", { name: "Ожидаемые проценты по вкладам" });
+    const disclosure = await screen.findByLabelText("Ожидаемые проценты по вкладам");
+    expect(disclosure).not.toHaveAttribute("open");
+    fireEvent.click(within(disclosure).getByText("Проценты по вкладам · 30 дней"));
+    const table = disclosure;
     expect(table).toHaveTextContent("Синтетический вклад · Банк");
-    expect(table).toHaveTextContent("1 234,56 ₽");
+    expect(table).toHaveTextContent("1 235 ₽");
     expect(table).toHaveTextContent("дата выплаты неизвестна");
     expect(table.querySelector("time")).toBeNull();
-    expect(screen.getByTestId("income-window-30")).toHaveTextContent("8 500 ₽ пассивно");
+    expect(screen.getByTestId("income-window-30")).not.toHaveTextContent("пассивно");
+    expect(screen.getByTestId("income-upcoming-passive").parentElement).toHaveTextContent(
+      "выплаты 8 500 ₽ + вклады ≈1 235 ₽",
+    );
     fireEvent.click(screen.getByRole("button", { name: "14 дней" }));
     expect(screen.getByTestId("income-upcoming-passive")).toHaveTextContent("9 735 ₽");
     expect(table).toHaveTextContent("30 дней");
@@ -343,7 +397,7 @@ describe("UI v2 Income and plans", () => {
     expect(screen.getByTestId("income-coverage")).toHaveTextContent("прогнозный остаток");
   });
 
-  it("puts the payout ladder before the plan, ends with handoffs and keeps event columns semantic", async () => {
+  it("puts the payout ladder before the plan, has shared tabs and keeps event columns semantic", async () => {
     const { mount } = setup();
     mount();
 
@@ -355,15 +409,15 @@ describe("UI v2 Income and plans", () => {
       "income-history-panel",
       "income-ladder-panel",
       "income-plan-panel",
-      "income-handoffs-panel",
     ]);
 
-    const handoffs = within(screen.getByTestId("income-handoffs-panel"));
-    expect(handoffs.getByText("НДФЛ и ИИС по выбранному отчётному срезу.")).toBeVisible();
-    expect(handoffs.getByRole("link", { name: "Налоги и ИИС →" })).toHaveAttribute(
+    const tabs = within(screen.getByRole("navigation", { name: "Разделы дохода и планов" }));
+    expect(tabs.getAllByRole("link")).toHaveLength(5);
+    expect(tabs.getByRole("link", { name: "Налоги и ИИС" })).toHaveAttribute(
       "href",
       "/v2/income/tax-iis?month=91",
     );
+    expect(screen.queryByText("Ещё по доходу:")).toBeNull();
 
     const ladder = screen.getByTestId("income-ladder-panel");
     const controls = within(ladder).getByRole("group", { name: "Окно ожидаемых выплат" });
@@ -378,7 +432,7 @@ describe("UI v2 Income and plans", () => {
     expect(coupon.children[2]).toHaveTextContent("8 500 ₽");
     // The source is named once for the window, not in every row.
     expect(coupon).not.toHaveTextContent("внешний источник");
-    expect(within(selectedWindow).getByText("Источник: внешний источник")).toBeVisible();
+    expect(within(selectedWindow).queryByText(/^Источник:/)).toBeNull();
 
     const principal = within(selectedWindow).getByTestId("income-event-provider-702");
     expect(within(principal).getByTitle("Возврат основной суммы")).toHaveTextContent("Погашение");

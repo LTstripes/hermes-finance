@@ -1,3 +1,4 @@
+import { IncomeTabs } from "./IncomeTabs";
 import { triggerDownload } from "../lib/download";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
@@ -227,6 +228,7 @@ export default function UiV2ScenarioLabPage() {
         </>
       }
     >
+      <IncomeTabs active="scenarios" monthId={selectedMonth?.id} />
       <div className={styles.page}>
         <UiV2Panel
           eyebrow="Параметры"
