@@ -305,9 +305,9 @@ describe("native month positions leaf", () => {
   it("shows valuation exceptions once under value and accrued interest under price", async () => {
     setup({}, [{ ...position, accrued_interest: { amount: "3.00", currency: "RUB" } }]);
     const table = await screen.findByRole("table");
-    expect(within(table).getAllByText(/Вручную · 31\.01\.2031/)).toHaveLength(1);
+    expect(within(table).queryAllByText(/Вручную · 31\.01\.2031/)).toHaveLength(0);
     const nkd = within(table).getByText(/НКД 3/);
-    expect(nkd.closest("td")).toHaveTextContent(/1\s100/);
+    expect(within(nkd.closest("td") as HTMLElement).getByRole("textbox")).toHaveValue("1 100");
   });
 
   it("updates column visibility, the single statement explanation and totals with the current filter", async () => {
@@ -427,6 +427,7 @@ describe("native month positions leaf", () => {
     );
     const user = userEvent.setup();
     await screen.findByText("Пусто");
+    await user.click(await screen.findByRole("button", { name: "+ Добавить позицию" }));
     await user.type(screen.getByLabelText("Количество"), "0.5");
     await user.type(screen.getByLabelText("Средняя цена приобретения"), "1000");
     await user.type(screen.getByLabelText("Рыночная цена"), "1100");
@@ -548,6 +549,7 @@ describe("native month positions leaf", () => {
     );
     const user = userEvent.setup();
     await screen.findByText("Пусто");
+    await user.click(await screen.findByRole("button", { name: "+ Добавить позицию" }));
     const form = screen
       .getByRole("button", { name: "Добавить позицию" })
       .closest("form") as HTMLFormElement;
@@ -596,8 +598,10 @@ describe("native month positions leaf", () => {
     });
     const user = userEvent.setup();
     await screen.findByText("Synthetic Fund");
+    await user.click(await screen.findByRole("button", { name: "+ Добавить позицию" }));
+    await user.click(screen.getByRole("button", { name: "Создать инструмент" }));
     const form = screen
-      .getByRole("button", { name: "Создать инструмент" })
+      .getByRole("textbox", { name: "Название инструмента" })
       .closest("form") as HTMLFormElement;
     const name = within(form).getByLabelText("Название инструмента");
     await user.type(name, "Synthetic New");
@@ -648,6 +652,11 @@ describe("native month positions leaf", () => {
     });
     const user = userEvent.setup();
     await screen.findByText("Synthetic Fund");
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     rerender(<UiV2MonthPositionsSection context={{ ...context, month: { ...month, id: 8 } }} />);
     release?.(json(quote));
@@ -660,6 +669,11 @@ describe("native month positions leaf", () => {
     const { fetchMock } = setup({ "POST /api/months/7/quote-preview": () => json(quote) });
     const user = userEvent.setup();
     await screen.findByText("Synthetic Fund");
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     expect(await screen.findByText("Нужно выбрать отдельно")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Применить выбранные" })).toBeDisabled();
@@ -710,6 +724,11 @@ describe("native month positions leaf", () => {
     });
     const user = userEvent.setup();
     await screen.findByText("Synthetic Fund");
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await user.click(await screen.findByRole("button", { name: "Применить выбранные" }));
     expect(await screen.findByText(/Котировки применены: 1/)).toBeInTheDocument();
@@ -760,6 +779,12 @@ describe("native month positions leaf", () => {
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-preview"))).toBe(
         false,
       );
+      if (
+        screen
+          .getByRole("button", { name: "Подтянуть котировки" })
+          .getAttribute("aria-expanded") === "false"
+      )
+        await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
       await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
       await user.click(await screen.findByRole("button", { name: "Применить выбранные" }));
       const message =
@@ -790,6 +815,11 @@ describe("native month positions leaf", () => {
     });
     const user = userEvent.setup();
     await screen.findByText("Synthetic Fund");
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     rerender(
       <UiV2MonthPositionsSection
@@ -863,6 +893,11 @@ describe("native month positions leaf", () => {
       false,
     );
 
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
     expect(screen.getByText("Внешний источник не настроен")).toBeInTheDocument();
@@ -900,6 +935,11 @@ describe("native month positions leaf", () => {
     expect(screen.getByText(/Запроси новый предпросмотр/)).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("quote-apply"))).toBe(false);
 
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
     expect(previewCalls).toBe(2);
@@ -942,6 +982,11 @@ describe("native month positions leaf", () => {
         ),
     });
     await screen.findByText("Synthetic Fund");
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
     await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
@@ -996,6 +1041,11 @@ describe("native month positions leaf", () => {
       },
     });
     await screen.findByText("Synthetic Fund");
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
     expect(screen.getByText("Нельзя выбрать источник автоматически")).toBeInTheDocument();
@@ -1048,6 +1098,11 @@ describe("native month positions leaf", () => {
       },
     });
     await screen.findByText("Synthetic Fund");
+    if (
+      screen.getByRole("button", { name: "Подтянуть котировки" }).getAttribute("aria-expanded") ===
+      "false"
+    )
+      await user.click(screen.getByRole("button", { name: "Подтянуть котировки" }));
     await user.click(screen.getByRole("button", { name: "Обновить котировки" }));
     await screen.findByRole("table", { name: "Предпросмотр котировок" });
     await user.click(screen.getByRole("button", { name: "Сопоставить инструмент Synthetic Fund" }));
@@ -1070,6 +1125,7 @@ describe("native month positions leaf", () => {
     );
     const user = userEvent.setup();
     await screen.findByText("Пусто");
+    await user.click(await screen.findByRole("button", { name: "+ Добавить позицию" }));
     await user.type(screen.getByLabelText("Количество"), "1");
     await user.type(screen.getByLabelText("Средняя цена приобретения"), "10");
     await user.type(screen.getByLabelText("Рыночная цена"), "11");

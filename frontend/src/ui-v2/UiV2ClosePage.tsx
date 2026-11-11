@@ -50,6 +50,7 @@ import overviewStyles from "./UiV2MonthOverview.module.css";
 import { UiV2MonthSources } from "./UiV2MonthSources";
 import monthStyles from "./UiV2MonthWorkspace.module.css";
 import styles from "./UiV2Page.module.css";
+import { moneyText, moneyWholeText } from "./valueFormat";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2Skeleton } from "./UiV2StateBlocks";
 
@@ -381,10 +382,16 @@ export default function UiV2ClosePage() {
               {panel !== "close" ? (
                 <strong className={monthStyles.workTotal}>
                   {panel === "payouts" ? "Купоны и дивиденды: " : null}
-                  {panel === "payouts" || panel === "budget" ? (
+                  {panel === "payouts" || panel === "budget" || panel === "positions" ? (
                     <span id="month-panel-total" />
                   ) : panelStep ? (
-                    figureText(panelStep)
+                    closed && panelStep.figure?.kind === "money" ? (
+                      <span title={moneyText(panelStep.figure.amount)}>
+                        {moneyWholeText(panelStep.figure.amount, "—")}
+                      </span>
+                    ) : (
+                      figureText(panelStep)
+                    )
                   ) : (
                     "—"
                   )}
@@ -578,7 +585,12 @@ export default function UiV2ClosePage() {
       showRefresh={false}
       header={
         <>
-          <p className={styles.eyebrow}>Месяц</p>
+          <div className={overviewStyles.headingMeta}>
+            <p className={styles.eyebrow}>Месяц</p>
+            <Link className={overviewStyles.allMonths} to="/v2/data/months">
+              Отчётные месяцы →
+            </Link>
+          </div>
           <div className={overviewStyles.titleRow}>
             {selectedPeriod ? (
               <MonthStepper months={months} current={selectedPeriod.id} search={location.search} />
@@ -591,26 +603,25 @@ export default function UiV2ClosePage() {
             ) : selectedMonth && selectionIdentityMatches ? (
               <MonthStatusChip month={selectedMonth} />
             ) : null}
-            <Link className={overviewStyles.allMonths} to="/v2/data/months">
-              Отчётные месяцы →
-            </Link>
-            <OverflowMenu label="Действия месяца">
-              <OverflowMenuItem
-                disabled={monthsQuery.isPending || fetching > 0}
-                onClick={() => void queryClient.invalidateQueries()}
-              >
-                Обновить
-              </OverflowMenuItem>
-              {closed ? (
-                <OverflowMenuItem
-                  aria-label="Открыть месяц заново"
-                  disabled={lifecycleBusy || lifecycleRecovery}
-                  onClick={requestReopen}
-                >
-                  Открыть заново
-                </OverflowMenuItem>
-              ) : null}
-            </OverflowMenu>
+            <Button
+              disabled={monthsQuery.isPending || fetching > 0}
+              onClick={() => void queryClient.invalidateQueries()}
+            >
+              Обновить
+            </Button>
+            {closed ? (
+              <OverflowMenu label="Действия месяца">
+                {closed ? (
+                  <OverflowMenuItem
+                    aria-label="Открыть месяц заново"
+                    disabled={lifecycleBusy || lifecycleRecovery}
+                    onClick={requestReopen}
+                  >
+                    Открыть заново
+                  </OverflowMenuItem>
+                ) : null}
+              </OverflowMenu>
+            ) : null}
           </div>
         </>
       }

@@ -245,7 +245,7 @@ export function MonthInstrumentPayouts({
       aria-label={`${allowProviderPreview ? "Предварительные выплаты" : "Количество по выписке"} ${isin}`}
     >
       <h3>
-        {allowProviderPreview ? "Предварительные выплаты · T-Invest" : "Количество по выписке"}
+        {allowProviderPreview ? "Предварительные выплаты · Т-Инвест" : "Количество по выписке"}
       </h3>
       {allowProviderPreview && (
         <details>
@@ -323,7 +323,7 @@ export function MonthInstrumentPayouts({
             disabled={busy || !validDate}
             onClick={() => void run()}
           >
-            {busy ? "Запрашиваем…" : "Запросить предварительные выплаты T-Invest"}
+            {busy ? "Запрашиваем…" : "Запросить предварительные выплаты Т-Инвест"}
           </Button>
         </>
       )}

@@ -15,7 +15,7 @@
 
 .root :global(.month-positions-table) th,
 .root :global(.month-positions-table) td {
-  padding: 10px 8px;
+  padding: 5px 6px;
   border-bottom: 1px solid var(--line-2);
   vertical-align: middle;
 }
@@ -29,9 +29,11 @@
 
 .instrumentTitle {
   display: block;
+  line-height: 18px;
   color: var(--ink);
-  overflow-wrap: anywhere;
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-decoration: none;
 }
 
@@ -94,8 +96,11 @@ a.instrumentTitle:hover {
 }
 
 .meta {
-  margin-top: 4px;
-  white-space: normal;
+  margin-top: 0;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .root :global(.month-positions-table) .groupRow th {
@@ -143,4 +148,65 @@ a.instrumentTitle:hover {
 .knownTotals {
   flex-wrap: wrap;
   margin-top: 14px;
+}
+
+.addGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.addGrid > * {
+  min-width: 0;
+}
+.addGrid :global(.input),
+.addGrid :global(.select) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.more {
+  grid-column: 1 / -1;
+}
+.textAction {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.result[data-tone="positive"] {
+  color: var(--pos);
+}
+.result[data-tone="negative"] {
+  color: var(--neg);
+}
+.root [hidden] {
+  display: none;
+}
+.root :global(.month-positions-table) input {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.root :global(.month-positions-table) input {
+  height: 32px;
+  min-height: 32px;
+  padding: 4px 6px;
+}
+
+.priceCell > span {
+  display: block;
+}
+.root :global(.month-positions-table) .priceCell:has(> .meta) input {
+  height: 24px;
+  min-height: 24px;
+}
+.root :global(.month-positions-table) td.priceCell {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.priceCell > .meta {
+  line-height: 14px;
 }

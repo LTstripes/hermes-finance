@@ -37,6 +37,7 @@ import {
 } from "../lib/flowTypes";
 import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
+import { shortInstrumentName } from "./instrumentName";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import styles from "./UiV2MonthPayoutsSection.module.css";
 import { MonthPanelTotal } from "./MonthPanelTotal";
@@ -336,9 +337,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
   }, [accounts]);
 
   const instrumentName = useMemo(() => {
-    const map = new Map(
-      instruments.map((i) => [i.id, i.ticker ? `${i.name} (${i.ticker})` : i.name]),
-    );
+    const map = new Map(instruments.map((i) => [i.id, shortInstrumentName(i)]));
     return (id: number | null) => (id == null ? "—" : (map.get(id) ?? `#${id}`));
   }, [instruments]);
 
@@ -738,9 +737,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                       ? null
                       : instruments.find((item) => item.id === row.instrument_id);
                   const instrumentPrimary = instrument
-                    ? instrument.ticker
-                      ? `${instrument.name} (${instrument.ticker})`
-                      : instrument.name
+                    ? shortInstrumentName(instrument)
                     : accountName(row.account_id);
                   return (
                     <tr
@@ -811,7 +808,12 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             </Select>
                           </>
                         ) : (
-                          <div className="month-flows-table__party">
+                          <div
+                            className="month-flows-table__party"
+                            title={[instrument?.name, instrument?.ticker, instrument?.isin]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          >
                             {validIsin(instrument?.isin) ? (
                               <Link
                                 to={`/v2/returns/instrument/${instrument?.isin}?${new URLSearchParams({ capital_account: String(row.account_id), back: location.pathname + location.search })}`}
@@ -1140,7 +1142,16 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                           </span>
                           {redemption ? <div className="muted tiny">погашение ≠ доход</div> : null}
                         </Td>
-                        <Td>{instrumentName(row.instrument_id)}</Td>
+                        <Td
+                          title={instruments
+                            .filter((item) => item.id === row.instrument_id)
+                            .map((item) =>
+                              [item.name, item.ticker, item.isin].filter(Boolean).join(" · "),
+                            )
+                            .join("")}
+                        >
+                          {instrumentName(row.instrument_id)}
+                        </Td>
                         <Td numeric>
                           {formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()}
                         </Td>

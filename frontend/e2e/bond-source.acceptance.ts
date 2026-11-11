@@ -404,7 +404,7 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   expect(writes).toEqual([]);
 
   await expect(
-    panel.getByRole("button", { name: "Запросить предварительные выплаты T-Invest" }),
+    panel.getByRole("button", { name: "Запросить предварительные выплаты Т-Инвест" }),
   ).toHaveCount(0);
   // The Month route intentionally has no provider action. Keep the exact
   // synthetic backend reconciliation cases here; the default preview component

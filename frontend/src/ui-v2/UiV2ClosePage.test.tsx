@@ -466,7 +466,7 @@ describe("native Monthly Close work mode", () => {
       );
     expect(panels.indexOf("brokers")).toBeLessThan(panels.indexOf("positions"));
     expect(panels.indexOf("positions")).toBeLessThan(panels.indexOf("payouts"));
-    expect(within(nav).getByRole("link", { name: /Выплаты/ })).toHaveTextContent("T-Invest");
+    expect(within(nav).getByRole("link", { name: /Выплаты/ })).toHaveTextContent("Т-Инвест");
     for (const link of within(nav).getAllByRole("link"))
       expect(
         new URL(link.getAttribute("href") ?? "", "http://synthetic").searchParams.get("month"),
@@ -731,8 +731,7 @@ describe("native Monthly Close work mode", () => {
     fireEvent.click(await screen.findByRole("link", { name: "Закрыть месяц" }));
     await screen.findByRole("region", { name: "Рабочая область: Закрыть месяц" });
     expect(state.workflowReads).toBe(before);
-    fireEvent.click(screen.getByRole("button", { name: "Действия месяца" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Обновить" }));
+    fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
     await waitFor(() => expect(state.workflowReads).toBe(before + 1));
   });
 
@@ -921,7 +920,7 @@ describe("native Monthly Close work mode", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Внутренняя ошибка приложения");
     expect(screen.getByRole("button", { name: "Проверить состояние месяца" })).toBeVisible();
     expect(state.workflow.month.status).toBe("draft");
-    fireEvent.click(screen.getByRole("button", { name: "Действия месяца" }));
+    expect(screen.queryByRole("button", { name: "Действия месяца" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Открыть месяц заново" })).toBeNull();
     expect(screen.queryByText("Месяц закрыт по вашему решению. Замечания сохранены.")).toBeNull();
     expect(state.writes).toEqual(["close"]);

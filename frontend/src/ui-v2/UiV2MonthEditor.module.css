@@ -180,3 +180,27 @@
 .budgetTable td:first-child {
   padding-left: 0;
 }
+
+.addExpenseRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.addExpenseRow label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  font-size: var(--t-xs);
+}
+.addExpenseRow input {
+  width: 100%;
+  min-width: 0;
+}
+
+fieldset.budgetEntry {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}

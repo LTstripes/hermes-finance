@@ -579,7 +579,7 @@ describe("UiV2MonthAssetsSection", () => {
     const submit = await screen.findByRole("button", { name: "Добавить денежную позицию" });
     await openAddForms();
     await user.type(screen.getByLabelText("Название денежной позиции"), "Копилка");
-    await user.type(screen.getByLabelText("Сумма наличных"), "2500");
+    await user.type(screen.getByLabelText("Сумма денег"), "2500");
     await user.click(submit);
     await screen.findByText(/Денежная позиция «Копилка» сохранена; данные перечитаны/);
 
@@ -986,8 +986,8 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
 
     await tables();
-    expect(screen.getAllByText("Недоступно")).toHaveLength(2);
-    expect(screen.getByText(/Итоги наличных за выбранный месяц недоступны/)).toBeInTheDocument();
+    expect(screen.getAllByText("Недоступно")).toHaveLength(1);
+    expect(screen.getByText(/Итоги денег за выбранный месяц недоступны/)).toBeInTheDocument();
     expect(screen.queryAllByText(/^0\s?₽$/)).toHaveLength(0);
   });
 
@@ -996,7 +996,7 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
 
     await tables();
-    expect(screen.getAllByText("Недоступно")).toHaveLength(2);
+    expect(screen.getAllByText("Недоступно")).toHaveLength(1);
     expect(screen.queryAllByText(/^0\s?₽$/)).toHaveLength(0);
   });
 
@@ -1010,7 +1010,7 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
 
     await tables();
-    expect(screen.getAllByText("0 ₽")).toHaveLength(2);
+    expect(screen.getAllByText("0 ₽")).toHaveLength(1);
     expect(screen.queryByText("Недоступно")).not.toBeInTheDocument();
   });
 
@@ -1133,7 +1133,7 @@ describe("UiV2MonthAssetsSection", () => {
     expect(screen.queryByText("Вклад Альфа")).not.toBeInTheDocument();
     expect(screen.queryByText("Кошелёк")).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue("Вклад Поздний")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Недоступно")).toHaveLength(2);
+    expect(screen.getAllByText("Недоступно")).toHaveLength(1);
 
     gate.resolve();
     await new Promise((done) => setTimeout(done, 20));
@@ -1218,25 +1218,25 @@ describe("UiV2MonthAssetsSection", () => {
     const user = userEvent.setup();
 
     await screen.findByText("Кошелёк");
-    expect(screen.getAllByText("12 345 ₽")).toHaveLength(2);
+    expect(screen.getAllByText("12 345 ₽")).toHaveLength(1);
 
     await openAddForms();
     await user.type(screen.getByLabelText("Название денежной позиции"), "Копилка");
-    await user.type(screen.getByLabelText("Сумма наличных"), "2500");
+    await user.type(screen.getByLabelText("Сумма денег"), "2500");
     await user.click(screen.getByRole("button", { name: "Добавить денежную позицию" }));
 
     // Строки подтверждены перечитыванием списка…
     await screen.findByText(/Денежная позиция «Копилка» сохранена; данные перечитаны/);
     // …но итог не перечитан: старое значение не показывается как текущее.
-    await screen.findByText(/Итог наличных не перечитан/);
-    expect(screen.getAllByText("Недоступно")).toHaveLength(2);
+    await screen.findByText(/Итог денег не перечитан/);
+    expect(screen.getAllByText("Недоступно")).toHaveLength(1);
     expect(screen.queryByText("12 345 ₽")).not.toBeInTheDocument();
     expect(screen.getByText("Копилка")).toBeInTheDocument();
 
     // Восстановление: сервер снова отдаёт итог, повтор подтверждает его.
     await user.click(screen.getByRole("button", { name: "Повторить чтение итога" }));
-    await waitFor(() => expect(screen.getAllByText("14 845 ₽")).toHaveLength(2));
-    expect(screen.queryByText(/Итог наличных не перечитан/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("14 845 ₽")).toHaveLength(1));
+    expect(screen.queryByText(/Итог денег не перечитан/)).not.toBeInTheDocument();
     expect(screen.queryByText("Недоступно")).not.toBeInTheDocument();
     expect(reads).toBe(3);
   });
@@ -1258,15 +1258,15 @@ describe("UiV2MonthAssetsSection", () => {
     const user = userEvent.setup();
 
     await screen.findByText("Кошелёк");
-    expect(screen.getAllByText("9 000 ₽")).toHaveLength(2);
+    expect(screen.getAllByText("9 000 ₽")).toHaveLength(1);
 
     await user.click(
       screen.getByRole("button", { name: "Действия для денежной позиции «Кошелёк»" }),
     );
     await user.click(screen.getByRole("menuitem", { name: "Исключить из капитала" }));
     await screen.findByText(/«Кошелёк»: исключена из ликвидного капитала/);
-    await screen.findByText(/Итог наличных не перечитан/);
-    expect(screen.getAllByText("Недоступно")).toHaveLength(2);
+    await screen.findByText(/Итог денег не перечитан/);
+    expect(screen.getAllByText("Недоступно")).toHaveLength(1);
     expect(screen.queryByText("9 000 ₽")).not.toBeInTheDocument();
     expect(reads).toBe(2);
   });
@@ -1538,7 +1538,7 @@ describe("UiV2MonthAssetsSection", () => {
     await openAddForms();
     const submit = await screen.findByRole("button", { name: "Добавить денежную позицию" });
     const nameInput = screen.getByLabelText("Название денежной позиции");
-    const amountInput = screen.getByLabelText("Сумма наличных");
+    const amountInput = screen.getByLabelText("Сумма денег");
     const checkbox = screen.getByRole("checkbox", { name: "Включать в ликвидный капитал" });
     await user.type(nameInput, "Копилка");
     await user.type(amountInput, "700");
