@@ -164,7 +164,7 @@ def source_fixture(monkeypatch, *, stale_second=False, absent_second=False):
     )
     monkeypatch.setattr(
         overall,
-        "_selected_sources",
+        "_source_read_inputs",
         lambda session, account, **_selection: (
             [
                 (
@@ -181,7 +181,7 @@ def source_fixture(monkeypatch, *, stale_second=False, absent_second=False):
     )
     monkeypatch.setattr(
         "hermes_finance.services.source_monthly_returns._selected_sources",
-        overall._selected_sources,
+        overall._source_read_inputs,
     )
     calls = []
 

@@ -40,7 +40,6 @@ from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 from hermes_finance.statement_import.mybroker_return_structure import (
     original_cancellation_dates,
-    source_return_blockers,
 )
 
 
@@ -655,7 +654,9 @@ def _read_monthly_returns(
             attached = (originals or {}).get(original.id)
             context = None
             cancellation_dates = None
-            blockers = source_return_blockers(view)
+            from hermes_finance.services.returns_read_inputs import source_blockers
+
+            blockers = source_blockers(session, view)
             scope_valid = (
                 native_scope is not None
                 and _native_scope(document) == native_scope
@@ -1059,7 +1060,11 @@ def _read_monthly_returns(
             start=group[0].result.opening_date,
             end=group[-1].result.closing_date,
             partial_segment=partial,
-            **asdict(_period_totals(group, schedule, period_uncertain_months)),
+            **asdict(
+                period
+                if group == rows
+                else _period_totals(group, schedule, period_uncertain_months)
+            ),
         )
         for group in groups
     ]
