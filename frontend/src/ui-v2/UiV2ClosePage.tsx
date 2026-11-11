@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
@@ -24,6 +24,7 @@ import {
 } from "../components/month-close/statementOutcome";
 import { useMonthCloseLifecycle } from "../components/month-close/useMonthCloseLifecycle";
 import { Button, ConfirmDialog } from "../components/ui";
+import { OverflowMenu, OverflowMenuItem } from "../components/ui/OverflowMenu";
 import { formatDate, formatMonth } from "../lib/format";
 import { queryKeys } from "../queryClient";
 import { MonthDraftPayouts } from "./MonthDraftPayouts";
@@ -41,6 +42,9 @@ import {
   MonthKpis,
   MonthOverview,
   MonthStepStrip,
+  MonthReadiness,
+  isIncompleteMonthDraft,
+  INCOMPLETE_MONTH_COPY,
 } from "./UiV2MonthOverview";
 import overviewStyles from "./UiV2MonthOverview.module.css";
 import { UiV2MonthSources } from "./UiV2MonthSources";
@@ -142,6 +146,7 @@ function MonthStepper({
 }
 
 export default function UiV2ClosePage() {
+  const fetching = useIsFetching();
   const [params] = useSearchParams();
   const [emptyClosePending, setEmptyClosePending] = useState(false);
   const location = useLocation();
@@ -336,6 +341,7 @@ export default function UiV2ClosePage() {
         )
       : [];
     const blocked = !closed && !workflow.readiness.can_close;
+    const incomplete = isIncompleteMonthDraft(workflow);
     const blockers = blocked ? findings.filter((item) => item.severity === "hard_blocker") : [];
     const remaining = blocked
       ? findings.filter((item) => item.severity !== "hard_blocker")
@@ -389,6 +395,15 @@ export default function UiV2ClosePage() {
             {closed && panel !== "close" ? (
               <p className={monthStyles.viewOnly}>Месяц закрыт — только просмотр.</p>
             ) : null}
+            {!closed &&
+            panel === "positions" &&
+            findings.some((item) => closeFindingPanel(item) === "positions") ? (
+              <CloseFindings
+                items={findings.filter((item) => closeFindingPanel(item) === "positions")}
+                closed={false}
+                pathFor={panelPath}
+              />
+            ) : null}
             {panel === "brokers" ? (
               <UiV2MonthSources
                 key={`sources:${workflow.month.id}:${panel}:${discardVersion}`}
@@ -404,6 +419,7 @@ export default function UiV2ClosePage() {
                 key={`editor:${workflow.month.id}:${panel}:${discardVersion}`}
                 embeddedMonthId={workflow.month.id}
                 embeddedSection={panel as EditorSection}
+                incompleteDraft={incomplete}
                 onNavigationStateChange={setEditorNavigation}
               />
             ) : null}
@@ -442,11 +458,13 @@ export default function UiV2ClosePage() {
                     <h2>
                       {closed
                         ? "Месяц закрыт"
-                        : blocked
-                          ? `Нужно исправить: ${workflow.readiness.hard_blocker_count}`
-                          : findingCount
-                            ? `Можно закрыть с замечаниями: ${findingCount}`
-                            : "Можно закрывать"}
+                        : incomplete
+                          ? INCOMPLETE_MONTH_COPY
+                          : blocked
+                            ? `Нужно исправить: ${workflow.readiness.hard_blocker_count}`
+                            : findingCount
+                              ? `Можно закрыть с замечаниями: ${findingCount}`
+                              : "Можно закрывать"}
                     </h2>
                     {closed ? (
                       <>
@@ -459,12 +477,15 @@ export default function UiV2ClosePage() {
                         {findingCount ? <p>Закрыт с замечаниями: {findingCount}</p> : null}
                       </>
                     ) : (
-                      <p>Закрытие не подтверждает полноту данных.</p>
+                      <>
+                        {!incomplete ? <p>Закрытие не подтверждает полноту данных.</p> : null}
+                        <MonthReadiness checklist={workflow.checklist} />
+                      </>
                     )}
                   </div>
                   {!closed ? (
                     <Button
-                      variant="primary"
+                      variant={incomplete ? "secondary" : "primary"}
                       type="button"
                       disabled={
                         !workflowReady ||
@@ -481,15 +502,6 @@ export default function UiV2ClosePage() {
                   ) : (
                     <div className={monthStyles.sourceNav}>
                       <Link to="/v2">Открыть «Мои финансы»</Link>
-                      <Button
-                        variant="ghost"
-                        type="button"
-                        aria-label="Открыть месяц заново"
-                        disabled={lifecycleBusy || lifecycleRecovery}
-                        onClick={requestReopen}
-                      >
-                        Открыть заново
-                      </Button>
                     </div>
                   )}
                 </div>
@@ -563,6 +575,7 @@ export default function UiV2ClosePage() {
   return (
     <UiV2Shell
       busy={monthsQuery.isPending}
+      showRefresh={false}
       header={
         <>
           <p className={styles.eyebrow}>Месяц</p>
@@ -581,6 +594,23 @@ export default function UiV2ClosePage() {
             <Link className={overviewStyles.allMonths} to="/v2/data/months">
               Отчётные месяцы →
             </Link>
+            <OverflowMenu label="Действия месяца">
+              <OverflowMenuItem
+                disabled={monthsQuery.isPending || fetching > 0}
+                onClick={() => void queryClient.invalidateQueries()}
+              >
+                Обновить
+              </OverflowMenuItem>
+              {closed ? (
+                <OverflowMenuItem
+                  aria-label="Открыть месяц заново"
+                  disabled={lifecycleBusy || lifecycleRecovery}
+                  onClick={requestReopen}
+                >
+                  Открыть заново
+                </OverflowMenuItem>
+              ) : null}
+            </OverflowMenu>
           </div>
         </>
       }

@@ -130,7 +130,7 @@ function monthRef(id: number) {
   };
 }
 
-function leaf(monthId: number, readOnly: boolean) {
+function leaf(monthId: number, readOnly: boolean, incompleteDraft = false) {
   const month: ReportingMonth = {
     ...monthRef(monthId),
     status: readOnly ? "closed" : "draft",
@@ -141,6 +141,7 @@ function leaf(monthId: number, readOnly: boolean) {
     refresh: async () => month,
     setDirty,
     returnToClose: null,
+    incompleteDraft,
   };
   return (
     <QueryClientProvider client={client}>
@@ -319,6 +320,33 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(labelledValue(block, "Покрытие ипотеки (ориентир):")).toHaveTextContent("75,3%");
     expect(labelledValue(block, "Покрытие обязательных расходов:")).toHaveTextContent("62,5%");
     expect(within(block).queryByRole("columnheader", { name: "Ставка" })).not.toBeInTheDocument();
+  });
+
+  it("hides all coverage metrics until broker statements arrive and restores them afterwards", async () => {
+    vi.mocked(getDashboard).mockResolvedValue({
+      month: monthRef(7),
+      mortgage: { coverage_pct: "75.25", gap: { amount: "1000.00", currency: "RUB" } },
+    } as never);
+    vi.mocked(getMonthSummary).mockResolvedValue({
+      month: monthRef(7),
+      coverage: { coverage_pct: "62.50" },
+    } as never);
+    client = createQueryClient();
+    const view = render(leaf(7, false, true));
+    const block = await propertySection();
+    expect(block).toHaveTextContent("Покрытие появится после загрузки выписок");
+    expect(block).not.toHaveTextContent(
+      /Покрытие ипотеки|Недостаток покрытия|Покрытие обязательных расходов|75,3%|62,5%/,
+    );
+    view.rerender(leaf(7, false, false));
+    await waitFor(() =>
+      expect(labelledValue(block, "Покрытие ипотеки (ориентир):")).toHaveTextContent("75,3%"),
+    );
+    expect(labelledValue(block, "Покрытие обязательных расходов:")).toHaveTextContent("62,5%");
+    view.rerender(leaf(7, true, true));
+    expect(
+      labelledValue(await propertySection(), "Покрытие ипотеки (ориентир):"),
+    ).toHaveTextContent("75,3%");
   });
 
   it("keeps a missing dashboard and summary as dashes instead of zeros", async () => {

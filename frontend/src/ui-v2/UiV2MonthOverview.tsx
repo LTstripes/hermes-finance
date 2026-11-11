@@ -146,6 +146,34 @@ function stepsById(checklist: MonthChecklist | undefined) {
   return new Map(checklist?.steps.map((step) => [step.id, step]) ?? []);
 }
 
+/** The checklist owns this state; missing or attention states are not empty. */
+export function isIncompleteMonthDraft(workflow: MonthCloseWorkflow): boolean {
+  return (
+    workflow.month.status === "draft" &&
+    workflow.checklist?.steps.find((step) => step.id === "brokers")?.state === "empty"
+  );
+}
+
+export const INCOMPLETE_MONTH_COPY =
+  "Не загружены брокерские выписки — капитал месяца будет неполным";
+
+export function MonthReadiness({ checklist }: { checklist: MonthChecklist | undefined }) {
+  if (!checklist || !checklist.total_count) return null;
+  return (
+    <div className={styles.bannerBody}>
+      <strong>
+        Готово {checklist.completed_count} из {checklist.total_count}
+      </strong>
+      <progress
+        aria-label="Готовность разделов месяца"
+        className={styles.progress}
+        value={checklist.completed_count}
+        max={checklist.total_count}
+      />
+    </div>
+  );
+}
+
 /** Compact section strip while one section is open. */
 export function MonthStepStrip({
   checklist,
@@ -233,6 +261,7 @@ export function MonthKpis({
   const review = workflow.final_review;
   if (!review.available) return null;
   const { kpis } = review;
+  const incomplete = isIncompleteMonthDraft(workflow);
   const display = variant === "overview" ? moneyWholeText : moneyText;
   // Without capital snapshots the backend sum is 0.00 by construction, not a measured zero.
   const coverage = kpis.portfolio_source_coverage;
@@ -249,13 +278,18 @@ export function MonthKpis({
       ? countText(budget.secondary_count, ["статья", "статьи", "статей"])
       : undefined;
   return (
-    <dl aria-label={variant === "close" ? "Итоги месяца" : "Итог месяца"} className={styles.kpis}>
+    <dl
+      aria-label={variant === "close" ? "Итоги месяца" : "Итог месяца"}
+      className={styles.kpis}
+      data-incomplete-close={variant === "close" && incomplete ? "true" : undefined}
+    >
       <Kpi
         label="Ликвидный капитал"
         title={capitalUnknown ? undefined : moneyText(kpis.liquid_capital_net)}
         value={capitalUnknown ? "—" : display(kpis.liquid_capital_net)}
-        {...capital}
+        {...(incomplete ? { note: "неполный · без брокерских счетов" } : capital)}
         extra={
+          !incomplete &&
           coverage &&
           (coverage.status !== "complete" ||
             coverage.source_account_financial_coverage?.status === "partial") ? (
@@ -268,9 +302,9 @@ export function MonthKpis({
       />
       <Kpi
         label="Пассивный доход"
-        title={moneyText(kpis.passive_income_actual)}
-        value={display(kpis.passive_income_actual)}
-        {...passive}
+        title={incomplete ? undefined : moneyText(kpis.passive_income_actual)}
+        value={incomplete ? "—" : display(kpis.passive_income_actual)}
+        {...(incomplete ? { note: "после загрузки выписок" } : passive)}
       />
       {variant === "close" ? (
         <Kpi label="Инвестиции" value={moneyText(review.investments.market_value)} />
@@ -284,11 +318,11 @@ export function MonthKpis({
           note={noExpenseRows ? "не заполнено" : articles}
         />
       ) : null}
-      {variant === "overview" ? (
+      {variant === "overview" || incomplete ? (
         <Kpi
           label="Покрытие расходов"
-          value={formatPercent(kpis.mandatory_expense_coverage_pct)}
-          note="пассивным доходом, по прогнозу"
+          value={incomplete ? "—" : formatPercent(kpis.mandatory_expense_coverage_pct)}
+          note={incomplete ? "после загрузки выписок" : "пассивным доходом, по прогнозу"}
         />
       ) : null}
     </dl>
@@ -365,34 +399,26 @@ function CloseBanner({
     );
   }
   const readiness = workflow.readiness;
-  const done = checklist?.completed_count;
-  const total = checklist?.total_count;
-  const reason = !readiness.can_close
-    ? `Закрытие заблокировано: ${countText(readiness.hard_blocker_count, ["замечание", "замечания", "замечаний"])}`
-    : checklist?.attention_count
-      ? `Требуют решения: ${countText(checklist.attention_count, ["замечание", "замечания", "замечаний"])}. Закрыть можно, замечания сохранятся.`
-      : "Закрытие не подтверждает полноту данных.";
+  const incomplete = isIncompleteMonthDraft(workflow);
+  const reason = incomplete
+    ? INCOMPLETE_MONTH_COPY
+    : !readiness.can_close
+      ? `Закрытие заблокировано: ${countText(readiness.hard_blocker_count, ["замечание", "замечания", "замечаний"])}`
+      : checklist?.attention_count
+        ? `Требуют решения: ${countText(checklist.attention_count, ["замечание", "замечания", "замечаний"])}. Закрыть можно, замечания сохранятся.`
+        : "Закрытие не подтверждает полноту данных.";
   return (
     <div className={styles.banner} data-state="open">
       <div className={styles.bannerBody}>
-        {done != null && total ? (
-          <>
-            <strong>
-              Готово {done} из {total}
-            </strong>
-            <span
-              aria-hidden="true"
-              className={styles.progress}
-              style={{ ["--progress" as string]: `${(done / total) * 100}%` }}
-            />
-          </>
+        {checklist?.total_count ? (
+          <MonthReadiness checklist={checklist} />
         ) : (
           <strong>Итоговая проверка</strong>
         )}
         <p>{reason}</p>
       </div>
       <Link
-        className={styles.primaryAction}
+        className={incomplete ? styles.secondaryAction : styles.primaryAction}
         data-blocked={readiness.can_close ? undefined : "true"}
         to={pathFor("close")}
       >
@@ -414,6 +440,16 @@ export function MonthOverview({
   const steps = stepsById(checklist);
   const closed = workflow.month.status === "closed";
   const hasExpenses = Boolean(checklist?.expenses.mandatory_items.length);
+  const remaining = closed
+    ? []
+    : STEP_ORDER.map((id) => steps.get(id))
+        .filter(
+          (step): step is MonthChecklistStep =>
+            step != null &&
+            step.id !== "close" &&
+            (step.state === "empty" || step.state === "attention"),
+        )
+        .slice(0, 3);
   const allDone =
     checklist != null &&
     checklist.completed_count === checklist.total_count &&
@@ -428,7 +464,10 @@ export function MonthOverview({
   return (
     <div className={styles.overview} data-testid="v2-close-workspace">
       <MonthKpis workflow={workflow} />
-      <div className={styles.columns} data-side={hasExpenses ? "true" : undefined}>
+      <div
+        className={styles.columns}
+        data-side={hasExpenses || remaining.length ? "true" : undefined}
+      >
         <nav aria-label="Разделы месяца" className={styles.checklist}>
           {!closed ? (
             <div className={styles.checklistHead}>
@@ -494,9 +533,24 @@ export function MonthOverview({
           ))}
           <CloseBanner pathFor={pathFor} workflow={workflow} />
         </nav>
-        {checklist && hasExpenses ? (
+        {checklist && (hasExpenses || remaining.length) ? (
           <aside className={styles.side}>
-            <ExpenseBars checklist={checklist} />
+            {remaining.length ? (
+              <nav aria-label="Что осталось" className={styles.remaining}>
+                <h2>Что осталось</h2>
+                <ul>
+                  {remaining.map((step) => (
+                    <li key={step.id}>
+                      <Link to={pathFor(step.id)}>
+                        <strong>{MONTH_STEP_COPY[step.id].label}</strong>
+                        <span>{hintText(step, step.id, false)}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            ) : null}
+            {hasExpenses ? <ExpenseBars checklist={checklist} /> : null}
           </aside>
         ) : null}
       </div>

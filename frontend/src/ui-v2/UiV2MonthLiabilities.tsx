@@ -435,6 +435,7 @@ export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext 
           busy={busy}
           commit={commit}
           coveragePct={coveragePct}
+          incompleteDraft={!readOnly && context.incompleteDraft === true}
           key={`properties-${monthId}`}
           monthId={monthId}
           mortgage={mortgage}
@@ -1164,6 +1165,7 @@ function PropertyBlock({
   busy,
   commit,
   coveragePct,
+  incompleteDraft,
   monthId,
   mortgage,
   onDirtyChange,
@@ -1173,6 +1175,7 @@ function PropertyBlock({
   unavailable,
 }: BlockProps & {
   coveragePct: string | null;
+  incompleteDraft: boolean;
   mortgage: DashboardMortgage | null;
   properties: PropertySnapshot[];
 }) {
@@ -1519,21 +1522,29 @@ function PropertyBlock({
         </div>
       ) : null}
       <div className={leafStyles.propertyTotals}>
-        <span>
-          Покрытие ипотеки (ориентир):{" "}
-          <strong>{formatPercent(mortgage?.coverage_pct, { digits: 1 })}</strong>
-        </span>
-        <span>
-          Недостаток покрытия:{" "}
-          <strong>{mortgage ? <MoneyAmount amount={moneyAmount(mortgage.gap)} /> : "—"}</strong>
-        </span>
-        <span>
-          Покрытие обязательных расходов:{" "}
-          <strong>{formatPercent(coveragePct, { digits: 1 })}</strong>
-        </span>
+        {incompleteDraft ? (
+          <span>Покрытие появится после загрузки выписок</span>
+        ) : (
+          <>
+            <span>
+              Покрытие ипотеки (ориентир):{" "}
+              <strong>{formatPercent(mortgage?.coverage_pct, { digits: 1 })}</strong>
+            </span>
+            <span>
+              Недостаток покрытия:{" "}
+              <strong>{mortgage ? <MoneyAmount amount={moneyAmount(mortgage.gap)} /> : "—"}</strong>
+            </span>
+            <span>
+              Покрытие обязательных расходов:{" "}
+              <strong>{formatPercent(coveragePct, { digits: 1 })}</strong>
+            </span>
+          </>
+        )}
       </div>
       <p className={leafStyles.hint}>
-        Недвижимость не входит в ликвидный капитал; покрытие ипотеки — ориентир.
+        {incompleteDraft
+          ? "Недвижимость не входит в ликвидный капитал."
+          : "Недвижимость не входит в ликвидный капитал; покрытие ипотеки — ориентир."}
       </p>
       {!readOnly ? (
         <form className={leafStyles.propertyForm} onSubmit={(event) => void addProperty(event)}>
