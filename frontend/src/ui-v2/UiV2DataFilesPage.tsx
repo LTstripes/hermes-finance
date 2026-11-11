@@ -1,7 +1,7 @@
 import { triggerDownload } from "../lib/download";
 import { brokerOriginalSession } from "../components/month-close/brokerOriginalSession";
 import { type UseQueryResult, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { createBackup, listBackups, restoreBackup } from "../api/backups";
 import { ApiClientError, formatApiError } from "../api/client";
@@ -16,11 +16,11 @@ import { listMonths } from "../api/months";
 import type { BackupMetadata, ReportingMonth, RestoreResponse } from "../api/types";
 import { MyBrokerImportPanel } from "../components/MyBrokerImportPanel";
 import { PortfolioReviewPackagePanel } from "../components/PortfolioReviewPackagePanel";
-import { ConfirmDialog } from "../components/ui";
+import { ConfirmDialog, OverflowMenu, OverflowMenuItem } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 import { queryKeys } from "../queryClient";
-import { sortReportingMonths } from "./monthSelection";
+import { latestClosedMonth, sortReportingMonths } from "./monthSelection";
 import styles from "./UiV2DataFiles.module.css";
 import {
   DataMonthContext,
@@ -29,6 +29,8 @@ import {
   UiV2DataFrame,
 } from "./UiV2DataShell";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+
+type ExportMonthResolution = DataMonthResolution | { kind: "no-closed" };
 
 type MonthExportFormat = "markdown" | "json";
 type DownloadKind =
@@ -138,7 +140,7 @@ function MonthExportState({
   downloadSuccess,
 }: {
   monthsQuery: UseQueryResult<ReportingMonth[]>;
-  resolution: DataMonthResolution;
+  resolution: ExportMonthResolution;
   selectedMonth: ReportingMonth | null;
   params: URLSearchParams;
   setParams: ReturnType<typeof useSearchParams>[1];
@@ -194,7 +196,7 @@ function MonthExportState({
     );
   }
 
-  if (resolution.kind !== "ready" || selectedMonth === null) return null;
+  if (resolution.kind !== "ready" && resolution.kind !== "no-closed") return null;
 
   function selectMonth(id: string) {
     const next = new URLSearchParams(params);
@@ -204,7 +206,11 @@ function MonthExportState({
 
   return (
     <>
-      <DataMonthContext automatic={resolution.automatic} month={selectedMonth} />
+      {resolution.kind === "ready" && selectedMonth ? (
+        <DataMonthContext automatic={resolution.automatic} month={selectedMonth} />
+      ) : (
+        <p className={styles.muted}>Закрытых месяцев пока нет. Выбери месяц для отчёта.</p>
+      )}
       <div className={styles.monthToolbar}>
         <div className={styles.field}>
           <label htmlFor="files-export-month">Месяц отчёта</label>
@@ -212,8 +218,11 @@ function MonthExportState({
             className={styles.monthSelect}
             id="files-export-month"
             onChange={(event) => selectMonth(event.currentTarget.value)}
-            value={selectedMonth.id}
+            value={selectedMonth?.id ?? ""}
           >
+            <option disabled value="">
+              Выбери месяц
+            </option>
             {(monthsQuery.data ?? []).map((month) => (
               <option key={month.id} value={month.id}>
                 {formatMonth(month.year, month.month)} ·{" "}
@@ -222,7 +231,6 @@ function MonthExportState({
             ))}
           </select>
         </div>
-        <span className={styles.muted}>Только чтение · существующие операции без изменений</span>
       </div>
       {downloadError ? (
         <div className={styles.error} role="alert">
@@ -237,7 +245,7 @@ function MonthExportState({
       <div className={styles.buttonRow}>
         <button
           className={styles.primaryButton}
-          disabled={downloadKind !== null}
+          disabled={downloadKind !== null || selectedMonth === null}
           onClick={() => onDownload("markdown")}
           type="button"
         >
@@ -245,7 +253,7 @@ function MonthExportState({
         </button>
         <button
           className={styles.secondaryButton}
-          disabled={downloadKind !== null}
+          disabled={downloadKind !== null || selectedMonth === null}
           onClick={() => onDownload("json")}
           type="button"
         >
@@ -271,6 +279,10 @@ export default function UiV2DataFilesPage() {
   const [restoreErrorKind, setRestoreErrorKind] = useState<RestoreErrorKind | null>(null);
   const [restoreSuccess, setRestoreSuccess] = useState<string | null>(null);
   const [preRestoreEvidence, setPreRestoreEvidence] = useState<BackupMetadata | null>(null);
+  const restoreTriggerRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (restoreCandidate === null) restoreTriggerRef.current?.focus();
+  }, [restoreCandidate]);
   const mutationInFlightRef = useRef<"create" | "restore" | null>(null);
 
   const monthsQuery = useQuery({
@@ -282,7 +294,14 @@ export default function UiV2DataFilesPage() {
     queryFn: ({ signal }) => listBackups(signal),
   });
   const months = useMemo(() => sortReportingMonths(monthsQuery.data ?? []), [monthsQuery.data]);
-  const resolution = resolveDataMonth(params.getAll("month"), months, isQueryReady(monthsQuery));
+  const monthParams = params.getAll("month");
+  const closedMonth = latestClosedMonth(months);
+  const resolution: ExportMonthResolution =
+    isQueryReady(monthsQuery) && monthParams.length === 0 && months.length > 0
+      ? closedMonth
+        ? { kind: "ready", month: closedMonth, automatic: true }
+        : { kind: "no-closed" }
+      : resolveDataMonth(monthParams, months, isQueryReady(monthsQuery));
   const selectedMonth = resolution.kind === "ready" ? resolution.month : null;
 
   async function downloadMonth(format: MonthExportFormat) {
@@ -421,7 +440,10 @@ export default function UiV2DataFilesPage() {
     }
   }
 
-  const backupList = backupsQuery.data ?? [];
+  const backupList = [...(backupsQuery.data ?? [])].sort(
+    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+  );
+  const noBackups = isQueryReady(backupsQuery) && backupList.length === 0;
   const filesBusy = !isQueryReady(monthsQuery) || !isQueryReady(backupsQuery);
 
   return (
@@ -429,150 +451,42 @@ export default function UiV2DataFilesPage() {
       active="files"
       busy={filesBusy}
       monthId={selectedMonth?.id}
-      subtitle="Локальные выгрузки для ручной передачи и отдельный контур резервных копий базы."
-      title="Файлы"
+      subtitle="Сохрани копию базы или скачай отчёт."
+      title="Экспорт и копии"
     >
       <div className={styles.surfaceStack} data-testid="data-files-page">
-        <MyBrokerImportPanel />
-        <section
-          aria-labelledby="files-exports-title"
-          className={styles.surface}
-          data-testid="files-exports"
-        >
-          <header className={styles.surfaceHeader}>
-            <div>
-              <p className={styles.kicker}>Читать и скачать</p>
-              <h2 id="files-exports-title">Экспорт</h2>
-              <p>Все действия ниже только создают локальный файл и не изменяют учёт.</p>
-            </div>
-            <span className={styles.modeBadge}>Только чтение</span>
-          </header>
-
-          <div className={styles.cardGrid}>
-            <article className={`${styles.card} ${styles.cardRecommended}`}>
-              <div className={styles.badgeRow}>
-                <span className={styles.recommendationBadge}>Рекомендуемый для AI-анализа</span>
-              </div>
-              <h3>Полный финансовый отчёт для AI</h3>
-              <p>
-                Ежемесячный файл с капиталом, портфелем, динамикой, пассивным доходом, целями,
-                долгами, недвижимостью, будущими выплатами, сигналами качества и комментариями.
-              </p>
-              <div className={styles.warning} role="note">
-                <strong>Внимание:</strong> файл содержит финансовые данные. Hermes создаёт его
-                только локально — ничего не загружается и не отправляется автоматически.
-              </div>
-              <div className={styles.buttonRow}>
-                <button
-                  className={styles.primaryButton}
-                  disabled={downloadKind !== null}
-                  onClick={() => void downloadAiReview()}
-                  type="button"
-                >
-                  {downloadKind === "ai-review" ? "Готовим отчёт…" : "Выгрузить отчёт для AI"}
-                </button>
-              </div>
-            </article>
-
-            <article className={styles.card} data-testid="month-exports">
-              <div className={styles.badgeRow}>
-                <span className={styles.modeBadge}>Только чтение</span>
-              </div>
-              <h3>Отчёты по месяцу</h3>
-              <p>
-                Скачай существующие Markdown или JSON отчёты для явно выбранного отчётного месяца.
-              </p>
-              <MonthExportState
-                downloadError={downloadError}
-                downloadKind={downloadKind}
-                downloadSuccess={downloadSuccess}
-                monthsQuery={monthsQuery}
-                onDownload={(format) => void downloadMonth(format)}
-                params={params}
-                resolution={resolution}
-                selectedMonth={selectedMonth}
-                setParams={setParams}
-              />
-            </article>
-          </div>
-
-          <details className={styles.technicalDisclosure}>
-            <summary>Дополнительные / технические выгрузки</summary>
-            <div className={styles.technicalContent}>
-              <section className={styles.technicalCard}>
-                <p className={styles.kicker}>Дополнительный технический раздел</p>
-                <h3>Пакет для AI-анализа</h3>
-                <p>
-                  Полная доступная история и коды причин для проверки AI-контракта. Это локальный
-                  файл; перед ручной передачей проверь его состав.
-                </p>
-                <div className={styles.buttonRow}>
-                  <button
-                    className={styles.primaryButton}
-                    disabled={downloadKind !== null}
-                    onClick={() => void downloadBundle("json")}
-                    type="button"
-                  >
-                    {downloadKind === "bundle-json"
-                      ? "Готовим JSON…"
-                      : "Скачать пакет анализа (JSON)"}
-                  </button>
-                  <button
-                    className={styles.secondaryButton}
-                    disabled={downloadKind !== null}
-                    onClick={() => void downloadBundle("markdown")}
-                    type="button"
-                  >
-                    {downloadKind === "bundle-markdown"
-                      ? "Готовим Markdown…"
-                      : "Скачать Markdown-компаньон"}
-                  </button>
-                </div>
-              </section>
-              <PortfolioReviewPackagePanel />
-            </div>
-          </details>
-        </section>
-
         <section
           aria-labelledby="files-backups-title"
-          className={`${styles.surface} ${styles.surfaceMutating}`}
+          className={`${styles.surface} ${noBackups ? styles.backupWarning : ""}`}
           data-testid="files-backups"
         >
           <header className={styles.surfaceHeader}>
             <div>
-              <p className={styles.kicker}>Изменить локальную базу</p>
-              <h2 id="files-backups-title">Резервные копии и восстановление</h2>
-              <p>
-                Создание копии и восстановление используют существующие операции резервного
-                копирования.
-              </p>
+              <h2 id="files-backups-title">Резервная копия</h2>
+              {noBackups ? (
+                <p data-testid="files-no-backups">
+                  Резервных копий пока нет. Создай первую, чтобы сохранить данные.
+                </p>
+              ) : isQueryReady(backupsQuery) && backupList[0] ? (
+                <p className={styles.latestBackup}>
+                  Последняя —{" "}
+                  <time dateTime={backupList[0].created_at}>
+                    {formatDate(backupList[0].created_at)}
+                  </time>
+                </p>
+              ) : null}
             </div>
             <div className={styles.backupHeaderAction}>
-              <span className={`${styles.modeBadge} ${styles.modeBadgeMutating}`}>
-                Изменяет данные
-              </span>
               <button
-                className={styles.secondaryButton}
+                className={noBackups ? styles.primaryButton : styles.secondaryButton}
                 disabled={creatingBackup || restoringBackupId !== null}
                 onClick={() => void handleCreateBackup()}
                 type="button"
               >
-                {creatingBackup ? "Создаём резервную копию…" : "Создать резервную копию"}
+                {creatingBackup ? "Создаём резервную копию…" : "Создать копию"}
               </button>
             </div>
           </header>
-
-          <div className={styles.irreversibleGate} role="note">
-            <span className={styles.irreversibleBadge}>Необратимо</span>
-            <div>
-              <strong>Восстановление заменяет текущую локальную базу.</strong>
-              <p>
-                Нажми «Восстановить» рядом с выбранным именем, затем подтверди копию в отдельном
-                диалоге. Система сохранит копию текущей базы перед заменой и покажет подтверждение.
-              </p>
-            </div>
-          </div>
 
           {backupError ? (
             <div className={styles.error} role="alert">
@@ -607,46 +521,157 @@ export default function UiV2DataFilesPage() {
             </UiV2Notice>
           ) : !isQueryReady(backupsQuery) ? (
             <UiV2Loading label="Загружаем список резервных копий…" />
-          ) : backupList.length === 0 ? (
-            <div className={styles.empty} data-testid="files-no-backups">
-              <strong>Резервных копий пока нет</strong>
-              Создай первую локальную копию кнопкой выше. Восстановление недоступно без конкретной
-              копии.
-            </div>
-          ) : (
-            <div className={styles.backupList}>
-              {backupList.map((backup) => (
-                <article className={styles.backupItem} key={backup.id}>
-                  <div>
-                    <p className={styles.kicker}>Локальная копия</p>
-                    <p className={styles.backupName}>{backup.name}</p>
-                    <BackupMetadataList backup={backup} />
-                  </div>
+          ) : backupList.length === 0 ? null : (
+            <table className={styles.backupTable} aria-label="Резервные копии">
+              <thead>
+                <tr>
+                  <th scope="col">Создана</th>
+                  <th scope="col">Копия</th>
+                  <th scope="col" className={styles.size}>
+                    Размер
+                  </th>
+                  <th scope="col">
+                    <span className={styles.muted}>Действия</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {backupList.map((backup) => (
+                  <tr key={backup.id}>
+                    <td>
+                      <time dateTime={backup.created_at}>{formatDate(backup.created_at)}</time>
+                    </td>
+                    <td
+                      className={styles.backupName}
+                      title={`Исходная база: ${backup.source_database.name}`}
+                    >
+                      {backup.name}
+                    </td>
+                    <td className={styles.size}>{backup.size_bytes} Б</td>
+                    <td
+                      onFocusCapture={(event) => {
+                        if (
+                          event.target instanceof HTMLButtonElement &&
+                          event.target.getAttribute("aria-haspopup") === "menu"
+                        ) {
+                          restoreTriggerRef.current = event.target;
+                        }
+                      }}
+                    >
+                      <OverflowMenu label={`Действия с копией ${backup.name}`}>
+                        <OverflowMenuItem
+                          danger
+                          aria-label={`Восстановить резервную копию ${backup.name}`}
+                          disabled={creatingBackup || restoringBackupId !== null}
+                          onClick={() => {
+                            if (
+                              mutationInFlightRef.current !== null ||
+                              creatingBackup ||
+                              restoringBackupId !== null
+                            ) {
+                              return;
+                            }
+                            setRestoreError(null);
+                            setRestoreErrorKind(null);
+                            setRestoreSuccess(null);
+                            setRestoreCandidate(backup);
+                          }}
+                        >
+                          Восстановить…
+                        </OverflowMenuItem>
+                      </OverflowMenu>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        <section
+          aria-labelledby="files-exports-title"
+          className={styles.surface}
+          data-testid="files-exports"
+        >
+          <div className={styles.cardGrid}>
+            <article className={`${styles.card} ${styles.cardRecommended}`}>
+              <h2 id="files-exports-title">Отчёт для AI</h2>
+              <p>
+                Ежемесячный файл с капиталом, портфелем, динамикой, пассивным доходом, целями,
+                долгами, недвижимостью, будущими выплатами, сигналами качества и комментариями.
+              </p>
+              <div className={styles.warning} role="note">
+                <strong>Внимание:</strong> файл содержит финансовые данные. Hermes создаёт его
+                только локально — ничего не загружается и не отправляется автоматически.
+              </div>
+              <div className={styles.buttonRow}>
+                <button
+                  className={styles.primaryButton}
+                  disabled={downloadKind !== null}
+                  onClick={() => void downloadAiReview()}
+                  type="button"
+                >
+                  {downloadKind === "ai-review" ? "Готовим отчёт…" : "Выгрузить отчёт для AI"}
+                </button>
+              </div>
+            </article>
+
+            <article className={styles.card} data-testid="month-exports">
+              <h2>Отчёт одного месяца</h2>
+              <p>
+                Скачай существующие Markdown или JSON отчёты для явно выбранного отчётного месяца.
+              </p>
+              <MonthExportState
+                downloadError={downloadError}
+                downloadKind={downloadKind}
+                downloadSuccess={downloadSuccess}
+                monthsQuery={monthsQuery}
+                onDownload={(format) => void downloadMonth(format)}
+                params={params}
+                resolution={resolution}
+                selectedMonth={selectedMonth}
+                setParams={setParams}
+              />
+            </article>
+          </div>
+
+          <details className={styles.technicalDisclosure}>
+            <summary>Технические выгрузки</summary>
+            <div className={styles.technicalContent}>
+              <section className={styles.technicalCard}>
+                <p className={styles.kicker}>Дополнительный технический раздел</p>
+                <h3>Пакет для AI-анализа</h3>
+                <p>
+                  Полная доступная история и коды причин для проверки AI-контракта. Это локальный
+                  файл; перед ручной передачей проверь его состав.
+                </p>
+                <div className={styles.buttonRow}>
                   <button
-                    aria-label={`Восстановить резервную копию ${backup.name}`}
-                    className={styles.dangerButton}
-                    disabled={creatingBackup || restoringBackupId !== null}
-                    onClick={() => {
-                      if (
-                        mutationInFlightRef.current !== null ||
-                        creatingBackup ||
-                        restoringBackupId !== null
-                      ) {
-                        return;
-                      }
-                      setRestoreError(null);
-                      setRestoreErrorKind(null);
-                      setRestoreSuccess(null);
-                      setRestoreCandidate(backup);
-                    }}
+                    className={styles.primaryButton}
+                    disabled={downloadKind !== null}
+                    onClick={() => void downloadBundle("json")}
                     type="button"
                   >
-                    Восстановить
+                    {downloadKind === "bundle-json"
+                      ? "Готовим JSON…"
+                      : "Скачать пакет анализа (JSON)"}
                   </button>
-                </article>
-              ))}
+                  <button
+                    className={styles.secondaryButton}
+                    disabled={downloadKind !== null}
+                    onClick={() => void downloadBundle("markdown")}
+                    type="button"
+                  >
+                    {downloadKind === "bundle-markdown"
+                      ? "Готовим Markdown…"
+                      : "Скачать Markdown-компаньон"}
+                  </button>
+                </div>
+              </section>
+              <PortfolioReviewPackagePanel />
+              <MyBrokerImportPanel />
             </div>
-          )}
+          </details>
         </section>
       </div>
 
@@ -656,7 +681,7 @@ export default function UiV2DataFilesPage() {
         description={
           restoreCandidate === null
             ? ""
-            : `Выбрана копия: ${restoreCandidate.name}. Текущая локальная база будет заменена этой копией. Это необратимое действие; перед заменой система сохранит копию текущей базы.`
+            : `Выбрана копия: ${restoreCandidate.name}. Текущая локальная база будет заменена этой копией. Все изменения, внесённые после создания выбранной копии, будут потеряны. Это необратимое действие; перед заменой система сохранит копию текущей базы.`
         }
         onCancel={() => {
           if (restoringBackupId === null) setRestoreCandidate(null);

@@ -17,6 +17,10 @@ import {
 import { UiV2ErrorBoundary, UiV2LoadingFallback } from "./UiV2Entry";
 import UiV2Page from "./UiV2Page";
 import { shortWholeRub } from "./UiV2HomeCharts";
+import { overallFixture } from "./returns/overallFixtures";
+import { m } from "./returns/fixtures";
+import { brokerageResult } from "./returns/dashboard";
+import { displayWhole } from "./returns/model";
 
 function LocationProbe() {
   const location = useLocation();
@@ -33,6 +37,9 @@ function setup(path = "/v2") {
     passive: makeUiV2PassiveHistory(),
     goals: makeUiV2Goals(),
     workflow: makeUiV2Workflow(),
+    overall: overallFixture(),
+    returnsWait: null as Promise<void> | null,
+    returnsError: false,
     monthsError: false,
     comparisonError: false,
     comparisonWait: null as Promise<void> | null,
@@ -53,6 +60,11 @@ function setup(path = "/v2") {
       if (url.pathname === "/api/months") {
         data = state.months;
         failed = state.monthsError;
+      } else if (url.pathname === "/api/returns/overall") {
+        expect(url.searchParams.get("include_instrument_summaries")).toBe("true");
+        await state.returnsWait;
+        data = state.overall;
+        failed = state.returnsError;
       } else if (url.pathname === "/api/accounts") {
         data = uiV2Accounts;
       } else if (url.pathname === "/api/analytics/closed-report-comparison") {
@@ -101,10 +113,116 @@ function setup(path = "/v2") {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+    setTimeout(() => callback(0), 0),
+  );
+  vi.stubGlobal("cancelAnimationFrame", clearTimeout);
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
     value: vi.fn(),
   });
+});
+
+it("defers Returns until main widgets settle and keeps capital visible during the slow read", async () => {
+  const { mount, reads, state } = setup();
+  let finishMain = () => {};
+  let finishReturns = () => {};
+  state.comparisonWait = new Promise<void>((resolve) => {
+    finishMain = resolve;
+  });
+  state.returnsWait = new Promise<void>((resolve) => {
+    finishReturns = resolve;
+  });
+  mount();
+  await screen.findByTestId("v2-passive-actual");
+  expect(reads.some((read) => read.includes("/returns/overall"))).toBe(false);
+  await act(async () => finishMain());
+  expect(await screen.findByTestId("v2-capital")).toBeVisible();
+  await waitFor(() => expect(reads.some((read) => read.includes("/returns/overall"))).toBe(true));
+  expect(screen.getByText("Загружаем доходность бумаг")).toBeInTheDocument();
+  await act(async () => finishReturns());
+  expect(await screen.findByTestId("v2-home-returns-total")).toHaveTextContent(
+    displayWhole(brokerageResult(state.overall, "all").amount, true),
+  );
+  expect(reads.some((read) => /forecast|payout-calendar/.test(read))).toBe(false);
+});
+
+it("ranks three results on each side by instrument, preserves zero/unknown/partial and shares the Returns cache", async () => {
+  const { mount, client, state, reads } = setup();
+  const template = state.overall.instruments[1];
+  state.overall.instruments = [
+    "4000",
+    "3000",
+    "2000",
+    "1000",
+    "-4000",
+    "-3000",
+    "-2000",
+    "-1000",
+    "0",
+    null,
+    "90000",
+  ].map((value, index) => ({
+    ...template,
+    isin: `SYNTH${index}`,
+    name: `Учебная бумага ${index}`,
+    accounts: [
+      {
+        ...template.accounts[0],
+        pnl: { ...m(value), reason_codes: index === 10 ? ["clean_partial_result"] : [] },
+        account_link: {
+          status: "linked",
+          financial_account_id: 3,
+          account_type: "brokerage",
+          source_account_id: "SYNTHETIC-PRIVATE-ID",
+          label: "Учебный счёт",
+          reason_codes: [],
+        },
+      },
+    ],
+  }));
+  state.overall.source_accounts[0].account_link =
+    state.overall.instruments[0].accounts[0].account_link;
+  client.setQueryData(["returns", "overall", "summaries"], state.overall);
+  mount();
+  const panel = await screen.findByRole("region", { name: "Доходность бумаг" });
+  expect(
+    await within(panel).findByText(/в плюсе 4 · в минусе 4 · без итога 2 · без изменения 1/),
+  ).toBeVisible();
+  const chart = within(panel).getByRole("list");
+  expect(within(chart).getAllByRole("listitem")).toHaveLength(6);
+  expect(
+    within(chart)
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toEqual(
+    [0, 1, 2, 4, 5, 6].map((index) => `Учебная бумага ${index}Синтетический брокерский счёт`),
+  );
+  expect(chart).not.toHaveTextContent("SYNTHETIC-PRIVATE-ID");
+  expect(within(panel).getByRole("link", { name: "Все бумаги →" })).toHaveAttribute(
+    "href",
+    "/v2/returns",
+  );
+  expect(reads.some((read) => read.includes("/returns/overall"))).toBe(false);
+});
+
+it("keeps Returns failure local, retries and hides cached success after invalidation or failure", async () => {
+  const { mount, client, state } = setup();
+  state.returnsError = true;
+  mount();
+  const panel = await screen.findByRole("region", { name: "Доходность бумаг" });
+  await within(panel).findByText("Доходность временно недоступна.");
+  expect(screen.getByTestId("v2-capital")).toBeVisible();
+  expect(within(panel).queryByRole("alert")).toBeNull();
+  state.returnsError = false;
+  fireEvent.click(within(panel).getByRole("button", { name: "Повторить" }));
+  await screen.findByTestId("v2-home-returns-total");
+  state.returnsWait = new Promise<void>(() => {});
+  act(() => {
+    void client.invalidateQueries({ queryKey: ["returns", "overall"] });
+  });
+  await waitFor(() => expect(screen.queryByTestId("v2-home-returns-total")).toBeNull());
+  expect(screen.getByTestId("v2-capital")).toBeVisible();
 });
 
 afterEach(() => {
