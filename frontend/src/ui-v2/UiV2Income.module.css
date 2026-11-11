@@ -74,6 +74,7 @@
 
 .timeline {
   display: grid;
+  container-type: inline-size;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -450,5 +451,41 @@
   .factLayout {
     grid-template-columns: minmax(0, 1fr);
     gap: 18px;
+  }
+}
+.depositForecast {
+  display: block;
+  margin-bottom: 18px;
+}
+.depositForecast > summary {
+  cursor: pointer;
+  font-weight: var(--w-semibold);
+  font-size: var(--t-md);
+}
+.depositForecast[open] > summary {
+  margin-bottom: 12px;
+}
+.planTable {
+  table-layout: fixed;
+}
+.planTable tbody th {
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 520px) {
+  .event {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 4px 14px;
+  }
+
+  .eventWhen {
+    grid-row: 1 / span 2;
+    flex-wrap: wrap;
+  }
+
+  .eventAmount {
+    grid-column: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }

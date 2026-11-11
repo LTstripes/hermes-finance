@@ -30,7 +30,7 @@ import { ClosedReportTitle } from "./ClosedReportTitle";
 import { IncomeFactBars } from "./IncomeFactBars";
 import { sortReportingMonths } from "./monthSelection";
 import sheet from "./ReportSheet.module.css";
-import { uiV2TaxIisPath } from "./taxIisRoute";
+import { IncomeTabs } from "./IncomeTabs";
 import incomeStyles from "./UiV2Income.module.css";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
@@ -204,22 +204,23 @@ function Headlines({
               data-testid="income-upcoming-passive"
               title={money(upcoming.forecast_passive_income ?? upcoming.passive_income)}
             >
-              {whole(upcoming.forecast_passive_income ?? upcoming.passive_income)}
+              ≈ {whole(upcoming.forecast_passive_income ?? upcoming.passive_income)}
             </span>
-            <span className={sheet.figureLabel}>ожидается за 30 дней</span>
+            <span className={sheet.figureLabel}>Ждём за 30 дней</span>
             <span className={sheet.figureDetail}>
-              {PRINCIPAL_REPAYMENT_LABEL}: {money(upcoming.redemption_principal)} · не доход
-              {Boolean(upcoming.deposit_estimates?.some((row) => row.included_in_forecast)) && (
+              выплаты {whole(upcoming.passive_income)} + вклады ≈
+              {whole(upcoming.deposit_interest_estimate)}
+              {!isZeroMoney(upcoming.redemption_principal) ? (
                 <>
                   <br />
-                  Включая расчётные проценты по вкладам: {money(upcoming.deposit_interest_estimate)}
+                  {PRINCIPAL_REPAYMENT_LABEL}: {whole(upcoming.redemption_principal)} · не доход
                 </>
-              )}
+              ) : null}
             </span>
           </>
         ) : (
           <>
-            <span className={sheet.figureLabel}>Ожидается за 30 дней</span>
+            <span className={sheet.figureLabel}>Ждём за 30 дней</span>
             <UiV2WidgetState retry={retryLadder} />
           </>
         )}
@@ -265,13 +266,17 @@ function SourceBreakdown({ report }: { report: PassiveIncomeSelectedReport }) {
           <li data-zero={isZeroMoney(part.amount) || undefined} key={part.key}>
             <i aria-hidden="true" className={sheet.dot} style={{ background: part.color }} />
             <span>{part.label}</span>
-            <strong className={sheet.amount}>{money(part.amount)}</strong>
+            <strong className={sheet.amount} title={money(part.amount)}>
+              {whole(part.amount)}
+            </strong>
           </li>
         ))}
         <li className={incomeStyles.sourceTotal}>
           <i aria-hidden="true" />
           <span>Всего чистого пассивного дохода</span>
-          <strong className={sheet.amount}>{money(report.passive_income_actual)}</strong>
+          <strong className={sheet.amount} title={money(report.passive_income_actual)}>
+            {whole(report.passive_income_actual)}
+          </strong>
         </li>
       </ul>
     </div>
@@ -368,6 +373,7 @@ function PassiveSection({
         retryLadder={retryLadder}
         selected={selected}
       />
+      {ladderReady && ladder ? <DepositEstimates upcoming={ladder.upcoming_30_days} /> : null}
       {!historyReady ? null : points.length === 0 ? (
         <UiV2WidgetState title="История появится после закрытия первого отчёта" />
       ) : (
@@ -423,39 +429,25 @@ function EventRow({ event, showSource }: { event: CashFlowLadderEvent; showSourc
           {showSource ? ` · ${ownerSourceLabel(event.source_kind)}` : ""}
         </small>
       </span>
-      <strong className={incomeStyles.eventAmount} data-principal={principal || undefined}>
+      <strong
+        className={incomeStyles.eventAmount}
+        data-principal={principal || undefined}
+        title={money(event.expected_net_amount)}
+      >
         {event.is_approximate ? (
           <abbr className={incomeStyles.approx} title="оценка">
             ≈{" "}
           </abbr>
         ) : null}
-        {money(event.expected_net_amount)}
+        {whole(event.expected_net_amount)}
         {principal ? " · не доход" : ""}
       </strong>
     </li>
   );
 }
 
-/** Where the dated events come from and whether any is an estimate, said once. */
 function sourceLabels(events: CashFlowLadderEvent[]): string[] {
   return Array.from(new Set(events.map((event) => ownerSourceLabel(event.source_kind))));
-}
-
-/**
- * One source for the whole list is named once below it; with mixed sources
- * each row names its own and only the estimate mark stays here.
- */
-function EventSources({ events }: { events: CashFlowLadderEvent[] }) {
-  if (events.length === 0) return null;
-  const sources = sourceLabels(events);
-  const approximate = events.some((event) => event.is_approximate);
-  if (sources.length > 1 && !approximate) return null;
-  return (
-    <p className={sheet.gapNote}>
-      {sources.length > 1 ? "≈ — оценка" : `Источник: ${sources[0]}`}
-      {sources.length === 1 && approximate ? " · ≈ — оценка" : ""}
-    </p>
-  );
 }
 
 function EventList({ events }: { events: CashFlowLadderEvent[] }) {
@@ -480,28 +472,11 @@ function WindowSummary({ window: selected }: { window: UpcomingEventsWindow }) {
   return (
     <div className={incomeStyles.windowSummary} data-testid={`income-window-${selected.days}`}>
       <p className={incomeStyles.windowTotals}>
-        <span>
-          <strong className={sheet.amount}>{money(selected.passive_income)}</strong> пассивно
-        </span>
-        {isZeroMoney(selected.redemption_principal) ? null : (
-          <span>
-            {PRINCIPAL_REPAYMENT_LABEL}{" "}
-            <strong className={sheet.amount} data-principal>
-              {money(selected.redemption_principal)}
-            </strong>{" "}
-            · не доход
-          </span>
-        )}
-        <span>
-          Всего поступлений{" "}
-          <strong className={sheet.amount}>{money(selected.total_cash_flow)}</strong>
-        </span>
         <span className={sheet.muted}>
           {formatDate(selected.from_date)}–{formatDate(selected.to_date)}
         </span>
       </p>
       <EventList events={selected.items} />
-      <EventSources events={selected.items} />
     </div>
   );
 }
@@ -545,7 +520,6 @@ function LadderMonth({ month, max }: { month: CashFlowLadderMonth; max: number }
               : ` · ${PRINCIPAL_REPAYMENT_LABEL.toLowerCase()} ${money(month.redemption_principal)} не доход`}
           </p>
           <EventList events={month.items} />
-          <EventSources events={month.items} />
         </div>
       </details>
     </li>
@@ -553,17 +527,18 @@ function LadderMonth({ month, max }: { month: CashFlowLadderMonth; max: number }
 }
 
 function DepositEstimates({ upcoming }: { upcoming: UpcomingEventsWindow }) {
-  if (!upcoming.deposit_estimates?.length) return null;
+  const rows = upcoming.deposit_estimates?.filter((row) => !isZeroMoney(row.amount)) ?? [];
+  if (!rows.length) return null;
   return (
-    <section aria-label="Ожидаемые проценты по вкладам" className={incomeStyles.depositForecast}>
-      <h3>
+    <details aria-label="Ожидаемые проценты по вкладам" className={incomeStyles.depositForecast}>
+      <summary>
         Проценты по вкладам · 30 дней
         <HelpTip label="Как рассчитаны проценты по вкладам">
           Период до конечной даты, не включая её. Остаток × годовая ставка × дни / число дней в
           году, при неизменных остатке и ставке, без капитализации и вычета налога. Для счетов с
           датированными процентами за этот период учитываются только эти выплаты.
         </HelpTip>
-      </h3>
+      </summary>
       <p className={sheet.muted}>
         Расчётная сумма за {formatDate(upcoming.from_date)}–{formatDate(upcoming.to_date)}; дата
         выплаты неизвестна. Включённые оценки уже учтены в общем прогнозе.
@@ -576,10 +551,11 @@ function DepositEstimates({ upcoming }: { upcoming: UpcomingEventsWindow }) {
           </tr>
         </thead>
         <tbody>
-          {upcoming.deposit_estimates.map((row) => (
+          {rows.map((row) => (
             <tr key={row.deposit_id}>
               <td>
-                {row.name} · {row.account_name}
+                {row.name}
+                {row.account_name !== row.name ? ` · ${row.account_name}` : ""}
                 {!row.included_in_forecast && (
                   <small>
                     {" "}
@@ -587,12 +563,14 @@ function DepositEstimates({ upcoming }: { upcoming: UpcomingEventsWindow }) {
                   </small>
                 )}
               </td>
-              <td className={sheet.amount}>{money(row.amount)}</td>
+              <td className={sheet.amount} title={money(row.amount)}>
+                {whole(row.amount)}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-    </section>
+    </details>
   );
 }
 
@@ -653,7 +631,6 @@ function LadderSection({
               </ul>
             )}
           </div>
-          <DepositEstimates upcoming={ladder.upcoming_30_days} />
           {ladder.warnings.length > 0 ? (
             <ul className={incomeStyles.warningList}>
               {ladder.warnings.map((warning) => (
@@ -772,6 +749,7 @@ function PlanSection({
   retryCoverage,
   retryBudget,
   retrySavings,
+  monthId,
 }: {
   coverage: IncomePlanCoverage | undefined;
   coverageReady: boolean;
@@ -783,6 +761,7 @@ function PlanSection({
   retryCoverage: () => void;
   retryBudget: () => void;
   retrySavings: () => void;
+  monthId: number;
 }) {
   return (
     <Section
@@ -799,58 +778,44 @@ function PlanSection({
         <Coverage coverage={coverage} />
       )}
       <div className={incomeStyles.planBlock}>
-        <h3>План и факт расходов</h3>
         {!budgetReady ? (
           <UiV2WidgetState retry={retryBudget} />
-        ) : budget.length === 0 ? (
-          <p className={sheet.muted}>План расходов не задан.</p>
+        ) : !budget.some((row) => row.planned !== null) ? (
+          <Link to={`/v2/close?month=${monthId}&panel=budget`}>Статьи расходов — в месяце</Link>
         ) : (
           <PlanTable rows={budget} />
         )}
       </div>
-      <div className={incomeStyles.planBlock}>
-        <h3>Накопления</h3>
-        {!savingsReady ? (
-          <UiV2WidgetState retry={retrySavings} />
-        ) : savings.length === 0 ? (
-          <p className={sheet.muted}>Накопления не заданы.</p>
-        ) : (
-          <ul className={incomeStyles.savingList}>
-            {savings.map((saving) => (
-              <li key={saving.id}>
-                <span>{saving.destination}</span>
-                <strong className={sheet.amount}>{money(saving.amount)}</strong>
-              </li>
-            ))}
-            {savingTotal?.breakdown.saving_allocations ? (
-              <li className={incomeStyles.savingTotal}>
-                <span>Всего за месяц</span>
-                <strong className={sheet.amount}>
-                  {money(savingTotal.breakdown.saving_allocations)}
-                </strong>
-              </li>
-            ) : null}
-          </ul>
-        )}
-      </div>
+      {savingsReady &&
+      savings.every((row) => isZeroMoney(row.amount)) &&
+      isZeroMoney(savingTotal?.breakdown.saving_allocations) ? null : (
+        <div className={incomeStyles.planBlock}>
+          <h3>Накопления</h3>
+          {!savingsReady ? (
+            <UiV2WidgetState retry={retrySavings} />
+          ) : savings.length === 0 ? (
+            <p className={sheet.muted}>Накопления не заданы.</p>
+          ) : (
+            <ul className={incomeStyles.savingList}>
+              {savings.map((saving) => (
+                <li key={saving.id}>
+                  <span>{saving.destination}</span>
+                  <strong className={sheet.amount}>{money(saving.amount)}</strong>
+                </li>
+              ))}
+              {savingTotal?.breakdown.saving_allocations ? (
+                <li className={incomeStyles.savingTotal}>
+                  <span>Всего за месяц</span>
+                  <strong className={sheet.amount}>
+                    {money(savingTotal.breakdown.saving_allocations)}
+                  </strong>
+                </li>
+              ) : null}
+            </ul>
+          )}
+        </div>
+      )}
     </Section>
-  );
-}
-
-function Handoffs({ taxIisPath }: { taxIisPath: string }) {
-  return (
-    <nav
-      aria-label="Дополнительные разделы"
-      className={sheet.footerLinks}
-      data-testid="income-handoffs-panel"
-    >
-      <span className={sheet.muted}>Ещё по доходу:</span>
-      <span>
-        <Link to={taxIisPath}>Налоги и ИИС →</Link>{" "}
-        <span className={sheet.muted}>НДФЛ и ИИС по выбранному отчётному срезу.</span>
-      </span>
-      <Link to="/v2/income/scenario-lab">Сценарии →</Link>
-    </nav>
   );
 }
 
@@ -871,7 +836,6 @@ export default function UiV2IncomePage() {
   const planningId = latestClosed?.id ?? null;
   const factSelection = resolveFactSelection(params.getAll("month"), closedMonths);
   const factId = factSelection.month?.id ?? null;
-  const taxIisPath = uiV2TaxIisPath(params, planningId);
 
   const summaryQuery = useQuery({
     enabled: planningId !== null,
@@ -979,6 +943,7 @@ export default function UiV2IncomePage() {
             retry={() => void ladderQuery.refetch()}
           />
           <PlanSection
+            monthId={planningId as number}
             budget={budgetReady ? (budgetQuery.data ?? []) : []}
             budgetReady={budgetReady}
             coverage={summary?.coverage}
@@ -991,7 +956,6 @@ export default function UiV2IncomePage() {
             savingsReady={savingsReady}
           />
         </div>
-        <Handoffs taxIisPath={taxIisPath} />
       </div>
     );
   }
@@ -1020,6 +984,7 @@ export default function UiV2IncomePage() {
         </>
       }
     >
+      <IncomeTabs active="overview" monthId={factId ?? planningId} />
       {content}
     </UiV2Shell>
   );

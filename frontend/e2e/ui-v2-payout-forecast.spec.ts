@@ -17,6 +17,41 @@ const payoutPosition = {
   quantity: "10",
 };
 
+test("ui-v2 Payouts fit desktop widths, zoom and 720px tables @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  await installPayoutApi(page);
+  await page.goto("/v2/data/payouts?month=12");
+  const main = page.getByRole("region", { name: "Основной прогноз" });
+  await expect(main.getByRole("table")).toBeVisible();
+  for (const width of [1024, 1280, 1440, 1920]) {
+    for (const zoom of width === 1024 ? [1] : [1, 1.25]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate((value) => {
+        document.documentElement.style.zoom = String(value);
+      }, zoom);
+      await assertNoPageOverflow(page);
+      const table = main.getByRole("table");
+      expect(
+        await table.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      await main.evaluate((element) => {
+        element.style.maxWidth = "720px";
+      });
+      expect(
+        await table.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+      ).toBe(true);
+      await page.screenshot({
+        path: testInfo.outputPath(`payouts-${width}-${zoom}.png`),
+        fullPage: true,
+      });
+      await main.evaluate((element) => {
+        element.style.maxWidth = "";
+      });
+    }
+  }
+});
+
 function money(amount: string) {
   return { amount, currency: "RUB" };
 }
@@ -352,17 +387,18 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await expect(main.getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
     expect(api.posts).toEqual([]);
     await expect(main.getByRole("button")).toHaveCount(2);
-    await expect(main.getByText("300 ₽", { exact: true })).toBeVisible();
+    await expect(main.locator("dd").first()).toHaveText("≈ 300 ₽");
     await expect(main.locator("dd").nth(1)).toHaveText("1 000 ₽");
     await expect(main).not.toContainText(/t_invest|SYNTHETIC-UID|completed|active/);
-    await expect(main.getByRole("table", { name: "Выплаты по датам" })).toBeVisible();
+    await expect(main.getByRole("table", { name: /Выплаты Сентябрь\s2031/ })).toBeVisible();
     await expect(main.getByText("возврат капитала, не доход")).toBeVisible();
     await expect(page.getByRole("button", { name: "Проверить выплаты T-Invest" })).toHaveCount(0);
     await assertNoPageOverflow(page);
-    const scrollOverflowX = await main
-      .getByRole("region", { name: "Выплаты: прокрутка списка" })
-      .evaluate((element) => getComputedStyle(element).overflowX);
-    expect(scrollOverflowX).toBe("auto");
+    const tableOverflow = await main
+      .getByRole("table", { name: /Выплаты Сентябрь\s2031/ })
+      .evaluate((element) => element.scrollWidth > element.clientWidth + 1);
+    expect(tableOverflow).toBe(false);
+    await expect(main.getByText("Приблизительно", { exact: false })).toHaveCount(1);
     await page.screenshot({
       path: testInfo.outputPath(`${viewport.name}-payout-calendar.png`),
       fullPage: true,

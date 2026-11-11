@@ -30,7 +30,7 @@ recovery before another explicit click. Coupons/dividends and principal repaymen
 are separate, labelled announced/forecast with personal tax/net unknown. Source
 previews and actual payout reconciliation retain their existing authority.
 
-The payout forecast page leads with a 12-month saved-calendar summary: coupon/dividend income and principal repayment are separate, followed by payments ordered by date. **Требует внимания** lists missing mappings, conflicts, incomplete or unavailable forecasts; the last forecast date comes from backend evidence and stays explicitly unknown when absent. Failed reloads retain the previously loaded calendar and its date in the same month/version. The primary actions are **Обновить** (local reread) and **Подробности**; provider preview, explicit selected-row Apply, diagnostics and manual editing live in the one-click disclosure. Payout PDF upload is available in the Month workspace's **Брокерские выписки** file intake. The forecast page also retains the original statement importer in a collapsed **Импорт выписок (старый)** block with `id="statement-import"`; legacy `#statement-import` links expand it automatically. The importer preserves explicit month scope, selected-row Apply and CLOSED protection.
+The payout forecast page leads with a 12-month saved-calendar summary: coupon/dividend income and principal repayment are separate. An amber forecast chart uses the existing calendar month totals, followed by one list of month disclosures with dated payments; the nearest month is expanded. The approximate mark stays on amounts and one shared caveat states the forecast date and unknown personal tax. Without an explicit month, the page selects the latest CLOSED report; invalid explicit month parameters never fall back silently. **Требует внимания** lists missing mappings, conflicts, incomplete or unavailable forecasts; the last forecast date comes from backend evidence and stays explicitly unknown when absent. Failed reloads retain the previously loaded calendar and its date in the same month/version. The primary actions are **Обновить** (local reread) and **Подробности**; provider preview, explicit selected-row Apply, diagnostics and manual editing live in the one-click disclosure. Payout PDF upload is available in the Month workspace's **Брокерские выписки** file intake. The forecast page also retains the original statement importer in a collapsed **Импорт выписок (старый)** block with `id="statement-import"`; legacy `#statement-import` links expand it automatically. The importer preserves explicit month scope, selected-row Apply and CLOSED protection.
 
 Start with the selected reporting month and its snapshot date. Manual facts, full source documents and provider observations have different authority. The supported source flow is: unchanged original → zero-write Preview → explicit identity/mapping review or durable non-economic journal → strict financial DRAFT Apply → ACK → independent GET → readiness review → explicit Close. A journal Save preserves observations and decisions; it creates no financial positions, cash, income, flows or accepted financial receipt.
 
@@ -440,9 +440,16 @@ dedicated destinations are not deleted.
 
 Income and plans leads with closed-month passive income as bars: the selected
 month in accent, the backend average as a line and the passive-income goal as a
-reference line; the selected month's sources follow. Dated payouts form a
-timeline that names their source once; plan and fact keep mandatory rows apart
-from the rest and show an absent plan or fact as a dash. Capital leads with
+reference line; the selected month's sources follow in whole rubles, with exact
+amounts on hover. Overview, payouts, goals, tax/IIS and scenarios share tabs that
+retain the selected month; the payout route remains `/v2/data/payouts` and belongs
+to Income and plans rather than Settings. One 30-day forecast shows the existing
+backend total with dated payments and estimated deposit interest as its composition.
+Deposit estimates stay in a disclosure, with zero rows omitted. Dated payouts form
+a timeline; source labels remain on rows only when sources are mixed. Plan and fact
+keep mandatory rows apart and show a missing value as a dash. Without any planned
+row, expense coverage and a link to the Month budget replace the plan table. Savings
+are omitted only when every row and the authoritative total are known zero. Capital leads with
 liquid capital, its backend change against the previous closed report and the
 composition chart; the monthly bridge is a waterfall of the same backend
 amounts. The page title carries the closed-report chip instead of a separate

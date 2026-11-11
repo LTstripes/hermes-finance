@@ -1,3 +1,4 @@
+import { IncomeTabs } from "./IncomeTabs";
 import {
   useCallback,
   useEffect,
@@ -529,6 +530,7 @@ export function GoalsWorkspace({
           </div>
         }
       >
+        <IncomeTabs active="goals" monthId={selectedMonthIdForView} />
         <div className={v2Styles.content}>
           {toolbar}
           {monthContextNotice}

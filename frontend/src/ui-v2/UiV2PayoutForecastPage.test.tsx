@@ -285,7 +285,7 @@ function show(query: string) {
   );
 }
 
-it("uses the exact month and preserves query/hash in Data navigation", async () => {
+it("uses the exact month and preserves the selected month in income navigation", async () => {
   show("?month=7&from=monthly-close-v2&monthId=7&step=future_payouts&scope=synthetic#target");
   await openDetails();
   expect(getMonth).toHaveBeenCalledWith(7);
@@ -293,9 +293,9 @@ it("uses the exact month and preserves query/hash in Data navigation", async () 
     "href",
     "/v2/close?month=7&step=future_payouts",
   );
-  expect(screen.getByRole("link", { name: /^Экспорт и копии$/ })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: /^Обзор$/ })).toHaveAttribute(
     "href",
-    "/v2/data/files?month=7&from=monthly-close-v2&monthId=7&step=future_payouts&scope=synthetic#target",
+    "/v2/income?month=7",
   );
   // Mixed calendar: passive income and principal stay distinct.
   expect(
@@ -306,13 +306,11 @@ it("uses the exact month and preserves query/hash in Data navigation", async () 
 });
 
 it.each([
-  "",
   "?month=",
   "?month=bad",
   "?month=999",
   "?month=7&month=7",
   "?month=07",
-  "#statement-import",
   "?month=999#statement-import",
 ])("rejects invalid explicit scope %s", async (query) => {
   show(query);
@@ -325,15 +323,19 @@ it.each([
   expect(applyPayouts).not.toHaveBeenCalled();
 });
 
-it("mounts the tool only after the Owner explicitly selects a month", async () => {
-  const user = userEvent.setup();
-  show("?from=monthly-close-v2&monthId=7&step=future_payouts#target");
-  expect(await screen.findByText("Месяц не выбран")).toBeInTheDocument();
-  expect(getMonth).not.toHaveBeenCalled();
-  await user.selectOptions(screen.getByLabelText("Отчётный месяц"), "7");
-  await openDetails();
-  expect(getMonth).toHaveBeenCalledWith(7);
-});
+it.each(["", "#statement-import", "?from=monthly-close-v2&monthId=7&step=future_payouts#target"])(
+  "selects the latest CLOSED month automatically without provider calls %s",
+  async (query) => {
+    show(query);
+    await screen.findByRole("region", { name: "Основной прогноз" });
+    expect(getMonth).toHaveBeenCalledWith(closedMonth.id);
+    expect(screen.getByLabelText("Отчётный месяц")).toHaveValue(String(closedMonth.id));
+    expect(screen.getByRole("navigation", { name: "Разделы дохода и планов" })).toBeVisible();
+    expect(previewPayouts).not.toHaveBeenCalled();
+    expect(previewPayoutsBatch).not.toHaveBeenCalled();
+    expect(applyPayouts).not.toHaveBeenCalled();
+  },
+);
 
 it("does not call the provider on mount; local calendar loads without preview", async () => {
   show("?month=7");
@@ -1336,11 +1338,11 @@ it("keeps the ordinary desktop view to two actions and separates 12-month income
       .getAllByRole("button")
       .map((button) => button.textContent),
   ).toEqual(["Обновить", "Подробности"]);
-  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивиденды300");
-  expect(main).toHaveTextContent("Возврат номинала1 000");
-  expect(main).not.toHaveTextContent("1 300");
+  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивиденды≈ 300");
+  expect(main).toHaveTextContent("Возврат номинала · не доход1 000");
+  expect(within(main).getAllByRole("definition")[0]).not.toHaveTextContent("1 300");
   expect(main).toHaveTextContent("Последний прогноз: 31.08.2026");
-  expect(within(main).getByRole("table", { name: "Выплаты по датам" })).toBeVisible();
+  expect(within(main).getByRole("table", { name: /Выплаты Сентябрь\s2026/ })).toBeVisible();
   expect(within(main).queryByRole("status", { name: "Требует внимания" })).toBeNull();
   expect(main).not.toHaveTextContent(/t_invest|UID-1|K-1|active|completed|v1/);
   expect(screen.queryByRole("button", { name: "Проверить все позиции T-Invest" })).toBeNull();
@@ -1379,15 +1381,13 @@ it.each(["?month=8", "?month=8&from=monthly-close-v2&monthId=8&step=future_payou
     } as CloseReadiness);
 
     show(query);
-    const calendar = await screen.findByRole("region", {
-      name: "Календарь выплат: горизонтальная прокрутка таблицы",
-    });
+    const calendar = await screen.findByRole("region", { name: "Основной прогноз" });
     expect(calendar).toBeVisible();
-    expect(within(calendar).getByText("Полнота неизвестна; известная часть:")).toBeVisible();
+    expect(within(calendar).getByText("Полнота неизвестна; известная часть")).toBeVisible();
     expect(calendar).toHaveTextContent("Июль 2026");
     expect(calendar).toHaveTextContent("0 выплат");
-    expect(calendar).toHaveTextContent("Пассивный доход: 0");
-    expect(calendar).toHaveTextContent("весь денежный поток: 0");
+    expect(calendar).toHaveTextContent("Прогноз дохода · купоны и дивиденды≈ 0");
+    expect(calendar).toHaveTextContent("≈ 0 ₽");
     expect(calendar).not.toHaveTextContent("999");
     expect(listPayoutCalendar).toHaveBeenCalledWith(closedMonth.id, "v1");
     expect(screen.getByRole("button", { name: "Подробности" })).toHaveAttribute(
@@ -1464,8 +1464,8 @@ it("keeps the previous calendar and its backend date after an offline reload wit
   expect(await within(main).findByText(/Обновление недоступно/)).toHaveTextContent(
     "Показан прежний прогноз. Последний прогноз: 31.08.2026",
   );
-  expect(within(main).getByRole("table", { name: "Выплаты по датам" })).toBeVisible();
-  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивиденды300");
+  expect(within(main).getByRole("table", { name: /Выплаты Сентябрь\s2026/ })).toBeVisible();
+  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивиденды≈ 300");
   expect(main).not.toHaveTextContent("synthetic offline");
   expect(previewPayoutsBatch).not.toHaveBeenCalled();
   expect(previewPayouts).not.toHaveBeenCalled();
@@ -1540,7 +1540,7 @@ it("does not turn invalid money into zero or retain a different version after a 
   ] as never);
   show("?month=7");
   const main = await screen.findByRole("region", { name: "Основной прогноз" });
-  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивидендыНе определён");
+  expect(main).toHaveTextContent("Прогноз дохода · купоны и дивиденды≈ Не определён");
   await openDetails();
   vi.mocked(listPayoutCalendar).mockRejectedValue(new Error("version unavailable"));
   await user.clear(screen.getByLabelText("Версия прогноза"));
@@ -1625,7 +1625,7 @@ it("shows saved forecast before optional mapping and readiness reads complete", 
   show("?month=7");
   const main = await screen.findByRole("region", { name: "Основной прогноз" });
   expect(main).toHaveTextContent("Прогноз дохода");
-  expect(within(main).getByRole("table", { name: "Выплаты по датам" })).toBeVisible();
+  expect(within(main).getByRole("table", { name: /Выплаты Сентябрь\s2026/ })).toBeVisible();
   expect(main).not.toHaveTextContent("Не удалось проверить согласованность выплат");
   expect(applyPayouts).not.toHaveBeenCalled();
 });

@@ -1,3 +1,4 @@
+import { IncomeTabs } from "./IncomeTabs";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
@@ -513,6 +514,7 @@ export default function UiV2TaxIisPage() {
         </>
       }
     >
+      <IncomeTabs active="tax" monthId={selectedMonthId} />
       <section className={styles.page}>
         <div className={styles.toolbar}>
           {monthsLoading ? (
