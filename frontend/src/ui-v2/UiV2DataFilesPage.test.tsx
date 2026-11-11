@@ -151,6 +151,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+async function openRestore(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(await screen.findByRole("button", { name: `Действия с копией ${name}` }));
+  await user.click(screen.getByRole("menuitem", { name: `Восстановить резервную копию ${name}` }));
+}
+
 describe("UI v2 Data files", () => {
   it.each([
     ["Скачать пакет анализа (JSON)", "/api/export/ai-analysis-bundle", "json"],
@@ -167,7 +172,7 @@ describe("UI v2 Data files", () => {
     });
     const { calls, mount } = setup();
     mount();
-    await user.click(await screen.findByText("Дополнительные / технические выгрузки"));
+    await user.click(await screen.findByText("Технические выгрузки"));
     await user.click(screen.getByRole("button", { name: label }));
     await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
     expect(calls.filter((call) => call.path.includes("ai-analysis-bundle"))).toEqual([
@@ -183,20 +188,79 @@ describe("UI v2 Data files", () => {
     const { calls, mount } = setup();
     mount();
 
-    expect(await screen.findByRole("heading", { name: "Файлы" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Экспорт и копии" })).toBeInTheDocument();
     expect(screen.getByTestId("files-exports")).toBeInTheDocument();
     expect(screen.getByTestId("files-backups")).toBeInTheDocument();
-    expect(screen.getAllByText("Только чтение").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Изменяет данные").length).toBeGreaterThan(0);
-    expect(screen.getByText("Необратимо")).toBeInTheDocument();
-    expect(await screen.findByLabelText("Месяц отчёта")).toHaveValue("12");
     expect(
-      screen.getByText("Дополнительные / технические выгрузки").closest("details"),
-    ).not.toHaveAttribute("open");
+      within(screen.getByTestId("data-files-page")).queryByText("Только чтение"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Изменяет данные")).not.toBeInTheDocument();
+    expect(screen.queryByText("Необратимо")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Месяц отчёта")).toHaveValue("91");
+    expect(screen.getByText("Технические выгрузки").closest("details")).not.toHaveAttribute("open");
     expect(calls.map(({ method, path }) => `${method} ${path}`)).toEqual(
       expect.arrayContaining(["GET /api/months", "GET /api/backups"]),
     );
     expect(calls.some(({ method }) => method === "POST")).toBe(false);
+  });
+
+  it("leads with an empty backup warning and one create action", async () => {
+    const { mount } = setup({ listedBackups: [] });
+    mount();
+    const empty = await screen.findByTestId("files-no-backups");
+    expect(empty).toHaveTextContent("Резервных копий пока нет");
+    expect(screen.getByTestId("data-files-page").firstElementChild).toBe(
+      screen.getByTestId("files-backups"),
+    );
+    expect(screen.getAllByRole("button", { name: "Создать копию" })).toHaveLength(1);
+    expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
+    expect(screen.getByTestId("files-backups")).not.toHaveTextContent(/восстановлен|необратимо/i);
+  });
+
+  it("requires an explicit month when only drafts exist", async () => {
+    const user = userEvent.setup();
+    const { calls, mount } = setup({
+      months: uiV2Months.filter((month) => month.status === "draft"),
+    });
+    mount();
+    expect(await screen.findByLabelText("Месяц отчёта")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Скачать Markdown" })).toBeDisabled();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    await user.selectOptions(screen.getByLabelText("Месяц отчёта"), "12");
+    expect(screen.getByRole("button", { name: "Скачать Markdown" })).toBeEnabled();
+  });
+
+  it.each(["month=12", "month=999", "month=bad", "month=91&month=12"])(
+    "preserves explicit month context: %s",
+    async (query) => {
+      const { mount } = setup({ path: `/v2/data/files?${query}` });
+      mount();
+      if (query === "month=12") {
+        expect(await screen.findByLabelText("Месяц отчёта")).toHaveValue("12");
+      } else {
+        await screen.findByText(
+          query === "month=999" ? "Месяц не найден" : "Некорректный параметр месяца",
+        );
+        expect(screen.queryByRole("button", { name: "Скачать Markdown" })).not.toBeInTheDocument();
+      }
+    },
+  );
+
+  it("cancels restore without a write and returns focus to its row menu", async () => {
+    const user = userEvent.setup();
+    const { calls, mount } = setup();
+    mount();
+    await openRestore(user, backups[0].name);
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent(
+      "Все изменения, внесённые после создания выбранной копии, будут потеряны",
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: `Действия с копией ${backups[0].name}` }),
+    ).toHaveFocus();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
 
   it("uses the existing month export contract and reports a local download", async () => {
@@ -212,7 +276,7 @@ describe("UI v2 Data files", () => {
 
     await user.click(await screen.findByRole("button", { name: "Скачать Markdown" }));
     await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
-    expect(calls.at(-1)).toMatchObject({ method: "POST", path: "/api/months/12/export/markdown" });
+    expect(calls.at(-1)).toMatchObject({ method: "POST", path: "/api/months/91/export/markdown" });
     expect(await screen.findByRole("status")).toHaveTextContent(/скачан/i);
     expect(anchorClick.mock.instances[0]).toHaveAttribute("download", "finance_report_2031-08.md");
     expect(createObjectURL).toHaveBeenCalledTimes(1);
@@ -248,7 +312,7 @@ describe("UI v2 Data files", () => {
 
     expect(await screen.findByTestId("files-no-months")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Выгрузить отчёт для AI" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Создать резервную копию" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Создать копию" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Скачать Markdown" })).not.toBeInTheDocument();
   });
 
@@ -257,7 +321,7 @@ describe("UI v2 Data files", () => {
     const { calls, mount } = setup({ listedBackups: [] });
     mount();
 
-    const createButton = await screen.findByRole("button", { name: "Создать резервную копию" });
+    const createButton = await screen.findByRole("button", { name: "Создать копию" });
     await user.click(createButton);
     expect(await screen.findByRole("status")).toHaveTextContent(/создана/i);
     expect(screen.getByText(preRestoreBackup.name)).toBeInTheDocument();
@@ -270,9 +334,7 @@ describe("UI v2 Data files", () => {
     mount();
 
     const target = backups[0];
-    await user.click(
-      await screen.findByRole("button", { name: `Восстановить резервную копию ${target.name}` }),
-    );
+    await openRestore(user, target.name);
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent(`Выбрана копия: ${target.name}`);
     expect(calls.filter(({ method }) => method === "POST")).toHaveLength(0);
@@ -295,13 +357,11 @@ describe("UI v2 Data files", () => {
     mount();
 
     const target = backups[0];
-    await user.click(
-      await screen.findByRole("button", { name: `Восстановить резервную копию ${target.name}` }),
-    );
+    await openRestore(user, target.name);
     const dialog = await screen.findByRole("alertdialog");
     const cancel = within(dialog).getByRole("button", { name: "Отмена" });
     const confirm = within(dialog).getByRole("button", { name: "Восстановить" });
-    const createButton = screen.getByRole("button", { name: "Создать резервную копию" });
+    const createButton = screen.getByRole("button", { name: "Создать копию" });
 
     expect(document.activeElement).toBe(cancel);
     await user.tab();
@@ -321,11 +381,7 @@ describe("UI v2 Data files", () => {
     client.setQueryData(queryKeys.accounts, { source: "pre-restore" });
     mount();
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await openRestore(user, backups[0].name);
     const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
 
@@ -345,11 +401,7 @@ describe("UI v2 Data files", () => {
     client.setQueryData(queryKeys.accounts, { source: "current" });
     mount();
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await openRestore(user, backups[0].name);
     const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
 
@@ -369,11 +421,7 @@ describe("UI v2 Data files", () => {
     client.setQueryData(queryKeys.accounts, { source: "current" });
     mount();
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await openRestore(user, backups[0].name);
     const dialog = await screen.findByRole("alertdialog");
     await user.click(within(dialog).getByRole("button", { name: "Восстановить" }));
 
@@ -403,11 +451,7 @@ describe("UI v2 Data files", () => {
     client.setQueryData(queryKeys.accounts, { source: "current" });
     mount();
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await openRestore(user, backups[0].name);
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: "Восстановить",
@@ -437,11 +481,7 @@ describe("UI v2 Data files", () => {
     client.setQueryData(queryKeys.accounts, { source: "current" });
     mount();
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await openRestore(user, backups[0].name);
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: "Восстановить",
@@ -470,11 +510,7 @@ describe("UI v2 Data files", () => {
     client.setQueryData(queryKeys.accounts, { source: "current" });
     mount();
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await openRestore(user, backups[0].name);
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: "Восстановить",
@@ -510,11 +546,7 @@ describe("UI v2 Data files", () => {
     });
     mount();
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await openRestore(user, backups[0].name);
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: "Восстановить",
@@ -524,11 +556,7 @@ describe("UI v2 Data files", () => {
       preRestoreBackup.name,
     );
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${secondTarget.name}`,
-      }),
-    );
+    await openRestore(user, secondTarget.name);
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: "Восстановить",
@@ -548,15 +576,16 @@ describe("UI v2 Data files", () => {
     });
     const { fetchMock, mount } = setup();
     mount();
-    const createButton = await screen.findByRole("button", { name: "Создать резервную копию" });
+    const createButton = await screen.findByRole("button", { name: "Создать копию" });
     fetchMock.mockImplementationOnce(() => pendingCreate);
     await user.click(createButton);
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await user.click(screen.getByRole("button", { name: `Действия с копией ${backups[0].name}` }));
+    const restoreItem = screen.getByRole("menuitem", {
+      name: `Восстановить резервную копию ${backups[0].name}`,
+    });
+    expect(restoreItem).toBeDisabled();
+    fireEvent.click(restoreItem);
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(
       fetchMock.mock.calls.filter(
@@ -579,11 +608,7 @@ describe("UI v2 Data files", () => {
     mount();
 
     fetchMock.mockImplementationOnce(() => pendingRestore);
-    await user.click(
-      await screen.findByRole("button", {
-        name: `Восстановить резервную копию ${backups[0].name}`,
-      }),
-    );
+    await openRestore(user, backups[0].name);
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: "Восстановить",
@@ -591,7 +616,7 @@ describe("UI v2 Data files", () => {
     );
     expect(await screen.findByRole("button", { name: "…" })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Создать резервную копию" }));
+    fireEvent.click(screen.getByRole("button", { name: "Создать копию" }));
     expect(
       fetchMock.mock.calls.filter(
         ([input, options]) => options?.method === "POST" && String(input) === "/api/backups",
