@@ -150,6 +150,66 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
+test("ui-v2 mobile Home, Returns and Month fit with reachable navigation @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  for (const width of [375, 430, 800]) {
+    await page.setViewportSize({ width, height: 812 });
+    for (const route of ["/v2", "/v2/returns", "/v2/close?month=12"]) {
+      await page.unrouteAll({ behavior: "wait" });
+      const evidence = route.includes("close")
+        ? await installCloseApi(page)
+        : await installApi(page);
+      await page.goto(route);
+      await expect(page.locator('#v2-main[aria-busy="false"]')).toBeVisible();
+      await expect(page.getByRole("link", { name: /Рабочий месяц:/ })).toBeVisible();
+      const nav = page.getByRole("navigation", { name: "Основная навигация", exact: true });
+      await expect(nav.getByRole("link")).toHaveCount(5);
+      expect(await nav.evaluate((el) => getComputedStyle(el).position)).toBe("fixed");
+      expect(await nav.evaluate((el) => el.getBoundingClientRect().bottom)).toBe(812);
+      expect(await page.locator("aside").evaluate((el) => el.getBoundingClientRect().height)).toBe(
+        48,
+      );
+      expect(
+        await page.locator("main").evaluate((el) => el.getBoundingClientRect().top),
+      ).toBeLessThanOrEqual(60);
+      if (route === "/v2") await expect(page.locator(".recharts-surface").first()).toBeVisible();
+      if (route === "/v2/returns") {
+        const table = page.getByRole("table", { name: "Все бумаги", exact: true });
+        await expect(table).toBeVisible();
+        if (width <= 550) {
+          expect(
+            await table
+              .locator("tbody tr")
+              .first()
+              .evaluate((el) => getComputedStyle(el).display),
+          ).toBe("grid");
+          await table.getByRole("button", { name: "Результат, ₽", exact: true }).click();
+          await expect(page).toHaveURL(/sort=pnl-desc/);
+        }
+      }
+      if (route.includes("close"))
+        await expect(
+          page.getByRole("navigation", { name: "Разделы месяца", exact: true }),
+        ).toBeVisible();
+      await assertBounded(page);
+      // All five destinations and the month entry remain inside the viewport.
+      for (const link of await nav.getByRole("link").all()) {
+        const rect = await link.boundingBox();
+        expect(rect!.x).toBeGreaterThanOrEqual(0);
+        expect(rect!.x + rect!.width).toBeLessThanOrEqual(width);
+      }
+      await capture(
+        page,
+        testInfo,
+        `ui-v2-mobile-${route.includes("close") ? "month" : route.endsWith("returns") ? "returns" : "home"}-${width}`,
+      );
+      expect(evidence.unexpected).toEqual([]);
+      expect(evidence.errors).toEqual([]);
+    }
+  }
+});
+
 for (const route of ["/v2", "/v2/capital"]) {
   test(`ui-v2 charts use CSS pixels at desktop zoom: ${route} @viewport-owned`, async ({
     page,

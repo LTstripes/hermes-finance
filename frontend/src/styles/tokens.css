@@ -25,6 +25,10 @@
   --month-content-max: 960px;
   --returns-content-max: 1120px;
   --action-target-min: 24px;
+  --mobile-header-height: 48px;
+  --mobile-nav-height: 64px;
+  --mobile-page-space: 12px;
+  --mobile-card-space: 8px;
   --focus-width: 3px;
   --focus-offset: 3px;
 

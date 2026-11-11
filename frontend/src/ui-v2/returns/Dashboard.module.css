@@ -641,3 +641,89 @@
     max-width: var(--returns-content-max);
   }
 }
+
+@media (max-width: 550px) {
+  .filters > *,
+  .filters input,
+  .filters select {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .list,
+  .list thead,
+  .list tbody {
+    display: block;
+  }
+  .list colgroup {
+    display: none;
+  }
+  .list thead tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--mobile-card-space);
+  }
+  .list.list thead th {
+    border: 0;
+  }
+  .list.list thead button {
+    min-height: var(--action-target-min);
+  }
+  .list.list thead th:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .list tbody {
+    display: grid;
+    gap: var(--mobile-card-space);
+  }
+  .list tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--mobile-card-space);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+  }
+  .list.list tbody th,
+  .list.list tbody td {
+    min-width: 0;
+    border: 0;
+  }
+  .list.list tbody th {
+    grid-row: span 2;
+  }
+  .list.list tbody td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .list tbody th a,
+  .list th small,
+  .list.list .accountRow th {
+    white-space: normal;
+    overflow: visible;
+  }
+  .list tbody td:nth-child(2) {
+    font-weight: var(--w-semibold);
+  }
+  .list tbody td:nth-child(n + 4) {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    gap: var(--mobile-card-space);
+  }
+  .list tbody td:nth-child(n + 4)::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-family: var(--f-ui);
+    font-size: var(--t-xs);
+  }
+  .list.list .accountRow th {
+    padding-left: var(--mobile-card-space);
+  }
+  .instrumentTitle {
+    flex-wrap: wrap;
+  }
+}

@@ -740,24 +740,34 @@ export default function UiV2ReturnsPage() {
                                     </>
                                   )}
                                 </th>
-                                <td title={displayMetric(row.pnl, true)} data-tone={tone(row.pnl)}>
+                                <td
+                                  data-label="Результат"
+                                  title={displayMetric(row.pnl, true)}
+                                  data-tone={tone(row.pnl)}
+                                >
                                   {displayWhole(row.pnl, true)}
                                 </td>
-                                <td data-tone={row.grouped ? undefined : tone(row.simple)}>
+                                <td
+                                  data-label="На вложенное"
+                                  data-tone={row.grouped ? undefined : tone(row.simple)}
+                                >
                                   {row.grouped ? (
                                     <span className={layout.muted}>по счетам</span>
                                   ) : (
                                     displayCompactRate(row.simple)
                                   )}
                                 </td>
-                                <td data-tone={row.grouped ? undefined : tone(row.annual)}>
+                                <td
+                                  data-label="Годовых"
+                                  data-tone={row.grouped ? undefined : tone(row.annual)}
+                                >
                                   {row.grouped ? (
                                     <span className={layout.muted}>по счетам</span>
                                   ) : (
                                     displayCompactRate(row.annual)
                                   )}
                                 </td>
-                                <td>
+                                <td data-label="Купоны и дивиденды">
                                   <InstrumentIncome
                                     account={
                                       row.grouped ? { ...row, resultAvailable: true } : row.account

@@ -579,3 +579,38 @@
     grid-column: 1 / -1;
   }
 }
+
+@media (max-width: 800px) {
+  .hero > *,
+  .grid > *,
+  .heroMeta > *,
+  .pairs li > * {
+    min-width: 0;
+  }
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chart,
+  .heroChart,
+  .chart svg {
+    max-width: 100%;
+  }
+  .pairs li {
+    flex-wrap: wrap;
+  }
+  .heroValue {
+    font-size: var(--t-2xl);
+  }
+  .allocRows li {
+    gap: var(--mobile-card-space);
+    font-size: var(--t-sm);
+  }
+  .head {
+    gap: var(--mobile-card-space);
+    font-size: var(--t-xs);
+  }
+  .chip {
+    max-width: 100%;
+    font-size: var(--t-xs);
+  }
+}
