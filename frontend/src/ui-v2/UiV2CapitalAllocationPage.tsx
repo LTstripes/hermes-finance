@@ -20,10 +20,10 @@ import {
   supportReasonLabel,
   supportStatusLabel,
 } from "../lib/riskSupportCopy";
+import { moneyWholeText } from "./valueFormat";
 import { queryKeys } from "../queryClient";
 import { sortReportingMonths } from "./monthSelection";
 import styles from "./UiV2CapitalAllocation.module.css";
-import pageStyles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
 import { UiV2Tabs } from "./UiV2Tabs";
@@ -47,6 +47,7 @@ function percent(value: string | null | undefined): string {
 }
 
 function Support({ support }: { support: RiskMetricSupport }) {
+  if (support.status === "supported") return null;
   return (
     <span className={styles.support} data-status={support.status}>
       {supportStatusLabel(support.status)}
@@ -97,7 +98,7 @@ export function Allocation({
   title,
   metric,
   account = false,
-  expanded = false,
+  expanded = true,
   onSelect,
 }: {
   title: string;
@@ -204,7 +205,7 @@ export function Concentration({
   metric,
   basis,
   event = false,
-  expanded = false,
+  expanded = true,
   renderLabel,
 }: {
   title: string;
@@ -388,7 +389,9 @@ export default function UiV2CapitalAllocationPage() {
           </div>
           <div>
             <span>Ликвидные активы</span>
-            <strong>{money(data.liquid_assets_total)}</strong>
+            <strong title={money(data.liquid_assets_total)}>
+              {moneyWholeText(data.liquid_assets_total, "—")}
+            </strong>
           </div>
         </section>
         {portfolioEmpty ? <UiV2WidgetState title="Портфель пуст" /> : null}
@@ -430,11 +433,7 @@ export default function UiV2CapitalAllocationPage() {
       busy={!monthsReady || (month !== null && !riskReady)}
       header={
         <>
-          <p className={pageStyles.eyebrow}>Деталь капитала</p>
-          <h1>Распределение и концентрация</h1>
-          <p className={pageStyles.subtitle}>
-            Срез ликвидного портфеля и будущих датированных событий.
-          </p>
+          <h1>Капитал</h1>
           <UiV2Tabs
             label="Капитал"
             tabs={[

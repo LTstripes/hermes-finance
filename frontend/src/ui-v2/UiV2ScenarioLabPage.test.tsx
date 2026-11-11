@@ -120,10 +120,7 @@ describe("native Scenario Lab", () => {
       expect.any(AbortSignal),
     );
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Сценарий" }),
-      "deposit_rate_assumption",
-    );
+    await user.click(screen.getByRole("radio", { name: /^Ставка по вкладам/ }));
     expect(screen.queryByTestId("evaluation")).not.toBeInTheDocument();
     await user.type(
       screen.getByRole("textbox", { name: "Гипотетическая годовая ставка по вкладам, %" }),
@@ -137,10 +134,7 @@ describe("native Scenario Lab", () => {
       expect.any(AbortSignal),
     );
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Сценарий" }),
-      "inflation_real_value",
-    );
+    await user.click(screen.getByRole("radio", { name: /^Инфляция и реальная стоимость/ }));
     await user.type(screen.getByRole("textbox", { name: "Годовая инфляция, %" }), "12");
     await user.click(screen.getByRole("button", { name: "Рассчитать сценарий" }));
     await screen.findByTestId("evaluation");
@@ -150,10 +144,7 @@ describe("native Scenario Lab", () => {
       expect.any(AbortSignal),
     );
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Сценарий" }),
-      "fx_translation_shock",
-    );
+    await user.click(screen.getByRole("radio", { name: /^Валютный шок/ }));
     await user.type(
       screen.getByRole("textbox", { name: "Изменение стоимости в отчёте, %" }),
       "-10",
@@ -173,10 +164,14 @@ describe("native Scenario Lab", () => {
     renderPage("/v2/income/scenario-lab?month=bogus");
     expect(await ready()).toHaveValue("");
     expect(screen.getByRole("alert")).toHaveTextContent("недействителен");
-    expect(screen.getByRole("button", { name: "Рассчитать сценарий" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Рассчитать сценарий" }));
+    expect(evaluateScenarioLab).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Рассчитать сценарий" })).toBeEnabled();
     await user.selectOptions(screen.getByRole("combobox", { name: "Отчётный месяц" }), "1");
     await user.type(screen.getByRole("textbox", { name: "Размер просадки акций, %" }), "101");
-    expect(screen.getByRole("button", { name: "Рассчитать сценарий" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Рассчитать сценарий" }));
+    expect(evaluateScenarioLab).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Рассчитать сценарий" })).toBeEnabled();
     await user.clear(screen.getByRole("textbox", { name: "Размер просадки акций, %" }));
     await user.type(screen.getByRole("textbox", { name: "Размер просадки акций, %" }), "10");
     expect(screen.getByRole("button", { name: "Рассчитать сценарий" })).toBeEnabled();
@@ -211,10 +206,7 @@ describe("native Scenario Lab", () => {
     await ready();
     const calculate = screen.getByRole("button", { name: "Рассчитать сценарий" });
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Сценарий" }),
-      "fx_translation_shock",
-    );
+    await user.click(screen.getByRole("radio", { name: /^Валютный шок/ }));
     const fxPct = screen.getByRole("textbox", { name: "Изменение стоимости в отчёте, %" });
     await user.type(fxPct, "-10");
     expect(calculate).toBeEnabled();
@@ -223,22 +215,18 @@ describe("native Scenario Lab", () => {
     expect(calculate).toBeEnabled();
     await user.clear(fxPct);
     await user.type(fxPct, "-101");
-    expect(calculate).toBeDisabled();
+    await user.click(calculate);
+    expect(screen.getByText("Введите допустимое значение параметра.")).toBeVisible();
+    expect(evaluateScenarioLab).not.toHaveBeenCalled();
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Сценарий" }),
-      "deposit_rate_assumption",
-    );
+    await user.click(screen.getByRole("radio", { name: /^Ставка по вкладам/ }));
     await user.type(
       screen.getByRole("textbox", { name: "Гипотетическая годовая ставка по вкладам, %" }),
       "250",
     );
     expect(calculate).toBeEnabled();
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Сценарий" }),
-      "inflation_real_value",
-    );
+    await user.click(screen.getByRole("radio", { name: /^Инфляция и реальная стоимость/ }));
     await user.type(screen.getByRole("textbox", { name: "Годовая инфляция, %" }), "250");
     expect(calculate).toBeEnabled();
   });
@@ -278,7 +266,7 @@ describe("native Scenario Lab", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: "Отчётный месяц" }), "2");
     resolveOld(evaluation("equity_drawdown") as never);
     await waitFor(() => expect(screen.queryByTestId("evaluation")).not.toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Скачать JSON" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Скачать расчёт (JSON)" })).not.toBeInTheDocument();
   });
 
   it("exports exactly the calculated month/input and suppresses a late export after invalidation", async () => {
@@ -297,13 +285,13 @@ describe("native Scenario Lab", () => {
     await user.type(screen.getByRole("textbox", { name: "Размер просадки акций, %" }), "10");
     await user.click(screen.getByRole("button", { name: "Рассчитать сценарий" }));
     await screen.findByTestId("evaluation");
-    await user.click(screen.getByRole("button", { name: "Скачать JSON" }));
+    await user.click(screen.getByRole("button", { name: "Скачать расчёт (JSON)" }));
     expect(downloadScenarioLabExport).toHaveBeenCalledWith(1, {
       equity_drawdown: { drawdown_pct: "10" },
     });
     await user.clear(screen.getByRole("textbox", { name: "Размер просадки акций, %" }));
     resolveExport({ blob: new Blob(["{}"]), filename: "scenario.json" } as never);
     await waitFor(() => expect(createObjectURL).not.toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "Скачать JSON" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Скачать расчёт (JSON)" })).not.toBeInTheDocument();
   });
 });

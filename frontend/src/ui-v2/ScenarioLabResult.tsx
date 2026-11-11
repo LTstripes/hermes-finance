@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { SCENARIO_OPTIONS } from "./scenarioLab";
 import { reasonCopy } from "../lib/reasonCopy";
 import {
   shockTypeOf,
@@ -11,15 +13,8 @@ import {
 } from "../api/scenarioLab";
 import type { ReportingMonth } from "../api/types";
 import { Badge, Button, DataValue, Panel, Table, Td, Th } from "../components/ui";
-import {
-  formatDate,
-  formatMoney,
-  formatMoneyDelta,
-  formatMonth,
-  formatMonthKey,
-  formatPercent,
-} from "../lib/format";
-import { INSTRUMENT_TYPE_LABELS, labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
+import { formatMoney, formatMoneyDelta, formatMonthKey, formatPercent } from "../lib/format";
+import { labelOf } from "../lib/labels";
 
 const FX_TRANSLATION_BASIS_UNAVAILABLE = "fx_translation_basis_unavailable";
 const FX_STRESS_UNAVAILABLE_TITLE = "Недоступен точный пересчёт";
@@ -133,7 +128,6 @@ export function ScenarioLabResult({
   onRetry: () => void;
 }) {
   const shockType = shockTypeOf(evaluation);
-  const reportingMonth = evaluation.reporting_month;
   const scenario = SCENARIO_TYPE_LABELS[shockType] ?? shockType;
 
   return (
@@ -142,9 +136,7 @@ export function ScenarioLabResult({
         <div className="scenario-lab__result-heading">
           <div>
             <p className="panel__label">Результат</p>
-            <h2>
-              {formatMonth(reportingMonth.year, reportingMonth.month)} · {scenario}
-            </h2>
+            <h2>{scenario}</h2>
           </div>
           <div className="scenario-lab__result-actions">
             <Button onClick={onRetry} size="sm" variant="ghost">
@@ -152,12 +144,17 @@ export function ScenarioLabResult({
             </Button>
           </div>
         </div>
-        <p className="muted tiny scenario-lab__result-asof">
-          {formatMonth(reportingMonth.year, reportingMonth.month)} ·{" "}
-          {labelOf(MONTH_STATUS_LABELS, reportingMonth.status)} · снимок{" "}
-          {formatDate(reportingMonth.snapshot_date)} · {humanShockInput(evaluation)}
-        </p>
+        <p className="muted tiny scenario-lab__result-asof">{humanShockInput(evaluation)}</p>
+        <MainAnswer evaluation={evaluation} />
+      </section>
 
+      <BaseScenarioSummary evaluation={evaluation} selectedMonth={selectedMonth} />
+      <ScenarioDetail evaluation={evaluation} />
+      <details className="scenario-lab__more">
+        <summary>Что сценарий не меняет · {evaluation.assumptions.length}</summary>
+        <p>{SCENARIO_OPTIONS.find((option) => option.value === shockType)?.description}</p>
+        <AssumptionsPanel evaluation={evaluation} />
+        <SupportPanel evaluation={evaluation} />
         <details className="scenario-lab__fingerprints">
           <summary>Идентификаторы расчёта</summary>
           <dl>
@@ -179,12 +176,7 @@ export function ScenarioLabResult({
             нормализованный вход дают одинаковый результат.
           </p>
         </details>
-      </section>
-
-      <BaseScenarioSummary evaluation={evaluation} selectedMonth={selectedMonth} />
-      <ScenarioDetail evaluation={evaluation} />
-      <SupportPanel evaluation={evaluation} />
-      <AssumptionsPanel evaluation={evaluation} />
+      </details>
     </>
   );
 }
@@ -208,136 +200,125 @@ function humanShockInput(evaluation: ScenarioLabEvaluation): string {
   return "";
 }
 
+function MainAnswer({ evaluation }: { evaluation: ScenarioLabEvaluation }) {
+  const type = shockTypeOf(evaluation);
+  const support =
+    metricSupportFor(evaluation, "liquid_capital_net") ??
+    metricSupportFor(evaluation, "liquid_assets");
+  let label = "Ликвидный капитал";
+  let base = moneyStringOf(evaluation.base, "liquid_capital_net");
+  let stressed =
+    support?.status === "supported"
+      ? moneyStringOf(evaluation.stressed, "liquid_capital_net")
+      : null;
+  let delta =
+    support?.status === "supported"
+      ? (moneyDeltaOf(evaluation.impact, "liquid_capital_net_delta") ??
+        moneyDeltaOf(evaluation.impact, "liquid_capital_net"))
+      : null;
+  if (type === "deposit_rate_assumption") {
+    label = "Прогноз пассивного дохода · месяц";
+    base = forecastMonthly(evaluation.base);
+    stressed = forecastMonthly(evaluation.stressed);
+    delta = moneyDeltaOf(evaluation.impact, "monthly_interest_delta");
+  } else if (type === "inflation_real_value") {
+    const rows = (evaluation as InflationEvaluation).stressed.cash_flow_real_value;
+    const key = Object.keys(rows)
+      .sort()
+      .find((key) => rows[key].months_ahead > 0);
+    const row = key ? rows[key] : null;
+    label = `Будущие потоки · ${key ? formatMonthKey(key) : "нет будущих месяцев"}`;
+    base = row?.nominal_total_cash_flow ?? null;
+    stressed = row?.real_total_cash_flow ?? null;
+    delta = row?.total_cash_flow_delta ?? null;
+  }
+  return (
+    <div className="scenario-lab__answer">
+      <p>{label}</p>
+      <div className="scenario-lab__comparison">
+        <span>
+          <small>Сейчас</small>
+          <strong>{formatMoney(base)}</strong>
+        </span>
+        <span aria-hidden="true">→</span>
+        <span>
+          <small>В сценарии</small>
+          <strong>{formatMoney(stressed)}</strong>
+        </span>
+      </div>
+      {delta !== null ? <p className="scenario-lab__delta">{formatMoneyDelta(delta)}</p> : null}
+      {stressed === null && type !== "inflation_real_value" ? (
+        <p className="muted tiny">
+          {support?.status === "unknown"
+            ? "Нет данных для точного результата"
+            : "точный стресс-пересчёт недоступен"}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function BaseScenarioSummary({
   evaluation,
-  selectedMonth,
 }: {
   evaluation: ScenarioLabEvaluation;
   selectedMonth: ReportingMonth;
 }) {
-  const shockType = shockTypeOf(evaluation);
-  const liquidSupport = metricSupportFor(evaluation, "liquid_assets");
-  const stressedAvailable = liquidSupport?.status !== "unavailable";
-
+  const type = shockTypeOf(evaluation);
+  const available = metricSupportFor(evaluation, "liquid_assets")?.status === "supported";
   return (
-    <Panel label="Базовый случай против сценария" title="Ключевые метрики">
-      <div className="scenario-lab__summary-grid">
-        <DataValue
-          label="Отчётный месяц"
-          meta={labelOf(MONTH_STATUS_LABELS, selectedMonth.status)}
-          value={formatMonth(selectedMonth.year, selectedMonth.month)}
-        />
-        <DataValue
-          label="Ликвидные активы · база"
-          meta={!stressedAvailable ? "точный стресс-пересчёт недоступен" : undefined}
-          value={formatMoney(moneyStringOf(evaluation.base, "liquid_assets"))}
-        />
-        {stressedAvailable ? (
+    <div className="scenario-lab__summary-grid">
+      <DataValue
+        label="Ликвидные активы · база"
+        value={formatMoney(moneyStringOf(evaluation.base, "liquid_assets"))}
+      />
+      <DataValue
+        label="Ликвидные активы · сценарий"
+        value={formatMoney(available ? moneyStringOf(evaluation.stressed, "liquid_assets") : null)}
+      />
+      {type === "equity_drawdown" || type === "fx_translation_shock" ? (
+        available ? (
           <DataValue
-            label="Ликвидные активы · сценарий"
-            value={formatMoney(moneyStringOf(evaluation.stressed, "liquid_assets"))}
+            label="Изменение по известным позициям"
+            value={formatMoneyDelta(moneyDeltaOf(evaluation.impact, "known_scope_impact"))}
           />
-        ) : null}
+        ) : null
+      ) : (
         <DataValue
-          label="Ликвидный капитал · база"
-          value={formatMoney(moneyStringOf(evaluation.base, "liquid_capital_net"))}
+          label="Ликвидный капитал"
+          meta={
+            type === "deposit_rate_assumption" ? "тело вкладов не меняется" : "номинал не меняется"
+          }
+          value={formatMoney(moneyStringOf(evaluation.stressed, "liquid_capital_net"))}
         />
-        {stressedAvailable ? (
-          <DataValue
-            label="Ликвидный капитал · сценарий"
-            value={formatMoney(moneyStringOf(evaluation.stressed, "liquid_capital_net"))}
-          />
-        ) : null}
-        {stressedAvailable &&
-        (shockType === "deposit_rate_assumption" || shockType === "inflation_real_value") ? (
-          <DataValue
-            label="Прогноз пассивного дохода · месяц"
-            meta={passiveIncomeMeta(evaluation)}
-            value={`${formatMoney(forecastMonthly(evaluation.base))} → ${formatMoney(
-              forecastMonthly(evaluation.stressed),
-            )}`}
-          />
-        ) : null}
-        {stressedAvailable ? <ImpactSummary evaluation={evaluation} /> : null}
-      </div>
-    </Panel>
+      )}
+    </div>
   );
 }
 
-function passiveIncomeMeta(evaluation: ScenarioLabEvaluation): string | undefined {
-  const support = metricSupportFor(evaluation, "forecast_passive_income");
-  if (!support) return undefined;
-  if (support.status === "supported") {
-    return "прогноз по известным данным";
+function strongestFirst<T extends { delta?: string }>(rows: Record<string, T>): string[] {
+  function magnitude(key: string) {
+    const raw = rows[key].delta;
+    return raw && /^-?\d+(\.\d{1,2})?$/.test(raw)
+      ? BigInt(raw.replace("-", "").split(".")[0] + (raw.split(".")[1] ?? "").padEnd(2, "0"))
+      : null;
   }
-  return supportReasonsText(support);
+  return Object.keys(rows).sort((a, b) => {
+    const left = magnitude(a),
+      right = magnitude(b);
+    if (left === right) return a.localeCompare(b, "ru", { numeric: true });
+    if (left === null) return 1;
+    if (right === null) return -1;
+    return left > right ? -1 : 1;
+  });
 }
 
-function ImpactSummary({ evaluation }: { evaluation: ScenarioLabEvaluation }) {
-  const shockType = shockTypeOf(evaluation);
-  const impact = evaluation.impact;
-  if (shockType === "deposit_rate_assumption") {
-    return (
-      <>
-        <DataValue
-          label="Проценты по вкладам · месяц"
-          value={formatMoneyDelta(moneyDeltaOf(impact, "monthly_interest_delta"))}
-        />
-        <DataValue
-          label="Проценты по вкладам · год"
-          value={formatMoneyDelta(moneyDeltaOf(impact, "annual_deposit_interest_delta"))}
-        />
-        <DataValue
-          label="Прогноз пассивного дохода · год"
-          value={formatMoneyDelta(moneyDeltaOf(impact, "forecast_annual_total_delta"))}
-        />
-        <DataValue
-          label="Ликвидный капитал"
-          meta="тело вкладов не меняется"
-          value={formatMoneyDelta(moneyDeltaOf(impact, "liquid_capital_net_delta"))}
-        />
-      </>
-    );
-  }
-  if (shockType === "inflation_real_value") {
-    return (
-      <>
-        <DataValue
-          label="Будущий доход · реальная стоимость"
-          value={formatMoneyDelta(moneyDeltaOf(impact, "future_income_real_value_delta"))}
-        />
-        <DataValue
-          label="Будущие погашения · реальная стоимость"
-          value={formatMoneyDelta(moneyDeltaOf(impact, "future_redemption_real_value_delta"))}
-        />
-        <DataValue
-          label="Будущие потоки · реальная стоимость"
-          value={formatMoneyDelta(moneyDeltaOf(impact, "future_total_cash_flow_real_value_delta"))}
-        />
-        <DataValue
-          label="Ликвидный капитал"
-          meta="номинал не меняется"
-          value={formatMoneyDelta(moneyDeltaOf(impact, "liquid_capital_net_delta"))}
-        />
-      </>
-    );
-  }
-  return (
-    <>
-      <DataValue
-        label="Известный скоуп · влияние"
-        value={formatMoneyDelta(moneyDeltaOf(impact, "known_scope_impact"))}
-      />
-      <DataValue
-        label="Ликвидные активы"
-        value={formatMoneyDelta(moneyDeltaOf(impact, "liquid_assets_delta"))}
-      />
-      <DataValue
-        label="Ликвидный капитал"
-        value={formatMoneyDelta(moneyDeltaOf(impact, "liquid_capital_net_delta"))}
-      />
-    </>
-  );
+function MoreRows({ count, show, onClick }: { count: number; show: boolean; onClick: () => void }) {
+  return count > 5 ? (
+    <Button variant="ghost" onClick={onClick}>
+      {show ? "Свернуть" : `Показать все ${count}`}
+    </Button>
+  ) : null;
 }
 
 function ScenarioDetail({ evaluation }: { evaluation: ScenarioLabEvaluation }) {
@@ -355,15 +336,14 @@ function ScenarioDetail({ evaluation }: { evaluation: ScenarioLabEvaluation }) {
 }
 
 function EquityDrawdownDetail({ evaluation }: { evaluation: EquityEvaluation }) {
+  const [showAll, setShowAll] = useState(false);
   const coverage = evaluation.coverage;
   const names = evaluation.presentation_metadata?.instrument_names ?? {};
   const accounts = evaluation.presentation_metadata?.account_names ?? {};
-  const positionIds = Object.keys(evaluation.impact.per_position).sort(
-    (a, b) => Number(a) - Number(b),
-  );
+  const positionIds = strongestFirst(evaluation.impact.per_position);
 
   return (
-    <Panel label="Падение акций" title="Детали по позициям">
+    <Panel label="Падение акций" title="Что изменилось сильнее всего">
       <div className="scenario-lab__coverage-line">
         <span>
           Применено: <strong>{coverage.applied}</strong>
@@ -386,7 +366,6 @@ function EquityDrawdownDetail({ evaluation }: { evaluation: EquityEvaluation }) 
         <thead>
           <tr>
             <Th scope="col">Позиция</Th>
-            <Th scope="col">Тип</Th>
             <Th numeric scope="col">
               База
             </Th>
@@ -400,7 +379,7 @@ function EquityDrawdownDetail({ evaluation }: { evaluation: EquityEvaluation }) 
           </tr>
         </thead>
         <tbody>
-          {positionIds.map((positionId) => {
+          {positionIds.slice(0, showAll ? undefined : 5).map((positionId) => {
             const baseRow = evaluation.base.per_position[positionId];
             const stressedRow = evaluation.stressed.per_position[positionId];
             const impactRow = evaluation.impact.per_position[positionId];
@@ -418,7 +397,6 @@ function EquityDrawdownDetail({ evaluation }: { evaluation: EquityEvaluation }) 
                   {instrumentName}
                   {accountName ? <span className="muted tiny"> · {accountName}</span> : null}
                 </Td>
-                <Td>{baseRow ? labelOf(INSTRUMENT_TYPE_LABELS, baseRow.instrument_type) : "—"}</Td>
                 <Td numeric>{baseRow ? formatMoney(baseRow.market_value) : "—"}</Td>
                 <Td numeric>{stressedRow ? formatMoney(stressedRow.market_value) : "—"}</Td>
                 <Td numeric>
@@ -441,21 +419,21 @@ function EquityDrawdownDetail({ evaluation }: { evaluation: EquityEvaluation }) 
           })}
         </tbody>
       </Table>
+      <MoreRows count={positionIds.length} show={showAll} onClick={() => setShowAll(!showAll)} />
     </Panel>
   );
 }
 
 function DepositRateDetail({ evaluation }: { evaluation: DepositEvaluation }) {
+  const [showAll, setShowAll] = useState(false);
   const coverage = evaluation.coverage;
   const names = evaluation.presentation_metadata?.deposit_names ?? {};
   const accounts = evaluation.presentation_metadata?.account_names ?? {};
-  const depositIds = Object.keys(evaluation.impact.per_deposit).sort(
-    (a, b) => Number(a) - Number(b),
-  );
+  const depositIds = strongestFirst(evaluation.impact.per_deposit);
   const goalEffect = evaluation.stressed.passive_income_goal_effect;
 
   return (
-    <Panel label="Ставка по вкладам" title="Пересчёт прогнозных процентов">
+    <Panel label="Ставка по вкладам" title="Что изменилось сильнее всего">
       <div className="scenario-lab__coverage-line">
         <span>
           Применено вкладов: <strong>{coverage.applied}</strong>
@@ -476,16 +454,6 @@ function DepositRateDetail({ evaluation }: { evaluation: DepositEvaluation }) {
         <thead>
           <tr>
             <Th scope="col">Вклад</Th>
-            <Th scope="col">Счёт</Th>
-            <Th numeric scope="col">
-              Тело (не меняется)
-            </Th>
-            <Th numeric scope="col">
-              Ставка · база
-            </Th>
-            <Th numeric scope="col">
-              Ставка · сценарий
-            </Th>
             <Th numeric scope="col">
               Проценты/мес · база
             </Th>
@@ -498,7 +466,7 @@ function DepositRateDetail({ evaluation }: { evaluation: DepositEvaluation }) {
           </tr>
         </thead>
         <tbody>
-          {depositIds.map((depositId) => {
+          {depositIds.slice(0, showAll ? undefined : 5).map((depositId) => {
             const baseRow = evaluation.base.per_deposit[depositId];
             const stressedRow = evaluation.stressed.per_deposit[depositId];
             const impactRow = evaluation.impact.per_deposit[depositId];
@@ -512,11 +480,18 @@ function DepositRateDetail({ evaluation }: { evaluation: DepositEvaluation }) {
                 : undefined;
             return (
               <tr key={depositId}>
-                <Td>{depositName}</Td>
-                <Td>{accountName ?? "—"}</Td>
-                <Td numeric>{baseRow ? formatMoney(baseRow.balance) : "—"}</Td>
-                <Td numeric>{baseRow ? formatPercent(baseRow.annual_rate_pct) : "—"}</Td>
-                <Td numeric>{stressedRow ? formatPercent(stressedRow.annual_rate_pct) : "—"}</Td>
+                <Td>
+                  {depositName}
+                  <small>{accountName ?? "—"}</small>
+                  <details>
+                    <summary>Тело и ставка</summary>
+                    <p>Тело (не меняется): {baseRow ? formatMoney(baseRow.balance) : "—"}</p>
+                    <p>
+                      Ставка: {baseRow ? formatPercent(baseRow.annual_rate_pct) : "—"} →{" "}
+                      {stressedRow ? formatPercent(stressedRow.annual_rate_pct) : "—"}
+                    </p>
+                  </details>
+                </Td>
                 <Td numeric>{baseRow ? formatMoney(baseRow.expected_monthly_interest) : "—"}</Td>
                 <Td numeric>
                   {stressedRow ? formatMoney(stressedRow.expected_monthly_interest) : "—"}
@@ -527,6 +502,7 @@ function DepositRateDetail({ evaluation }: { evaluation: DepositEvaluation }) {
           })}
         </tbody>
       </Table>
+      <MoreRows count={depositIds.length} show={showAll} onClick={() => setShowAll(!showAll)} />
       <p className="muted tiny">
         Меняется только прогнозный процентный доход: тело вкладов и ликвидный капитал остаются на
         базовом уровне.
@@ -536,12 +512,17 @@ function DepositRateDetail({ evaluation }: { evaluation: DepositEvaluation }) {
 }
 
 function InflationRealValueDetail({ evaluation }: { evaluation: InflationEvaluation }) {
+  const [showAll, setShowAll] = useState(false);
   const stressedRows = evaluation.stressed.cash_flow_real_value;
-  const monthKeys = Object.keys(stressedRows).sort();
+  const monthKeys = strongestFirst(
+    Object.fromEntries(
+      Object.entries(stressedRows).map(([key, row]) => [key, { delta: row.total_cash_flow_delta }]),
+    ),
+  );
   const coverage = evaluation.coverage;
 
   return (
-    <Panel label="Инфляция и реальная стоимость" title="Номинал против реальной стоимости">
+    <Panel label="Инфляция и реальная стоимость" title="Что изменилось сильнее всего">
       <div className="scenario-lab__coverage-line">
         <span>
           Месяцев в сетке: <strong>{coverage.applied}</strong>
@@ -564,18 +545,6 @@ function InflationRealValueDetail({ evaluation }: { evaluation: InflationEvaluat
           <tr>
             <Th scope="col">Месяц</Th>
             <Th numeric scope="col">
-              Доход · номинал
-            </Th>
-            <Th numeric scope="col">
-              Доход · реальный
-            </Th>
-            <Th numeric scope="col">
-              Погашение · номинал
-            </Th>
-            <Th numeric scope="col">
-              Погашение · реальное
-            </Th>
-            <Th numeric scope="col">
               Поток · номинал
             </Th>
             <Th numeric scope="col">
@@ -587,22 +556,28 @@ function InflationRealValueDetail({ evaluation }: { evaluation: InflationEvaluat
           </tr>
         </thead>
         <tbody>
-          {monthKeys.map((monthKey) => {
+          {monthKeys.slice(0, showAll ? undefined : 5).map((monthKey) => {
             const row = stressedRows[monthKey];
             if (!row) return null;
             return (
               <tr key={monthKey}>
                 <Td>
                   {formatMonthKey(monthKey)}
+                  <details>
+                    <summary>Состав потока</summary>
+                    <p>
+                      Доход: {formatMoney(row.nominal_income)} → {formatMoney(row.real_income)}
+                    </p>
+                    <p>
+                      Погашение: {formatMoney(row.nominal_redemption)} →{" "}
+                      {formatMoney(row.real_redemption)}
+                    </p>
+                  </details>
                   <span className="muted tiny">
                     {" "}
                     · {row.months_ahead === 0 ? "базовый" : `${row.months_ahead} мес.`}
                   </span>
                 </Td>
-                <Td numeric>{formatMoney(row.nominal_income)}</Td>
-                <Td numeric>{formatMoney(row.real_income)}</Td>
-                <Td numeric>{formatMoney(row.nominal_redemption)}</Td>
-                <Td numeric>{formatMoney(row.real_redemption)}</Td>
                 <Td numeric>{formatMoney(row.nominal_total_cash_flow)}</Td>
                 <Td numeric>{formatMoney(row.real_total_cash_flow)}</Td>
                 <Td numeric>{formatMoneyDelta(row.total_cash_flow_delta)}</Td>
@@ -611,17 +586,17 @@ function InflationRealValueDetail({ evaluation }: { evaluation: InflationEvaluat
           })}
         </tbody>
       </Table>
+      <MoreRows count={monthKeys.length} show={showAll} onClick={() => setShowAll(!showAll)} />
     </Panel>
   );
 }
 
 function FxTranslationDetail({ evaluation }: { evaluation: FxEvaluation }) {
+  const [showAll, setShowAll] = useState(false);
   const coverage = evaluation.coverage;
   const names = evaluation.presentation_metadata?.instrument_names ?? {};
   const accounts = evaluation.presentation_metadata?.account_names ?? {};
-  const positionIds = Object.keys(evaluation.impact.per_position).sort(
-    (a, b) => Number(a) - Number(b),
-  );
+  const positionIds = strongestFirst(evaluation.impact.per_position);
   // Relevant aggregate support comes from the server envelope (#334): the
   // backend maps candidate/unknown row coverage to liquid_assets (and the
   // sibling capital aggregates) as unavailable / unknown / supported.
@@ -702,7 +677,6 @@ function FxTranslationDetail({ evaluation }: { evaluation: FxEvaluation }) {
         <thead>
           <tr>
             <Th scope="col">Позиция</Th>
-            <Th scope="col">Тип</Th>
             <Th numeric scope="col">
               База (без пересчёта)
             </Th>
@@ -711,7 +685,7 @@ function FxTranslationDetail({ evaluation }: { evaluation: FxEvaluation }) {
           </tr>
         </thead>
         <tbody>
-          {positionIds.map((positionId) => {
+          {positionIds.slice(0, showAll ? undefined : 5).map((positionId) => {
             const baseRow = evaluation.base.per_position[positionId];
             const impactRow = evaluation.impact.per_position[positionId];
             const instrumentName =
@@ -728,7 +702,6 @@ function FxTranslationDetail({ evaluation }: { evaluation: FxEvaluation }) {
                   {instrumentName}
                   {accountName ? <span className="muted tiny"> · {accountName}</span> : null}
                 </Td>
-                <Td>{baseRow ? labelOf(INSTRUMENT_TYPE_LABELS, baseRow.instrument_type) : "—"}</Td>
                 <Td numeric>{baseRow ? formatMoney(baseRow.market_value) : "—"}</Td>
                 <Td>
                   {impactRow ? (
@@ -751,6 +724,7 @@ function FxTranslationDetail({ evaluation }: { evaluation: FxEvaluation }) {
           })}
         </tbody>
       </Table>
+      <MoreRows count={positionIds.length} show={showAll} onClick={() => setShowAll(!showAll)} />
     </Panel>
   );
 }

@@ -953,6 +953,21 @@ Alfa PDF supports bounded historical realised payout events. It is not a generic
 
 Keep actual, forecast and hypothetical values visibly separate. Passive-income goal progress uses actual C03 eligible CLOSED-month rolling average; forecast shocks do not rewrite it. Goal target dates are deadlines, not evidence of a future trajectory; unchanged current value cannot justify an invented future achievement date. C8 owns formulas, eligibility, support states and scenario matrices.
 
+Goals, tax/IIS and scenarios use the Income and plans heading and its shared
+month-preserving tabs. Goals show whole rubles and one decimal place for progress;
+unsupported goals do not promise an achievement-date forecast. Tax/IIS leads with
+income YTD, the current rate, distance to the next bracket and each account's IIS
+contribution for the selected tax year. Zero benefit statuses and absent eligible
+closing dates are omitted; tax-scale and history details remain in a disclosure.
+Scenario parameters use four radio cards, preset values and a custom input.
+Calculation remains explicit; invalid inputs receive an inline error. The result
+leads with a server-owned base/scenario pair and any supplied change, followed by
+the largest row changes with expansion. Inflation names the future month of its
+nominal/real cash-flow comparison. Assumptions and calculation identifiers are
+collapsed, and the unchanged JSON export appears only with a current result.
+Capital allocation uses the Capital heading and tabs, expands its main sections
+initially and omits supported-status badges while retaining material limitations.
+
 Scenario Lab freezes its base and supports only the accepted single-shock families and explicit applicability evidence. Currency tags alone do not authorize FX translation; issuer exposure cannot be guessed from names. Account WHAT-IF uses finite named assumptions under C7. Instrument WHAT-IF is the supported fixed-holding stock scenario; editing prose does not enable bonds or changing-quantity total return.
 
 The recommended AI JSON is one full-history financial review in format `3.2.0`,
