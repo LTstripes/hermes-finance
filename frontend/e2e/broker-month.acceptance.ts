@@ -2450,9 +2450,9 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
     await page.keyboard.press("Escape");
     await page.goto(calendarPage);
     const region = page.getByRole("region", {
-      name: "Календарь выплат: горизонтальная прокрутка таблицы",
+      name: "Основной прогноз",
     });
-    await expect(region).toContainText("Полнота неизвестна; известная часть:");
+    await expect(region).toContainText("Полнота неизвестна; известная часть");
     await expect(region).toContainText("0 выплат");
     await expect(region).not.toContainText("999");
     if (afterReload) {
@@ -2464,10 +2464,10 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
       await expect(page.getByRole("heading", { name: "Доходность", exact: true })).toBeVisible();
       await page.goBack();
       await expect(page).toHaveURL(calendarPage);
-      await expect(region).toContainText("Полнота неизвестна; известная часть:");
+      await expect(region).toContainText("Полнота неизвестна; известная часть");
       await expect(region).toContainText("0 выплат");
       await page.reload();
-      await expect(region).toContainText("Полнота неизвестна; известная часть:");
+      await expect(region).toContainText("Полнота неизвестна; известная часть");
       await expect(region).toContainText("0 выплат");
       await page.screenshot({
         path: info.outputPath("retired-closed-calendar-after-back-reload.png"),
@@ -2493,7 +2493,9 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
   await transition("close");
   expect(await (await request.get(calendarUrl)).json()).toEqual([]);
   await page.goto(calendarPage);
-  await expect(page.getByText("Нет ожидаемых выплат", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("На этом горизонте нет сохранённых выплат.", { exact: true }),
+  ).toBeVisible();
   await transition("reopen");
   await acceptStep(4, "retire", r3.relations[0].id);
   await transition("close");
@@ -2504,7 +2506,9 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
   expect(await (await request.get(calendarUrl)).json()).toEqual([]);
   await page.goto(calendarPage);
   await page.reload();
-  await expect(page.getByText("Нет ожидаемых выплат", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("На этом горизонте нет сохранённых выплат.", { exact: true }),
+  ).toBeVisible();
   for (const [accepted, retired] of [
     [r1, "terminal-ui-R2"],
     [r3, "terminal-ui-R4"],

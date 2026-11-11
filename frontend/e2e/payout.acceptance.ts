@@ -48,7 +48,7 @@ test("individual Apply confirms through the real API and reload never submits", 
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/v2/data/payouts?month=${month.id}`);
-  await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
   expect(posts).toEqual([]);
   await openForecastDetails(page);
   await page.getByRole("button", { name: "Проверить выплаты T-Invest" }).click();
@@ -70,7 +70,7 @@ test("individual Apply confirms through the real API and reload never submits", 
     [],
   );
   await page.reload();
-  await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
   expect(posts).toHaveLength(1);
   await expect(page.getByRole("button", { name: /Применить выбранные \(1\)/ })).toHaveCount(0);
 });
@@ -161,7 +161,7 @@ test("real provider failure keeps earlier confirmation and stops the frozen bulk
       .filter((row: { source_kind: string }) => row.source_kind === "provider"),
   ).toHaveLength(1);
   await page.reload();
-  await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
   expect(posts).toHaveLength(2);
 });
 
@@ -187,7 +187,7 @@ test("committed response loss never retries; reload needs fresh preview and expl
   await expect(page.getByText(/Запрос не отправлен · версия/)).toBeVisible();
   expect(posts).toHaveLength(1);
   await page.reload();
-  await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
   expect(posts).toHaveLength(1);
   await selectWithManual(page, 5);
   await expect(page.getByText("Уже сохранено; повторно не отправляется.").first()).toBeVisible();
@@ -209,7 +209,7 @@ for (const width of [1366]) {
     await page.goto(
       `/v2/data/payouts?month=${monthId}&from=monthly-close-v2&step=future_payouts&monthId=${monthId}`,
     );
-    await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
     expect(posts).toEqual([]);
     await expect(page.getByLabel("PDF отчёта Alfa")).toBeHidden();
     await openForecastDetails(page);
@@ -250,7 +250,7 @@ for (const width of [1366]) {
     expect(rows[0].expected_net_amount.amount).toBe("999.00");
     expect(rows[0].is_confirmed).toBe(false);
     await page.reload();
-    await expect(page.getByText("Объединённый календарь выплат")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Прогноз на 12 месяцев" })).toBeVisible();
     expect(posts.filter((url) => url.endsWith("/payout-apply"))).toHaveLength(2);
     await openForecastDetails(page);
     await page.getByRole("button", { name: "Проверить все позиции T-Invest" }).click();

@@ -1,3 +1,4 @@
+import { IncomeTabs } from "./IncomeTabs";
 import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 
@@ -19,7 +20,6 @@ const READ_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
 ];
 
 const MUTATE_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
-  { id: "payouts", label: "Выплаты" },
   { id: "months", label: "Отчётные месяцы" },
   { id: "catalogs", label: "Справочники и сопоставления" },
   { id: "files", label: "Экспорт и копии" },
@@ -115,18 +115,22 @@ export function UiV2DataFrame({
 }) {
   return (
     <UiV2Shell
-      showRefresh={active !== "app"}
-      active="data"
+      showRefresh={active !== "app" && active !== "payouts"}
+      active={active === "payouts" ? "income" : "data"}
       busy={busy}
       header={
         <>
-          <p className={styles.eyebrow}>Настройки</p>
+          <p className={styles.eyebrow}>{active === "payouts" ? "Доход и планы" : "Настройки"}</p>
           <h1>{title}</h1>
           <p className={styles.subtitle}>{subtitle}</p>
         </>
       }
     >
-      <UiV2DataSubnav active={active} monthId={monthId} />
+      {active === "payouts" ? (
+        <IncomeTabs active="payouts" monthId={monthId} />
+      ) : (
+        <UiV2DataSubnav active={active} monthId={monthId} />
+      )}
       {children}
     </UiV2Shell>
   );

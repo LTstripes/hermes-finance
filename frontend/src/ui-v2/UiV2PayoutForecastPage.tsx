@@ -44,7 +44,8 @@ import {
   TInvestBatchSummary,
   TInvestPayoutApplySummary,
 } from "../components/month-close/TInvestStepSummary";
-import { PayoutPaymentsCalendar } from "../components/PayoutPaymentsCalendar";
+import { shortInstrumentName } from "./instrumentName";
+import { wholeMoneyText } from "./wholeMoney";
 import { PayoutPreviewPanel } from "../components/PayoutPreviewPanel";
 import {
   Badge,
@@ -55,15 +56,12 @@ import {
   LoadingState,
   Panel,
   Select,
-  Table,
-  Td,
-  Th,
 } from "../components/ui";
 import { formatDate, formatMoney, formatMonth, formatQuantity } from "../lib/format";
 import { INSTRUMENT_TYPE_LABELS, labelOf, MONTH_STATUS_LABELS } from "../lib/labels";
 import { reasonCopy } from "../lib/reasonCopy";
 import { queryKeys } from "../queryClient";
-import { resolveMonthSelection } from "./monthSelection";
+import { latestClosedMonth, resolveMonthSelection } from "./monthSelection";
 import {
   executePayoutSelection,
   type FrozenPayoutGroup,
@@ -238,10 +236,6 @@ function isAppliedPayoutRepresented(
   if (counting === "count_manual") return manualProof;
   if (counting === "count_provider") return providerProof;
   return counting === "keep_both" && providerProof && manualProof;
-}
-
-function newestMonth(months: ReportingMonth[]): ReportingMonth | undefined {
-  return [...months].sort((a, b) => b.year - a.year || b.month - a.month || b.id - a.id)[0];
 }
 
 function payoutSubtotal(rows: PayoutPreview["rows"], principal: boolean): string {
@@ -1011,9 +1005,8 @@ function PayoutForecastTool({
     void readContext(monthId, version);
   }
 
-  const payments = calendar
-    .flatMap((entry) => entry.items)
-    .sort((a, b) => a.expected_date.localeCompare(b.expected_date));
+  // Geometry only. Labels retain the authoritative calendar money.
+  const chartMax = Math.max(0, ...calendar.map((entry) => Number(entry.total_net.amount) || 0));
   const automatic = refreshStatus?.automatic_refresh;
   const forecastDate = refreshStatus?.forecast_as_of;
   const dateLabel = forecastDate
@@ -1132,10 +1125,6 @@ function PayoutForecastTool({
         <div className={styles.heading}>
           <div>
             <h2>Прогноз на 12 месяцев</h2>
-            <p className="muted">
-              От даты снимка {formatDate(month.snapshot_date)}
-              {contextError || automatic?.status === "error" ? null : ` · ${dateLabel}`}
-            </p>
           </div>
           <div className="toolbar">
             <Button
@@ -1160,13 +1149,14 @@ function PayoutForecastTool({
           <div>
             <dt>Прогноз дохода · купоны и дивиденды</dt>
             <dd>
+              ≈{" "}
               {calendarLoaded
                 ? calendarTotal(calendar.flatMap((entry) => [entry.coupon, entry.dividend]))
                 : "Не определён"}
             </dd>
           </div>
           <div>
-            <dt>Возврат номинала</dt>
+            <dt>Возврат номинала · не доход</dt>
             <dd>
               {calendarLoaded
                 ? calendarTotal(calendar.map((entry) => entry.redemption))
@@ -1175,7 +1165,15 @@ function PayoutForecastTool({
           </div>
         </dl>
         <p className="muted tiny">
-          Прогнозные суммы. Личный налог по выплатам T-Invest не определён.
+          Приблизительно · от снимка {formatDate(month.snapshot_date)} · {dateLabel} Личный налог по
+          выплатам T-Invest не учтён.
+        </p>
+        <p className={styles.composition}>
+          Купоны{" "}
+          {calendarLoaded ? calendarTotal(calendar.map((entry) => entry.coupon)) : "Не определён"}
+          {" / "}дивиденды{" "}
+          {calendarLoaded ? calendarTotal(calendar.map((entry) => entry.dividend)) : "Не определён"}
+          {" / "}возврат номинала (не доход)
         </p>
         {attention.length ? (
           <section className={styles.attention} aria-label="Требует внимания" role="status">
@@ -1187,53 +1185,112 @@ function PayoutForecastTool({
             </ul>
           </section>
         ) : null}
-        <h3>Выплаты по датам</h3>
-        {payments.length ? (
-          <section
-            aria-label="Выплаты: прокрутка списка"
-            className={styles.scroll}
-            // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users must be able to scroll the payouts table.
-            tabIndex={0}
-          >
-            <Table aria-label="Выплаты по датам">
-              <thead>
-                <tr>
-                  <Th>Дата</Th>
-                  <Th>Бумага / счёт</Th>
-                  <Th>Выплата</Th>
-                  <Th numeric>Сумма</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((item) => (
-                  <tr key={`${item.source_kind}-${item.source_id}`}>
-                    <Td>{formatDate(item.expected_date)}</Td>
-                    <Td>
-                      <strong>{item.instrument_name ?? "Бумага не определена"}</strong>
-                      <div className="muted tiny">{item.account_name}</div>
-                    </Td>
-                    <Td>
-                      {payoutKindLabel(item.flow_type)}
-                      {item.flow_type === "redemption" ? (
-                        <div className="muted tiny">возврат капитала, не доход</div>
-                      ) : null}
-                    </Td>
-                    <Td numeric>
-                      {formatMoney(item.expected_net_amount.amount, {
-                        currency:
-                          item.expected_net_amount.currency === "RUB"
-                            ? "₽"
-                            : item.expected_net_amount.currency,
-                      })}
-                      {item.is_approximate ? (
-                        <div className="muted tiny">приблизительно</div>
-                      ) : null}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </section>
+        {calendarLoaded && calendar.length > 0 ? (
+          <>
+            <figure className={styles.chart} aria-label="Прогноз выплат по месяцам">
+              <figcaption className="muted tiny">
+                Весь денежный поток · включая возврат номинала
+              </figcaption>
+              <div className={styles.bars}>
+                {calendar.map((entry) => {
+                  const value = Number(entry.total_net.amount);
+                  const height =
+                    chartMax > 0 && Number.isFinite(value)
+                      ? (Math.max(0, value) / chartMax) * 100
+                      : 0;
+                  return (
+                    <div className={styles.barColumn} key={`${entry.year}-${entry.month}`}>
+                      <span
+                        className={styles.barTrack}
+                        title={`${formatMonth(entry.year, entry.month)}: ${wholeMoneyText(entry.total_net)}`}
+                      >
+                        <span style={{ height: `${height}%` }} />
+                      </span>
+                      <span>{String(entry.month).padStart(2, "0")}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </figure>
+            <div className={styles.months}>
+              {calendar.map((entry, index) => (
+                <details
+                  className={styles.month}
+                  key={`${entry.year}-${entry.month}`}
+                  open={index === 0}
+                >
+                  <summary>
+                    <span>{formatMonth(entry.year, entry.month)}</span>
+                    <span className="muted tiny">{entry.items.length} выплат</span>
+                    {entry.actual_attribution_coverage === "unknown" ? (
+                      <span className="muted tiny">Полнота неизвестна; известная часть</span>
+                    ) : null}
+                    <strong title={calendarTotal([entry.total_net])}>
+                      ≈ {wholeMoneyText(entry.total_net)}
+                    </strong>
+                  </summary>
+                  {entry.items.length ? (
+                    <table
+                      className={styles.payments}
+                      aria-label={`Выплаты ${formatMonth(entry.year, entry.month)}`}
+                    >
+                      <thead>
+                        <tr>
+                          <th>Дата</th>
+                          <th>Бумага / счёт</th>
+                          <th>Вид</th>
+                          <th>Сумма</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...entry.items]
+                          .sort((a, b) => a.expected_date.localeCompare(b.expected_date))
+                          .map((item) => {
+                            const instrument = instrumentById.get(item.instrument_id);
+                            const name = instrument
+                              ? shortInstrumentName(instrument)
+                              : (item.instrument_name ?? "Бумага не определена");
+                            return (
+                              <tr key={`${item.source_kind}-${item.source_id}`}>
+                                <td>{formatDate(item.expected_date)}</td>
+                                <td>
+                                  {instrument?.isin ? (
+                                    <Link
+                                      to={`/v2/returns/instrument/${encodeURIComponent(instrument.isin)}`}
+                                      title={instrument.name}
+                                    >
+                                      {name}
+                                    </Link>
+                                  ) : (
+                                    <strong>{name}</strong>
+                                  )}
+                                  <small>{item.account_name}</small>
+                                </td>
+                                <td>
+                                  {payoutKindLabel(item.flow_type)}
+                                  {item.flow_type === "redemption" ? (
+                                    <small>возврат капитала, не доход</small>
+                                  ) : null}
+                                </td>
+                                <td
+                                  className={styles.paymentAmount}
+                                  title={calendarTotal([item.expected_net_amount])}
+                                >
+                                  {item.is_approximate ? "≈ " : ""}
+                                  {wholeMoneyText(item.expected_net_amount)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="muted tiny">Нет сохранённых выплат.</p>
+                  )}
+                </details>
+              ))}
+            </div>
+          </>
         ) : (
           <p>
             {calendarLoaded
@@ -1242,22 +1299,6 @@ function PayoutForecastTool({
           </p>
         )}
       </section>
-      <Panel
-        action={<Badge>12 месяцев · вручную и T-Invest</Badge>}
-        label="Прогноз"
-        title="Объединённый календарь выплат"
-      >
-        {loadingContext ? (
-          <LoadingState description="Загружаем локальный календарь…" inline />
-        ) : (
-          <section
-            aria-label="Календарь выплат: горизонтальная прокрутка таблицы"
-            className={styles.scroll}
-          >
-            <PayoutPaymentsCalendar months={calendar} />
-          </section>
-        )}
-      </Panel>
       <div id="payout-forecast-details" hidden={!detailsOpen} className={styles.diagnostics}>
         <h2>Подробности прогноза</h2>
         <p>
@@ -1657,7 +1698,13 @@ export default function UiV2PayoutForecastPage() {
     queryFn: ({ signal }) => listMonths(signal),
   });
   const selection = resolveMonthSelection(params.getAll("month"), months.data ?? []);
-  const month = isQueryReady(months) && selection.kind === "selected" ? selection.month : null;
+  const month = isQueryReady(months)
+    ? selection.kind === "selected"
+      ? selection.month
+      : selection.kind === "automatic"
+        ? latestClosedMonth(months.data ?? [])
+        : null
+    : null;
   const close = parseMonthlyCloseReturnContext(params);
   const returnPath = close && close.monthId === month?.id ? monthlyCloseReturnPath(close) : null;
   const [payoutWriteActive, setPayoutWriteActive] = useState(false);
@@ -1689,7 +1736,7 @@ export default function UiV2PayoutForecastPage() {
   }, [location.hash, month]);
   const monthOptions = useMemo(() => {
     const rows = months.data ?? [];
-    const fallback = newestMonth(rows);
+    const fallback = latestClosedMonth(rows);
     return { rows, fallback };
   }, [months.data]);
 
@@ -1743,7 +1790,7 @@ export default function UiV2PayoutForecastPage() {
         </UiV2Notice>
       ) : (
         <>
-          <DataMonthContext month={month} automatic={false} />
+          <DataMonthContext month={month} automatic={selection.kind === "automatic"} />
           <div inert={statementWriteActive}>
             <PayoutForecastTool
               key={`${month.id}:${location.search}`}

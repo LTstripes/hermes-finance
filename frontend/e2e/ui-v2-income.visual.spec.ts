@@ -14,6 +14,55 @@ import { fulfillMonthPlate } from "./visual-fixtures";
 
 type IncomeScene = "normal" | "no-closed" | "first-closed" | "zero" | "partial";
 
+test("ui-v2 Income fits desktop widths and zoom @viewport-owned", async ({ page }, testInfo) => {
+  await installIncomeApi(page);
+  await page.goto("/v2/income?month=91");
+  await expect(page.getByTestId("income-average")).toBeVisible();
+  for (const width of [1024, 1280, 1440, 1920]) {
+    for (const zoom of width === 1024 ? [1] : [1, 1.25]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate((value) => {
+        document.documentElement.style.zoom = String(value);
+      }, zoom);
+      await assertBounded(page);
+      const tabs = page.getByRole("navigation", { name: "Разделы дохода и планов" });
+      await expect(tabs.getByRole("link")).toHaveCount(5);
+      for (const link of await tabs.getByRole("link").all()) {
+        await expect(link).toHaveAttribute("href", /[?&]month=91(?:&|$)/);
+      }
+      for (const table of await page.getByRole("table").all()) {
+        expect(
+          await table.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        ).toBe(true);
+      }
+      const overlaps = await page.locator('[data-testid^="income-event-"]').evaluateAll((rows) =>
+        rows.flatMap((row) => {
+          const children = Array.from(row.children).map((child) => child.getBoundingClientRect());
+          const problems: string[] = [];
+          for (let a = 0; a < children.length; a++)
+            for (let b = a + 1; b < children.length; b++) {
+              const x = children[a],
+                y = children[b];
+              if (
+                x.left < y.right - 1 &&
+                x.right > y.left + 1 &&
+                x.top < y.bottom - 1 &&
+                x.bottom > y.top + 1
+              )
+                problems.push(row.textContent ?? "");
+            }
+          return problems;
+        }),
+      );
+      expect(overlaps).toEqual([]);
+      await page.screenshot({
+        path: testInfo.outputPath(`income-${width}-${zoom}.png`),
+        fullPage: true,
+      });
+    }
+  }
+});
+
 const money = (amount: string) => ({ amount, currency: "RUB" });
 
 function makeSummary({ zero = false }: { zero?: boolean } = {}): IncomePlanSummary {
@@ -270,7 +319,7 @@ test("ui-v2 Income and plans desktop: passive figures, bars, ladder and planning
   await expect(figures.getByTestId("income-selected-actual")).toHaveText("17 500 ₽");
   await expect(page.getByTestId("income-average")).toHaveText("15 300 ₽");
   await expect(page.getByTestId("income-forecast")).toHaveCount(0);
-  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("8 500 ₽");
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("≈ 8 500 ₽");
   await expect(
     page.getByText("Возврат основной суммы: 100 000 ₽", { exact: false }).first(),
   ).toBeVisible();
@@ -358,12 +407,7 @@ test("ui-v2 Income and plans desktop: passive figures, bars, ladder and planning
     await page
       .locator('[data-testid$="-panel"]')
       .evaluateAll((panels) => panels.map((panel) => panel.getAttribute("data-testid"))),
-  ).toEqual([
-    "income-history-panel",
-    "income-ladder-panel",
-    "income-plan-panel",
-    "income-handoffs-panel",
-  ]);
+  ).toEqual(["income-history-panel", "income-ladder-panel", "income-plan-panel"]);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-income-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
@@ -388,7 +432,7 @@ for (const scene of ["no-closed", "first-closed", "zero", "partial"] as const) {
       }
       if (scene === "zero") {
         await expect(page.getByTestId("income-average")).toHaveText("0 ₽");
-        await expect(page.getByTestId("income-upcoming-passive")).toHaveText("0 ₽");
+        await expect(page.getByTestId("income-upcoming-passive")).toHaveText("≈ 0 ₽");
       }
       if (scene === "partial") {
         await expect(page.getByTestId("income-ladder-panel")).toContainText(
@@ -429,15 +473,17 @@ test("ui-v2 deposit period forecast and table @viewport-owned", async ({ page },
     ],
   };
   await page.goto("/v2/income");
-  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 735 ₽");
-  const deposits = page.getByRole("region", { name: "Ожидаемые проценты по вкладам" });
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("≈ 9 735 ₽");
+  const deposits = page.getByLabel("Ожидаемые проценты по вкладам");
+  await expect(deposits).not.toHaveAttribute("open");
+  await deposits.locator(":scope > summary").click();
   await expect(deposits.getByRole("row")).toHaveCount(3);
   await expect(deposits).toContainText("дата выплаты неизвестна");
   await expect(deposits).toContainText("В общий прогноз не добавлено");
   await page.getByRole("button", { name: "14 дней" }).click();
   await expect(page.getByTestId("income-window-14")).toBeVisible();
   await expect(deposits).toContainText("30 дней");
-  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("9 735 ₽");
+  await expect(page.getByTestId("income-upcoming-passive")).toHaveText("≈ 9 735 ₽");
   await assertBounded(page);
   await capture(page, testInfo, "deposit-period-forecast");
   expect(evidence.errors).toEqual([]);
