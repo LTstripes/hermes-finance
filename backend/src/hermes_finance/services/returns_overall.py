@@ -21,7 +21,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services import returns_view, source_investment_proofs
 from hermes_finance.services.source_instrument_returns import _identities
-from hermes_finance.services.source_monthly_returns import _selected_sources, source_read_snapshot
+from hermes_finance.services.source_monthly_returns import _source_read_inputs, source_read_snapshot
 from hermes_finance.statement_import.mybroker import PROVIDER
 
 
@@ -221,6 +221,8 @@ def _source_accounts(
     captured_analyses=None,
     captured_reports=None,
     defer_history_proof_xirr=False,
+    native_instruments=True,
+    requested_isin=None,
 ):
     canonical = returns_view._source_scopes(session)
     labels = {a["id"]: a["label"] for a in returns_view._accounts(session, canonical)}
@@ -239,7 +241,7 @@ def _source_accounts(
         from hermes_finance.services.source_account_history import latest_history
 
         proof = latest_history(reports)
-        selected, _ = _selected_sources(session, account)
+        selected, _ = _source_read_inputs(session, account)
         metadata = _identities([view for _, view, error in selected if not error and view])
         extended = proof
         if proof and any(
@@ -270,6 +272,7 @@ def _source_accounts(
             read_instrument_returns(
                 session,
                 source_account=account,
+                isin=requested_isin,
                 include_monthly_history=False,
                 available_period=True,
                 excluded_periods={
@@ -281,7 +284,7 @@ def _source_accounts(
                     if p["status"] != "current"
                 },
             )
-            if any(original is not None for original, _, _ in selected)
+            if native_instruments and any(original is not None for original, _, _ in selected)
             else None
         )
         native_periods = set()
@@ -690,11 +693,14 @@ def _mixed_result(session, accounts, gold, months, mappings, reverse):
     }
 
 
-def read_overall(session, *, include_instrument_details=False):
+def read_overall(session, *, include_instrument_details=False, native_instruments=True):
     with source_read_snapshot(session):
         months = returns_view._months(session)
         accounts, instruments, canonical = _source_accounts(
-            session, include_instrument_details=include_instrument_details
+            session,
+            include_instrument_details=include_instrument_details,
+            native_instruments=native_instruments,
+            defer_history_proof_xirr=not native_instruments,
         )
         mappings, reverse = _account_mappings(session, canonical)
         for instrument in instruments:
@@ -728,7 +734,9 @@ def read_clean_overall(session, *, include_instrument_details=False):
     from hermes_finance.services.clean_instrument_return import read_clean_overview
 
     with source_read_snapshot(session):
-        legacy = read_overall(session, include_instrument_details=False)
+        # Only account evidence and non-security components survive this overlay.
+        # The independently guarded clean read below owns every instrument row.
+        legacy = read_overall(session, include_instrument_details=False, native_instruments=False)
         clean = read_clean_overview(session, include_position_rates=True)
         indexed = {row["scope"]: row for row in legacy["source_accounts"]}
         instruments = {}
@@ -960,7 +968,10 @@ def read_instrument_card(session, isin, *, overview=None):
             # The instrument card needs the source index only; deposits, gold,
             # and aggregate income from the overall page are not its inputs.
             accounts, instruments, _ = _source_accounts(
-                session, include_instrument_details=False, defer_history_proof_xirr=True
+                session,
+                include_instrument_details=False,
+                defer_history_proof_xirr=True,
+                requested_isin=isin,
             )
             for row in instruments:
                 for account in row["accounts"]:

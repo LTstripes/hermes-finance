@@ -38,7 +38,6 @@ from hermes_finance.services.source_monthly_returns import (
 )
 from hermes_finance.statement_import.money import normalize_currency
 from hermes_finance.statement_import.mybroker import PROVIDER, MyBrokerError, digest
-from hermes_finance.statement_import.mybroker_return_structure import source_return_blockers
 
 
 @dataclass(frozen=True)
@@ -1341,7 +1340,9 @@ def _prepare_instrument_inputs(
                 raise MyBrokerError("native_source_scope_ambiguous")
             views.append(view)
             period_inferred = "period_inferred_from_content" in view["document"].get("warnings", [])
-            blockers = set(source_return_blockers(view))
+            from hermes_finance.services.returns_read_inputs import source_blockers
+
+            blockers = source_blockers(session, view)
             proven_cancellations = cancellation_dates.get(original.id)
             if proven_cancellations is not None:
                 blockers -= {
@@ -1394,10 +1395,19 @@ def _prepare_instrument_inputs(
             while month <= original.covered_to:
                 gaps.append(InstrumentReturnGap(code, original.id, month))
                 month = _next_month(month)
+    from hermes_finance.services.returns_read_inputs import repo_identities
     from hermes_finance.services.source_trade_identity import repo_return_identities
 
     # Owned by this one coherent read; never persisted or reused by a later GET.
-    views = [{**view, "return_repo_identities": repo_return_identities(view)} for view in views]
+    views = [
+        {
+            **view,
+            "return_repo_identities": repo_identities(
+                session, view, identity_reader=repo_return_identities
+            ),
+        }
+        for view in views
+    ]
     identities = _identities(views)
     catalogue_kinds = {}
     unsupported_type_isins = set()

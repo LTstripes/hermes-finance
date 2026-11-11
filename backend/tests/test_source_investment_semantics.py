@@ -16,6 +16,8 @@ SEMANTIC_MODULES = (
     "domain/source_money_classifications.py",
     "domain/xirr.py",
     "domain/xirr_roots.py",
+    "services/broker_money_ownership.py",
+    "services/broker_trade_money.py",
     "services/clean_closed_position.py",
     "services/clean_instrument_return.py",
     "services/clean_purchase_returns.py",
@@ -25,6 +27,7 @@ SEMANTIC_MODULES = (
     "services/mybroker_money_candidates.py",
     "services/returns_read_inputs.py",
     "services/source_investment_proofs.py",
+    "services/source_intake.py",
     "services/source_account_history.py",
     "services/source_instrument_events.py",
     "services/source_instrument_returns.py",
@@ -55,7 +58,7 @@ SEMANTIC_MODULES = (
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v20",
-    "bbb0cd52527a2005066aa746042bc6dc8a71cd7f880faa00929f6133393b356d",
+    "1431781a2b1e5f6b976bd1ea934d1010323fc518bb93a76dcb5d5d37ad33a6e0",
 )
 
 

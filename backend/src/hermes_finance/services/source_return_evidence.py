@@ -3,7 +3,6 @@
 No classification, financial fact or receipt is written by a return reader.
 """
 
-import json
 import re
 from datetime import date, timedelta
 from decimal import Decimal
@@ -15,7 +14,7 @@ from hermes_finance.statement_import.mybroker import digest
 
 
 def bound_import(session, view):
-    from hermes_finance.services.returns_read_inputs import source_import
+    from hermes_finance.services.returns_read_inputs import normalized_import, source_import
 
     source = source_import(session, view["document_sha256"])
     if source is None:
@@ -27,7 +26,7 @@ def bound_import(session, view):
         or str(source.covered_to) != view["covered_to"]
         # S1 enriches parsed facts with account/cash linkage. Compare the frozen
         # parser facts, as other exact-original readers do, rather than that enrichment.
-        or not _original_equal(document, json.loads(source.normalized_json))
+        or not _original_equal(document, normalized_import(session, source))
     ):
         return None
     return source
@@ -581,8 +580,9 @@ def _effective_payout_instrument(
     owner = owned[0]
     if owner["role"] != role or owner["row_fingerprint"] != digest(row):
         return None
-    heads = _payout_money_heads(session)
-    entry = heads.get((role, owner["target_id"]))
+    from hermes_finance.services.returns_read_inputs import money_proof_head
+
+    entry = money_proof_head(session, (role, owner["target_id"]))
     if entry is None:
         return None
     receipt, proof, target = entry
