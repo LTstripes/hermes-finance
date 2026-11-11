@@ -140,7 +140,7 @@ async function installDataApi(page: Page) {
   return { errors, posts, reads, unexpected };
 }
 
-async function installFilesApi(page: Page) {
+async function installFilesApi(page: Page, hasBackups = true) {
   const unexpected: string[] = [];
   const posts: string[] = [];
   const errors: string[] = [];
@@ -173,7 +173,7 @@ async function installFilesApi(page: Page) {
       return;
     }
     if (request.method() === "GET" && url.pathname === "/api/backups") {
-      await route.fulfill({ status: 200, json: [backup] });
+      await route.fulfill({ status: 200, json: hasBackups ? [backup] : [] });
       return;
     }
     unexpected.push(line);
@@ -310,17 +310,17 @@ test("ui-v2 Files desktop: exports and irreversible restore remain separated", a
 }, testInfo) => {
   const evidence = await installFilesApi(page);
   await page.goto("/v2/data/files");
-  await expect(page.getByRole("heading", { name: "Файлы" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Экспорт и копии" })).toBeVisible();
   await expect(page.getByTestId("files-exports")).toBeVisible();
   await expect(page.getByTestId("files-backups")).toBeVisible();
-  await expect(page.getByText("Необратимо")).toBeVisible();
+  await expect(page.getByText("Необратимо")).toHaveCount(0);
   await expect(page.getByText(evidence.backup.name)).toBeVisible();
-  await expect(
-    page.getByText("Дополнительные / технические выгрузки").locator(".."),
-  ).not.toHaveAttribute("open");
+  await expect(page.getByText("Технические выгрузки").locator("..")).not.toHaveAttribute("open");
 
+  await expect(page.getByRole("menuitem")).toHaveCount(0);
+  await page.getByRole("button", { name: `Действия с копией ${evidence.backup.name}` }).click();
   await page
-    .getByRole("button", { name: `Восстановить резервную копию ${evidence.backup.name}` })
+    .getByRole("menuitem", { name: `Восстановить резервную копию ${evidence.backup.name}` })
     .click();
   await expect(page.getByRole("alertdialog")).toContainText(
     `Выбрана копия: ${evidence.backup.name}`,
@@ -331,4 +331,50 @@ test("ui-v2 Files desktop: exports and irreversible restore remain separated", a
   expect(evidence.posts).toEqual([]);
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
+});
+
+test("@viewport-owned Export and copies fit desktop zoom and 720px content", async ({
+  page,
+}, testInfo) => {
+  for (const hasBackups of [false, true]) {
+    await page.unroute("**/api/**");
+    const evidence = await installFilesApi(page, hasBackups);
+    await page.goto("/v2/data/files");
+    await expect(page.getByRole("heading", { level: 1, name: "Экспорт и копии" })).toBeVisible();
+    if (!hasBackups) {
+      await expect(page.getByTestId("files-no-backups")).toBeVisible();
+      await expect(page.getByTestId("files-backups")).not.toContainText(/восстановлен|необратимо/i);
+    } else {
+      await expect(page.getByRole("table", { name: "Резервные копии" })).toBeVisible();
+      await expect(page.getByLabel("Месяц отчёта")).toHaveValue("91");
+    }
+    for (const width of [1024, 1280, 1440, 1920]) {
+      for (const zoom of [1, 1.25]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate((value) => {
+          document.documentElement.style.zoom = String(value);
+        }, zoom);
+        await assertBounded(page);
+        const create = await page
+          .getByRole("button", { name: "Создать копию", exact: true })
+          .boundingBox();
+        expect(create && create.x >= 0 && create.x + create.width <= width).toBeTruthy();
+        if (width === 1280 && zoom === 1.25)
+          await capture(page, testInfo, `export-${hasBackups ? "copies" : "empty"}-1280-zoom125`);
+      }
+    }
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = "1";
+      const content = document.querySelector<HTMLElement>('[data-testid="data-files-page"]');
+      if (content) content.style.width = "720px";
+    });
+    expect(
+      await page
+        .getByTestId("files-backups")
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    expect(evidence.posts).toEqual([]);
+    expect(evidence.unexpected).toEqual([]);
+    expect(evidence.errors).toEqual([]);
+  }
 });
