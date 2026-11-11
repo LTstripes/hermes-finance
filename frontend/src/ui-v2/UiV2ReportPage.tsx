@@ -30,7 +30,6 @@ import {
   HISTORY_WINDOWS,
   historyWindowLabel,
   type HistoryWindowSize,
-  NO_HISTORICAL_CHANGE_TEXT,
   REPORTS_PATH,
   resolveReportTarget,
   seriesPosition,
@@ -328,13 +327,12 @@ function HoldingsBlock({
       {sections.map((section) => {
         const list = lists[section.kind];
         const sectionRows = rows.filter((row) => row.kind === section.kind);
+        if (list.ready && sectionRows.length === 0) return null;
         return (
           <div className={reportStyles.subBlock} key={section.kind}>
             <h3>{section.title}</h3>
             {!list.ready ? (
               <UiV2WidgetState retry={list.retry} />
-            ) : sectionRows.length === 0 ? (
-              <p className={reportStyles.muted}>В закрытом отчёте нет строк этого вида.</p>
             ) : (
               <ul className={reportStyles.holdingList}>
                 {sectionRows.map((row) => (
@@ -590,15 +588,6 @@ export default function UiV2ReportPage() {
             points={points}
             position={position}
           />
-          <Panel
-            eyebrow="Изменение состояния"
-            id="report-change-title"
-            title="Где изменились суммы"
-          >
-            <p className={reportStyles.muted} data-testid="report-change-unavailable">
-              {NO_HISTORICAL_CHANGE_TEXT}
-            </p>
-          </Panel>
           <LinkedPairsBlock point={position.point} />
           <HoldingsBlock
             lists={{

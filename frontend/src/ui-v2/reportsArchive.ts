@@ -225,3 +225,46 @@ export function seriesPosition(
     next: points[index + 1] ?? null,
   };
 }
+
+/** Match the exact closed snapshot; drafts and a different date cannot supply its money. */
+export function matchingCapitalPoint(month: ReportingMonth, points: CapitalCompositionPoint[]) {
+  if (month.status !== "closed") return null;
+  return (
+    points.find(
+      (point) =>
+        point.reporting_month_id === month.id &&
+        point.year === month.year &&
+        point.month === month.month &&
+        point.snapshot_date === month.snapshot_date,
+    ) ?? null
+  );
+}
+
+/** Collapse only consecutive existing closed periods without confirmed capital. */
+export function groupMonthsWithoutCapital(
+  months: ReportingMonth[],
+  capitalFor: (month: ReportingMonth) => CapitalCompositionPoint | null,
+): ReportingMonth[][] {
+  const groups: ReportingMonth[][] = [];
+  const missing = (month: ReportingMonth) => {
+    const point = capitalFor(month);
+    return (
+      month.status === "closed" &&
+      (!point ||
+        point.portfolio_source_coverage?.status === "unavailable" ||
+        !point.liquid_capital_net)
+    );
+  };
+  for (const month of months) {
+    const previous = groups.at(-1)?.at(-1);
+    if (
+      previous &&
+      missing(previous) &&
+      missing(month) &&
+      previous.year * 12 + previous.month === month.year * 12 + month.month + 1
+    ) {
+      groups.at(-1)!.push(month);
+    } else groups.push([month]);
+  }
+  return groups;
+}

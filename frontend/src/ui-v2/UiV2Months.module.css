@@ -169,3 +169,53 @@
     width: 100%;
   }
 }
+
+.monthTable {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+}
+.monthTable th,
+.monthTable td {
+  padding: var(--returns-cell-padding);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.monthTable th:first-child {
+  width: 22%;
+}
+.monthTable th:nth-child(2) {
+  width: 14%;
+}
+.monthTable th:last-child {
+  width: 24%;
+}
+.monthTable .money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.money small {
+  display: block;
+}
+.monthTable .actions {
+  flex-wrap: nowrap;
+  gap: var(--returns-cell-padding);
+}
+.monthTable .primary {
+  min-height: var(--returns-row-height);
+  padding: var(--returns-cell-padding);
+}
+.missingGroup summary {
+  cursor: pointer;
+  color: var(--muted);
+  padding: var(--returns-cell-padding) 0;
+}
+.missingGroup .row {
+  flex-wrap: wrap;
+}
+
+.monthTable td:last-child {
+  padding-left: var(--t-xs);
+}

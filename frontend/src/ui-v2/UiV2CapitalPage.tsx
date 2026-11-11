@@ -613,14 +613,6 @@ function HoldingsBlock({
         ]
       : []),
   ];
-  const noLinkReasons = [
-    ...new Set(
-      visible
-        .filter((row) => row.kind === "position")
-        .map((row) => holdingReturnsNavigation(row).reason)
-        .filter(Boolean),
-    ),
-  ];
   const top = risk?.top_positions;
   const topReason = top
     ? unsupportedMetricReason(top.support.status, top.support.reason_codes)
@@ -728,7 +720,12 @@ function HoldingsBlock({
                             {row.name}
                           </Link>
                         ) : (
-                          <span className={capitalStyles.holdingName}>{row.name}</span>
+                          <span
+                            className={capitalStyles.holdingName}
+                            title={target.reason ?? undefined}
+                          >
+                            {row.name}
+                          </span>
                         )}
                         <span className={capitalStyles.holdingMeta}>
                           {holdingContextLabel(row)}
@@ -776,9 +773,6 @@ function HoldingsBlock({
         <p className={sheet.muted}>
           {filter ? "В фильтре нет строк." : "В закрытом отчёте нет строк капитала."}
         </p>
-      ) : null}
-      {noLinkReasons.length ? (
-        <p className={sheet.gapNote}>Без ссылки на разбор: {noLinkReasons.join(" ")}</p>
       ) : null}
       {metric && !unsupported ? (
         <Limits

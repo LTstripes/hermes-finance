@@ -358,7 +358,14 @@ export default function UiV2ClosePage() {
         : undefined;
     const panelStep = workflow.checklist?.steps.find((step) => step.id === panel);
     content = !panel ? (
-      <MonthOverview pathFor={panelPath} workflow={workflow} />
+      <>
+        <MonthOverview pathFor={panelPath} workflow={workflow} />
+        {closed ? (
+          <p>
+            <Link to={`/v2/reports/${workflow.month.id}`}>Состав капитала на эту дату</Link>
+          </p>
+        ) : null}
+      </>
     ) : (
       <div className={styles.closeWorkspace} data-testid="v2-close-workspace">
         <MonthStepStrip
@@ -604,7 +611,7 @@ export default function UiV2ClosePage() {
           <div className={overviewStyles.headingMeta}>
             <p className={styles.eyebrow}>Месяц</p>
             <Link className={overviewStyles.allMonths} to="/v2/data/months">
-              Отчётные месяцы →
+              Все месяцы →
             </Link>
           </div>
           <div className={overviewStyles.titleRow}>

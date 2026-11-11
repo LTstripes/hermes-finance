@@ -7,10 +7,11 @@ import { createQueryClient } from "../queryClient";
 import {
   makeUiV2ArchiveHistory,
   makeUiV2CapitalHistory,
-  uiV2Accounts,
+  makeUiV2PassiveHistory,
   uiV2ArchiveMonths,
   uiV2Months,
 } from "../test/uiV2Fixtures";
+import { moneyText } from "./valueFormat";
 import UiV2ReportsPage from "./UiV2ReportsPage";
 
 function LocationProbe() {
@@ -24,6 +25,8 @@ function setup(path = "/v2/reports") {
   const state = {
     months: uiV2ArchiveMonths,
     composition: makeUiV2ArchiveHistory(),
+    income: makeUiV2PassiveHistory(),
+    incomeError: false,
     monthsError: false,
     compositionError: false,
   };
@@ -45,8 +48,9 @@ function setup(path = "/v2/reports") {
           data = state.composition;
           failed = state.compositionError;
           break;
-        case "/api/accounts":
-          data = uiV2Accounts;
+        case "/api/analytics/passive-income":
+          data = state.income;
+          failed = state.incomeError;
           break;
         default:
           throw new Error(`Unexpected API: ${url.pathname}${url.search}`);
@@ -82,277 +86,164 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("UI v2 reports archive", () => {
-  it("keeps the known subtotal and labels a partially covered report row", async () => {
-    const { mount, state } = setup();
-    state.composition = {
-      ...state.composition,
-      points: state.composition.points.map((point) =>
-        point.reporting_month_id === 90
-          ? {
-              ...point,
-              portfolio_source_coverage: {
-                status: "partial",
-                reason_codes: ["active_account_snapshot_missing"],
-                missing_account_ids: [2],
-              },
-            }
-          : point,
-      ),
-    };
-    mount();
-    const row = await screen.findByTestId("reports-row-90");
-    await waitFor(() => expect(row).toHaveTextContent("2 761 300 ₽"));
-    await waitFor(() =>
-      expect(within(row).getByTestId("portfolio-coverage-note")).toHaveTextContent(
-        "Частично: нет снимка счёта: Синтетический старый вклад",
-      ),
-    );
-    expect(within(row).getByText("Итог известных записей")).toBeVisible();
-  });
-
-  it("does not display unconfirmed zeros when snapshots are unavailable", async () => {
-    const { mount, state } = setup();
-    state.composition = {
-      ...state.composition,
-      points: state.composition.points.map((point) =>
-        point.reporting_month_id === 90
-          ? {
-              ...point,
-              portfolio_source_coverage: {
-                status: "unavailable",
-                reason_codes: ["active_account_snapshot_missing"],
-                missing_account_ids: [2],
-              },
-            }
-          : point,
-      ),
-    };
-    mount();
-    const row = await screen.findByTestId("reports-row-90");
-    await waitFor(() => expect(row).toHaveTextContent("Синтетический старый вклад"));
-    const cells = within(row).getAllByRole("cell");
-    expect(cells.slice(3, 6).map((cell) => cell.textContent?.trim())).toEqual([
-      "—Нет снимков капитала; нет снимка счёта: Синтетический старый вклад",
-      "—",
-      "—",
-    ]);
-  });
-
-  it("keeps the missing snapshot reason when the source is also partial", async () => {
-    const { mount, state } = setup();
-    state.composition = {
-      ...state.composition,
-      points: state.composition.points.map((point) =>
-        point.reporting_month_id === 90
-          ? {
-              ...point,
-              portfolio_source_coverage: {
-                status: "unavailable",
-                reason_codes: ["active_account_snapshot_missing"],
-                missing_account_ids: [2],
-                source_account_financial_coverage: {
-                  status: "partial",
-                  reason_codes: [],
-                  account_ids: [2],
-                  intake_count: 1,
-                },
-              },
-            }
-          : point,
-      ),
-    };
-    mount();
-    const row = await screen.findByTestId("reports-row-90");
-    await waitFor(() => expect(row).toHaveTextContent("Синтетический старый вклад"));
-    const cells = within(row).getAllByRole("cell");
-    expect(cells.slice(3, 6).map((cell) => cell.textContent?.trim())).toEqual([
-      "—Нет снимков капитала; нет снимка счёта: Синтетический старый вклад",
-      "—",
-      "—",
-    ]);
-    expect(row).not.toHaveTextContent("Итог известных записей");
-  });
-
-  it("groups closed reports by year, marks the current report and keeps drafts out of history", async () => {
+describe("unified months list at the reports address", () => {
+  it("shows canonical closed capital and passive income alongside drafts, without computing deltas", async () => {
     const { mount, reads } = setup();
     mount();
-
-    expect(await screen.findByRole("heading", { level: 1, name: "Отчёты" })).toBeVisible();
-    await screen.findByTestId("reports-archive");
-    await waitFor(() =>
-      expect(screen.getByTestId("reports-row-90")).toHaveTextContent("2 761 300 ₽"),
-    );
-    expect(screen.getByRole("heading", { level: 2, name: "2031" })).toBeVisible();
-
-    const group2031 = screen.getByTestId("reports-year-2031");
-    const group2030 = screen.getByTestId("reports-year-2030");
-    expect(within(group2031).getByTestId("reports-row-91")).toHaveAttribute("data-current", "true");
-    expect(within(group2031).getByTestId("reports-row-90")).toHaveAttribute(
-      "data-current",
-      "false",
-    );
-    expect(within(group2030).getByTestId("reports-row-87")).toBeVisible();
-
-    const rows = Array.from(group2031.querySelectorAll("tbody tr")).map(
-      (row) => row.getAttribute("data-testid") ?? `gap:${row.textContent}`,
-    );
-    expect(rows.slice(0, 6)).toEqual([
-      "reports-row-91",
-      "reports-gap-2031-6",
-      "reports-row-90",
-      "reports-row-89",
-      "reports-gap-2031-3",
-      "reports-row-88",
-    ]);
-    expect(within(group2030).queryByText("отчёта нет")).toBeNull();
-    expect(screen.queryByTestId("reports-row-12")).toBeNull();
-
-    const currentRow = within(group2031).getByTestId("reports-row-91");
-    expect(currentRow).toHaveTextContent("Закрыт");
-    expect(
-      within(currentRow).getByRole("link", { name: "Открыть в «Мои финансы»" }),
-    ).toHaveAttribute("href", "/v2");
-    const olderRow = within(group2031).getByTestId("reports-row-90");
-    expect(olderRow).toHaveTextContent("Закрыт");
-    expect(olderRow).toHaveTextContent("31.05.2031");
-    expect(olderRow).toHaveTextContent("2 761 300 ₽");
-    expect(olderRow).toHaveTextContent("3 151 300 ₽");
-    expect(olderRow).toHaveTextContent("−390 000 ₽");
-    expect(within(olderRow).getByRole("link", { name: "Открыть отчёт" })).toHaveAttribute(
+    expect(await screen.findByRole("heading", { name: "Все месяцы", level: 1 })).toBeVisible();
+    const row = await screen.findByTestId("reports-row-90");
+    await waitFor(() => expect(row).toHaveTextContent("2 761 300 ₽"));
+    expect(within(row).getByRole("link", { name: "Открыть" })).toHaveAttribute(
       "href",
-      "/v2/reports/90",
+      "/v2/close?month=90",
     );
-
-    const draftNote = screen.getByTestId("reports-draft-note");
-    expect(draftNote).toHaveTextContent("Август 2031 ещё не закрыт");
-    expect(draftNote).toHaveTextContent("черновик, не отчёт");
-    expect(draftNote.querySelector("a")).toHaveAttribute("href", "/v2");
-
-    expect(screen.getByTestId("reports-archive")).toHaveAttribute("data-money-state", "confirmed");
+    expect(screen.getByTestId("reports-row-12")).toHaveTextContent("Черновик");
+    expect(screen.queryByRole("columnheader", { name: "Изменение" })).toBeNull();
+    expect(screen.queryByText("отчёта нет")).toBeNull();
     expect(reads.every((read) => read.startsWith("GET "))).toBe(true);
-    // Opening the archive on the normal navigation path costs no extra network:
-    // only the two already-cached read models Home/Capital use.
-    expect(reads.map((read) => read.split(" ")[1])).toEqual([
-      "/api/months",
-      "/api/analytics/capital-composition",
-    ]);
-    expect(screen.getByRole("link", { name: "Отчётные месяцы →" })).toHaveAttribute(
-      "href",
-      "/v2/data/months",
+    expect(reads).toContain("GET /api/analytics/passive-income?reporting_month_id=91");
+    const income = makeUiV2PassiveHistory().points.find((point) => point.reporting_month_id === 90);
+    expect(income).toBeDefined();
+    expect(within(row).getAllByRole("cell")[2]).toHaveAttribute(
+      "title",
+      moneyText(income!.passive_income_actual),
     );
-    expect(
-      screen.getByText(/Поздние цены и остатки в прошлые отчёты не подставляются/i),
-    ).toBeVisible();
   });
-
-  it("keeps gap markers non-interactive and unnumbered", async () => {
-    const { mount } = setup();
+  it("keeps the exact known subtotal with a short partial label and one explanation", async () => {
+    const { mount, state } = setup();
+    // Select by ID because the fixture also contains a prior-year point.
+    const point = state.composition.points.find((point) => point.reporting_month_id === 90)!;
+    point.portfolio_source_coverage = {
+      status: "partial",
+      reason_codes: [],
+      missing_account_ids: [2],
+    };
     mount();
-
-    const gap = await screen.findByTestId("reports-gap-2031-6");
-    expect(gap).toHaveTextContent("Июнь 2031");
-    expect(gap).toHaveTextContent("отчёта нет");
-    expect(within(gap).queryByRole("link")).toBeNull();
-    expect(within(gap).queryByRole("button")).toBeNull();
-    expect(gap).not.toHaveTextContent("0 ₽");
-    expect(screen.queryByTestId("reports-gap-2031-8")).toBeNull();
-    expect(screen.queryByTestId("reports-gap-2030-12")).toBeNull();
+    const row = await screen.findByTestId("reports-row-90");
+    await waitFor(() => expect(row).toHaveTextContent("2 761 300 ₽неполный"));
+    expect(screen.getAllByText(/Неполный капитал — итог известных записей/)).toHaveLength(1);
+    expect(within(row).queryByText(/нет снимка счёта/)).toBeNull();
   });
-
-  it("notes the missing second closed report without inventing rows", async () => {
+  it.each([false, true])(
+    "hides unavailable capital even with partial source coverage %s",
+    async (sourcePartial) => {
+      const { mount, state } = setup();
+      const point = state.composition.points.find((point) => point.reporting_month_id === 90)!;
+      point.portfolio_source_coverage = {
+        status: "unavailable",
+        reason_codes: [],
+        missing_account_ids: [2],
+        ...(sourcePartial
+          ? {
+              source_account_financial_coverage: {
+                status: "partial" as const,
+                reason_codes: [],
+                account_ids: [2],
+                intake_count: 1,
+              },
+            }
+          : {}),
+      };
+      mount();
+      const row = await screen.findByTestId("reports-row-90");
+      await waitFor(() => expect(within(row).getAllByRole("cell")[1]).toHaveTextContent("—"));
+      expect(row).not.toHaveTextContent("2 761 300 ₽");
+      expect(within(row).queryByText("неполный")).toBeNull();
+    },
+  );
+  it("collapses consecutive missing capital without hiding the individual month actions", async () => {
+    const { mount, state } = setup();
+    state.months = state.months.filter(
+      (month) => month.id === 91 || month.id === 90 || month.id === 89,
+    );
+    state.composition.points = state.composition.points.filter(
+      (point) => point.reporting_month_id === 91,
+    );
+    mount();
+    const summary = await screen.findByText(/Апрель 2031 — Май 2031 · без капитала · 2 мес/);
+    const details = summary.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    fireEvent.click(summary);
+    expect(
+      within(details)
+        .getAllByRole("link", { name: "Открыть" })
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(["/v2/close?month=90", "/v2/close?month=89"]);
+  });
+  it("keeps the single closed report and never invents a preceding report", async () => {
     const { mount, state } = setup();
     state.months = [uiV2Months[0], uiV2Months[1]];
     state.composition = makeUiV2CapitalHistory({ firstClosed: true });
     mount();
-
-    expect(await screen.findByTestId("reports-single-note")).toHaveTextContent(
-      "История появится после второго закрытого отчёта",
-    );
     await waitFor(() =>
       expect(screen.getByTestId("reports-row-91")).toHaveTextContent("2 803 900 ₽"),
     );
     expect(screen.queryByText("отчёта нет")).toBeNull();
   });
-
-  it("hides every money value and offers a retry when the composition read fails", async () => {
-    const { mount, reads, state } = setup();
+  it("hides failed capital and recovers through the existing refresh action", async () => {
+    const { mount, state } = setup();
     state.compositionError = true;
     mount();
-
-    expect(await screen.findByTestId("reports-row-90")).toBeVisible();
-    expect(screen.getByTestId("reports-row-90")).not.toHaveTextContent("2 761 300 ₽");
-    expect(screen.getByTestId("reports-archive")).toHaveAttribute(
-      "data-money-state",
-      "unavailable",
-    );
-    expect(screen.getByText("Денежные значения отчётов временно недоступны")).toBeVisible();
-    expect(reads).toContain("GET /api/analytics/capital-composition");
-
+    await screen.findByText(/Часть сумм недоступна/);
+    expect(screen.getByTestId("months-table")).not.toHaveTextContent("2 761 300 ₽");
     state.compositionError = false;
-    fireEvent.click(within(screen.getByRole("alert")).getByRole("button", { name: "Повторить" }));
+    fireEvent.click(screen.getByRole("button", { name: "Обновить список" }));
     await waitFor(() =>
       expect(screen.getByTestId("reports-row-90")).toHaveTextContent("2 761 300 ₽"),
     );
   });
-
-  it("fails the money closed when the series does not confirm the latest closed report", async () => {
-    const { mount, state } = setup();
-    state.composition = makeUiV2CapitalHistory({ firstClosed: true });
+  it("fails capital closed when the latest report identity does not match", async () => {
+    const { mount, state, client } = setup();
+    state.composition.points.pop();
     mount();
-
-    expect(await screen.findByTestId("reports-row-91")).toBeVisible();
-    expect(screen.getByTestId("reports-archive")).toHaveAttribute(
-      "data-money-state",
-      "unavailable",
-    );
-    expect(screen.getByTestId("reports-row-91")).not.toHaveTextContent("2 803 900 ₽");
+    await screen.findByTestId("months-table");
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(screen.getByTestId("months-table")).not.toHaveTextContent("2 761 300 ₽");
   });
-
-  it("shows no rows when nothing is closed yet and never reads money", async () => {
+  it("shows draft actions without reading closed money when no month is closed", async () => {
     const { mount, reads, state } = setup();
     state.months = [uiV2Months[1]];
     mount();
-
-    expect(await screen.findByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
-    expect(screen.queryByTestId("reports-archive")).toBeNull();
+    expect(await screen.findByRole("link", { name: "Открыть" })).toHaveAttribute(
+      "href",
+      "/v2/close?month=12",
+    );
     expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
   });
-
-  it("recovers the archive after a months read error", async () => {
+  it("recovers from a month read error without substituting money", async () => {
     const { mount, reads, state } = setup();
     state.monthsError = true;
     mount();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Список месяцев недоступен");
     expect(reads.some((read) => read.includes("/api/analytics/"))).toBe(false);
     state.monthsError = false;
-    fireEvent.click(screen.getByRole("button", { name: "Повторить" }));
-    expect(await screen.findByTestId("reports-row-90")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Обновить список" }));
+    await screen.findByTestId("reports-row-90");
   });
-
-  it("shows a genuine zero report as zero and never as a missing month", async () => {
+  it("shows known zero as zero and never as missing capital", async () => {
     const { mount, state } = setup();
-    state.composition = {
-      asset_classes: state.composition.asset_classes,
-      points: makeUiV2CapitalHistory({ zero: true }).points,
-    };
+    state.composition.points = makeUiV2CapitalHistory({ zero: true }).points;
     mount();
-
     await waitFor(() => expect(screen.getByTestId("reports-row-91")).toHaveTextContent("0 ₽"));
-    expect(screen.getByTestId("reports-row-91")).not.toHaveTextContent("отчёта нет");
-    expect(screen.getByTestId("reports-gap-2031-6")).toHaveTextContent("—");
   });
-
-  it("keeps the archive as a native section without a current sidebar item", async () => {
-    const { mount } = setup();
-    mount();
-
-    await screen.findByTestId("reports-archive");
-    expect(screen.getByRole("link", { name: "Мои финансы" })).not.toHaveAttribute("aria-current");
-    expect(screen.getByRole("link", { name: "Капитал" })).not.toHaveAttribute("aria-current");
-    expect(
-      screen.queryByRole("link", { name: "Открыть этот раздел в предыдущем интерфейсе →" }),
-    ).not.toBeInTheDocument();
-  });
+  it.each(["latest", "snapshot"])(
+    "rejects passive income for a different %s identity",
+    async (mismatch) => {
+      const { mount, state, client } = setup();
+      if (mismatch === "latest") state.income.latest_closed_report_id = 999;
+      else
+        state.income.points = state.income.points.map((point) => ({
+          ...point,
+          snapshot_date: "2031-01-01",
+        }));
+      mount();
+      await waitFor(() =>
+        expect(screen.getByTestId("reports-row-90")).toHaveTextContent("2 761 300 ₽"),
+      );
+      await waitFor(() => expect(client.isFetching()).toBe(0));
+      expect(
+        within(screen.getByTestId("reports-row-90")).getAllByRole("cell")[2],
+      ).toHaveTextContent("—");
+    },
+  );
 });

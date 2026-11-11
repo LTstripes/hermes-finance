@@ -284,6 +284,25 @@ describe("UiV2Shell native navigation", () => {
     expect(navigation.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
   });
 
+  it.each(["/v2/data/months?month=7", "/v2/reports"])(
+    "marks the month plate at %s without selecting Settings",
+    async (path) => {
+      respondWith(draftStatus);
+      render(
+        withClient(
+          <MemoryRouter initialEntries={[path]}>
+            <UiV2Shell header={<h1>Все месяцы</h1>}>Контент</UiV2Shell>
+          </MemoryRouter>,
+        ),
+      );
+      expect(await screen.findByRole("link", { name: /Рабочий месяц/ })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(screen.getByRole("link", { name: "Настройки" })).not.toHaveAttribute("aria-current");
+    },
+  );
+
   it("keeps Close keyboard-operable and every shell link in v2", async () => {
     const user = userEvent.setup();
     renderShell();

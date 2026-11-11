@@ -59,7 +59,18 @@ The Month workspace uses authoritative read models without a second progress led
 
 `/v2/close` is the normal **Month** entry: personal data first, then broker statements before dependent positions and payouts, followed by comments and final review/explicit Close. It reuses the existing editor sections, shared multi-file source-intake upload and saved-source/exception list. The ordinary **Выплаты** entry reuses saved financial DRAFT positions for the existing T-Invest forecast refresh, shows a compact result and links to the saved calendar, alongside accepted actual records. It does not mount a second XML upload/review. Source-only Save does not establish that financial DRAFT. Source observations and quantity-date scenarios remain accessible in **Брокерские выписки**, with payout observations in a separate disclosure; an earlier scenario date never becomes month-end EOD. Source observations are not added to accepted actual totals; unknown tax remains unknown. Manual payout forms are secondary disclosures, retaining existing records and guards. Panel/section/step links, exact month/account/ISIN/quantity date, dirty/pending recovery and Back/Reload remain supported. Each XML has its own Save/readback result; a broken file does not discard valid siblings. Month displays sources bound to that month and unbound sources overlapping its calendar period, with an explicit source-account filter; this display never binds or financially accepts an original. Source review reuses the existing identity/journal/strict-DRAFT controls, with exact originals reselected after reload. Unknown ISINs require explicit review. Account-and-period links open the existing read-only bond/monthly-return reader; source estimates do not establish financial readiness. The backend-owned DRAFT/Close/Reopen workflow and existing routes remain available.
 
-In the period list, every compact row has the same primary **Открыть месяц** action
+The **Все месяцы** list at `/v2/data/months` and `/v2/reports` uses one component,
+with period, status, closed-report liquid capital and passive income from their
+existing readers. It does not calculate historical changes. A partial capital
+subtotal is marked **неполный**, with one explanation under the table. Consecutive
+closed periods without confirmed capital collapse into a range; expanding it
+retains each period and its actions. Both routes highlight the month plate.
+Home and month overview link to **Все месяцы**. The closed overview links to
+**Состав капитала на эту дату** at the existing report address. Historical reports
+omit unavailable change blocks and successfully loaded empty holdings sections;
+failed reads retain their retry controls.
+
+In the period list, every compact row has the same primary **Открыть** action
 to `/v2/close?month=id`, including immediately after create/copy and list readback.
 Copy, the separate manual editor, reports and eligible draft deletion live in the
 accessible **⋯** menu. There is no duplicate **Проверить и закрыть** action.

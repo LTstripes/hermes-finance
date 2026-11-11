@@ -11,10 +11,14 @@ import {
   withMonthlyCloseReturn,
 } from "../components/month-close/navigation";
 import { ConfirmDialog, OverflowMenu, OverflowMenuItem } from "../components/ui";
-import { formatDate, formatMonth } from "../lib/format";
+import { getCapitalComposition, getPassiveIncomeHistory } from "../api/analytics";
+import { formatMonth } from "../lib/format";
 import { lastDayOfMonth, nextPeriod } from "../lib/period";
 import { queryKeys } from "../queryClient";
-import { UiV2DataFrame } from "./UiV2DataShell";
+import { UiV2Shell } from "./UiV2Shell";
+import { isQueryReady } from "./UiV2StateBlocks";
+import { moneyText, moneyWholeText } from "./valueFormat";
+import { groupMonthsWithoutCapital, matchingCapitalPoint } from "./reportsArchive";
 import {
   latestClosedMonth,
   monthWorkspacePath,
@@ -78,6 +82,40 @@ export default function UiV2MonthsPage() {
       : null;
   const latest = months[0] ?? null;
   const latestClosed = latestClosedMonth(months);
+  const compositionQuery = useQuery({
+    enabled: latestClosed !== null,
+    queryKey: queryKeys.capitalComposition,
+    queryFn: ({ signal }) => getCapitalComposition(signal),
+  });
+  const incomeQuery = useQuery({
+    enabled: latestClosed !== null,
+    queryKey: queryKeys.passiveIncomeHistory(latestClosed?.id ?? null),
+    queryFn: ({ signal }) => getPassiveIncomeHistory(latestClosed!.id, signal),
+  });
+  const capitalConfirmed =
+    isQueryReady(monthsQuery) &&
+    isQueryReady(compositionQuery) &&
+    compositionQuery.data?.points.at(-1)?.reporting_month_id === latestClosed?.id;
+  const incomeConfirmed =
+    isQueryReady(monthsQuery) &&
+    isQueryReady(incomeQuery) &&
+    incomeQuery.data?.latest_closed_report_id === latestClosed?.id;
+  const capitalFor = (month: ReportingMonth) =>
+    capitalConfirmed ? matchingCapitalPoint(month, compositionQuery.data?.points ?? []) : null;
+  const incomeFor = (month: ReportingMonth) =>
+    incomeConfirmed && month.status === "closed"
+      ? incomeQuery.data?.points.find(
+          (item) =>
+            item.reporting_month_id === month.id &&
+            item.year === month.year &&
+            item.month === month.month &&
+            item.snapshot_date === month.snapshot_date,
+        )?.passive_income_actual
+      : null;
+  const groups =
+    compositionQuery.isPending || compositionQuery.isFetching
+      ? months.map((month) => [month])
+      : groupMonthsWithoutCapital(months, capitalFor);
   const [action, setAction] = useState<Action | null>(null);
   const [target, setTarget] = useState<Target>(initialTarget);
   const [pendingDelete, setPendingDelete] = useState<ReportingMonth | null>(null);
@@ -186,13 +224,84 @@ export default function UiV2MonthsPage() {
     }
   }
 
+  function monthActions(month: ReportingMonth) {
+    return (
+      <div className={styles.actions}>
+        <Link className={styles.primary} to={monthWorkspacePath(month.id)}>
+          Открыть
+        </Link>
+        <OverflowMenu label={`Действия месяца ${formatMonth(month.year, month.month)}`}>
+          <OverflowMenuItem disabled={busy} onClick={() => startClone(month)}>
+            Копировать
+          </OverflowMenuItem>
+          <OverflowMenuItem
+            onClick={() =>
+              navigate(
+                closeContext?.monthId === month.id
+                  ? withMonthlyCloseReturn(
+                      `/v2/data/months/${month.id}`,
+                      month.id,
+                      closeContext.step,
+                      closeContext.origin,
+                    )
+                  : `/v2/data/months/${month.id}`,
+              )
+            }
+          >
+            Редактор
+          </OverflowMenuItem>
+          {month.status === "closed" ? (
+            <OverflowMenuItem
+              onClick={() => navigate(latestClosed?.id === month.id ? "/v2" : reportPath(month.id))}
+            >
+              {latestClosed?.id === month.id ? CURRENT_ROW_ACTION : "Посмотреть отчёт"}
+            </OverflowMenuItem>
+          ) : (
+            <OverflowMenuItem danger disabled={busy} onClick={() => setPendingDelete(month)}>
+              Удалить черновик
+            </OverflowMenuItem>
+          )}
+        </OverflowMenu>
+      </div>
+    );
+  }
+  function monthName(month: ReportingMonth) {
+    return (
+      <>
+        <span>{formatMonth(month.year, month.month)}</span>
+        {selected?.id === month.id ? <span className={styles.selected}>Выбран</span> : null}
+      </>
+    );
+  }
+  function monthRow(month: ReportingMonth) {
+    const point = capitalFor(month);
+    const income = incomeFor(month);
+    const coverage = point?.portfolio_source_coverage;
+    const partial =
+      coverage?.status === "partial" ||
+      coverage?.source_account_financial_coverage?.status === "partial";
+    const capital = coverage?.status === "unavailable" ? null : point?.liquid_capital_net;
+    return (
+      <tr key={month.id} data-testid={`reports-row-${month.id}`}>
+        <th scope="row">{monthName(month)}</th>
+        <td>{month.status === "closed" ? "Закрыт" : "Черновик"}</td>
+        <td className={styles.money} title={moneyText(capital, "—")}>
+          {moneyWholeText(capital, "—")}
+          {partial && capital ? <small className={styles.hint}>неполный</small> : null}
+        </td>
+        <td className={styles.money} title={moneyText(income, "—")}>
+          {moneyWholeText(income, "—")}
+        </td>
+        <td>{monthActions(month)}</td>
+      </tr>
+    );
+  }
+
   return (
-    <UiV2DataFrame
-      active="months"
+    <UiV2Shell
       busy={monthsQuery.isPending || busy}
-      monthId={selected?.id}
-      subtitle="Выбери любой период: исправь черновик, проверь и закрой его или открой сохранённый отчёт."
-      title="Отчётные месяцы"
+      showRefresh={false}
+      header={<h1>Все месяцы</h1>}
     >
       <div className={styles.toolbar}>
         {returnToClose ? (
@@ -221,6 +330,10 @@ export default function UiV2MonthsPage() {
           disabled={busy || monthsQuery.isFetching}
           onClick={() => {
             void monthsQuery.refetch();
+            if (latestClosed) {
+              void compositionQuery.refetch();
+              void incomeQuery.refetch();
+            }
           }}
           type="button"
         >
@@ -354,76 +467,74 @@ export default function UiV2MonthsPage() {
       ) : null}
 
       <section className={styles.panel} aria-label="Список отчётных месяцев">
-        <h2>Все периоды</h2>
         {monthsQuery.isPending ? <p role="status">Загружаем месяцы…</p> : null}
         {!monthsQuery.isPending && !monthsQuery.isError && months.length === 0 ? (
           <p>Периодов пока нет. Создай первый отчётный месяц.</p>
         ) : null}
         {!monthsQuery.isError && months.length > 0 ? (
-          <ul className={styles.list}>
-            {months.map((month) => (
-              <li className={styles.row} key={month.id}>
-                <div>
-                  <strong>{formatMonth(month.year, month.month)}</strong>{" "}
-                  <span className={styles.status}>
-                    {month.status === "draft" ? "Черновик" : "Закрыт"}
-                  </span>
-                  {selected?.id === month.id ? (
-                    <span className={styles.selected}>Выбран</span>
-                  ) : null}
-                  <small>Снимок {formatDate(month.snapshot_date)}</small>
-                </div>
-                <div className={styles.actions}>
-                  <Link className={styles.primary} to={monthWorkspacePath(month.id)}>
-                    Открыть месяц
-                  </Link>
-                  <OverflowMenu label={`Действия месяца ${formatMonth(month.year, month.month)}`}>
-                    <OverflowMenuItem disabled={busy} onClick={() => startClone(month)}>
-                      Копировать
-                    </OverflowMenuItem>
-                    <OverflowMenuItem
-                      onClick={() =>
-                        navigate(
-                          closeContext?.monthId === month.id
-                            ? withMonthlyCloseReturn(
-                                `/v2/data/months/${month.id}`,
-                                month.id,
-                                closeContext.step,
-                                closeContext.origin,
-                              )
-                            : `/v2/data/months/${month.id}`,
-                        )
-                      }
-                    >
-                      Редактор
-                    </OverflowMenuItem>
-                    {month.status === "closed" ? (
-                      <OverflowMenuItem
-                        onClick={() =>
-                          navigate(latestClosed?.id === month.id ? "/v2" : reportPath(month.id))
-                        }
-                      >
-                        {latestClosed?.id === month.id ? CURRENT_ROW_ACTION : "Посмотреть отчёт"}
-                      </OverflowMenuItem>
-                    ) : (
-                      <OverflowMenuItem
-                        danger
-                        disabled={busy}
-                        onClick={() => setPendingDelete(month)}
-                      >
-                        Удалить черновик
-                      </OverflowMenuItem>
-                    )}
-                  </OverflowMenu>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <>
+            {latestClosed && (compositionQuery.isError || incomeQuery.isError) ? (
+              <p className={styles.hint} role="status">
+                Часть сумм недоступна. Обнови список, чтобы повторить чтение.
+              </p>
+            ) : null}
+            <table className={styles.monthTable} data-testid="months-table">
+              <thead>
+                <tr>
+                  <th scope="col">Месяц</th>
+                  <th scope="col">Статус</th>
+                  <th scope="col" className={styles.money}>
+                    Ликвидный капитал
+                  </th>
+                  <th scope="col" className={styles.money}>
+                    Пассивный доход
+                  </th>
+                  <th scope="col">Действие</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((group) =>
+                  group.length === 1 ? (
+                    monthRow(group[0])
+                  ) : (
+                    <tr key={`group-${group[0].id}`}>
+                      <td colSpan={5}>
+                        <details className={styles.missingGroup}>
+                          <summary>
+                            {formatMonth(group.at(-1)!.year, group.at(-1)!.month)} —{" "}
+                            {formatMonth(group[0].year, group[0].month)} · без капитала ·{" "}
+                            {group.length} мес.
+                          </summary>
+                          <ul className={styles.list}>
+                            {group.map((month) => (
+                              <li className={styles.row} key={month.id}>
+                                <div>
+                                  {monthName(month)}
+                                  <span className={styles.hint}>Закрыт · капитал —</span>
+                                </div>
+                                <span
+                                  className={styles.money}
+                                  title={moneyText(incomeFor(month), "—")}
+                                >
+                                  Пассивный доход: {moneyWholeText(incomeFor(month), "—")}
+                                </span>
+                                {monthActions(month)}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+            <p className={styles.hint}>
+              Неполный капитал — итог известных записей. Прочерк означает отсутствие подтверждённой
+              суммы; черновики не входят в историю закрытых отчётов.
+            </p>
+          </>
         ) : null}
-        <p className={styles.hint}>
-          Открыть месяц — личные данные, XML и исключения, инструменты и предварительные выплаты.
-          Ручной редактор и архив подтверждённых отчётов доступны отдельно.
-        </p>
       </section>
       <ConfirmDialog
         busy={busy}
@@ -444,6 +555,6 @@ export default function UiV2MonthsPage() {
         open={pendingDelete !== null}
         title="Удалить черновик?"
       />
-    </UiV2DataFrame>
+    </UiV2Shell>
   );
 }

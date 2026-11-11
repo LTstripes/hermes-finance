@@ -18,7 +18,10 @@ export function UiV2MonthPlate() {
     queryKey: queryKeys.monthWorkingStatus,
     queryFn: ({ signal }) => getMonthWorkingStatus(signal),
   });
-  const ariaCurrent = pathname.startsWith("/v2/close") ? "page" : undefined;
+  const ariaCurrent =
+    pathname.startsWith("/v2/close") || pathname === "/v2/data/months" || pathname === "/v2/reports"
+      ? "page"
+      : undefined;
   const status = statusQuery.data;
   if (!status?.month) {
     return (

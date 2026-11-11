@@ -978,7 +978,7 @@ export default function UiV2Page() {
           ) : null}
           {latestClosed ? (
             <Link className={styles.link} to="/v2/reports">
-              История отчётов →
+              Все месяцы →
             </Link>
           ) : null}
         </div>

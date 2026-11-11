@@ -573,6 +573,19 @@ describe("native Monthly Close work mode", () => {
     },
   );
 
+  it("links the closed overview to the capital composition for that exact month", async () => {
+    const { mount, state } = setup("/v2/close?month=12");
+    state.workflow = closedFrom(readyForClose());
+    state.months = state.months.map((month) =>
+      month.id === 12 ? { ...month, status: "closed" } : month,
+    );
+    mount();
+    expect(
+      await screen.findByRole("link", { name: "Состав капитала на эту дату" }),
+    ).toHaveAttribute("href", "/v2/reports/12");
+    expect(state.writes).toEqual([]);
+  });
+
   it("offers a period choice when only closed months exist", async () => {
     const { mount, state } = setup();
     state.months = state.months.filter((month) => month.status === "closed");
@@ -581,7 +594,7 @@ describe("native Monthly Close work mode", () => {
     expect(
       await screen.findByRole("heading", { name: "Выбери или создай отчётный месяц" }),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: /Отчётные месяцы/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Все месяцы/ })).toHaveAttribute(
       "href",
       "/v2/data/months",
     );
