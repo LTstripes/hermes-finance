@@ -108,7 +108,7 @@ type MonthLiabilitiesKeys = {
 };
 
 const INITIAL_DEBT_DRAFT: DebtAddDraft = {
-  name: "Кредитка",
+  name: "",
   debt_type: "credit_card",
   current_balance: "",
   annual_rate: "",
@@ -1036,97 +1036,100 @@ function DebtBlock({
         </span>
       </div>
       {!readOnly ? (
-        <form className={leafStyles.form} onSubmit={(event) => void addDebt(event)}>
-          <div className={leafStyles.formGrid}>
-            <Field htmlFor="debt-name" label="Название долга">
-              <Input
-                disabled={busy || readOnly}
-                id="debt-name"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({ ...previous, name: event.target.value }));
-                  setAddTouched(true);
-                }}
-                required
-                value={addDraft.name}
-              />
-            </Field>
-            <Field htmlFor="debt-type" label="Тип долга">
-              <Select
-                disabled={busy || readOnly}
-                id="debt-type"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({ ...previous, debt_type: event.target.value }));
-                  setAddTouched(true);
-                }}
-                value={addDraft.debt_type}
-              >
-                <option value="credit_card">Кредитная карта</option>
-                <option value="other">Прочее</option>
-              </Select>
-            </Field>
-            <Field htmlFor="debt-bal" label="Текущий баланс долга">
-              <Input
-                className="input--money"
-                disabled={busy || readOnly}
-                id="debt-bal"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({
-                    ...previous,
-                    current_balance: event.target.value,
-                  }));
-                  setAddTouched(true);
-                }}
-                required
-                value={addDraft.current_balance}
-              />
-            </Field>
-            <Field htmlFor="debt-rate" label="Годовая ставка, % (пусто — неизвестно)">
-              <Input
-                disabled={busy || readOnly}
-                id="debt-rate"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({ ...previous, annual_rate: event.target.value }));
-                  setAddTouched(true);
-                }}
-                placeholder="неизвестно"
-                value={addDraft.annual_rate}
-              />
-            </Field>
-            <Field htmlFor="debt-due" label="Ближайший платёж">
-              <Input
-                disabled={busy || readOnly}
-                id="debt-due"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({
-                    ...previous,
-                    next_due_date: event.target.value,
-                  }));
-                  setAddTouched(true);
-                }}
-                type="date"
-                value={addDraft.next_due_date}
-              />
-            </Field>
-            <Field htmlFor="debt-end" label="Окончание договора">
-              <Input
-                disabled={busy || readOnly}
-                id="debt-end"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({
-                    ...previous,
-                    contract_end_date: event.target.value,
-                  }));
-                  setAddTouched(true);
-                }}
-                type="date"
-                value={addDraft.contract_end_date}
-              />
-            </Field>
-          </div>
-          <Button disabled={busy} type="submit" variant="primary">
-            Добавить долг
-          </Button>
-        </form>
+        <details>
+          <summary className="btn">+ Добавить долг</summary>
+          <form className={leafStyles.form} onSubmit={(event) => void addDebt(event)}>
+            <div className={leafStyles.formGrid}>
+              <Field htmlFor="debt-name" label="Название долга">
+                <Input
+                  disabled={busy || readOnly}
+                  id="debt-name"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({ ...previous, name: event.target.value }));
+                    setAddTouched(true);
+                  }}
+                  required
+                  value={addDraft.name}
+                />
+              </Field>
+              <Field htmlFor="debt-type" label="Тип долга">
+                <Select
+                  disabled={busy || readOnly}
+                  id="debt-type"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({ ...previous, debt_type: event.target.value }));
+                    setAddTouched(true);
+                  }}
+                  value={addDraft.debt_type}
+                >
+                  <option value="credit_card">Кредитная карта</option>
+                  <option value="other">Прочее</option>
+                </Select>
+              </Field>
+              <Field htmlFor="debt-bal" label="Текущий баланс долга">
+                <Input
+                  className="input--money"
+                  disabled={busy || readOnly}
+                  id="debt-bal"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({
+                      ...previous,
+                      current_balance: event.target.value,
+                    }));
+                    setAddTouched(true);
+                  }}
+                  required
+                  value={addDraft.current_balance}
+                />
+              </Field>
+              <Field htmlFor="debt-rate" label="Годовая ставка, % (пусто — неизвестно)">
+                <Input
+                  disabled={busy || readOnly}
+                  id="debt-rate"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({ ...previous, annual_rate: event.target.value }));
+                    setAddTouched(true);
+                  }}
+                  placeholder="неизвестно"
+                  value={addDraft.annual_rate}
+                />
+              </Field>
+              <Field htmlFor="debt-due" label="Ближайший платёж">
+                <Input
+                  disabled={busy || readOnly}
+                  id="debt-due"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({
+                      ...previous,
+                      next_due_date: event.target.value,
+                    }));
+                    setAddTouched(true);
+                  }}
+                  type="date"
+                  value={addDraft.next_due_date}
+                />
+              </Field>
+              <Field htmlFor="debt-end" label="Окончание договора">
+                <Input
+                  disabled={busy || readOnly}
+                  id="debt-end"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({
+                      ...previous,
+                      contract_end_date: event.target.value,
+                    }));
+                    setAddTouched(true);
+                  }}
+                  type="date"
+                  value={addDraft.contract_end_date}
+                />
+              </Field>
+            </div>
+            <Button disabled={busy} type="submit" variant="primary">
+              Добавить долг
+            </Button>
+          </form>
+        </details>
       ) : null}
       <ConfirmDialog
         busy={busy}
@@ -1547,94 +1550,97 @@ function PropertyBlock({
           : "Недвижимость не входит в ликвидный капитал; покрытие ипотеки — ориентир."}
       </p>
       {!readOnly ? (
-        <form className={leafStyles.propertyForm} onSubmit={(event) => void addProperty(event)}>
-          <div className={leafStyles.propertyValues}>
-            <Field htmlFor="prop-name" label="Название объекта">
-              <Input
-                disabled={busy || readOnly}
-                id="prop-name"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({ ...previous, name: event.target.value }));
-                  setAddTouched(true);
-                }}
-                required
-                value={addDraft.name}
-              />
-            </Field>
-            <Field htmlFor="prop-val" label="Стоимость">
-              <Input
-                className="input--money"
-                disabled={busy || readOnly}
-                id="prop-val"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({
-                    ...previous,
-                    estimated_value: event.target.value,
-                  }));
-                  setAddTouched(true);
-                }}
-                required
-                value={addDraft.estimated_value}
-              />
-            </Field>
-            <Field htmlFor="prop-mort" label="Остаток ипотеки">
-              <Input
-                className="input--money"
-                disabled={busy || readOnly}
-                id="prop-mort"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({
-                    ...previous,
-                    mortgage_balance: event.target.value,
-                  }));
-                  setAddTouched(true);
-                }}
-                required
-                value={addDraft.mortgage_balance}
-              />
-            </Field>
-          </div>
-          <div className={leafStyles.propertyPayments}>
-            <Field htmlFor="prop-pay" label="Ежемесячный платёж">
-              <Input
-                className="input--money"
-                disabled={busy || readOnly}
-                id="prop-pay"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({
-                    ...previous,
-                    monthly_payment: event.target.value,
-                  }));
-                  setAddTouched(true);
-                }}
-                required
-                value={addDraft.monthly_payment}
-              />
-            </Field>
-            <Field htmlFor="prop-rate" label="Годовая ставка, %">
-              <Input
-                disabled={busy || readOnly}
-                id="prop-rate"
-                aria-describedby="prop-rate-hint"
-                onChange={(event) => {
-                  setAddDraft((previous) => ({
-                    ...previous,
-                    mortgage_annual_rate: event.target.value,
-                  }));
-                  setAddTouched(true);
-                }}
-                placeholder="неизвестно"
-                value={addDraft.mortgage_annual_rate}
-              />
-            </Field>
-          </div>
-          <p id="prop-rate-hint" className={leafStyles.hint}>
-            Пустая ставка — неизвестно. Платёж указан в ₽ за месяц.
-          </p>
-          <Button disabled={busy} type="submit" variant="primary">
-            Добавить объект
-          </Button>
-        </form>
+        <details>
+          <summary className="btn">+ Добавить объект</summary>
+          <form className={leafStyles.propertyForm} onSubmit={(event) => void addProperty(event)}>
+            <div className={leafStyles.propertyValues}>
+              <Field htmlFor="prop-name" label="Название объекта">
+                <Input
+                  disabled={busy || readOnly}
+                  id="prop-name"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({ ...previous, name: event.target.value }));
+                    setAddTouched(true);
+                  }}
+                  required
+                  value={addDraft.name}
+                />
+              </Field>
+              <Field htmlFor="prop-val" label="Стоимость">
+                <Input
+                  className="input--money"
+                  disabled={busy || readOnly}
+                  id="prop-val"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({
+                      ...previous,
+                      estimated_value: event.target.value,
+                    }));
+                    setAddTouched(true);
+                  }}
+                  required
+                  value={addDraft.estimated_value}
+                />
+              </Field>
+              <Field htmlFor="prop-mort" label="Остаток ипотеки">
+                <Input
+                  className="input--money"
+                  disabled={busy || readOnly}
+                  id="prop-mort"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({
+                      ...previous,
+                      mortgage_balance: event.target.value,
+                    }));
+                    setAddTouched(true);
+                  }}
+                  required
+                  value={addDraft.mortgage_balance}
+                />
+              </Field>
+            </div>
+            <div className={leafStyles.propertyPayments}>
+              <Field htmlFor="prop-pay" label="Ежемесячный платёж">
+                <Input
+                  className="input--money"
+                  disabled={busy || readOnly}
+                  id="prop-pay"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({
+                      ...previous,
+                      monthly_payment: event.target.value,
+                    }));
+                    setAddTouched(true);
+                  }}
+                  required
+                  value={addDraft.monthly_payment}
+                />
+              </Field>
+              <Field htmlFor="prop-rate" label="Годовая ставка, %">
+                <Input
+                  disabled={busy || readOnly}
+                  id="prop-rate"
+                  aria-describedby="prop-rate-hint"
+                  onChange={(event) => {
+                    setAddDraft((previous) => ({
+                      ...previous,
+                      mortgage_annual_rate: event.target.value,
+                    }));
+                    setAddTouched(true);
+                  }}
+                  placeholder="неизвестно"
+                  value={addDraft.mortgage_annual_rate}
+                />
+              </Field>
+            </div>
+            <p id="prop-rate-hint" className={leafStyles.hint}>
+              Пустая ставка — неизвестно. Платёж указан в ₽ за месяц.
+            </p>
+            <Button disabled={busy} type="submit" variant="primary">
+              Добавить объект
+            </Button>
+          </form>
+        </details>
       ) : null}
       <ConfirmDialog
         busy={busy}

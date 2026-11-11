@@ -1,5 +1,6 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { displayMonthNumber } from "./MonthMoneyInput";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
@@ -324,11 +325,85 @@ function setup(options: { month?: ReportingMonth; readOnly?: boolean } = {}) {
   };
 }
 
+async function openAddForms() {
+  await screen.findByTestId("month-assets-meta");
+  await waitFor(() => expect(screen.queryByText("Загружаем активы…")).not.toBeInTheDocument());
+  for (const name of ["+ Добавить вклад", "+ Добавить денежную позицию"]) {
+    const toggle = screen.queryByRole("button", { name });
+    if (toggle?.getAttribute("aria-expanded") === "false") fireEvent.click(toggle);
+  }
+}
 async function tables() {
-  return screen.findAllByRole("table");
+  const result = await screen.findAllByRole("table");
+  await openAddForms();
+  return result;
 }
 
 describe("UiV2MonthAssetsSection", () => {
+  it("starts with collapsed additions and saves inline balances through the existing versioned write", async () => {
+    seedDepositMutations();
+    const { setDirty } = setup();
+    const user = userEvent.setup();
+    const balance = await screen.findByLabelText(`Баланс — ${deposit.name}`);
+    expect(screen.queryByLabelText("Название вклада")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Название денежной позиции")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Сохранить остатки" })).not.toBeInTheDocument();
+    await user.clear(balance);
+    await user.type(balance, "123 456,78");
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
+    await waitFor(() => expect(setDirty).toHaveBeenLastCalledWith("assets", false));
+    expect(updateDeposit).toHaveBeenLastCalledWith(
+      deposit.id,
+      {
+        name: deposit.name,
+        deposit_type: deposit.deposit_type,
+        balance: money("123456.78"),
+        annual_rate: deposit.annual_rate,
+        actual_interest_received: deposit.actual_interest_received,
+      },
+      deposit.updated_at,
+    );
+    const confirmedVersion = deposits[0].updated_at;
+    await user.clear(balance);
+    await user.type(balance, "123457");
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
+    await waitFor(() => expect(updateDeposit).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(updateDeposit).mock.calls[1][2]).toBe(confirmedVersion);
+  });
+
+  it("focuses one metadata row and restores its draft and menu focus on Escape", async () => {
+    setup();
+    const user = userEvent.setup();
+    const menu = await screen.findByRole("button", {
+      name: `Действия для вклада «${deposit.name}»`,
+    });
+    await user.click(menu);
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const name = screen.getByLabelText(`Название — ${deposit.name}`);
+    expect(name).toHaveFocus();
+    await user.clear(name);
+    await user.type(name, "Synthetic renamed deposit");
+    await user.keyboard("{Escape}");
+    expect(menu).toHaveFocus();
+    expect(screen.queryByDisplayValue("Synthetic renamed deposit")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Сохранить остатки" })).not.toBeInTheDocument();
+    expect(updateDeposit).not.toHaveBeenCalled();
+  });
+
+  it("saves a cash amount inline and confirms the exact amount before clearing dirty state", async () => {
+    seedCashMutations();
+    const { setDirty } = setup();
+    const user = userEvent.setup();
+    const amount = await screen.findByLabelText(`Сумма — ${cashRow.name}`);
+    await user.clear(amount);
+    await user.type(amount, "7 654,32");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(setDirty).toHaveBeenLastCalledWith("assets", false));
+    expect(updateCashBalance).toHaveBeenCalledWith(cashRow.id, { amount: money("7654.32") });
+    expect(listCashBalances).toHaveBeenCalledTimes(2);
+    expect(getCashTotal).toHaveBeenCalledTimes(2);
+  });
+
   it("collapses closed empty deposits, retains full footer totals and omits unanimous capital flags", async () => {
     deposits = [
       deposit,
@@ -434,6 +509,13 @@ describe("UiV2MonthAssetsSection", () => {
     const { setDirty } = setup();
     const user = userEvent.setup();
 
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+    );
+    await openAddForms();
     const submit = await screen.findByRole("button", { name: "Добавить вклад" });
     await user.type(screen.getByLabelText("Название вклада"), "Вклад Тинькофф");
     await user.type(screen.getByLabelText("Баланс вклада"), "15000.50");
@@ -462,6 +544,13 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
     const user = userEvent.setup();
 
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+    );
+    await openAddForms();
     const submit = await screen.findByRole("button", { name: "Добавить вклад" });
     await user.type(screen.getByLabelText("Название вклада"), "Накопления А");
     await user.selectOptions(screen.getByLabelText("Тип"), "savings");
@@ -480,7 +569,15 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
     const user = userEvent.setup();
 
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+    );
+    await openAddForms();
     const submit = await screen.findByRole("button", { name: "Добавить денежную позицию" });
+    await openAddForms();
     await user.type(screen.getByLabelText("Название денежной позиции"), "Копилка");
     await user.type(screen.getByLabelText("Сумма наличных"), "2500");
     await user.click(submit);
@@ -511,12 +608,14 @@ describe("UiV2MonthAssetsSection", () => {
     await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
     const first = screen.getByDisplayValue("Вклад Альфа");
-    const second = screen.getByDisplayValue("Вклад Бета");
     await user.clear(first);
     await user.type(first, "Альфа новая");
+    await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Бета»" }));
+    await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
+    const second = screen.getByDisplayValue("Вклад Бета");
     await user.clear(second);
     await user.type(second, "Бета новая");
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     expect(await screen.findByText(/Сохранено: Альфа новая/)).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(/Бета новая/);
     expect(screen.getByDisplayValue("Бета новая")).toBeInTheDocument();
@@ -547,25 +646,25 @@ describe("UiV2MonthAssetsSection", () => {
       .closest("section") as HTMLElement;
     await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
-    const balances = within(panel).getAllByDisplayValue("100000.00");
+    const balances = within(panel).getAllByDisplayValue(displayMonthNumber("100000.00"));
     await user.clear(balances[0]);
     await user.type(balances[0], "110000.00");
     await user.clear(balances[1]);
     await user.type(balances[1], "120000.00");
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     await screen.findByRole("alert");
     expect(within(panel).getByText(/итог — · данные уточняются/)).toBeInTheDocument();
-    const totals = panel.querySelector(".totals-bar") as HTMLElement;
-    expect(totals).toHaveTextContent(/Баланс:\s*—/);
-    expect(totals).toHaveTextContent(/Прогноз в месяц:\s*—/);
-    expect(totals).toHaveTextContent(/Получено:\s*—/);
-    expect(within(panel).getByDisplayValue("110000.00")).toBeInTheDocument();
-    expect(within(panel).getByDisplayValue("120000.00")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    const totals = panel.querySelector("tfoot") as HTMLElement;
+    expect(totals.querySelector('[data-label="Баланс"]')).toHaveTextContent(/^—$/);
+    expect(totals.querySelector('[data-label="Прогноз"]')).toHaveTextContent(/^—$/);
+    expect(totals.querySelector('[data-label="Получено"]')).toHaveTextContent(/^—$/);
+    expect(within(panel).getByDisplayValue(displayMonthNumber("110000.00"))).toBeInTheDocument();
+    expect(within(panel).getByDisplayValue(displayMonthNumber("120000.00"))).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     expect(await screen.findByText(/Сохранено: Вклад Альфа, Вклад Бета/)).toBeInTheDocument();
-    expect(totals).toHaveTextContent(/Баланс:\s*230\s*000\s*₽/);
-    expect(totals).toHaveTextContent(/Прогноз в месяц:\s*2\s*000\s*₽/);
-    expect(totals).toHaveTextContent(/Получено:\s*1\s*800\s*₽/);
+    expect(totals.querySelector('[data-label="Баланс"]')).toHaveTextContent(/^230\s*000\s*₽$/);
+    expect(totals).toHaveTextContent(/2\s*000\s*₽/);
+    expect(totals).toHaveTextContent(/1\s*800\s*₽/);
     expect(vi.mocked(updateDeposit).mock.calls.map(([id]) => id)).toEqual([21, 22, 22]);
   });
 
@@ -585,16 +684,16 @@ describe("UiV2MonthAssetsSection", () => {
       .closest("section") as HTMLElement;
     await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
-    const balance = within(panel).getByDisplayValue("100000.00");
+    const balance = within(panel).getByDisplayValue(displayMonthNumber("100000.00"));
     await user.clear(balance);
     await user.type(balance, "110000.00");
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     await screen.findByRole("alert");
-    expect(panel.querySelector(".totals-bar")).toHaveTextContent(/Баланс:\s*—/);
+    expect(panel.querySelector('tfoot [data-label="Баланс"]')).toHaveTextContent(/^—$/);
     await user.click(within(panel).getByRole("button", { name: "Обновить" }));
-    await waitFor(() => expect(panel.querySelector(".totals-bar")).toHaveTextContent(/110\s*000/));
-    expect(within(panel).getByDisplayValue("110000.00")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await waitFor(() => expect(panel.querySelector("tfoot")).toHaveTextContent(/110\s*000/));
+    expect(within(panel).getByDisplayValue(displayMonthNumber("110000.00"))).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     await screen.findByText(/Сохранено: Вклад Альфа/);
     expect(vi.mocked(updateDeposit)).toHaveBeenCalledTimes(1);
   });
@@ -628,14 +727,12 @@ describe("UiV2MonthAssetsSection", () => {
         await user.click(within(dialog).getByRole("button", { name: "Удалить" }));
       }
       await screen.findByRole("alert");
-      expect(panel.querySelector(".totals-bar")).toHaveTextContent(/Баланс:\s*—/);
+      expect(within(panel).getByText(/итог — · данные уточняются/)).toBeInTheDocument();
       if (action === "create")
         expect(screen.getByLabelText("Название вклада")).toHaveValue("Новый вклад");
       gate.resolve();
       await waitFor(() =>
-        expect(panel.querySelector(".totals-bar")).toHaveTextContent(
-          action === "create" ? /105\s*000/ : /Баланс:\s*0\s*₽/,
-        ),
+        expect(panel).toHaveTextContent(action === "create" ? /105\s*000/ : /итог\s*0\s*₽/),
       );
       if (action === "create") {
         await user.click(screen.getByRole("button", { name: "Проверить создание" }));
@@ -666,10 +763,10 @@ describe("UiV2MonthAssetsSection", () => {
     await tables();
     await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
-    const balance = screen.getByDisplayValue("100000.00");
+    const balance = screen.getByDisplayValue(displayMonthNumber("100000.00"));
     await user.clear(balance);
     await user.type(balance, "110000.00");
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     await screen.findByRole("alert");
     view.unmount();
     render(sectionElement(view.client, view.context));
@@ -677,10 +774,10 @@ describe("UiV2MonthAssetsSection", () => {
     const panel = screen
       .getByRole("heading", { name: "Депозиты" })
       .closest("section") as HTMLElement;
-    expect(panel.querySelector(".totals-bar")).toHaveTextContent(/Баланс:\s*—/);
+    expect(panel.querySelector('tfoot [data-label="Баланс"]')).toHaveTextContent(/^—$/);
     unavailable = false;
     await user.click(within(panel).getByRole("button", { name: "Обновить" }));
-    await waitFor(() => expect(panel.querySelector(".totals-bar")).toHaveTextContent(/110\s*000/));
+    await waitFor(() => expect(panel.querySelector("tfoot")).toHaveTextContent(/110\s*000/));
     expect(vi.mocked(updateDeposit)).toHaveBeenCalledTimes(1);
   });
 
@@ -703,7 +800,7 @@ describe("UiV2MonthAssetsSection", () => {
     const panel = screen
       .getByRole("heading", { name: "Депозиты" })
       .closest("section") as HTMLElement;
-    await waitFor(() => expect(panel.querySelector(".totals-bar")).toHaveTextContent(/100\s*000/));
+    await waitFor(() => expect(panel.querySelector("tfoot")).toHaveTextContent(/100\s*000/));
     expect(screen.getByLabelText("Название вклада")).toHaveValue("Новый вклад");
   });
 
@@ -787,13 +884,13 @@ describe("UiV2MonthAssetsSection", () => {
     await tables();
     await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
-    const balance = screen.getByDisplayValue("100000.00");
+    const balance = screen.getByDisplayValue(displayMonthNumber("100000.00"));
     await user.clear(balance);
     await user.type(balance, "110000.00");
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/не удалось перечитать/i);
-    expect(screen.getByDisplayValue("110000.00")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    expect(screen.getByDisplayValue(displayMonthNumber("110000.00"))).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     expect(await screen.findByText(/Сохранено: Вклад Альфа/)).toBeInTheDocument();
     expect(vi.mocked(updateDeposit)).toHaveBeenCalledTimes(1);
   });
@@ -808,10 +905,10 @@ describe("UiV2MonthAssetsSection", () => {
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
 
     expect(screen.getByDisplayValue("Вклад Альфа")).toBeInTheDocument();
-    const balance = screen.getByDisplayValue("100000.00");
+    const balance = screen.getByDisplayValue(displayMonthNumber("100000.00"));
     await user.clear(balance);
     await user.type(balance, "110000.00");
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
     await screen.findByText(/Сохранено: Вклад Альфа/);
 
     expect(vi.mocked(updateDeposit).mock.calls[0]).toEqual([
@@ -854,11 +951,14 @@ describe("UiV2MonthAssetsSection", () => {
     const user = userEvent.setup();
 
     await screen.findByText("Кошелёк");
-    await user.click(screen.getByRole("button", { name: "да" }));
+    await user.click(
+      screen.getByRole("button", { name: "Действия для денежной позиции «Кошелёк»" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Исключить из капитала" }));
     await screen.findByText(/«Кошелёк»: исключена из ликвидного капитала/);
 
     expect(vi.mocked(updateCashBalance).mock.calls[0]).toEqual([41, { include_in_capital: false }]);
-    expect(screen.getByRole("button", { name: "нет" })).toBeInTheDocument();
+    expect(screen.getByText("не в капитале")).toBeInTheDocument();
   });
 
   it("deletes a cash position behind confirmation", async () => {
@@ -930,9 +1030,9 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
 
     const rendered = await tables();
-    expect(rendered[0]).toHaveTextContent(/500\s*USD/);
-    expect(rendered[1]).toHaveTextContent(/75\s*USD/);
-    expect(screen.getByText(/^Получено:/)).toHaveTextContent("—");
+    expect(within(rendered[0]).getByLabelText("Баланс — Вклад в долларах")).toHaveValue("500");
+    expect(within(rendered[1]).getByRole("textbox")).toHaveValue("75");
+    expect(rendered[0].querySelector("tfoot")).toHaveTextContent("—");
     expect(screen.getByText(/Строки в разных валютах/)).toBeInTheDocument();
   });
 
@@ -949,6 +1049,13 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
     const user = userEvent.setup();
 
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+    );
+    await openAddForms();
     const submit = await screen.findByRole("button", { name: "Добавить вклад" });
     await user.type(screen.getByLabelText("Название вклада"), "Вклад Рисковый");
     await user.type(screen.getByLabelText("Баланс вклада"), "100");
@@ -976,6 +1083,8 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
     const user = userEvent.setup();
 
+    await screen.findByRole("button", { name: "+ Добавить вклад" });
+    await openAddForms();
     await screen.findByRole("button", { name: "Добавить вклад" });
     await user.type(screen.getByLabelText("Название вклада"), "Вклад Один");
     await user.type(screen.getByLabelText("Баланс вклада"), "1000");
@@ -1012,6 +1121,7 @@ describe("UiV2MonthAssetsSection", () => {
     expect(screen.queryByText("Вклад Февральский")).not.toBeInTheDocument();
     expect(screen.queryByText("Февральский кошелёк")).not.toBeInTheDocument();
 
+    await openAddForms();
     await user.type(screen.getByLabelText("Название вклада"), "Вклад Поздний");
     await user.type(screen.getByLabelText("Баланс вклада"), "777");
     await user.click(screen.getByRole("button", { name: "Добавить вклад" }));
@@ -1048,7 +1158,9 @@ describe("UiV2MonthAssetsSection", () => {
     expect(updateCashBalance).not.toHaveBeenCalled();
     seedDepositMutations();
     rerender(contextFor(monthDraft, setDirty, false));
-    await user.type(await screen.findByLabelText("Название вклада"), "Вклад После Reopen");
+    await screen.findByRole("button", { name: "+ Добавить вклад" });
+    await openAddForms();
+    await user.type(screen.getByLabelText("Название вклада"), "Вклад После Reopen");
     await user.type(screen.getByLabelText("Баланс вклада"), "1000");
     await user.type(screen.getByLabelText("Годовая ставка %"), "12");
     await user.click(screen.getByRole("button", { name: "Добавить вклад" }));
@@ -1072,6 +1184,8 @@ describe("UiV2MonthAssetsSection", () => {
     const { setDirty, unmount } = setup();
     const user = userEvent.setup();
 
+    await screen.findByRole("button", { name: "+ Добавить вклад" });
+    await openAddForms();
     await screen.findByRole("button", { name: "Добавить вклад" });
     await user.type(screen.getByLabelText("Название вклада"), "Черновик");
     expect(setDirty).toHaveBeenCalledWith("assets", true);
@@ -1106,6 +1220,7 @@ describe("UiV2MonthAssetsSection", () => {
     await screen.findByText("Кошелёк");
     expect(screen.getAllByText("12 345 ₽")).toHaveLength(2);
 
+    await openAddForms();
     await user.type(screen.getByLabelText("Название денежной позиции"), "Копилка");
     await user.type(screen.getByLabelText("Сумма наличных"), "2500");
     await user.click(screen.getByRole("button", { name: "Добавить денежную позицию" }));
@@ -1145,7 +1260,10 @@ describe("UiV2MonthAssetsSection", () => {
     await screen.findByText("Кошелёк");
     expect(screen.getAllByText("9 000 ₽")).toHaveLength(2);
 
-    await user.click(screen.getByRole("button", { name: "да" }));
+    await user.click(
+      screen.getByRole("button", { name: "Действия для денежной позиции «Кошелёк»" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Исключить из капитала" }));
     await screen.findByText(/«Кошелёк»: исключена из ликвидного капитала/);
     await screen.findByText(/Итог наличных не перечитан/);
     expect(screen.getAllByText("Недоступно")).toHaveLength(2);
@@ -1165,7 +1283,7 @@ describe("UiV2MonthAssetsSection", () => {
     expect(screen.queryByText("Чужой вклад")).not.toBeInTheDocument();
     expect(screen.queryByText("Пусто")).not.toBeInTheDocument();
     expect(screen.queryAllByText(/^0\s?₽$/)).toHaveLength(0);
-    expect(screen.getByText(/Баланс:/)).toHaveTextContent("—");
+    expect(screen.getByText(/итог — · данные уточняются/)).toBeInTheDocument();
     // Отклонённый список не рендерится таблицей; таблица только у денежных средств.
     expect(await tables()).toHaveLength(1);
   });
@@ -1284,11 +1402,12 @@ describe("UiV2MonthAssetsSection", () => {
       scenario: "rate-only",
       stale: "annual_rate",
       mutate: async (scope, user) => {
-        const rate = scope.getByDisplayValue("12.00");
+        const rate = scope.getByDisplayValue(displayMonthNumber("12.00"));
         await user.clear(rate);
         await user.type(rate, "13.50");
       },
-      expectPreserved: (scope) => expect(scope.getByDisplayValue("13.50")).toBeInTheDocument(),
+      expectPreserved: (scope) =>
+        expect(scope.getByDisplayValue(displayMonthNumber("13.50"))).toBeInTheDocument(),
     },
     {
       scenario: "deposit-type-only",
@@ -1302,11 +1421,12 @@ describe("UiV2MonthAssetsSection", () => {
       scenario: "actual-interest-only",
       stale: "actual_interest_received",
       mutate: async (scope, user) => {
-        const actual = scope.getByDisplayValue("900.00");
+        const actual = scope.getByDisplayValue(displayMonthNumber("900.00"));
         await user.clear(actual);
         await user.type(actual, "1000");
       },
-      expectPreserved: (scope) => expect(scope.getByDisplayValue("1000")).toBeInTheDocument(),
+      expectPreserved: (scope) =>
+        expect(scope.getByDisplayValue(displayMonthNumber("1000"))).toBeInTheDocument(),
     },
   ];
 
@@ -1322,20 +1442,20 @@ describe("UiV2MonthAssetsSection", () => {
       await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
       await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
       const editRow = screen.getByDisplayValue("Вклад Альфа").closest("tr") as HTMLElement;
-      const scope = within(editRow);
+      const scope = within(editRow.closest("table") as HTMLElement);
       await mutate(scope, user);
 
-      await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+      await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveTextContent(/Изменение вклада не подтверждено/);
-      expect(editRow.closest("section")?.querySelector(".totals-bar")).toHaveTextContent(
-        /Баланс:\s*—/,
-      );
+      expect(
+        editRow.closest("section")?.querySelector('tfoot [data-label="Баланс"]'),
+      ).toHaveTextContent(/^—$/);
       expect(screen.queryByText(/Сохранено: Вклад Альфа/)).not.toBeInTheDocument();
 
       // A changed version with different values is not overwritten on retry.
       expectPreserved(scope);
-      await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+      await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
       expect(await screen.findByRole("alert")).toHaveTextContent(/Данные вклада изменились/);
       expectPreserved(scope);
       expect(vi.mocked(updateDeposit)).toHaveBeenCalledTimes(1);
@@ -1357,6 +1477,13 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
     const user = userEvent.setup();
 
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+    );
+    await openAddForms();
     const submit = await screen.findByRole("button", { name: "Добавить вклад" });
     const nameInput = screen.getByLabelText("Название вклада");
     const balanceInput = screen.getByLabelText("Баланс вклада");
@@ -1371,7 +1498,7 @@ describe("UiV2MonthAssetsSection", () => {
     expect(submit).toBeDisabled();
     // Черновик (в т.ч. новейший ввод) не выбрасывается во время записи.
     expect(nameInput).toHaveValue("Вклад Отложенный");
-    expect(balanceInput).toHaveValue("5000");
+    expect(balanceInput).toHaveValue("5 000");
 
     gate.resolve();
     await screen.findByText(/Вклад «Вклад Отложенный» сохранён; данные перечитаны/);
@@ -1402,6 +1529,13 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
     const user = userEvent.setup();
 
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+    );
+    await openAddForms();
     const submit = await screen.findByRole("button", { name: "Добавить денежную позицию" });
     const nameInput = screen.getByLabelText("Название денежной позиции");
     const amountInput = screen.getByLabelText("Сумма наличных");
@@ -1444,21 +1578,21 @@ describe("UiV2MonthAssetsSection", () => {
     await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
     await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
     const editRow = screen.getByDisplayValue("Вклад Альфа").closest("tr") as HTMLElement;
-    const scope = within(editRow);
-    const balance = scope.getByDisplayValue("100000.00");
+    const scope = within(editRow.closest("table") as HTMLElement);
+    const balance = scope.getByDisplayValue(displayMonthNumber("100000.00"));
     await user.clear(balance);
     await user.type(balance, "115000.00");
-    await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
 
     await waitFor(() => expect(scope.getByDisplayValue("Вклад Альфа")).toBeDisabled());
-    expect(scope.getByDisplayValue("115000.00")).toBeDisabled();
+    expect(scope.getByDisplayValue(displayMonthNumber("115000.00"))).toBeDisabled();
     expect(scope.getByRole("combobox")).toBeDisabled();
     // Изменение остаётся в форме на время записи и readback.
-    expect(scope.getByDisplayValue("115000.00")).toHaveValue("115000.00");
+    expect(scope.getByDisplayValue(displayMonthNumber("115000.00"))).toHaveValue("115 000");
 
     gate.resolve();
     await screen.findByText(/Сохранено: Вклад Альфа/);
-    expect(screen.queryByDisplayValue("115000.00")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Баланс — Вклад Альфа")).toHaveValue("115 000");
     expect(screen.queryByText(/Изменение вклада не подтверждено/)).not.toBeInTheDocument();
   });
 
@@ -1476,6 +1610,13 @@ describe("UiV2MonthAssetsSection", () => {
       setup();
       const user = userEvent.setup();
 
+      await waitFor(() =>
+        expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+      );
+      await openAddForms();
       const submit = await screen.findByRole("button", { name: "Добавить вклад" });
       await user.type(screen.getByLabelText("Название вклада"), "Вклад Ставка");
       await user.type(screen.getByLabelText("Баланс вклада"), "1000");
@@ -1507,11 +1648,11 @@ describe("UiV2MonthAssetsSection", () => {
       await user.click(screen.getByRole("button", { name: "Действия для вклада «Вклад Альфа»" }));
       await user.click(screen.getByRole("menuitem", { name: "Изменить" }));
       const editRow = screen.getByDisplayValue("Вклад Альфа").closest("tr") as HTMLElement;
-      const scope = within(editRow);
-      const rate = scope.getByDisplayValue("12.00");
+      const scope = within(editRow.closest("table") as HTMLElement);
+      const rate = scope.getByDisplayValue(displayMonthNumber("12.00"));
       await user.clear(rate);
       await user.type(rate, submitted);
-      await user.click(screen.getByRole("button", { name: "Сохранить вклады" }));
+      await user.click(screen.getByRole("button", { name: "Сохранить остатки" }));
 
       await screen.findByText(/Сохранено: Вклад Альфа/);
       expect(vi.mocked(updateDeposit).mock.calls[0][1].annual_rate).toBe(submitted);
@@ -1530,6 +1671,13 @@ describe("UiV2MonthAssetsSection", () => {
       setup();
       const user = userEvent.setup();
 
+      await waitFor(() =>
+        expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+      );
+      await openAddForms();
       const submit = await screen.findByRole("button", { name: "Добавить вклад" });
       await user.type(screen.getByLabelText("Название вклада"), "Вклад Странная");
       await user.type(screen.getByLabelText("Баланс вклада"), "1000");
@@ -1561,6 +1709,13 @@ describe("UiV2MonthAssetsSection", () => {
     setup();
     const user = userEvent.setup();
 
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "Загружаем активы" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "+ Добавить вклад" })).toBeInTheDocument(),
+    );
+    await openAddForms();
     const submit = await screen.findByRole("button", { name: "Добавить вклад" });
     await user.type(screen.getByLabelText("Название вклада"), "Вклад Один");
     await user.type(screen.getByLabelText("Баланс вклада"), "5000");

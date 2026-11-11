@@ -40,67 +40,26 @@
 .depositsTable :global(td.num) {
   width: auto;
 }
-.depositsTable:has(:global(.input)) thead {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  clip-path: inset(50%);
-}
-.depositsTable:has(:global(.input)) tbody {
-  display: block;
-}
-.depositsTable:has(:global(.input)) tr {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
-}
-.depositsTable:has(:global(.input)) td,
-.depositsTable:has(:global(.input)) :global(td.num),
-.depositsTable:has(:global(.input)) :global(td.month-deposits-table__actions) {
-  display: grid;
-  min-width: 0;
-  width: auto;
-  padding: 6px 0;
-  text-align: start;
-  border: 0;
-  white-space: normal;
-}
-.depositsTable:has(:global(.input)) td::before {
-  content: attr(data-label);
-  color: var(--muted);
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-.depositsTable:has(:global(.input)) td:first-child {
-  grid-column: 1 / -1;
-}
-.depositsTable:has(:global(.input)) :global(.row-actions) {
-  flex-wrap: wrap;
-  justify-content: flex-start;
-}
-
 @container (max-width: 760px) {
-  .depositsTable thead {
+  .depositsTable:not(.editable) thead {
     position: absolute;
     width: 1px;
     height: 1px;
     clip-path: inset(50%);
   }
-  .depositsTable tbody {
+  .depositsTable:not(.editable) tbody {
     display: block;
   }
-  .depositsTable tr {
+  .depositsTable:not(.editable) tr {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px 16px;
     padding: 12px 0;
     border-bottom: 1px solid var(--line);
   }
-  .depositsTable td,
-  .depositsTable :global(td.num),
-  .depositsTable :global(td.month-deposits-table__actions) {
+  .depositsTable:not(.editable) td,
+  .depositsTable:not(.editable) :global(td.num),
+  .depositsTable:not(.editable) :global(td.month-deposits-table__actions) {
     display: grid;
     min-width: 0;
     width: auto;
@@ -109,16 +68,59 @@
     border: 0;
     white-space: normal;
   }
-  .depositsTable td::before {
+  .depositsTable:not(.editable) td::before {
     content: attr(data-label);
     color: var(--muted);
     font-size: 12px;
     margin-bottom: 4px;
   }
-  .depositsTable td:first-child {
+  .depositsTable:not(.editable) td:first-child {
     grid-column: 1 / -1;
   }
-  .depositsTable :global(.row-actions) {
+  .depositsTable:not(.editable) :global(.row-actions) {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 799px) {
+  .depositsTable.editable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+  }
+  .depositsTable.editable tbody {
+    display: block;
+  }
+  .depositsTable.editable tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .depositsTable.editable td,
+  .depositsTable.editable :global(td.num),
+  .depositsTable.editable :global(td.month-deposits-table__actions) {
+    display: grid;
+    min-width: 0;
+    width: auto;
+    padding: 6px 0;
+    text-align: start;
+    border: 0;
+    white-space: normal;
+  }
+  .depositsTable.editable td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .depositsTable.editable td:first-child {
+    grid-column: 1 / -1;
+  }
+  .depositsTable.editable :global(.row-actions) {
     flex-wrap: wrap;
     justify-content: flex-start;
   }
@@ -146,4 +148,81 @@
 .cashTable th:first-child,
 .cashTable td:first-child {
   padding-left: 0;
+}
+
+.editable {
+  max-width: 960px;
+}
+.editable th,
+.editable td {
+  padding-inline: 6px;
+}
+.editable :global(.month-deposits-table__actions) {
+  width: 44px;
+  min-width: 44px;
+}
+.editable :global(.num) > span:has(input) {
+  width: 160px;
+}
+.editable :global(.num)[data-label="Ставка"] > span:has(input) {
+  width: 96px;
+}
+.editable :global(.num) {
+  white-space: normal;
+}
+.rowEditActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+@media (min-width: 800px) {
+  .depositsTable.editable {
+    table-layout: fixed;
+  }
+  .editable th:first-child {
+    width: auto;
+  }
+  .editable :global(th.num):nth-child(2),
+  .editable :global(th.num):nth-child(5) {
+    width: 172px;
+  }
+  .editable :global(th.num):nth-child(3) {
+    width: 106px;
+  }
+  .editable :global(th.num):nth-child(4) {
+    width: 80px;
+  }
+}
+
+.compactForecast {
+  display: none;
+}
+.metadataEdit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px 18px;
+}
+.metadataEdit :global(.field):first-child {
+  width: 280px;
+  max-width: 100%;
+}
+.metadataEdit :global(.select) {
+  width: 160px;
+}
+@container (max-width: 800px) {
+  .editable :global(th.num):nth-child(3),
+  .editable :global(th.num):nth-child(4),
+  .editable td[data-label="Ставка"],
+  .editable td[data-label="Прогноз в месяц"],
+  .editable td[data-label="Прогноз"] {
+    display: none;
+  }
+  .editable .compactForecast {
+    display: block;
+    color: var(--muted);
+    font-size: var(--t-sm);
+  }
 }

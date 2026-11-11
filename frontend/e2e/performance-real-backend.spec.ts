@@ -7,7 +7,7 @@ test("Checkpoint A: preparation/readback → XIRR → observed PRE/POST → TWRR
   request,
 }, testInfo) => {
   test.setTimeout(60_000);
-  const api = "http://127.0.0.1:8000/api";
+  const api = new URL("/api", testInfo.project.use.baseURL).href;
   const start = "2040-01-31";
   const end = "2040-02-29";
   const money = (amount: string) => ({ amount, currency: "RUB" });
@@ -164,7 +164,7 @@ test("Checkpoint A: preparation/readback → XIRR → observed PRE/POST → TWRR
   });
   await page.goto("/v2/capital");
   await page.goBack();
-  await expect(page).toHaveURL(`http://127.0.0.1:5173${url}`);
+  await expect(page).toHaveURL(new URL(url, testInfo.project.use.baseURL).href);
   await expect(page.getByTestId("performance-detail-twrr")).toContainText("%");
 
   // Material correction revokes cash and PRE/POST authority; stale capture cannot revive it.
