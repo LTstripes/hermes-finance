@@ -6,10 +6,12 @@ import { listIncomes } from "../api/incomes";
 import { getMonthSummary } from "../api/summary";
 import type { IncomeEntry, SalaryTaxSummary } from "../api/types";
 import { formatRateBps } from "../components/SalaryTaxRateSummary";
-import { DataValue, Field, MoneyInput } from "../components/ui";
+import { Button, DataValue, Field } from "../components/ui";
 import { formatMoney } from "../lib/format";
 import { findIncome, upsertSalaryLine, upsertSimpleIncomeLine } from "../lib/incomeLines";
 import { isBlankMoney, moneyAmount, normalizeMoneyInput, toKopecks } from "../lib/money";
+import { MonthMoneyInput } from "./MonthMoneyInput";
+import { MonthSaveBar } from "./MonthSaveBar";
 import styles from "./UiV2MonthEditor.module.css";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 
@@ -376,7 +378,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
           <form onSubmit={(event) => void save(event)}>
             <div className="editor-grid">
               <Field htmlFor="salary-gross" label="Зарплата до вычета налогов">
-                <MoneyInput
+                <MonthMoneyInput
                   disabled={readOnly || saving}
                   id="salary-gross"
                   inputMode="decimal"
@@ -402,7 +404,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
                 />
               </section>
               <Field htmlFor="salary-actual-net" label="Фактическая зарплата после налогов">
-                <MoneyInput
+                <MonthMoneyInput
                   disabled={readOnly || saving}
                   id="salary-actual-net"
                   inputMode="decimal"
@@ -416,7 +418,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
               <summary>Добавить другой доход</summary>
               <div className="editor-grid">
                 <Field htmlFor="bonus" label="Премия">
-                  <MoneyInput
+                  <MonthMoneyInput
                     disabled={readOnly || saving}
                     id="bonus"
                     inputMode="decimal"
@@ -426,7 +428,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
                   />
                 </Field>
                 <Field htmlFor="side" label="Дополнительный доход">
-                  <MoneyInput
+                  <MonthMoneyInput
                     disabled={readOnly || saving}
                     id="side"
                     inputMode="decimal"
@@ -436,7 +438,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
                   />
                 </Field>
                 <Field htmlFor="cashback" label="Кэшбэк (не пассивный доход)">
-                  <MoneyInput
+                  <MonthMoneyInput
                     disabled={readOnly || saving}
                     id="cashback"
                     inputMode="decimal"
@@ -454,11 +456,19 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
                 обновляются после ручного сохранения.
               </p>
             </details>
-            {!readOnly ? (
-              <button disabled={!dirty || saving || retryBlocked} type="submit">
-                {saving ? "Сохраняем…" : context.workspace ? "Сохранить" : "Сохранить доходы"}
-              </button>
-            ) : null}
+            <MonthSaveBar
+              changed={
+                Object.keys(form).filter(
+                  (key) => form[key as keyof IncomeForm] !== baseline[key as keyof IncomeForm],
+                ).length
+              }
+            >
+              {!readOnly && (dirty || saving) ? (
+                <Button disabled={saving || retryBlocked} type="submit" variant="primary">
+                  {saving ? "Сохраняем…" : context.workspace ? "Сохранить" : "Сохранить доходы"}
+                </Button>
+              ) : null}
+            </MonthSaveBar>
           </form>
         )
       ) : null}

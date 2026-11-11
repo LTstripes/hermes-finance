@@ -15,7 +15,8 @@ import {
 import { getMonthSummary } from "../api/summary";
 import type { IncomeEntry, IncomeType, MonthSummary, ReportingMonth } from "../api/types";
 import { formatMoney } from "../lib/format";
-import { formatMoneyInput, isBlankMoney } from "../lib/money";
+import { displayMonthNumber as formatMoneyInput } from "./MonthMoneyInput";
+import { isBlankMoney } from "../lib/money";
 import { createQueryClient } from "../queryClient";
 import { MonthIncomeSection } from "./MonthIncomeSection";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
@@ -342,7 +343,9 @@ describe("native month editor income leaf", () => {
     expect(listIncomes).toHaveBeenCalledWith(7, expect.any(AbortSignal));
     expect(getMonthSummary).toHaveBeenCalledWith(7, expect.any(AbortSignal), false);
     expect(onDirty).not.toHaveBeenCalledWith("income", true);
-    expect(within(section).getByRole("button", { name: "Сохранить доходы" })).toBeDisabled();
+    expect(
+      within(section).queryByRole("button", { name: "Сохранить доходы" }),
+    ).not.toBeInTheDocument();
   });
 
   it("creates missing lines with exact legacy payloads, confirms readback and reloads", async () => {
@@ -633,7 +636,9 @@ describe("native month editor income leaf", () => {
       expect(within(section).getByLabelText("Зарплата до вычета налогов")).toBeInTheDocument(),
     );
     expect(within(section).queryByRole("alert")).not.toBeInTheDocument();
-    expect(within(section).getByRole("button", { name: "Сохранить доходы" })).toBeDisabled();
+    expect(
+      within(section).queryByRole("button", { name: "Сохранить доходы" }),
+    ).not.toBeInTheDocument();
   });
 
   it("gates the retry until a partial save is reconciled and never duplicates the created row", async () => {
