@@ -9,23 +9,28 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
-- 1.15.0 is prepared on main for guarded publication with
-  [release notes](release-notes-1.15.0.md). Publication, the tag and the Stable
-  installation are recorded here only after their read-back.
+- [v1.15.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.15.0)
+  is published at `62f0a50eef0eb04c9ce031c39fbbf9fa49efacfc` with
+  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/42904115400)
+  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/42958411450)
+  successful, with [release notes](release-notes-1.15.0.md).
+- 1.15.0 is installed on the Owner computer on 2026-11-11 by backup-first OPS02,
+  then Prepare and Start; the running health version reads back 1.15.0 and a
+  pre-update SQLite backup exists in the update backup directory. Detailed numeric
+  Owner UAT of 1.15.0 has not been performed.
 - [v1.14.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.14.0)
   (`c4e91bd496c602a6496ec018caff473ac83fa1b4`, exact-main CI
   [42571502233](https://github.com/LTstripes/hermes-finance/actions/runs/42571502233),
   guarded publication
   [42572541752](https://github.com/LTstripes/hermes-finance/actions/runs/42572541752))
-  is the installed Stable version since 2026-11-09 (backup-first OPS02, Prepare and
-  Start; health read back 1.14.0). Its pre-update backup is retained. Detailed
+  was installed on 2026-11-09 and keeps its pre-update backup. Detailed
   numeric Owner UAT of 1.13.0 and 1.14.0 has not been performed and is not inferred
   from CI or copy checks.
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
-Changes since 1.14.0, prepared for 1.15.0:
+Changes since 1.14.0, shipped in 1.15.0:
 
 - [#1156](https://github.com/LTstripes/hermes-finance/pull/1156) takes the market
   line of the capital bridge from statements and shows the capital-vs-statement
@@ -55,8 +60,7 @@ establish Owner UAT. Returns summaries and one instrument card still take about
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Publish 1.15.0 through the guarded route and install it on Stable backup-first,
-   then Owner UAT of the returns screens, the month pages and the close screen,
+1. Owner UAT of installed 1.15.0 of the returns screens, the month pages and the close screen,
    together with the pending UAT of 1.13.0 and 1.14.0.
 2. Remaining UI audit tasks (navigation, payouts forecast, capital table, settings,
    mobile) through Codex; returns summaries speed.
