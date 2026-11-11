@@ -580,11 +580,21 @@ Refresh, cancellation, errors and Back/Reload retain their selection guarantees.
 The full detail still shows interval result/rate, credited coupons/dividends and
 available history separately. Unknown values remain unavailable with reasons.
 
-Monthly bars select the same period used by instruments and both top-five lists;
-their paged table alternative preserves gaps, signs and zero. Instrument search,
-type filters, exact sorting and on-demand trades include sold securities. Tops
-compare only full instrument-v2 results with the same dates, method and basis;
-positive/negative rows alone qualify, defaulting to RUB P&L with a percent toggle.
+Without an explicit scope, the monthly screen opens the first account with saved
+periods; an explicit portfolio URL retains its existing availability. Accounts use
+the overview's segmented selector and catalogue names, with a neutral account type
+while names load and the native identifier only in the title. The selected period
+result leads; nonzero coupons/dividends are secondary and all-history is a link to
+the overview. Monthly bars and the ordinary paged month table select the same
+period used by instruments and rankings, preserving gaps, signs and zero. A custom
+interval remains a secondary action. Known partial amounts are labelled as such,
+without claiming a complete account result or inventing a percentage.
+Instrument search, type filters, exact header sorting and on-demand trades include
+sold securities; the ordinary table starts with ten rows and has no disclosures
+or reason codes in its rows. Money uses whole rubles, rates one signed decimal,
+and exact precision remains in titles/details. Rankings compare only full
+instrument-v2 results with the same dates, method and basis; positive/negative
+rows share one zero-based RUB chart. Method and source explanations are secondary.
 Conditional bond estimates remain in details. The overview never replaces a
 whole-period result with available fragments or calculates financial returns.
 Custom intervals keep unavailable account rates explicit while retaining any

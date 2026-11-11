@@ -617,3 +617,101 @@
   font-size: var(--t-lg);
   font-weight: var(--w-semibold);
 }
+
+/* Monthly tables share the overview's typography and compact row density. */
+.monthInstruments.monthInstruments col:nth-child(1) {
+  width: 34%;
+}
+.monthInstruments.monthInstruments col:nth-child(2) {
+  width: 22%;
+}
+.monthInstruments.monthInstruments col:nth-child(3) {
+  width: 16%;
+}
+.monthInstruments.monthInstruments col:nth-child(4) {
+  width: 28%;
+}
+.monthInstruments.monthInstruments th button {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.monthTable.monthTable td,
+.monthTable.monthTable th {
+  padding: var(--returns-cell-padding);
+  height: var(--returns-month-row-height);
+  vertical-align: middle;
+  line-height: var(--returns-line-height);
+}
+.monthTable.monthTable th:first-child {
+  width: 26%;
+}
+.monthTable tr[data-selected] {
+  background: var(--accent-soft);
+}
+.monthTable.monthTable button {
+  min-height: 0;
+}
+.monthTable.monthTable th:not(:first-child),
+.monthInstruments.monthInstruments th:not(:first-child) {
+  text-align: right;
+}
+.monthInstruments.monthInstruments td,
+.monthTable.monthTable td {
+  overflow-wrap: normal;
+}
+
+.monthPage:not(:has(.diagnostics)) .panel {
+  padding: var(--returns-cell-padding) 0;
+}
+.monthPage:not(:has(.diagnostics)) .cards {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--skeleton-gap);
+  padding-bottom: var(--skeleton-gap);
+}
+.monthPage:not(:has(.diagnostics)) .primaryCard {
+  grid-column: 1 / -1;
+}
+.monthPage:not(:has(.diagnostics)) .primaryCard .mainValue {
+  font-size: var(--t-hero);
+}
+.monthPage:not(:has(.diagnostics)) .controls {
+  align-items: center;
+}
+.monthPage:not(:has(.diagnostics)) .controls fieldset {
+  flex-wrap: wrap;
+}
+.monthLead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--skeleton-gap);
+}
+.monthLeaders > li {
+  min-height: var(--returns-chart-row-height);
+  padding: var(--returns-cell-padding) 0;
+}
+.monthLeaders button {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1023px) {
+  .monthLead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .monthPage:not(:has(.diagnostics)) .primaryCard .mainValue {
+    font-size: var(--t-2xl);
+  }
+}
+
+.monthPage:not(:has(.diagnostics)) .sectionHead {
+  margin-bottom: var(--returns-cell-padding);
+}
+.monthPage:not(:has(.diagnostics)) .periodLine {
+  margin-bottom: var(--returns-cell-padding) !important;
+}
+.monthPage:not(:has(.diagnostics)) main {
+  padding-bottom: var(--skeleton-gap);
+}

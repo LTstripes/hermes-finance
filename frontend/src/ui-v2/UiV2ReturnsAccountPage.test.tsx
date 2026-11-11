@@ -15,6 +15,12 @@ import {
 import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
 import UiV2ReturnsAccountPage from "./UiV2ReturnsAccountPage";
 
+function choosePeriod(start: string, end: string) {
+  fireEvent.click(screen.getByText("Свой интервал", { exact: true }));
+  fireEvent.change(screen.getByLabelText("Начальная стоимость на"), { target: { value: start } });
+  fireEvent.change(screen.getByLabelText("Конечная стоимость на"), { target: { value: end } });
+  fireEvent.click(screen.getByRole("button", { name: /^Показать$/ }));
+}
 function Location() {
   const location = useLocation();
   return (
@@ -35,6 +41,8 @@ function install(override?: (url: URL) => Promise<Response> | undefined) {
       calls.push(url.pathname + url.search);
       const custom = override?.(url);
       if (custom) return custom;
+      // Host/navigation tests do not invent DTOs for independent diagnostics.
+      if (!url.pathname.startsWith("/api/returns/")) return Promise.resolve(response({}, 503));
       const scope = url.searchParams.get("scope") ?? "source:SYNTH-A";
       const period = {
         start: url.searchParams.get("start") ?? may.start,
@@ -72,6 +80,63 @@ function setup(path = "/v2/returns/account?scope=source:SYNTH-A") {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("diagnostic history entry keeps its original source account and exact history interval", async () => {
+  const calls = install();
+  setup("/v2/returns/account?diagnostics=performance&period=history");
+  await waitFor(() =>
+    expect(screen.getByTestId("location")).toHaveTextContent("scope=source%3ASYNTH-A"),
+  );
+  expect(screen.getByTestId("location")).toHaveTextContent("start=2030-03-31&end=2030-05-31");
+  expect(
+    calls.some((call) => call.includes("/overview?") && call.includes("scope=portfolio")),
+  ).toBe(false);
+});
+
+test("unscoped entry selects the first account with periods while an explicit portfolio stays explicit", async () => {
+  install((url) =>
+    url.pathname.endsWith("context")
+      ? Promise.resolve(
+          response({
+            ...contextFixture,
+            source_periods: { "source:SYNTH-B": contextFixture.source_periods["source:SYNTH-B"] },
+          }),
+        )
+      : undefined,
+  );
+  setup("/v2/returns/account");
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(screen.getByTestId("location")).toHaveTextContent("scope=source%3ASYNTH-B");
+  expect(screen.getByTestId("location")).toHaveTextContent(`start=${may.start}&end=${may.end}`);
+  expect(screen.queryByRole("button", { name: "Учебный счёт А" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Общий портфель" }));
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("scope=portfolio"));
+  await screen.findByRole("region", { name: "Результат периода" });
+  expect(screen.getByRole("button", { name: "Общий портфель" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
+test("partial months are labelled once and ordinary rows contain no disclosures or reason codes", async () => {
+  install((url) => {
+    if (!url.pathname.endsWith("overview")) return;
+    const data = overviewFixture();
+    data.selected.pnl.reason_codes = ["clean_partial_result"];
+    data.history.forEach((row) => {
+      row.pnl.reason_codes = ["clean_partial_result"];
+    });
+    return Promise.resolve(response(data));
+  });
+  setup();
+  const result = await screen.findByRole("region", { name: "Результат периода" });
+  expect(result).toHaveTextContent("Известная часть за период");
+  const history = screen.getByRole("region", { name: "Известная часть по месяцам" });
+  expect(within(history).getByRole("columnheader", { name: "Известная часть, ₽" })).toBeVisible();
+  expect(within(history).getByRole("table").querySelector("details")).toBeNull();
+  expect(within(history).getByRole("table")).not.toHaveTextContent(/ⓘ|clean_partial_result/);
+  expect(screen.queryByRole("combobox", { name: "Период" })).toBeNull();
+});
+
 test("switching accounts replaces a foreign inception with its exact own history", async () => {
   const own = { start: "2031-05-11", end: "2031-09-30" };
   const calls = install((url) =>
@@ -87,9 +152,7 @@ test("switching accounts replaces a foreign inception with its exact own history
   );
   setup(`/v2/returns/account?scope=source:SYNTH-A&start=${may.start}&end=${may.end}`);
   await screen.findByRole("region", { name: "Результат периода" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Счёт" }), {
-    target: { value: "source:SYNTH-B" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: /^Учебный счёт Б$/ }));
   await waitFor(() =>
     expect(screen.getByTestId("location")).toHaveTextContent("start=2031-05-11&end=2031-09-30"),
   );
@@ -115,7 +178,11 @@ test("unscoped CLOSED history opens the accepted portfolio even without saved st
   setup("/v2/returns/account");
   await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("start=2030-04-30"));
   await screen.findByRole("region", { name: "Результат периода" });
-  expect(screen.getByRole("combobox", { name: "Счёт" })).toHaveValue("portfolio");
+  expect(screen.getByRole("button", { name: /^Общий портфель$/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  fireEvent.click(screen.getByText("Подробнее о данных", { exact: true }));
   expect(screen.getByRole("link", { name: "Открыть отчёты месяцев" })).toHaveAttribute(
     "href",
     "/v2/data/months",
@@ -158,15 +225,18 @@ test("account opening keeps diagnostics outside the ordinary path", async () => 
   expect(calls.filter((c) => c.includes("/basket?"))).toHaveLength(0);
   expect(screen.queryByRole("region", { name: "Моя доходность" })).toBeNull();
   expect(screen.queryByText("Дополнительная диагностика портфеля за выбранный период")).toBeNull();
-  expect(screen.queryByText("Подробнее о данных")).toBeNull();
+  expect(screen.queryByText("Подробнее о данных")?.closest("details")).not.toHaveAttribute("open");
 });
 
 test("account authority is explicit in links and has no source/accepted selector", async () => {
   install();
   setup();
   await screen.findByRole("region", { name: "Результат периода" });
-  const accounts = screen.getByRole("combobox", { name: "Счёт" });
-  expect(within(accounts).getByRole("option", { name: "Общий портфель" })).toHaveValue("portfolio");
+  const accounts = screen.getByRole("group", { name: "Счета" });
+  expect(within(accounts).getByRole("button", { name: "Общий портфель" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   expect(screen.queryByRole("combobox", { name: "Представление" })).toBeNull();
 });
 
@@ -203,7 +273,7 @@ test("duplicate scope containing a proven alias stays invalid and never selects 
   const path =
     "/v2/returns/account?scope=source:OLD-A&scope=source:SYNTH-B&start=2030-03-31&end=2030-04-30";
   setup(path);
-  await screen.findByRole("option", { name: "Учебный счёт А" });
+  await screen.findByRole("button", { name: /^Учебный счёт А$/ });
   expect(screen.getByTestId("location")).toHaveTextContent(path.slice(path.indexOf("?")));
   expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
   expect(calls.filter((c) => c.includes("/overview"))).toHaveLength(0);
@@ -231,7 +301,9 @@ test("partial history shows server RUB subtotal with coverage and no invented ra
     return Promise.resolve(response(data));
   });
   setup();
-  const card = await screen.findByRole("region", { name: "За доступные месяцы" });
+  await screen.findByRole("region", { name: "Результат периода" });
+  fireEvent.click(screen.getByText("Подробнее о данных", { exact: true }));
+  const card = screen.getByRole("region", { name: "За доступные месяцы" });
   expect(card).toHaveTextContent("За доступные месяцы · 2 из 3");
   expect(card).toHaveTextContent("+80 ₽");
   expect(card).not.toHaveTextContent("%");
@@ -261,14 +333,19 @@ test("missing name is explained in table, tops and lazy detail without a lookup"
   });
   setup();
   await screen.findByRole("region", { name: "Результат периода" });
-  expect(screen.getAllByLabelText("Подробнее: Название RU000A000001")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: /▸ RU000A000001/ }));
+  expect(screen.queryByLabelText("Подробнее: Название RU000A000001")).toBeNull();
+  expect(screen.getByText("Название бумаги не найдено; показан ISIN.")).not.toBeVisible();
+  fireEvent.click(
+    within(screen.getByRole("table", { name: "Бумаги за период" })).getByRole("button", {
+      name: /^RU000A000001$/,
+    }),
+  );
   await screen.findByText("Количество: 10 → 0");
-  expect(screen.getAllByLabelText("Подробнее: Название RU000A000001")).toHaveLength(3);
+  expect(screen.getAllByLabelText("Подробнее: Название RU000A000001")).toHaveLength(1);
   expect(calls.every((c) => c.startsWith("/api/returns/"))).toBe(true);
 });
 
-test("tops show the name first, ISIN second and an honest single ISIN fallback", async () => {
+test("leaders show catalogue names and an honest single ISIN fallback", async () => {
   install((url) => {
     if (!url.pathname.endsWith("overview")) return;
     const data = overviewFixture();
@@ -278,14 +355,13 @@ test("tops show the name first, ISIN second and an honest single ISIN fallback",
   setup();
   const tops = await screen.findByRole("region", { name: "Лидеры и отстающие" });
   const rows = within(tops).getAllByRole("listitem");
-  expect(rows[0].querySelector("span")?.firstChild?.textContent).toBe("Северные технологии");
-  expect(rows[0].querySelector("small")).toHaveTextContent("RU000A000001");
+  expect(within(rows[0]).getByRole("button")).toHaveTextContent("Северные технологии");
   expect(rows[1]).toHaveTextContent("RU000A000002");
   expect(rows[1].querySelector("small")).toBeNull();
   expect(rows).toHaveLength(3);
 });
 
-test("account leaders show clean monetary results and label partial amounts", async () => {
+test("account leaders rank full server results while partial amounts stay marked in the table", async () => {
   install((url) => {
     if (!url.pathname.endsWith("overview")) return;
     const data = overviewFixture();
@@ -297,13 +373,14 @@ test("account leaders show clean monetary results and label partial amounts", as
   });
   setup();
   const tops = await screen.findByRole("region", { name: "Лидеры и отстающие" });
-  expect(tops).toHaveTextContent("Северные технологии");
-  // The partial amount is marked once by a footnote, not by a prefix on every row.
-  expect(tops).not.toHaveTextContent("Известная часть:");
-  expect(tops.querySelector("sup")).toHaveTextContent("*");
-  expect(within(tops).getByText("(известная часть, не полный итог)")).toBeInTheDocument();
+  expect(tops).not.toHaveTextContent("Северные технологии");
+  expect(tops.querySelector("sup")).toBeNull();
   expect(tops).toHaveTextContent("Горизонт");
-  expect(tops).toHaveTextContent("известная часть результата, не полный итог");
+  const table = screen.getByRole("table", { name: "Бумаги за период" });
+  expect(within(table).getByRole("row", { name: /Северные технологии/ })).toHaveTextContent(
+    "неполный",
+  );
+  expect(table.querySelector("details")).toBeNull();
 });
 
 test("source seam context stays behind each metric's details while values remain visible", async () => {
@@ -325,17 +402,13 @@ test("source seam context stays behind each metric's details while values remain
   setup();
   const result = await screen.findByRole("region", { name: "Результат периода" });
   expect(result).toHaveTextContent("+27 ₽");
-  expect(result).toHaveTextContent("2,70%");
-  for (const name of ["Результат периода", "Полученные купоны", "Полученные дивиденды"]) {
-    const card = screen.getByRole("region", { name });
-    const info = within(card).getAllByText("Остатки соседних периодов расходятся.");
-    for (const explanation of info) expect(explanation).not.toBeVisible();
-    for (const control of within(card).getAllByLabelText(/^Подробнее:/)) {
-      expect(control).toHaveTextContent("ⓘ");
-      fireEvent.click(control);
-    }
-    for (const explanation of info) expect(explanation).toBeVisible();
-  }
+  expect(result).toHaveTextContent("+2,7%");
+  const footer = screen.getByText("Подробнее о данных", { exact: true }).closest("details")!;
+  const explanations = within(footer).getAllByText("Остатки соседних периодов расходятся.");
+  for (const explanation of explanations) expect(explanation).not.toBeVisible();
+  fireEvent.click(screen.getByText("Подробнее о данных", { exact: true }));
+  for (const control of within(footer).getAllByLabelText(/^Подробнее:/)) fireEvent.click(control);
+  for (const explanation of explanations) expect(explanation).toBeVisible();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
@@ -352,10 +425,12 @@ test("account reconciliation explains the whole account in metric details", asyn
   });
   setup();
   const card = await screen.findByRole("region", { name: "Результат периода" });
-  expect(card).toHaveTextContent("+123,45");
-  const explanation = within(card).getByText(/Результат всего счёта за указанные даты/);
+  expect(card).toHaveTextContent("+123 ₽");
+  const footer = screen.getByText("Подробнее о данных", { exact: true }).closest("details")!;
+  const explanation = within(footer).getByText(/Результат всего счёта за указанные даты/);
   expect(explanation).not.toBeVisible();
-  fireEvent.click(within(card).getByLabelText("Подробнее: Результат периода"));
+  fireEvent.click(screen.getByText("Подробнее о данных", { exact: true }));
+  fireEvent.click(within(footer).getByLabelText("Подробнее: Результат периода"));
   expect(explanation).toBeVisible();
   expect(explanation).toHaveTextContent("денежный остаток и операции счёта");
   expect(within(card).queryByText(/Результат бумаги/)).not.toBeInTheDocument();
@@ -368,12 +443,20 @@ test("pins CLOSED default in URL and loads trades only on expansion", async () =
   expect(screen.getByTestId("location")).toHaveTextContent("start=2030-04-30&end=2030-05-31");
   expect(calls.filter((c) => c.includes("/instrument?"))).toHaveLength(0);
   expect(screen.queryByRole("region", { name: "За всю историю" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /Горизонт — проданная/ }));
+  fireEvent.click(
+    within(screen.getByRole("table", { name: "Бумаги за период" })).getByRole("button", {
+      name: /Горизонт — проданная/,
+    }),
+  );
   await screen.findByText("Продажа");
   expect(screen.getByText("Количество: 10 → 0")).toBeVisible();
   expect(calls.filter((c) => c.includes("/instrument?"))).toHaveLength(1);
   fireEvent.change(screen.getByRole("combobox", { name: "Тип" }), { target: { value: "bond" } });
-  expect(screen.queryByRole("button", { name: /Северные технологии/ })).not.toBeInTheDocument();
+  expect(
+    within(screen.getByRole("table", { name: "Бумаги за период" })).queryByRole("button", {
+      name: /Северные технологии/,
+    }),
+  ).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Учебная облигация/ })).toBeVisible();
 });
 
@@ -394,7 +477,12 @@ test.each(["contract", "interval", "endpoint"])(
       );
     });
     setup();
-    fireEvent.click(await screen.findByRole("button", { name: /Горизонт — проданная/ }));
+    fireEvent.click(
+      await within(await screen.findByRole("table", { name: "Бумаги за период" })).findByRole(
+        "button",
+        { name: /Горизонт — проданная/ },
+      ),
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить детали");
     expect(
       screen.queryByRole("heading", { name: "Мой результат за период, ₽" }),
@@ -415,15 +503,16 @@ test("late account response cannot populate the new scope; error hides cached fi
   });
   setup();
   await waitFor(() =>
-    expect(screen.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-A"),
+    expect(screen.getByRole("button", { name: /^Учебный счёт А$/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    ),
   );
-  fireEvent.change(screen.getByRole("combobox", { name: "Счёт" }), {
-    target: { value: "source:SYNTH-B" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: /^Учебный счёт Б$/ }));
   const result = await screen.findByRole("region", { name: "Результат периода" });
-  expect(result).toHaveTextContent("−1 750,25");
+  expect(result).toHaveTextContent("−1 750 ₽");
   await act(async () => resolveA(response(overviewFixture())));
-  expect(result).toHaveTextContent("−1 750,25");
+  expect(result).toHaveTextContent("−1 750 ₽");
   fail = true;
   fireEvent.click(screen.getByRole("button", { name: "Обновить" }));
   await screen.findByRole("alert");
@@ -493,13 +582,9 @@ test("24 months keep an earlier selection visible after loading and period chang
       name: /янв.*2029/,
     });
   expect(selectedBar()).toHaveAttribute("aria-pressed", "true");
-  fireEvent.change(screen.getByRole("combobox", { name: "Период" }), {
-    target: { value: `${longHistoryPeriods[12].start}/${longHistoryPeriods[12].end}` },
-  });
+  choosePeriod(longHistoryPeriods[12].start, longHistoryPeriods[12].end);
   await screen.findByRole("region", { name: "Результат периода" });
-  fireEvent.change(screen.getByRole("combobox", { name: "Период" }), {
-    target: { value: `${longHistoryPeriods[0].start}/${longHistoryPeriods[0].end}` },
-  });
+  choosePeriod(longHistoryPeriods[0].start, longHistoryPeriods[0].end);
   await screen.findByRole("region", { name: "Результат периода" });
   expect(selectedBar()).toHaveAttribute("aria-pressed", "true");
 });
@@ -513,7 +598,10 @@ test("without CLOSED months source intervals remain selectable without silently 
   setup();
   await screen.findByText(/Закрытых месяцев пока нет/);
   await waitFor(() =>
-    expect(screen.getByRole("combobox", { name: "Счёт" })).toHaveValue("source:SYNTH-A"),
+    expect(screen.getByRole("button", { name: /^Учебный счёт А$/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    ),
   );
   // Flush post-context URL effects: source periods are offered for manual
   // selection, not silently adopted in place of a missing CLOSED default.
@@ -521,10 +609,8 @@ test("without CLOSED months source intervals remain selectable without silently 
   expect(screen.getByTestId("location")).not.toHaveTextContent("start=");
   expect(screen.getByTestId("location")).not.toHaveTextContent("end=");
   expect(screen.queryByRole("region", { name: "Результат периода" })).not.toBeInTheDocument();
-  expect(screen.queryByText("Подробнее о данных")).toBeNull();
-  fireEvent.change(screen.getByRole("combobox", { name: "Период" }), {
-    target: { value: `${may.start}/${may.end}` },
-  });
+  expect(screen.getByText("Подробнее о данных").closest("details")).not.toHaveAttribute("open");
+  choosePeriod(may.start, may.end);
   await screen.findByRole("region", { name: "Результат периода" });
 });
 
@@ -549,7 +635,9 @@ test("account breakdown explains payouts above total using only the selected ove
     return Promise.resolve(response(value));
   });
   setup("/v2/returns/account?scope=source:SYNTH-A&start=2030-04-30&end=2030-05-31");
-  const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
+  await screen.findByRole("region", { name: "Результат периода" });
+  fireEvent.click(screen.getAllByText("Из чего сложился результат", { exact: true })[0]);
+  const region = within(screen.getByRole("region", { name: "Разложение результата" }));
   expect(region.getByText("+15 ₽")).toBeVisible();
   expect(region.getByText("+4 ₽")).toBeVisible();
   expect(region.getByText("Уплаченный НКД")).toBeVisible();
@@ -582,7 +670,7 @@ test("available period rate stays visible independently of unavailable P&L and p
   });
   setup();
   const result = await screen.findByRole("region", { name: "Результат периода" });
-  expect(result).toHaveTextContent("0,13%");
+  expect(result).toHaveTextContent("+0,1%");
   expect(result).toHaveTextContent("0 из 1");
 });
 
@@ -642,24 +730,22 @@ test("accepted net payments remain visible when the result and percentage are un
   expect(within(payouts).getByText(/покрытие периода частичное/)).toBeVisible();
   expect(within(payouts).getByText(/Учебная акция/)).toBeVisible();
   expect(screen.queryByRole("region", { name: "Результат периода" })).toBeNull();
-  expect(screen.getByRole("region", { name: "Полученные дивиденды" })).toHaveTextContent("104,40");
+  expect(screen.getByRole("region", { name: "Полученные дивиденды" })).toHaveTextContent("104 ₽");
   expect(within(payouts).queryByText("Оценка")).toBeNull();
 });
 
-test("instrument row exposes both server metrics and visible missing-evidence reason", async () => {
+test("compact instrument rows keep both server metrics and details retain the missing-evidence reason", async () => {
   install();
   setup();
   const section = await screen.findByRole("region", { name: "По инструментам" });
   const zero = within(section).getByRole("row", { name: /Равновесие/ });
   expect(zero).toHaveTextContent("0 ₽");
-  expect(zero).toHaveTextContent("0,00%");
+  expect(zero).toHaveTextContent("0,0%");
   const missing = within(section).getByRole("row", { name: /Учебная облигация/ });
-  expect(missing).toHaveTextContent("Не хватает стоимости на границе периода");
-  expect(within(missing).getByRole("note")).toBeVisible();
-  expect(within(missing).getByRole("note")).toHaveTextContent(
-    "Не хватает стоимости на границе периода.",
-  );
-  expect(missing).toHaveTextContent("30.04.2030 — 31.05.2030");
+  expect(missing).toHaveTextContent("—");
+  expect(missing.querySelector("details")).toBeNull();
+  fireEvent.click(screen.getByText("Подробнее о бумагах", { exact: true }));
+  expect(screen.getByText("Не хватает стоимости на границе периода.")).toBeVisible();
 });
 
 test("true absence has one empty state; a pending read has a skeleton instead", async () => {
@@ -738,7 +824,7 @@ test("known historical percentages stay in a visible table without an empty mone
   const history = await screen.findByRole("region", { name: "Результат по месяцам" });
   expect(within(history).queryByRole("group", { name: "История результата в рублях" })).toBeNull();
   expect(within(history).getByRole("table")).toBeVisible();
-  expect(history).toHaveTextContent("10,00%");
+  expect(history).toHaveTextContent("+10,0%");
 });
 
 test("a partially known history preserves unknown month gaps and instrument identities", async () => {
@@ -785,10 +871,12 @@ test("a direct accepted-account URL keeps its identity without offering accounts
   );
   setup(`/v2/returns/account?scope=account:1&start=${may.start}&end=${may.end}`);
   await screen.findByRole("region", { name: "Результат периода" });
-  const selector = screen.getByRole("combobox", { name: "Счёт" });
-  expect(selector).toHaveValue("account:1");
-  const selected = selector.querySelector('option[value="account:1"]');
-  expect(selected).toHaveAttribute("disabled");
-  expect(selected).toHaveAttribute("hidden");
-  expect(within(selector).getByRole("option", { name: "Общий портфель" })).toHaveValue("portfolio");
+  const selector = screen.getByRole("group", { name: "Счета" });
+  const selected = within(selector).getByRole("button", { name: "Сохранённый счёт" });
+  expect(selected).toHaveAttribute("aria-pressed", "true");
+  expect(selected).toBeDisabled();
+  expect(within(selector).getByRole("button", { name: "Общий портфель" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
 });

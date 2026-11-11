@@ -1,7 +1,7 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { type ReasonContext, reasonCopy } from "../../lib/reasonCopy";
-import { displayMetric, type Metric } from "./model";
+import { displayMetric, displayWhole, displayCompactRate, tone, type Metric } from "./model";
 import styles from "./Returns.module.css";
 
 const methods: Record<string, string> = {
@@ -148,5 +148,18 @@ export function Value({
         )}
       </Info>
     </div>
+  );
+}
+
+/** Ordinary tables show only server values; exact precision remains in the title. */
+export function CompactValue({ metric, signed = false }: { metric: Metric; signed?: boolean }) {
+  return (
+    <span
+      className={styles.number}
+      data-tone={signed ? tone(metric) : undefined}
+      title={displayMetric(metric, signed)}
+    >
+      {metric.unit === "kopecks" ? displayWhole(metric, signed) : displayCompactRate(metric)}
+    </span>
   );
 }
