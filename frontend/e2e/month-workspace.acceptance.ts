@@ -224,9 +224,9 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   await page.getByLabel("Целевой месяц").selectOption("10");
   await page.getByRole("button", { name: "Создать месяц", exact: true }).click();
   const row = page
-    .getByRole("listitem")
+    .getByRole("row")
     .filter({ has: page.getByText("Октябрь 2040", { exact: true }) });
-  const open = row.getByRole("link", { name: "Открыть месяц", exact: true });
+  const open = row.getByRole("link", { name: "Открыть", exact: true });
   await expect(open).toBeVisible();
   const href = await open.getAttribute("href");
   const id = new URL(href ?? "", "http://fixture").searchParams.get("month");
@@ -553,11 +553,9 @@ for (const width of [1280, 1440, 1920])
       await page.evaluate((value) => {
         document.documentElement.style.zoom = String(value);
       }, zoom);
-      await expect(
-        page.getByRole("link", { name: "Открыть месяц", exact: true }).first(),
-      ).toBeVisible();
+      await expect(page.getByRole("link", { name: "Открыть", exact: true }).first()).toBeVisible();
       const aligned = await page
-        .getByRole("link", { name: "Открыть месяц", exact: true })
+        .getByRole("link", { name: "Открыть", exact: true })
         .evaluateAll((links) => links.map((link) => link.getBoundingClientRect().x));
       expect(Math.max(...aligned) - Math.min(...aligned)).toBeLessThan(1);
       await fits(page);

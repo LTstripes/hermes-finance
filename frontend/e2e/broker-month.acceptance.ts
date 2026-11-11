@@ -198,11 +198,11 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   const month = (await (await request.get("/api/months")).json()).find(
     (row: { year: number; month: number }) => row.year === 2035 && row.month === 10,
   );
-  const row = page.getByText("Октябрь 2035", { exact: true }).locator("xpath=ancestor::li");
+  const row = page.getByText("Октябрь 2035", { exact: true }).locator("xpath=ancestor::tr");
   await row.getByRole("button", { name: /Действия месяца/ }).click();
   await expect(page.getByRole("menuitem", { name: "Редактор", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  await row.getByRole("link", { name: "Открыть месяц", exact: true }).focus();
+  await row.getByRole("link", { name: "Открыть", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/v2/close\\?month=${month.id}$`));
   await monthPanel(page, "brokers");

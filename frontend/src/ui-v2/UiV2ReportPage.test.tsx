@@ -212,13 +212,23 @@ describe("UI v2 historical report", () => {
     ]);
   });
 
+  it("omits empty holding sections after successful reads while preserving populated sections", async () => {
+    const { mount, state } = setup();
+    state.cash = [];
+    state.deposits = [];
+    mount();
+    await screen.findByTestId("report-holding-position-501");
+    expect(screen.queryByRole("heading", { name: "Денежные строки" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Вклады" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Позиции" })).toBeVisible();
+  });
+
   it("never shows a historical delta or historical performance", async () => {
     const { mount, reads } = setup();
     mount();
 
-    expect(await screen.findByTestId("report-change-unavailable")).toHaveTextContent(
-      "Изменение между отчётами показывается только для двух последних закрытых отчётов.",
-    );
+    await screen.findByTestId("report-net");
+    expect(screen.queryByRole("heading", { name: "Где изменились суммы" })).toBeNull();
     expect(screen.queryByText(/XIRR/)).toBeNull();
     expect(screen.queryByText(/TWRR/)).toBeNull();
     expect(reads.some((read) => read.includes("/api/performance/"))).toBe(false);

@@ -110,6 +110,22 @@ describe("App", () => {
     );
   });
 
+  it.each(["/v2/data/months?month=2", "/v2/reports?month=2"])(
+    "keeps the unified month list available at %s",
+    async (path) => {
+      window.history.pushState({}, "", path);
+      vi.stubGlobal(
+        "fetch",
+        mockFetchRouter({ "GET /api/months": () => jsonResponse(sampleMonths) }),
+      );
+      render(<App />);
+      expect(await screen.findByRole("heading", { name: "Все месяцы", level: 1 })).toBeVisible();
+      await waitFor(() => expect(screen.getAllByRole("link", { name: "Открыть" })).toHaveLength(2));
+      expect(window.location.pathname + window.location.search).toBe(path);
+      expect(screen.getByRole("link", { name: "Настройки" })).not.toHaveAttribute("aria-current");
+    },
+  );
+
   it.each([
     ["performance", "?scope=account&account_id=7&start=2030-01-01&end=2030-02-01"],
     ["monthly-returns", "?source_account=SYNTH-A&bond_period=2030-02-01"],

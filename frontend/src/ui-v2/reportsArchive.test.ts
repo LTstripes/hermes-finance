@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildArchive,
+  matchingCapitalPoint,
+  groupMonthsWithoutCapital,
   contextualHistoryWindow,
   GAP_ROW_LABEL,
   REPORTS_PATH,
@@ -204,5 +206,26 @@ describe("contextualHistoryWindow", () => {
   it("keeps the whole closed series for «Всё время» and for an unknown selection", () => {
     expect(contextualHistoryWindow(points, selectedId, "all")).toHaveLength(points.length);
     expect(contextualHistoryWindow(points, 9999, 12)).toHaveLength(points.length);
+  });
+});
+
+describe("unified month list identity and grouping", () => {
+  it("rejects draft money and mismatched snapshot dates", () => {
+    const month = uiV2Months.find((month) => month.id === 90)!;
+    expect(matchingCapitalPoint(month, history.points)?.reporting_month_id).toBe(90);
+    expect(matchingCapitalPoint({ ...month, status: "draft" }, history.points)).toBeNull();
+    expect(
+      matchingCapitalPoint({ ...month, snapshot_date: "2031-05-30" }, history.points),
+    ).toBeNull();
+  });
+  it("never collapses across a missing calendar period or an intervening draft", () => {
+    const base = uiV2Months[0];
+    const months = [7, 6, 4, 3, 2].map((month) => ({ ...base, id: month, year: 2031, month }));
+    months[3].status = "draft";
+    expect(
+      groupMonthsWithoutCapital(months, () => null).map((group) =>
+        group.map((month) => month.month),
+      ),
+    ).toEqual([[7, 6], [4], [3], [2]]);
   });
 });

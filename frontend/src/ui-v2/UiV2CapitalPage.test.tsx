@@ -876,7 +876,11 @@ it("links exact catalogue instruments from Capital and gives unsupported rows an
   );
   const noIsin = screen.getByTestId("capital-holding-position-502");
   expect(within(noIsin).queryByRole("link")).toBeNull();
-  expect(screen.getByText(/Без ссылки на разбор:/)).toHaveTextContent("Точный ISIN не подтверждён");
+  expect(screen.queryByText(/Без ссылки на разбор:/)).toBeNull();
+  expect(within(noIsin).getByText("Синтетическая облигация")).toHaveAttribute(
+    "title",
+    "Точный ISIN не подтверждён; переход к разбору недоступен.",
+  );
 });
 
 it("restores the Capital holding filter from a safe card Back target without changing totals", async () => {

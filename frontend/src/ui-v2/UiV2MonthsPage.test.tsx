@@ -1,4 +1,4 @@
-import { QueryClientProvider } from "@tanstack/react-query";
+﻿import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
@@ -7,7 +7,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cloneMonth, createMonth, deleteMonth, listMonths } from "../api/months";
 import type { ReportingMonth } from "../api/types";
 import { createQueryClient, queryKeys } from "../queryClient";
+import { getCapitalComposition, getPassiveIncomeHistory } from "../api/analytics";
+import { makeUiV2CapitalHistory } from "../test/uiV2Fixtures";
 import UiV2MonthsPage from "./UiV2MonthsPage";
+
+vi.mock("../api/analytics", () => ({
+  getCapitalComposition: vi.fn(),
+  getPassiveIncomeHistory: vi.fn(),
+}));
 
 vi.mock("../api/months", () => ({
   listMonths: vi.fn(),
@@ -62,12 +69,27 @@ function renderPage(path = "/v2/data/months") {
 }
 
 async function ready() {
-  return screen.findAllByRole("link", { name: "Открыть месяц" });
+  return screen.findAllByRole("link", { name: "Открыть" });
 }
 
 describe("native month management", () => {
   beforeEach(() => {
     rows = [draft, closed];
+    vi.mocked(getCapitalComposition).mockImplementation(async () => ({
+      asset_classes: [],
+      points: rows
+        .filter((row) => row.status === "closed")
+        .slice()
+        .reverse()
+        .map((row) => ({
+          ...makeUiV2CapitalHistory().points[0],
+          reporting_month_id: row.id,
+          year: row.year,
+          month: row.month,
+          snapshot_date: row.snapshot_date,
+        })),
+    }));
+    vi.mocked(getPassiveIncomeHistory).mockRejectedValue(new Error("Synthetic income unavailable"));
     vi.mocked(listMonths)
       .mockReset()
       .mockImplementation(async () => [...rows]);
@@ -86,9 +108,7 @@ describe("native month management", () => {
     expect(screen.getByText("Закрыт")).toBeVisible();
     expect(screen.getByText("Черновик")).toBeVisible();
     expect(
-      screen
-        .getAllByRole("link", { name: "Открыть месяц" })
-        .map((link) => link.getAttribute("href")),
+      screen.getAllByRole("link", { name: "Открыть" }).map((link) => link.getAttribute("href")),
     ).toEqual(["/v2/close?month=2", "/v2/close?month=1"]);
     expect(screen.queryByRole("link", { name: "Проверить и закрыть" })).toBeNull();
     const trigger = screen.getByRole("button", { name: /Действия месяца Июнь/ });
@@ -110,11 +130,7 @@ describe("native month management", () => {
     rows = [draft, closed, { ...closed, id: 4, month: 4, snapshot_date: "2030-04-30" }];
     renderPage();
     await ready();
-    const row = screen
-      .getAllByRole("link", { name: "Открыть месяц" })
-      .find((link) => link.getAttribute("href") === `/v2/close?month=${id}`)
-      ?.closest("li");
-    if (!row) throw new Error("Missing closed row");
+    const row = await screen.findByTestId(`reports-row-${id}`);
     fireEvent.click(within(row).getByRole("button", { name: /Действия месяца/ }));
     fireEvent.click(
       screen.getByRole("menuitem", {
@@ -139,10 +155,10 @@ describe("native month management", () => {
     await ready();
     expect(screen.queryByRole("button", { name: "Выбрать" })).not.toBeInTheDocument();
     expect(screen.getByText("Выбран")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Источники и актуальность" })).toHaveAttribute(
-      "href",
-      "/v2/data?month=2",
-    );
+    expect(screen.queryByRole("navigation", { name: "Разделы настроек" })).toBeNull();
+    expect(
+      within(screen.getByTestId("reports-row-2")).getByRole("link", { name: "Открыть" }),
+    ).toHaveAttribute("href", "/v2/close?month=2");
   });
 
   it("creates a period once and selects it only after list readback", async () => {
@@ -171,9 +187,9 @@ describe("native month management", () => {
     });
     expect(listMonths).toHaveBeenCalledTimes(2);
     expect(screen.getByText(/Черновик Июль 2030 подтверждён/)).toBeInTheDocument();
-    const createdRow = screen.getByText("Июль 2030", { exact: true }).closest("li");
+    const createdRow = screen.getByText("Июль 2030", { exact: true }).closest("tr");
     if (!createdRow) throw new Error("Created draft row missing");
-    expect(within(createdRow).getByRole("link", { name: "Открыть месяц" })).toHaveAttribute(
+    expect(within(createdRow).getByRole("link", { name: "Открыть" })).toHaveAttribute(
       "href",
       "/v2/close?month=3",
     );

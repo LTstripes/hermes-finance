@@ -229,7 +229,7 @@ test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", 
       .getByRole("region", { name: "Что изменило капитал" })
       .getByText("Изменение ликвидного капитала"),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: "История отчётов →" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Все месяцы →" })).toHaveAttribute(
     "href",
     "/v2/reports",
   );
@@ -1461,6 +1461,8 @@ async function installReportsApi(page: Page, scene: ReportsScene = "archive") {
     } else if (url.pathname === "/api/analytics/capital-composition") {
       json = state.composition;
       status = state.compositionError ? 503 : 200;
+    } else if (url.pathname === "/api/analytics/passive-income") {
+      json = makeUiV2PassiveHistory();
     } else if (url.pathname === "/api/analytics/risk-allocation") {
       json = state.risk;
       status = state.riskError ? 503 : 200;
@@ -1496,17 +1498,16 @@ test("ui-v2 reports archive desktop: year groups, gaps and the current report st
 }, testInfo) => {
   const evidence = await installReportsApi(page);
   await page.goto("/v2/reports");
-  await expect(page.getByRole("heading", { level: 1, name: "Отчёты" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "2031" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Все месяцы" })).toBeVisible();
   await expect(page.getByTestId("reports-row-91")).toContainText("Закрыт");
   await expect(page.getByTestId("reports-row-91")).toContainText("2 803 900 ₽");
   await expect(page.getByTestId("reports-row-90")).toContainText("2 761 300 ₽");
-  await expect(page.getByTestId("reports-row-90")).toContainText("−390 000 ₽");
-  await expect(page.getByTestId("reports-gap-2031-6")).toContainText("отчёта нет");
-  await expect(page.getByTestId("reports-row-12")).toHaveCount(0);
-  await expect(page.getByTestId("reports-draft-note")).toContainText("Август 2031 ещё не закрыт");
-  await expect(page.getByTestId("reports-year-2030")).toContainText("Ноябрь 2030");
-  await expect(page.getByRole("link", { name: "Отчётные месяцы →" })).toBeVisible();
+  await expect(page.getByTestId("reports-row-90")).toContainText("15 600 ₽");
+  await expect(page.getByTestId("reports-row-12")).toContainText("Черновик");
+  await expect(page.getByTestId("reports-row-87")).toContainText("Ноябрь 2030");
+  await expect(
+    page.getByTestId("reports-row-91").getByRole("link", { name: "Открыть" }),
+  ).toHaveAttribute("href", "/v2/close?month=91");
   const archiveLayout = await page.getByTestId("reports-row-91").evaluate((row) => {
     const cells = Array.from(row.children).map((cell) => cell.getBoundingClientRect());
     const action = row.querySelector("td:last-child a")?.getBoundingClientRect();
@@ -1517,20 +1518,59 @@ test("ui-v2 reports archive desktop: year groups, gaps and the current report st
       widths: cells.map((cell) => cell.width),
     };
   });
-  expect(archiveLayout.cellCount).toBe(7);
+  expect(archiveLayout.cellCount).toBe(5);
   expect(archiveLayout.tableLayout).toBe("fixed");
   expect(archiveLayout.actionGap).toBeGreaterThanOrEqual(12);
   expect(archiveLayout.widths.every((width) => width > 0)).toBe(true);
   await assertBounded(page);
   await capture(page, testInfo, "ui-v2-reports-archive-desktop");
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
-  // No extra endpoint on the archive path, regardless of duplicate dev-mode reads.
+  // The list reuses the same capital and passive income readers as the overview.
   expect([...new Set(evidence.reads.map((read) => read.split(" ")[1]))].sort()).toEqual([
     "/api/analytics/capital-composition",
+    "/api/analytics/passive-income?reporting_month_id=91",
     "/api/months",
   ]);
   expect(evidence.unexpected).toEqual([]);
   expect(evidence.errors).toEqual([]);
+});
+
+test("@viewport-owned ui-v2 months table fits 720px at desktop widths and zoom", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installReportsApi(page);
+  await page.goto("/v2/data/months");
+  await expect(page.getByTestId("reports-row-91")).toContainText("2 803 900 ₽");
+  const table = page.getByTestId("months-table");
+  await table.evaluate((element) => {
+    element.parentElement!.style.maxWidth = "720px";
+  });
+  for (const [width, zoom] of [
+    [1024, 1],
+    [1280, 1],
+    [1280, 1.25],
+    [1440, 1],
+    [1440, 1.25],
+    [1920, 1],
+    [1920, 1.25],
+  ]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.evaluate((value) => {
+      document.documentElement.style.zoom = String(value);
+    }, zoom);
+    const overflow = await table.evaluate(
+      (element) =>
+        [...element.querySelectorAll("th, td")].filter(
+          (cell) => cell.scrollWidth > cell.clientWidth + 1,
+        ).length,
+    );
+    expect(overflow).toBe(0);
+    await expect(page.getByTestId("reports-row-90")).toContainText("15 600 ₽");
+    await assertBounded(page);
+    await capture(page, testInfo, `months-${width}-${zoom}`);
+  }
+  expect(evidence.errors).toEqual([]);
+  expect(evidence.unexpected).toEqual([]);
 });
 
 test("issue 538 archive keeps a known subtotal beside its source coverage", async ({
@@ -1549,18 +1589,11 @@ test("issue 538 archive keeps a known subtotal beside its source coverage", asyn
   await page.goto("/v2/reports");
   const row = page.getByTestId(`reports-row-${uiV2CapitalPreviousMonthId}`);
   await expect(row).toContainText("2 761 300 ₽");
-  await expect(row).toContainText(
-    "Частично: нет снимков счетов: Синтетический старый вклад, Синтетический брокерский счёт",
-  );
-  await row.getByRole("button", { name: "Подробнее" }).click();
-  await expect(row).toContainText(
-    "Не хватает снимков за Май 2031: Синтетический старый вклад, Синтетический брокерский счёт",
-  );
+  await expect(row).toContainText("неполный");
+  await expect(page.getByText(/Неполный капитал — итог известных записей/)).toHaveCount(1);
   const overlap = await row.evaluate((element) => {
-    const note = element.querySelector('[data-testid="portfolio-coverage-note"]');
-    const assets = element.querySelectorAll("td")[4];
-    if (!note || !assets) throw new Error("Missing archive coverage or assets cell");
-    return note.getBoundingClientRect().right > assets.getBoundingClientRect().left;
+    const cells = element.querySelectorAll("td");
+    return cells[1].scrollWidth > cells[1].clientWidth + 1;
   });
   expect(overlap).toBe(false);
   await assertBounded(page);
@@ -1577,17 +1610,14 @@ for (const scene of ["no-closed", "first-closed", "money-error"] as const) {
     const evidence = await installReportsApi(page, scene);
     await page.goto("/v2/reports");
     if (scene === "no-closed") {
-      await expect(page.getByRole("heading", { name: "Закрой первый отчёт" })).toBeVisible();
-      await expect(page.getByTestId("reports-archive")).toHaveCount(0);
+      await expect(page.getByTestId("reports-row-12")).toContainText("Черновик");
+      await expect(page.getByTestId("reports-row-91")).toHaveCount(0);
     } else if (scene === "first-closed") {
-      await expect(page.getByTestId("reports-single-note")).toBeVisible();
+      await expect(page.getByTestId("reports-row-91")).toContainText("2 803 900 ₽");
       await expect(page.getByText("отчёта нет")).toHaveCount(0);
     } else {
-      await expect(page.getByTestId("reports-archive")).toHaveAttribute(
-        "data-money-state",
-        "unavailable",
-      );
-      await expect(page.getByTestId("reports-row-90")).toContainText("—");
+      await expect(page.getByText(/Часть сумм недоступна/)).toBeVisible();
+      await expect(page.getByTestId("months-table")).not.toContainText("2 761 300 ₽");
     }
     await assertBounded(page);
     await capture(page, testInfo, `ui-v2-reports-archive-${scene}`);
@@ -1616,9 +1646,7 @@ test("ui-v2 historical report desktop: context, values and place in history stay
     "/v2/reports/89",
   );
   await expect(page.getByTestId("report-neighbour-next")).toHaveAttribute("href", "/v2/reports/91");
-  await expect(page.getByTestId("report-change-unavailable")).toContainText(
-    "Изменение между отчётами",
-  );
+  await expect(page.getByRole("heading", { name: "Где изменились суммы" })).toHaveCount(0);
   await expect(
     page.getByText(/Поздние цены, остатки и позиции никогда не подставляются/),
   ).toBeVisible();

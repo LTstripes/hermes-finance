@@ -87,7 +87,7 @@ test("user-decided Close: unconfirmed Clone, warnings, lost ACK, reload and expl
   await expect(page.getByRole("button", { name: "Проверить состояние месяца" })).toBeEnabled();
   expect(posts).toBe(1);
   expect((await (await request.get(`/api/months/${cloned.id}`)).json()).status).toBe("closed");
-  await page.getByRole("link", { name: "Отчётные месяцы →", exact: true }).click();
+  await page.getByRole("link", { name: "Все месяцы →", exact: true }).click();
   await expect(page.getByRole("alertdialog")).toContainText("Сохранение ещё не подтверждено");
   await page.getByRole("button", { name: "Вернуться к форме", exact: true }).click();
   await page.unroute(workflowPattern);
@@ -388,9 +388,9 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/v2/data/months");
     const oldRow = page
-      .getByRole("listitem")
+      .getByRole("row")
       .filter({ has: page.getByText(/Май.*2034/, { exact: true }) });
-    await oldRow.getByRole("link", { name: "Открыть месяц", exact: true }).click();
+    await oldRow.getByRole("link", { name: "Открыть", exact: true }).click();
     await expect(page).toHaveURL(`/v2/close?month=${old}`);
     await tile(page, /Снимок и общие данные/);
     await expect(page.getByLabel("Дата снимка")).toHaveCount(0);
@@ -448,10 +448,10 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     await expect(page).toHaveURL(`/v2/close?month=${old}&step=market_quotes`);
     await page.goto(`/v2/data/months?month=${old}`);
     const reopened = page
-      .getByRole("listitem")
+      .getByRole("row")
       .filter({ has: page.getByText(/Май.*2034/, { exact: true }) });
     const reopenedPrimary = reopened.getByRole("link", {
-      name: "Открыть месяц",
+      name: "Открыть",
       exact: true,
     });
     await expect(reopenedPrimary).toBeVisible();
@@ -490,9 +490,9 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     await expect(page.getByText("Месяц закрыт", { exact: true }).first()).toBeVisible();
     expect((await (await request.get(`/api/months/${old}`)).json()).status).toBe("closed");
     expect((await (await request.get(`/api/months/${newestDraft}`)).json()).status).toBe("draft");
-    await page.getByRole("link", { name: "Отчётные месяцы →", exact: true }).click();
+    await page.getByRole("link", { name: "Все месяцы →", exact: true }).click();
     const otherRow = page
-      .getByRole("listitem")
+      .getByRole("row")
       .filter({ has: page.getByText(/Май.*2035/, { exact: true }) });
     await otherRow.getByRole("button", { name: /Действия месяца/ }).click();
     await page.getByRole("menuitem", { name: "Посмотреть отчёт", exact: true }).click();

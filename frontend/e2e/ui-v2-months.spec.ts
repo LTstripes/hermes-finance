@@ -67,10 +67,10 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const calls = await installMonthsApi(page);
     await page.goto("/v2/data/months?month=2");
-    await expect(page.getByRole("heading", { level: 1, name: "Отчётные месяцы" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Все месяцы" })).toBeVisible();
     await expect(page.getByText("Выбран", { exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Открыть месяц", exact: true })).toHaveCount(2);
-    const primaryClose = page.getByRole("link", { name: "Открыть месяц", exact: true }).first();
+    await expect(page.getByRole("link", { name: "Открыть", exact: true })).toHaveCount(2);
+    const primaryClose = page.getByRole("link", { name: "Открыть", exact: true }).first();
     await expect(primaryClose).toBeVisible();
     const normal = await primaryContrast(primaryClose);
     expect(normal.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
@@ -118,7 +118,7 @@ for (const viewport of [{ name: "desktop", width: 1366, height: 900 }]) {
     await page.goto("/v2/data/months?month=999");
     await expect(page.getByText(/Запрошенный месяц не найден/)).toBeVisible();
     await page.goBack();
-    await expect(page.getByRole("heading", { level: 1, name: "Отчётные месяцы" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Все месяцы" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     );

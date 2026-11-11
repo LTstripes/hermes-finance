@@ -694,10 +694,7 @@ it("links the report-context line to the contextual archive", async () => {
   mount();
 
   await screen.findByTestId("v2-capital");
-  expect(screen.getByRole("link", { name: "История отчётов →" })).toHaveAttribute(
-    "href",
-    "/v2/reports",
-  );
+  expect(screen.getByRole("link", { name: "Все месяцы →" })).toHaveAttribute("href", "/v2/reports");
 });
 
 describe("UI v2 isolation", () => {
