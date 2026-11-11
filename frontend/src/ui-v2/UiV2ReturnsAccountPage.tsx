@@ -1,3 +1,4 @@
+import { useAccountName } from "./returns/useAccountName";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, lazy, Suspense, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -59,6 +60,7 @@ function Instruments({
   const [sort, setSort] = useState("pnl-desc");
   const [expanded, setExpanded] = useState<string | null>(initialIsin);
   const [limit, setLimit] = useState(20);
+  const accountName = useAccountName(rows.map((row) => row.account_link));
   const [mode, setMode] = useState<"pnl" | "rate">(() =>
     ranked(rows, period, "pnl", true).length || ranked(rows, period, "pnl", false).length
       ? "pnl"
@@ -172,6 +174,7 @@ function Instruments({
                         period={row.period}
                         valuationDate={row.valuation_date}
                         accountLink={row.account_link}
+                        accountLabel={accountName(row.account_link, "")}
                       />
                     </td>
                     <td>
@@ -288,6 +291,7 @@ export default function UiV2ReturnsAccountPage() {
     queryFn: ({ signal }) => getContext(signal),
     staleTime: 5 * 60 * 1000,
   });
+  const accountName = useAccountName(context.data?.accounts.map((a) => a.account_link) ?? []);
   const scope = params.get("scope") ?? "";
   const period = { start: params.get("start") ?? "", end: params.get("end") ?? "" };
   const selectionValid =
@@ -443,16 +447,16 @@ export default function UiV2ReturnsAccountPage() {
               </option>
               {currentAccount && !selectableAccounts.includes(currentAccount) && (
                 <option value={scope} disabled hidden>
-                  {currentAccount.account_link?.status === "linked"
-                    ? currentAccount.account_link.label
-                    : currentAccount.label}
+                  {accountName(currentAccount.account_link, currentAccount.label)}
                 </option>
               )}
               {selectableAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.account_link?.status === "linked"
-                    ? account.account_link.label
-                    : account.label}
+                <option
+                  key={account.id}
+                  value={account.id}
+                  title={account.account_link?.source_account_id}
+                >
+                  {accountName(account.account_link, account.label)}
                 </option>
               ))}
             </select>
@@ -631,6 +635,7 @@ export default function UiV2ReturnsAccountPage() {
                     period={data.selected.period}
                     valuationDate={data.selected.valuation_date}
                     accountLink={data.account_link}
+                    accountLabel={accountName(data.account_link, currentAccount?.label ?? "")}
                   />
                 </section>
               )}

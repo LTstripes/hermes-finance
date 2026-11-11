@@ -23,7 +23,7 @@ function Location() {
   );
 }
 function setup(
-  path: string,
+  path: string | { pathname: string; state: { instrumentName: string } },
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 ) {
   return render(
@@ -40,6 +40,80 @@ function setup(
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("a linked account keeps its catalogue name in the visible calculation-gap explanation", async () => {
+  const card = instrumentCardFixture();
+  const account = card.accounts[0];
+  account.label = "Выписка SYNTH-CONTRACT-99";
+  account.account_link = {
+    source_account_id: "SYNTH-CONTRACT-99",
+    financial_account_id: 11,
+    account_type: "brokerage",
+    label: "Брокерский SYNTH-CONTRACT-99",
+    status: "linked",
+    reason_codes: [],
+  };
+  account.included = false;
+  account.detail = null;
+  account.clean = null;
+  account.reason_codes = ["missing_endpoint"];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string) =>
+      response(
+        new URL(input, "http://localhost").pathname === "/api/accounts"
+          ? [{ id: 11, name: "Учебный счёт Л" }]
+          : card,
+      ),
+    ),
+  );
+  setup(
+    "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
+  );
+  expect(await screen.findByText(/Счёт: Учебный счёт Л/)).toBeVisible();
+  expect(screen.queryByText(/Счёт: Выписка SYNTH-CONTRACT-99/)).toBeNull();
+});
+
+test("the relocated Refresh keeps the shell's global cache invalidation", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(["accounts"], []);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(instrumentCardFixture())),
+  );
+  setup("/v2/returns/instrument/RU000A000002", client);
+  await screen.findByRole("heading", { name: "Результат за всю историю" });
+  const refresh = screen.getByRole("button", { name: "Обновить" });
+  await waitFor(() => expect(refresh).not.toBeDisabled());
+  fireEvent.click(refresh);
+  await waitFor(() => expect(client.getQueryState(["accounts"])?.isInvalidated).toBe(true));
+  await screen.findByRole("heading", { name: "Результат за всю историю" });
+});
+
+test("keeps the overview short name before and after loading the full instrument name", async () => {
+  const card = instrumentCardFixture();
+  card.name = "Полное учебное название ПАО ао";
+  let finish: (response: Response) => void = () => {
+    throw new Error("Request not started");
+  };
+  const fetch = vi.fn(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  setup({
+    pathname: "/v2/returns/instrument/RU000A000002",
+    state: { instrumentName: "Короткое имя" },
+  });
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Короткое имя");
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  await act(async () => finish(response(card)));
+  await screen.findByRole("heading", { name: "Результат за всю историю" });
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Короткое имя");
+  expect(screen.getByText(/Полное учебное название ПАО ао/)).toBeVisible();
+});
+
 test("selected scope and exact period show only that account's known return", async () => {
   vi.stubGlobal(
     "fetch",
@@ -50,7 +124,9 @@ test("selected scope and exact period show only that account's known return", as
   );
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
   expect(screen.getByText("Выбранный счёт · 30.04.2030 – 31.05.2030")).toBeVisible();
-  const result = screen.getByRole("heading", { name: "Сумма по данным" }).closest("section");
+  const result = screen
+    .getByRole("heading", { name: "Результат за всю историю" })
+    .closest("section");
   expect(result).toHaveTextContent("+12 ₽");
   expect(result).not.toHaveTextContent("+8 ₽");
   const accounts = within(screen.getByRole("region", { name: "Позиции и результат по счетам" }));
@@ -445,7 +521,7 @@ test("selected scope shows producer-owned price, payouts and result with redempt
     region.getByRole("heading", { name: "Полученные выплаты" }).closest("section"),
   ).toHaveTextContent("+120 ₽");
   expect(
-    region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
+    region.getByRole("heading", { name: "Результат за всю историю" }).closest("section"),
   ).toHaveTextContent("+70 ₽");
   expect(region.getByText(/Погашение включено в стоимость и сделки/)).toBeVisible();
   expect(screen.getByText("В отчёте AI: source-account-2")).not.toBeVisible();
@@ -478,7 +554,7 @@ test("unknown and genuine zero payout are not confused", async () => {
     region.getByRole("heading", { name: "Стоимость и сделки" }).closest("section"),
   ).toHaveTextContent("—");
   expect(
-    region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
+    region.getByRole("heading", { name: "Результат за всю историю" }).closest("section"),
   ).toHaveTextContent("+120 ₽");
 });
 
@@ -517,7 +593,7 @@ test.each([
     setup(
       "/v2/returns/instrument/RU000A000002?detail_scope=source%3ASYNTH-A&detail_start=2030-04-30&detail_end=2030-05-31",
     );
-    const heading = await screen.findByRole("heading", { name: "Сумма по данным" });
+    const heading = await screen.findByRole("heading", { name: "Результат за всю историю" });
     expect(heading.closest("section")).toHaveTextContent(shown);
   },
 );
@@ -536,7 +612,7 @@ test.each([
   );
   setup(`/v2/returns/instrument/RU000A000002?${selection}`);
   expect(await screen.findByRole("alert")).toHaveTextContent("Счёт или период изменились");
-  expect(screen.queryByRole("heading", { name: "Сумма по данным" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Результат за всю историю" })).toBeNull();
 });
 
 test("background refresh keeps the card and signals that data is updating", async () => {
@@ -677,7 +753,8 @@ test("known clean result remains visible when the account proof is stale", async
   expect(accounts.getByText("+12 ₽")).toBeVisible();
   expect(accounts.getAllByText("—").length).toBeGreaterThan(0);
   expect(accounts.getByText("−4 ₽")).toBeVisible();
-  expect(accounts.getAllByText("—")).toHaveLength(5);
+  expect(accounts.queryByRole("columnheader", { name: "Годовых" })).toBeNull();
+  expect(accounts.getAllByText("—")).toHaveLength(3);
   expect(accounts.queryByText("Не все показатели доступны")).toBeNull();
 });
 
@@ -791,6 +868,12 @@ test("whole result keeps the note about unattributed account money", async () =>
       /На счёте есть операции без привязки к бумаге: результат по ней может быть неполным\./,
     ),
   ).toBeVisible();
+  const classification = screen.getByText(
+    "Классификация выплаты основана на правиле по умолчанию.",
+  );
+  expect(classification).not.toBeVisible();
+  fireEvent.click(screen.getByLabelText("Подробнее: Оговорки результата"));
+  expect(classification).toBeVisible();
 });
 
 test("standalone instrument explains paid income greater than its exact total", async () => {
@@ -848,7 +931,7 @@ test("standalone instrument explains paid income greater than its exact total", 
   const region = within(await screen.findByRole("region", { name: "Разложение результата" }));
   expect(region.getByText(/Купоны: \+10 ₽ · Дивиденды: \+5 ₽/)).toBeVisible();
   expect(
-    region.getByRole("heading", { name: "Сумма по данным" }).closest("section"),
+    region.getByRole("heading", { name: "Результат за всю историю" }).closest("section"),
   ).toHaveTextContent("+4 ₽");
   expect(region.queryByText(/^Комиссии:/)).toBeNull();
 });
@@ -978,7 +1061,9 @@ test("one account card leads with the simple return and annual XIRR, not Modifie
   );
   setup("/v2/returns/instrument/RU000A000002");
   await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
-  const result = screen.getByRole("heading", { name: "Сумма по данным" }).closest("section");
+  const result = screen
+    .getByRole("heading", { name: "Результат за всю историю" })
+    .closest("section");
   expect(result).toHaveTextContent("+10,0%");
   expect(result).toHaveTextContent("на вложенное · +12,1% годовых");
   expect(screen.queryByText(/Modified Dietz/)).toBeNull();
@@ -1039,11 +1124,11 @@ test("an invalidated card hides the previous success until the authoritative ref
       ),
   );
   setup("/v2/returns/instrument/RU000A000002", client);
-  await screen.findByRole("heading", { name: "Сумма по данным" });
+  await screen.findByRole("heading", { name: "Результат за всю историю" });
   void client.invalidateQueries({ queryKey: ["returns", "instrument-card"] });
   await screen.findByRole("status", { name: "Загружаем инструмент…" });
-  expect(screen.queryByRole("heading", { name: "Сумма по данным" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Результат за всю историю" })).toBeNull();
   expect(screen.getByRole("button", { name: "К доходности" })).toBeVisible();
   await act(async () => finish(response(instrumentCardFixture())));
-  await screen.findByRole("heading", { name: "Сумма по данным" });
+  await screen.findByRole("heading", { name: "Результат за всю историю" });
 });

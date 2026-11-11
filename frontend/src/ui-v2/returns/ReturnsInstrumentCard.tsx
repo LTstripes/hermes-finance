@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useAccountName } from "./useAccountName";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
@@ -124,6 +125,8 @@ export function ReturnsInstrumentCard({
   backLabel?: string;
   initialName?: string;
 }) {
+  const queryClient = useQueryClient();
+  const fetching = useIsFetching();
   const [expandedPurchases, setExpandedPurchases] = useState<string[]>([]);
   const query = useQuery({
     queryKey: ["returns", "instrument-card", isin, revision],
@@ -135,9 +138,10 @@ export function ReturnsInstrumentCard({
     : null;
   const invalidated = useReturnsInvalidated(["returns", "instrument-card", isin, revision]);
   const data = !query.isError && !invalidated ? selection?.card : undefined;
+  const catalogueName = useAccountName(data?.accounts.map((a) => a.account_link) ?? []);
   const accountName = (scope: string, fallback: string) => {
     const link = data?.accounts.find((account) => account.scope === scope)?.account_link;
-    return accountLabels[scope] ?? (link?.status === "linked" ? link.label : fallback);
+    return catalogueName(link, accountLabels[scope] ?? fallback);
   };
   const accountsWithKnownTrades =
     data?.accounts.filter(
@@ -222,6 +226,14 @@ export function ReturnsInstrumentCard({
   );
   const purchaseMoney = (value: string | null, signed = false) =>
     displayWhole({ ...unavailable, value }, signed);
+  const showAnnual = data?.accounts.some((account) => account.clean?.xirr?.value != null);
+  const primaryCaveats =
+    data?.summary.pnl.reason_codes.filter(
+      (code) =>
+        !["clean_partial_result", "selected_components_incomplete", "income_assumed"].includes(
+          code,
+        ),
+    ) ?? [];
   const Heading = standalone ? "h1" : "h2";
   return (
     <section className={styles.page} aria-label={`Карточка инструмента ${isin}`}>
@@ -255,19 +267,27 @@ export function ReturnsInstrumentCard({
         <>
           <header className={styles.header}>
             <p className={sheet.eyebrow}>
-              {kindLabel(data.kind)} · {data.isin}
+              {kindLabel(data.kind)} · {data.isin} · {data.name}
             </p>
             <div className={styles.titleRow}>
               <Heading>
-                {shortInstrumentName({ name: data.name, isin: data.isin, ticker: null })}{" "}
+                {shortInstrumentName({
+                  name: initialName?.trim() || data.name,
+                  isin: data.isin,
+                  ticker: null,
+                })}{" "}
                 <MissingName name={data.name} isin={data.isin} />
               </Heading>
+              <button
+                type="button"
+                className={styles.refresh}
+                disabled={fetching > 0}
+                onClick={() => void queryClient.invalidateQueries()}
+              >
+                Обновить
+              </button>
               <span className={styles.periodChip}>{periodText(data, !!selectedScope)}</span>
             </div>
-            {data.name !==
-              shortInstrumentName({ name: data.name, isin: data.isin, ticker: null }) && (
-              <small className={sheet.muted}>{data.name}</small>
-            )}
           </header>
           {capitalRequested && matches.length !== 1 && (
             <p className={styles.notice}>
@@ -278,7 +298,7 @@ export function ReturnsInstrumentCard({
           <section className={styles.summary} aria-label="Разложение результата">
             <div className={styles.lead}>
               <section className={styles.total}>
-                <h2 className={sheet.eyebrow}>Сумма по данным</h2>
+                <h2 className={sheet.eyebrow}>Результат за всю историю</h2>
                 <strong className={sheet.hero} title={displayMetric(data.summary.pnl, true)}>
                   {displayWhole(data.summary.pnl, true)}
                 </strong>
@@ -289,9 +309,7 @@ export function ReturnsInstrumentCard({
                   {data.summary.pnl.value !== null &&
                     data.summary.pnl.estimate &&
                     !isPartialResult(data.summary.pnl) &&
-                    !visibleReturnReasons(data.summary.pnl.reason_codes).length && (
-                      <span className={styles.estimate}>Оценка</span>
-                    )}
+                    !primaryCaveats.length && <span className={styles.estimate}>Оценка</span>}
                   {simpleRate && (
                     <span className={sheet.delta} data-tone={tone(simpleRate)}>
                       {displayCompactRate(simpleRate)}
@@ -322,14 +340,35 @@ export function ReturnsInstrumentCard({
                       </small>
                     )}
                 </div>
-                {partialTotal && (
+                {partialTotal && !primaryCaveats.length && (
                   <p className={styles.caveat}>
                     В сумму входят только рассчитанные составляющие. Это не полный итог.
                   </p>
                 )}
                 <div className={styles.caveatGroup}>
-                  <MissingMetricNote metrics={summaryMetrics} />
-                  <ResultNote metric={data.summary.pnl} />
+                  {data.summary.pnl.value === null && (
+                    <MissingMetricNote metrics={summaryMetrics} />
+                  )}
+                  <ResultNote
+                    metric={{ ...data.summary.pnl, reason_codes: primaryCaveats.slice(0, 1) }}
+                  />
+                  {data.summary.pnl.reason_codes.some(
+                    (code) =>
+                      !primaryCaveats.slice(0, 1).includes(code) &&
+                      !["clean_partial_result", "selected_components_incomplete"].includes(code),
+                  ) && (
+                    <Info label="Оговорки результата">
+                      <Explanation
+                        codes={data.summary.pnl.reason_codes.filter(
+                          (code) =>
+                            !primaryCaveats.slice(0, 1).includes(code) &&
+                            !["clean_partial_result", "selected_components_incomplete"].includes(
+                              code,
+                            ),
+                        )}
+                      />
+                    </Info>
+                  )}
                 </div>
               </section>
               <dl className={styles.position}>
@@ -345,7 +384,9 @@ export function ReturnsInstrumentCard({
                 {nonzeroAmount(data.summary.reported_value) && (
                   <section>
                     <h3>Стоимость позиции</h3>
-                    <strong>{displayMetric(data.summary.reported_value)}</strong>
+                    <strong title={displayMetric(data.summary.reported_value)}>
+                      {displayWhole(data.summary.reported_value)}
+                    </strong>
                     {!!data.summary.valuation_dates.length && (
                       <small>
                         Оценки на {data.summary.valuation_dates.map(dateLabel).join(", ")}
@@ -429,7 +470,7 @@ export function ReturnsInstrumentCard({
                     <col />
                     <col />
                     <col />
-                    <col />
+                    {showAnnual && <col />}
                   </colgroup>
                   <thead>
                     <tr>
@@ -438,7 +479,7 @@ export function ReturnsInstrumentCard({
                       <th>Стоимость</th>
                       <th>Результат</th>
                       <th>На вложенное</th>
-                      <th>Годовых</th>
+                      {showAnnual && <th>Годовых</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -478,7 +519,9 @@ export function ReturnsInstrumentCard({
                             {displayWhole(pnl, true)}
                           </td>
                           <td data-tone={tone(simple)}>{displayCompactRate(simple)}</td>
-                          <td data-tone={tone(annual)}>{displayCompactRate(annual)}</td>
+                          {showAnnual && (
+                            <td data-tone={tone(annual)}>{displayCompactRate(annual)}</td>
+                          )}
                         </tr>
                       );
                     })}
@@ -494,7 +537,14 @@ export function ReturnsInstrumentCard({
                     <ReturnsResultMeta
                       period={account.period}
                       valuationDate={account.valuation_date}
-                      accountLink={account.account_link}
+                      accountLink={
+                        account.account_link
+                          ? {
+                              ...account.account_link,
+                              label: accountName(account.scope, account.label),
+                            }
+                          : null
+                      }
                     />
                     {!account.included && <small>Не включён в общий результат</small>}
                     <ReturnsInstrumentResult
@@ -865,7 +915,10 @@ export function ReturnsInstrumentCard({
                 <section key={account.scope}>
                   <h3>{accountName(account.scope, account.label)}</h3>
                   <Explanation
-                    context={{ account: account.label, instrument: data.name }}
+                    context={{
+                      account: accountName(account.scope, account.label),
+                      instrument: data.name,
+                    }}
                     codes={codes.length ? codes : ["all_history_source_proof_unavailable"]}
                   />
                 </section>

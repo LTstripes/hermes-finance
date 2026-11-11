@@ -18,7 +18,7 @@ export default function UiV2ReturnsInstrumentPage({
   const selection = (key: string) =>
     params.getAll(key).length > 1 ? "invalid-duplicate" : params.get(key);
   return (
-    <UiV2Shell active="returns" header={null}>
+    <UiV2Shell active="returns" header={null} showRefresh={false}>
       {validIsin(isin) ? (
         <ReturnsInstrumentCard
           key={isin}

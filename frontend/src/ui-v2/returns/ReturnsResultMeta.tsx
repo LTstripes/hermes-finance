@@ -4,17 +4,19 @@ export function ReturnsResultMeta({
   period,
   valuationDate,
   accountLink,
+  accountLabel,
 }: {
   period: Period | null;
   valuationDate: string | null;
   accountLink?: AccountLink | null;
+  accountLabel?: string;
 }) {
   return (
     <div style={{ display: "grid", gap: 2 }}>
       {accountLink && (
-        <small>
+        <small title={accountLink.source_account_id}>
           {accountLink.status === "linked"
-            ? accountLink.label
+            ? (accountLabel ?? accountLink.label)
             : `Выписка ${accountLink.source_account_id}: связь со счётом не подтверждена`}
         </small>
       )}
