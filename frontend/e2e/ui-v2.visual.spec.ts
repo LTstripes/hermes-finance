@@ -5,6 +5,7 @@ import type { BrokerMonthReadback } from "../src/api/brokerMonths";
 import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
 import { makeCapitalDraft } from "../src/test/capitalDraftFixtures";
 import { returnsDiagnosticsFixture } from "../src/test/returnsDiagnosticsFixture";
+import { overallFixture } from "../src/ui-v2/returns/overallFixtures";
 
 import {
   makeUiV2ArchiveHistory,
@@ -44,6 +45,7 @@ async function installApi(page: Page, scene: Scene = "normal") {
     capital: makeUiV2CapitalHistory({ firstClosed, zero }),
     passive: makeUiV2PassiveHistory({ firstClosed, zero }),
     goals: makeUiV2Goals({ firstClosed, zero }),
+    overall: overallFixture(),
   };
   if (scene === "coverage" && state.comparison.current) {
     state.comparison.current.portfolio_source_coverage = {
@@ -99,6 +101,8 @@ async function installApi(page: Page, scene: Scene = "normal") {
       status = state.passiveError ? 503 : 200;
     } else if (url.pathname === "/api/goals/summary") {
       json = state.goals;
+    } else if (url.pathname === "/api/returns/overall") {
+      json = state.overall;
     } else if (url.pathname === "/api/accounts") {
       json = uiV2Accounts;
     } else if (url.pathname === "/api/months/12/close-workflow") {
@@ -145,6 +149,56 @@ async function capture(page: Page, testInfo: TestInfo, name: string) {
     animations: "disabled",
   });
 }
+
+test("ui-v2 Home Returns: ranking and charts fit desktop zoom @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  const evidence = await installApi(page);
+  const template = evidence.state.overall.instruments[1];
+  evidence.state.overall.instruments = [
+    "400000",
+    "300000",
+    "200000",
+    "100000",
+    "-400000",
+    "-300000",
+    "-200000",
+    "-100000",
+  ].map((value, index) => ({
+    ...template,
+    isin: `RU000A00000${index}`,
+    name: `Синтетическая бумага ${index}`,
+    accounts: [{ ...template.accounts[0], pnl: { ...template.accounts[0].pnl, value } }],
+  }));
+  await page.goto("/v2");
+  const panel = page.getByRole("region", { name: "Доходность бумаг" });
+  await expect(panel).toContainText("в плюсе 4 · в минусе 4");
+  await expect(panel.getByRole("listitem")).toHaveCount(6);
+  await expect(panel.getByRole("link", { name: "Все бумаги →" })).toHaveAttribute(
+    "href",
+    "/v2/returns",
+  );
+  for (const width of [1024, 1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const zoom of [1, 1.25]) {
+      await page.evaluate((scale) => {
+        document.documentElement.style.zoom = String(scale);
+      }, zoom);
+      // Wait for ResizeObserver/Recharts to settle at the new scale.
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+      await assertBounded(page);
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await capture(page, testInfo, "ui-v2-home-returns-zoom125");
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
 
 test("ui-v2 Home desktop: closed financial picture and draft CTA stay bounded", async ({
   page,
@@ -503,6 +557,8 @@ async function installCloseApi(page: Page) {
       json = { status: "ok", version: "0.9.0-synthetic" };
     } else if (url.pathname === "/api/analytics/closed-report-comparison") {
       json = makeUiV2Comparison();
+    } else if (url.pathname === "/api/returns/overall") {
+      json = overallFixture();
     } else if (url.pathname === "/api/analytics/capital-composition") {
       json = makeUiV2CapitalHistory();
     } else if (url.pathname === "/api/analytics/passive-income") {
@@ -799,7 +855,10 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     }
     let json: unknown;
     let status = 200;
-    const returnsHost = returnsDiagnosticsFixture(url, state.accounts);
+    const returnsHost =
+      url.pathname === "/api/returns/overall"
+        ? overallFixture()
+        : returnsDiagnosticsFixture(url, state.accounts);
     if (returnsHost) {
       json = returnsHost;
     } else if (url.pathname === "/api/months") {

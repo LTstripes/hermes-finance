@@ -272,10 +272,84 @@
 
 .blockHead {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.returnsRetry {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.returnsRetry button {
+  color: var(--accent);
+}
+
+.returnsLeaders {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+}
+
+.returnsLeaders li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: var(--t-sm);
+}
+
+.returnsLeaders a,
+.returnsLeaders strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.returnsLeaders a {
+  color: var(--accent);
+}
+
+.returnsLeaders small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.returnsLeaders strong {
+  text-align: right;
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.returnsTrack {
+  position: relative;
+  height: 14px;
+  border-inline: 1px solid var(--line);
+  background: linear-gradient(
+    to right,
+    transparent calc(50% - 1px),
+    var(--line) calc(50% - 1px),
+    var(--line) 50%,
+    transparent 50%
+  );
+}
+
+.returnsTrack > span {
+  position: absolute;
+  height: 100%;
+  left: 50%;
+  background: var(--pos);
+  border-radius: 3px;
+}
+
+.returnsTrack[data-tone="negative"] > span {
+  left: auto;
+  right: 50%;
+  background: var(--neg);
 }
 
 .blockHead h2 {

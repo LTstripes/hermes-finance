@@ -1,4 +1,5 @@
 import type { Route } from "@playwright/test";
+import { overallFixture } from "../src/ui-v2/returns/overallFixtures";
 
 import { makeUiV2ProviderCapabilities } from "../src/test/uiV2DataFixtures";
 import { makeUiV2Comparison, makeUiV2PassiveHistory } from "../src/test/uiV2Fixtures";
@@ -579,6 +580,7 @@ export function syntheticApiResponse(
   state: AuditState = "content",
 ): { status?: number; json: unknown } | null {
   const path = url.pathname;
+  if (path === "/api/returns/overall" && method === "GET") return { json: overallFixture() };
   if (path === "/api/health") return { json: { status: "ok", version: "0.7.0-synthetic" } };
 
   if (state === "error" && path === "/api/months") {
