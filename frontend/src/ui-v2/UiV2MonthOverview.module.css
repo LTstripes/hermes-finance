@@ -49,6 +49,16 @@
   border-left: 0;
 }
 
+.kpis[data-incomplete-close="true"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  row-gap: 18px;
+}
+
+.kpis[data-incomplete-close="true"] .kpi:nth-child(4) {
+  padding-left: 0;
+  border-left: 0;
+}
+
 .kpi dt {
   color: var(--muted);
   font-size: var(--t-xs);
@@ -249,11 +259,25 @@
 
 .progress {
   display: block;
+  width: 100%;
   height: 6px;
+  border: 0;
   border-radius: 999px;
-  background:
-    linear-gradient(var(--pos), var(--pos)) 0 0 / var(--progress, 0%) 100% no-repeat,
-    var(--line);
+  overflow: hidden;
+  appearance: none;
+  background: var(--line);
+}
+
+.progress::-webkit-progress-bar {
+  background: var(--line);
+}
+
+.progress::-webkit-progress-value {
+  background: var(--pos);
+}
+
+.progress::-moz-progress-bar {
+  background: var(--pos);
 }
 
 .primaryAction,
@@ -292,6 +316,25 @@
   display: grid;
   gap: 32px;
   min-width: 0;
+}
+
+.remaining ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.remaining a {
+  display: grid;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-2);
+  text-decoration: none;
+}
+
+.remaining span {
+  color: var(--muted);
+  font-size: var(--t-sm);
 }
 
 .expenses {
@@ -483,6 +526,20 @@
   }
 
   .kpi:nth-child(3) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .kpis[data-incomplete-close="true"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kpis[data-incomplete-close="true"] .kpi:nth-child(4) {
+    padding-left: 20px;
+    border-left: 1px solid var(--line);
+  }
+
+  .kpis[data-incomplete-close="true"] .kpi:nth-child(5) {
     padding-left: 0;
     border-left: 0;
   }

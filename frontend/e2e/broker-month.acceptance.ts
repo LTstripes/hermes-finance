@@ -2077,9 +2077,11 @@ test("Month workspace: two accounts, valid/broken/valid XML, replay, Back/Reload
     expect.objectContaining({ code: "source_intake_pending", severity: "warning" }),
   );
   await reloadWorkspace(page);
+  await page.getByRole("button", { name: "Действия месяца" }).click();
   await expect(
-    page.getByRole("button", { name: "Открыть месяц заново", exact: true }),
+    page.getByRole("menuitem", { name: "Открыть месяц заново", exact: true }),
   ).toBeVisible();
+  await page.keyboard.press("Escape");
   expect(await manual()).toEqual(before);
   expect(await (await request.get("/api/instruments")).json()).toEqual(instrumentsBefore);
   expect(financialPosts).toEqual([]);
@@ -2441,9 +2443,11 @@ test("terminal retirement Close preserves UNKNOWN through Month calendar Back Re
     expect(denied.status()).toBe(409);
     expect((await (await request.get(`/api/months/${monthId}`)).json()).status).toBe("closed");
     await expect(page.getByRole("heading", { name: "Декабрь 2037", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Действия месяца" }).click();
     await expect(
-      page.getByRole("button", { name: "Открыть месяц заново", exact: true }),
+      page.getByRole("menuitem", { name: "Открыть месяц заново", exact: true }),
     ).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.goto(calendarPage);
     const region = page.getByRole("region", {
       name: "Календарь выплат: горизонтальная прокрутка таблицы",

@@ -52,6 +52,7 @@ export type MonthEditorContext = {
   setDirty: (section: string, dirty: boolean) => void;
   returnToClose: string | null;
   workspace?: boolean;
+  incompleteDraft?: boolean;
   setPending?: (section: string, value: boolean) => void;
 };
 
@@ -72,10 +73,12 @@ function selectedSection(params: URLSearchParams): EditorSection | null {
 export default function UiV2MonthEditorPage({
   embeddedMonthId,
   embeddedSection,
+  incompleteDraft = false,
   onNavigationStateChange,
 }: {
   embeddedMonthId?: number;
   embeddedSection?: EditorSection;
+  incompleteDraft?: boolean;
   onNavigationStateChange?: (state: { dirty: boolean; pending: boolean }) => void;
 } = {}) {
   const queryClient = useQueryClient();
@@ -172,6 +175,7 @@ export default function UiV2MonthEditorPage({
         setDirty,
         returnToClose,
         workspace: embedded,
+        incompleteDraft: embedded && month.status === "draft" && incompleteDraft,
         setPending,
       }
     : null;

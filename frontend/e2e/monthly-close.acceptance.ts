@@ -61,7 +61,11 @@ test("user-decided Close: unconfirmed Clone, warnings, lost ACK, reload and expl
   await page.goto(path);
   const start = page.getByRole("button", { name: "Закрыть месяц", exact: true });
   await expect(start).toBeEnabled();
-  await expect(page.getByText(/Закрытие не подтверждает полноту данных/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Не загружены брокерские выписки — капитал месяца будет неполным",
+    }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Закрыть намеренно пустой период…" })).toHaveCount(
     0,
   );
@@ -88,7 +92,9 @@ test("user-decided Close: unconfirmed Clone, warnings, lost ACK, reload and expl
   await page.getByRole("button", { name: "Вернуться к форме", exact: true }).click();
   await page.unroute(workflowPattern);
   await page.reload();
-  await expect(page.getByRole("button", { name: "Открыть месяц заново" })).toBeVisible();
+  await page.getByRole("button", { name: "Действия месяца" }).click();
+  await expect(page.getByRole("menuitem", { name: "Открыть месяц заново" })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByText("Чтобы исправить, открой месяц заново.")).toBeVisible();
   const closedReadiness = await (await request.get(readinessPath)).json();
   expect(closedReadiness.items).toContainEqual(
@@ -293,12 +299,14 @@ test("synthetic real-backend native Close: edit, reread, report, reopen and rest
     true,
   );
   await page.screenshot({ path: info.outputPath("closed-return-desktop.png"), fullPage: true });
-  await page.getByRole("button", { name: "Открыть месяц заново" }).focus();
+  await page.getByRole("button", { name: "Действия месяца" }).click();
+  await page.getByRole("menuitem", { name: "Открыть месяц заново" }).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("alertdialog", { name: "Открыть месяц заново?" })).toBeVisible();
   await page.keyboard.press("Escape");
   expect((await (await request.get("/api/months/1")).json()).status).toBe("closed");
-  await page.getByRole("button", { name: "Открыть месяц заново" }).click();
+  await page.getByRole("button", { name: "Действия месяца" }).click();
+  await page.getByRole("menuitem", { name: "Открыть месяц заново" }).click();
   await page.getByRole("button", { name: "Открыть заново" }).click();
   await expect(page.getByText("Черновик", { exact: true })).toBeVisible();
   expect((await (await request.get("/api/months/1")).json()).status).toBe("draft");
@@ -391,11 +399,13 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     ).toHaveCount(0);
     await tile(page, /Итоги/);
 
-    await page.getByRole("button", { name: "Открыть месяц заново", exact: true }).click();
+    await page.getByRole("button", { name: "Действия месяца" }).click();
+    await page.getByRole("menuitem", { name: "Открыть месяц заново", exact: true }).click();
     await expect(page.getByRole("alertdialog", { name: "Открыть месяц заново?" })).toBeVisible();
     await page.keyboard.press("Escape");
     expect((await (await request.get(`/api/months/${old}`)).json()).status).toBe("closed");
-    await page.getByRole("button", { name: "Открыть месяц заново", exact: true }).click();
+    await page.getByRole("button", { name: "Действия месяца" }).click();
+    await page.getByRole("menuitem", { name: "Открыть месяц заново", exact: true }).click();
     await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
     await tile(page, /Снимок и общие данные/);
     await page
