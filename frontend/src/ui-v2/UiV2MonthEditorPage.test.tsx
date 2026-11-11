@@ -344,7 +344,7 @@ describe("native month editor frame", () => {
     await user.click(screen.getByRole("link", { name: /^Бюджет$/ }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Остаться" }));
-    expect(input).toHaveValue("123,00");
+    expect(input).toHaveValue("123");
     expect(screen.getByTestId("location")).toHaveTextContent("/v2/data/months/7?section=income");
   });
 });

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { createAccount, listAccounts } from "../api/accounts";
 import { ApiClientError, formatApiError } from "../api/client";
@@ -36,6 +36,8 @@ import { ACCOUNT_TYPE_LABELS, DEPOSIT_TYPE_LABELS, SOURCE_LABELS, labelOf } from
 import { moneyAmount, normalizeMoneyInput, sumMoneyAmounts, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
+import { MonthMoneyInput } from "./MonthMoneyInput";
+import { MonthSaveBar } from "./MonthSaveBar";
 import styles from "./UiV2MonthAssets.module.css";
 
 type DepositDraft = {
@@ -336,6 +338,22 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   }
   const [cashDraftTouched, setCashDraftTouched] = useState(false);
   const [editDeposits, setEditDeposits] = useState<Record<number, DepositDraft> | null>(null);
+  const [editingDepositId, setEditingDepositId] = useState<number | null>(null);
+  const [showNewDeposit, setShowNewDeposit] = useState(false);
+  const [showNewCash, setShowNewCash] = useState(false);
+  const [cashEdits, setCashEdits] = useState<Record<number, string>>({});
+  const editBefore = useRef<DepositDraft | null>(null);
+  const rowRefs = useRef(new Map<number, HTMLTableRowElement>());
+  function focusDepositMenu(id: number) {
+    rowRefs.current.get(id)?.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")?.focus();
+  }
+  useEffect(() => {
+    if (editingDepositId !== null)
+      rowRefs.current
+        .get(editingDepositId)
+        ?.nextElementSibling?.querySelector<HTMLInputElement>("input")
+        ?.focus();
+  }, [editingDepositId]);
   const [editOriginals, setEditOriginals] = useState<Record<number, DepositSnapshot>>({});
   const [pendingDeleteDeposit, setPendingDeleteDeposit] = useState<DepositSnapshot | null>(null);
   const [pendingDeleteCash, setPendingDeleteCash] = useState<CashBalance | null>(null);
@@ -364,7 +382,11 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
   const busyRef = useRef(false);
   const operation = useRef(0);
 
-  const localDirty = depositDraftTouched || cashDraftTouched || editDeposits !== null;
+  const localDirty =
+    depositDraftTouched ||
+    cashDraftTouched ||
+    editDeposits !== null ||
+    Object.keys(cashEdits).length > 0;
 
   useEffect(() => {
     context.setPending?.(DIRTY_SECTION, busy || pendingCreated !== null);
@@ -395,8 +417,17 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       }),
     [depositsQuery.data],
   );
-  const showDepositType =
-    new Set(depositRows.map((row) => row.deposit_type)).size > 1 || !!editDeposits;
+  const showDepositType = closed && new Set(depositRows.map((row) => row.deposit_type)).size > 1;
+  const changedDepositFields = Object.entries(editDeposits ?? {}).reduce((count, [id, draft]) => {
+    const original = editOriginals[Number(id)];
+    if (!original) return count;
+    const before = depositDraftFor(original);
+    return (
+      count +
+      (Object.keys(draft) as Array<keyof DepositDraft>).filter((key) => draft[key] !== before[key])
+        .length
+    );
+  }, 0);
   const cashRows = useMemo(() => cashRowsQuery.data ?? [], [cashRowsQuery.data]);
   const cashTotal =
     cashTotalQuery.data && cashTotalQuery.data.reporting_month_id === monthId
@@ -408,10 +439,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
       accounts.filter(
         (account) =>
           account.status === "active" &&
-          (account.account_type === "deposit" ||
-            account.account_type === "savings" ||
-            account.account_type === "other" ||
-            account.account_type === "brokerage"),
+          (account.account_type === "deposit" || account.account_type === "savings"),
       ),
     [accounts],
   );
@@ -439,10 +467,9 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     (row) =>
       normalizeMoneyInput(row.balance.amount) !== null && toKopecks(row.balance.amount) === 0n,
   );
-  const visibleDeposits =
-    closed && !showEmptyDeposits
-      ? depositRows.filter((row) => !emptyDeposits.includes(row))
-      : depositRows;
+  const visibleDeposits = !showEmptyDeposits
+    ? depositRows.filter((row) => !emptyDeposits.includes(row))
+    : depositRows;
   const showCashCapital = !closed || cashRows.some((row) => !row.include_in_capital);
 
   const defaultAccountId = depositAccounts[0]?.id ?? null;
@@ -699,27 +726,45 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     );
   }
 
-  function startDepositEdit() {
-    setEditOriginals(Object.fromEntries(depositRows.map((row) => [row.id, row])));
-    setEditDeposits(
-      Object.fromEntries(
-        depositRows.map((row) => [
-          row.id,
-          {
-            name: row.name,
-            account_id: String(row.account_id),
-            deposit_type: row.deposit_type,
-            balance: moneyAmount(row.balance),
-            annual_rate: row.annual_rate,
-            actual_interest: moneyAmount(row.actual_interest_received),
-          },
-        ]),
-      ),
-    );
+  function depositDraftFor(row: DepositSnapshot): DepositDraft {
+    return {
+      name: row.name,
+      account_id: String(row.account_id),
+      deposit_type: row.deposit_type,
+      balance: moneyAmount(row.balance),
+      annual_rate: row.annual_rate,
+      actual_interest: moneyAmount(row.actual_interest_received),
+    };
+  }
+  function patchDeposit(row: DepositSnapshot, patch: Partial<DepositDraft>) {
+    setNotice(null);
+    if (!editDeposits?.[row.id]) setEditOriginals((previous) => ({ ...previous, [row.id]: row }));
+    setEditDeposits((previous) => ({
+      ...previous,
+      [row.id]: { ...(previous?.[row.id] ?? depositDraftFor(row)), ...patch },
+    }));
+  }
+  function cancelDeposit(row: DepositSnapshot) {
+    if (busyRef.current) return;
+    setEditDeposits((previous) => {
+      const next = { ...previous };
+      if (editBefore.current) next[row.id] = editBefore.current;
+      else delete next[row.id];
+      return Object.keys(next).length ? next : null;
+    });
+    setEditingDepositId(null);
+    focusDepositMenu(row.id);
   }
 
-  async function handleSaveDepositEdit() {
-    if (busyRef.current || readOnly || !editDeposits) return;
+  async function handleSaveDepositEdit(onlyId?: number) {
+    if (busyRef.current || readOnly) return;
+    if (!editDeposits) {
+      if (onlyId !== undefined) {
+        setEditingDepositId(null);
+        focusDepositMenu(onlyId);
+      }
+      return;
+    }
     if (depositsForeign) {
       setActionError(DEPOSITS_FOREIGN_MESSAGE);
       return;
@@ -735,6 +780,10 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     for (const [idText, draft] of Object.entries(editDeposits)) {
       if (operation.current !== token) return;
       const id = Number(idText);
+      if (onlyId !== undefined && id !== onlyId) {
+        failed[id] = draft;
+        continue;
+      }
       const current = editOriginals[id];
       let writeAcknowledged = false;
       try {
@@ -822,6 +871,10 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
         `Не удалось подтвердить: ${errors.join("; ")}. Проверь данные и повтори сохранение.`,
       );
     finishAction(token);
+    if (editingDepositId !== null && !failed[editingDepositId]) {
+      setEditingDepositId(null);
+      focusDepositMenu(editingDepositId);
+    }
   }
 
   async function handleDeleteDeposit() {
@@ -954,7 +1007,7 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     }
   }
 
-  async function handleToggleCashCapital(row: CashBalance) {
+  async function handleToggleCashCapital(row: CashBalance, amount?: string) {
     if (busyRef.current) return;
     if (readOnly) {
       setActionError("Месяц закрыт: изменения активов недоступны.");
@@ -968,21 +1021,37 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     try {
       // From this point the pre-write total must not present as current (B1).
       setTotalUnconfirmed(true);
-      const target = !row.include_in_capital;
-      const changed = await updateCashBalance(row.id, { include_in_capital: target });
+      const target = amount === undefined ? !row.include_in_capital : row.include_in_capital;
+      const amountValue = amount === undefined ? undefined : moneyValue(amount, row.currency);
+      const changed = await updateCashBalance(
+        row.id,
+        amountValue ? { amount: amountValue } : { include_in_capital: target },
+      );
       if (changed.id !== row.id || changed.reporting_month_id !== monthId) {
         throw new Error("Ответ API не подтверждает денежную позицию.");
       }
       const fresh = await refetchCashRows();
       const confirmed = fresh.find((item) => item.id === row.id);
-      if (!confirmed || confirmed.include_in_capital !== target) {
+      if (
+        !confirmed ||
+        confirmed.include_in_capital !== target ||
+        (amountValue && !sameMoney(moneyAmount(confirmed.amount), amountValue.amount))
+      ) {
         throw new Error("Изменение не подтверждено перечитыванием списка.");
       }
       await refreshCashTotal();
       await markDataStale();
       if (operation.current !== token) return;
+      if (amountValue)
+        setCashEdits((previous) => {
+          const next = { ...previous };
+          delete next[row.id];
+          return next;
+        });
       setNotice(
-        `«${confirmed.name}»: ${target ? "включена" : "исключена"} из ликвидного капитала.`,
+        amountValue
+          ? "Сохранено"
+          : `«${confirmed.name}»: ${target ? "включена" : "исключена"} из ликвидного капитала.`,
       );
     } catch (cause) {
       reportFailure(token, cause);
@@ -1064,7 +1133,9 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   title="Пусто"
                 />
               ) : (
-                <Table className={`month-deposits-table ${styles.depositsTable}`}>
+                <Table
+                  className={`month-deposits-table ${styles.depositsTable} ${!readOnly ? styles.editable : ""}`}
+                >
                   <thead>
                     <tr>
                       <Th className="month-deposits-table__name">Название</Th>
@@ -1074,179 +1145,245 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                       <Th numeric>Прогноз в месяц</Th>
                       <Th numeric>Получено</Th>
                       {!readOnly ? (
-                        <Th className="month-deposits-table__actions">Действия</Th>
+                        <Th className="month-deposits-table__actions" aria-label="Действия" />
                       ) : null}
                     </tr>
                   </thead>
                   <tbody>
                     {visibleDeposits.map((row) => {
-                      const editDeposit = editDeposits?.[row.id];
+                      const draft = editDeposits?.[row.id] ?? depositDraftFor(row);
+                      const editing = editingDepositId === row.id;
                       return (
-                        <tr key={row.id}>
-                          <Td data-label="Название">
-                            {editDeposit ? (
-                              <Input
-                                disabled={busy || readOnly}
-                                value={editDeposit.name}
-                                onChange={(event) =>
-                                  setEditDeposits({
-                                    ...editDeposits,
-                                    [row.id]: { ...editDeposit, name: event.target.value },
-                                  })
-                                }
-                              />
-                            ) : (
-                              row.name
-                            )}
-                          </Td>
-                          {showDepositType ? (
-                            <Td data-label="Тип">
-                              {editDeposit ? (
-                                <Select
-                                  disabled={busy || readOnly}
-                                  value={editDeposit.deposit_type}
-                                  onChange={(event) =>
-                                    setEditDeposits({
-                                      ...editDeposits,
-                                      [row.id]: {
-                                        ...editDeposit,
-                                        deposit_type: event.target.value,
-                                      },
-                                    })
-                                  }
-                                >
-                                  <option value="deposit">Депозит</option>
-                                  <option value="savings">Накопления</option>
-                                </Select>
+                        <Fragment key={row.id}>
+                          <tr
+                            key={row.id}
+                            ref={(element) => {
+                              if (element) rowRefs.current.set(row.id, element);
+                              else rowRefs.current.delete(row.id);
+                            }}
+                            onKeyDown={(event) => {
+                              if (busy) return;
+                              if (event.key === "Escape" && editing) {
+                                event.preventDefault();
+                                cancelDeposit(row);
+                              }
+                              if (
+                                event.key === "Enter" &&
+                                (event.target as HTMLElement).tagName === "INPUT"
+                              ) {
+                                event.preventDefault();
+                                void handleSaveDepositEdit(row.id);
+                              }
+                            }}
+                          >
+                            <Td data-label="Название">
+                              {row.name}
+                              {!readOnly ? (
+                                <small className={styles.cashAccount}>
+                                  {labelOf(DEPOSIT_TYPE_LABELS, row.deposit_type)}
+                                </small>
+                              ) : null}
+                              {!readOnly ? (
+                                <small className={styles.compactForecast}>
+                                  {formatPercent(row.annual_rate, { digits: 2 })} · прогноз{" "}
+                                  {formatMoney(moneyAmount(row.expected_monthly_interest), {
+                                    currency: currencySuffix(
+                                      row.expected_monthly_interest.currency,
+                                    ),
+                                  })}
+                                </small>
+                              ) : null}
+                            </Td>
+                            {showDepositType ? (
+                              <Td data-label="Тип">
+                                {labelOf(DEPOSIT_TYPE_LABELS, row.deposit_type)}
+                              </Td>
+                            ) : null}
+                            <Td numeric data-label="Баланс">
+                              {!readOnly ? (
+                                <MonthMoneyInput
+                                  aria-label={`Баланс — ${row.name}`}
+                                  disabled={busy}
+                                  suffix={currencySuffix(row.balance.currency)}
+                                  value={draft.balance}
+                                  onChange={(value) => patchDeposit(row, { balance: value })}
+                                />
                               ) : (
-                                labelOf(DEPOSIT_TYPE_LABELS, row.deposit_type)
+                                formatMoney(moneyAmount(row.balance), {
+                                  currency: currencySuffix(row.balance.currency),
+                                })
                               )}
                             </Td>
-                          ) : null}
-                          <Td numeric data-label="Баланс">
-                            {editDeposit ? (
-                              <Input
-                                className="input--money"
-                                disabled={busy || readOnly}
-                                value={editDeposit.balance}
-                                onChange={(event) =>
-                                  setEditDeposits({
-                                    ...editDeposits,
-                                    [row.id]: { ...editDeposit, balance: event.target.value },
-                                  })
-                                }
-                              />
-                            ) : (
-                              formatMoney(moneyAmount(row.balance), {
-                                currency: currencySuffix(row.balance.currency),
-                              })
-                            )}
-                          </Td>
-                          <Td numeric data-label="Ставка">
-                            {editDeposit ? (
-                              <Input
-                                className="input--money"
-                                disabled={busy || readOnly}
-                                value={editDeposit.annual_rate}
-                                onChange={(event) =>
-                                  setEditDeposits({
-                                    ...editDeposits,
-                                    [row.id]: { ...editDeposit, annual_rate: event.target.value },
-                                  })
-                                }
-                              />
-                            ) : (
-                              formatPercent(row.annual_rate, { digits: 2 })
-                            )}
-                          </Td>
-                          <Td numeric data-label="Прогноз в месяц">
-                            <span className="muted">
-                              {formatMoney(moneyAmount(row.expected_monthly_interest), {
-                                currency: currencySuffix(row.expected_monthly_interest.currency),
-                              })}
-                            </span>
-                          </Td>
-                          <Td numeric data-label="Получено">
-                            {editDeposit ? (
-                              <Input
-                                className="input--money"
-                                disabled={busy || readOnly}
-                                value={editDeposit.actual_interest}
-                                onChange={(event) =>
-                                  setEditDeposits({
-                                    ...editDeposits,
-                                    [row.id]: {
-                                      ...editDeposit,
-                                      actual_interest: event.target.value,
-                                    },
-                                  })
-                                }
-                              />
-                            ) : (
-                              formatMoney(moneyAmount(row.actual_interest_received), {
-                                currency: currencySuffix(row.actual_interest_received.currency),
-                              })
-                            )}
-                          </Td>
-                          {!readOnly ? (
-                            <Td className="month-deposits-table__actions" data-label="Действия">
-                              <div className="row-actions">
-                                {!editDeposits ? (
-                                  <OverflowMenu label={`Действия для вклада «${row.name}»`}>
-                                    <OverflowMenuItem
-                                      disabled={busy || readOnly}
-                                      onClick={startDepositEdit}
-                                    >
-                                      Изменить
-                                    </OverflowMenuItem>
-                                    <OverflowMenuItem
-                                      danger
-                                      disabled={busy || readOnly}
-                                      onClick={() => setPendingDeleteDeposit(row)}
-                                    >
-                                      Удалить
-                                    </OverflowMenuItem>
-                                  </OverflowMenu>
-                                ) : null}
-                              </div>
+                            <Td numeric data-label="Ставка">
+                              {formatPercent(row.annual_rate, { digits: 2 })}
                             </Td>
+                            <Td numeric data-label="Прогноз в месяц">
+                              <span className="muted">
+                                {formatMoney(moneyAmount(row.expected_monthly_interest), {
+                                  currency: currencySuffix(row.expected_monthly_interest.currency),
+                                })}
+                              </span>
+                            </Td>
+                            <Td numeric data-label="Получено">
+                              {!readOnly ? (
+                                <MonthMoneyInput
+                                  aria-label={`Получено — ${row.name}`}
+                                  disabled={busy}
+                                  suffix={currencySuffix(row.actual_interest_received.currency)}
+                                  value={draft.actual_interest}
+                                  onChange={(value) =>
+                                    patchDeposit(row, { actual_interest: value })
+                                  }
+                                />
+                              ) : (
+                                formatMoney(moneyAmount(row.actual_interest_received), {
+                                  currency: currencySuffix(row.actual_interest_received.currency),
+                                })
+                              )}
+                            </Td>
+                            {!readOnly ? (
+                              <Td className="month-deposits-table__actions" data-label="Действия">
+                                <OverflowMenu label={`Действия для вклада «${row.name}»`}>
+                                  <OverflowMenuItem
+                                    disabled={busy}
+                                    onClick={() => {
+                                      editBefore.current = editDeposits?.[row.id] ?? null;
+                                      setEditingDepositId(row.id);
+                                    }}
+                                  >
+                                    Изменить
+                                  </OverflowMenuItem>
+                                  <OverflowMenuItem
+                                    danger
+                                    disabled={busy}
+                                    onClick={() => setPendingDeleteDeposit(row)}
+                                  >
+                                    Удалить
+                                  </OverflowMenuItem>
+                                </OverflowMenu>
+                              </Td>
+                            ) : null}
+                          </tr>
+                          {editing ? (
+                            <tr
+                              onKeyDown={(event) => {
+                                if (busy) return;
+                                if (event.key === "Escape") {
+                                  event.preventDefault();
+                                  cancelDeposit(row);
+                                }
+                                if (
+                                  event.key === "Enter" &&
+                                  (event.target as HTMLElement).tagName === "INPUT"
+                                ) {
+                                  event.preventDefault();
+                                  void handleSaveDepositEdit(row.id);
+                                }
+                              }}
+                            >
+                              <td colSpan={6}>
+                                <div className={styles.metadataEdit}>
+                                  <Field htmlFor={`deposit-name-${row.id}`} label="Название">
+                                    <Input
+                                      id={`deposit-name-${row.id}`}
+                                      aria-label={`Название — ${row.name}`}
+                                      disabled={busy}
+                                      value={draft.name}
+                                      onChange={(event) =>
+                                        patchDeposit(row, { name: event.target.value })
+                                      }
+                                    />
+                                  </Field>
+                                  <Field htmlFor={`deposit-type-${row.id}`} label="Тип">
+                                    <Select
+                                      id={`deposit-type-${row.id}`}
+                                      aria-label={`Тип — ${row.name}`}
+                                      disabled={busy}
+                                      value={draft.deposit_type}
+                                      onChange={(event) =>
+                                        patchDeposit(row, { deposit_type: event.target.value })
+                                      }
+                                    >
+                                      <option value="deposit">Депозит</option>
+                                      <option value="savings">Накопления</option>
+                                    </Select>
+                                  </Field>
+                                  <Field htmlFor={`deposit-rate-${row.id}`} label="Ставка">
+                                    <MonthMoneyInput
+                                      id={`deposit-rate-${row.id}`}
+                                      aria-label={`Ставка — ${row.name}`}
+                                      disabled={busy}
+                                      suffix="%"
+                                      value={draft.annual_rate}
+                                      onChange={(value) =>
+                                        patchDeposit(row, { annual_rate: value })
+                                      }
+                                    />
+                                  </Field>
+                                </div>
+                                <div className={styles.rowEditActions}>
+                                  <Button
+                                    disabled={busy}
+                                    onClick={() => void handleSaveDepositEdit(row.id)}
+                                    type="button"
+                                    variant="primary"
+                                  >
+                                    Готово
+                                  </Button>
+                                  <Button
+                                    disabled={busy}
+                                    onClick={() => cancelDeposit(row)}
+                                    type="button"
+                                  >
+                                    Отмена
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
                           ) : null}
-                        </tr>
+                        </Fragment>
                       );
                     })}
                   </tbody>
-                  {closed ? (
-                    <tfoot>
-                      <tr>
-                        <th scope="row" colSpan={showDepositType ? 2 : 1}>
-                          Итого
-                        </th>
-                        <Td numeric data-label="Баланс">
-                          {totalText(
-                            depositTotalsUnconfirmed ? null : depositTotals.balance,
-                            depositTotals.currency,
-                          )}
-                        </Td>
-                        <Td />
-                        <Td numeric data-label="Прогноз">
-                          {totalText(
-                            depositTotalsUnconfirmed ? null : depositTotals.expected,
-                            depositTotals.currency,
-                          )}
-                        </Td>
-                        <Td numeric data-label="Получено">
-                          {totalText(
-                            depositTotalsUnconfirmed ? null : depositTotals.actual,
-                            depositTotals.currency,
-                          )}
-                        </Td>
-                      </tr>
-                    </tfoot>
-                  ) : null}
+                  <tfoot>
+                    <tr>
+                      <th scope="row" colSpan={showDepositType ? 2 : 1}>
+                        Итого
+                        {!readOnly ? (
+                          <small className={styles.compactForecast}>
+                            Прогноз:{" "}
+                            {totalText(
+                              depositTotalsUnconfirmed ? null : depositTotals.expected,
+                              depositTotals.currency,
+                            )}
+                          </small>
+                        ) : null}
+                      </th>
+                      <Td numeric data-label="Баланс">
+                        {totalText(
+                          depositTotalsUnconfirmed ? null : depositTotals.balance,
+                          depositTotals.currency,
+                        )}
+                      </Td>
+                      <Td data-label="Ставка" />
+                      <Td numeric data-label="Прогноз">
+                        {totalText(
+                          depositTotalsUnconfirmed ? null : depositTotals.expected,
+                          depositTotals.currency,
+                        )}
+                      </Td>
+                      <Td numeric data-label="Получено">
+                        {totalText(
+                          depositTotalsUnconfirmed ? null : depositTotals.actual,
+                          depositTotals.currency,
+                        )}
+                      </Td>
+                    </tr>
+                  </tfoot>
                 </Table>
               )}
 
-              {closed && emptyDeposits.length > 0 ? (
+              {emptyDeposits.length > 0 ? (
                 <button
                   type="button"
                   aria-expanded={showEmptyDeposits}
@@ -1256,19 +1393,19 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 </button>
               ) : null}
               {editDeposits ? (
-                <div className="row-actions">
+                <MonthSaveBar changed={changedDepositFields}>
                   <Button
                     disabled={busy || readOnly}
                     onClick={() => void handleSaveDepositEdit()}
                     type="button"
                     variant="primary"
                   >
-                    Сохранить вклады
+                    Сохранить остатки
                   </Button>
                   <Button disabled={busy} onClick={() => setEditDeposits(null)} type="button">
                     Отмена
                   </Button>
-                </div>
+                </MonthSaveBar>
               ) : null}
               {depositTotalsUnconfirmed ? (
                 <p className={styles.hint} role="status">
@@ -1284,37 +1421,6 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                   </button>
                 </p>
               ) : null}
-              {!closed ? (
-                <div className="totals-bar">
-                  <span>
-                    Баланс:{" "}
-                    <strong>
-                      {totalText(
-                        depositTotalsUnconfirmed ? null : depositTotals.balance,
-                        depositTotals.currency,
-                      )}
-                    </strong>
-                  </span>
-                  <span>
-                    Прогноз в месяц:{" "}
-                    <strong>
-                      {totalText(
-                        depositTotalsUnconfirmed ? null : depositTotals.expected,
-                        depositTotals.currency,
-                      )}
-                    </strong>
-                  </span>
-                  <span>
-                    Получено:{" "}
-                    <strong>
-                      {totalText(
-                        depositTotalsUnconfirmed ? null : depositTotals.actual,
-                        depositTotals.currency,
-                      )}
-                    </strong>
-                  </span>
-                </div>
-              ) : null}
               {depositTotals.mixed ? (
                 <p className={styles.hint} role="status">
                   Строки в разных валютах: итог показан без конвертации.
@@ -1322,6 +1428,15 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
               ) : null}
 
               {!readOnly ? (
+                <Button
+                  type="button"
+                  aria-expanded={showNewDeposit}
+                  onClick={() => setShowNewDeposit(!showNewDeposit)}
+                >
+                  + Добавить вклад
+                </Button>
+              ) : null}
+              {!readOnly && showNewDeposit ? (
                 <form className="form-stack asset-form" onSubmit={handleCreateDeposit}>
                   <p className="panel__label" style={{ marginBottom: 0 }}>
                     Новый вклад
@@ -1372,13 +1487,13 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                       </Select>
                     </Field>
                     <Field htmlFor="dep-balance" label="Баланс вклада">
-                      <Input
+                      <MonthMoneyInput
                         className="input--money"
                         disabled={busy}
                         id="dep-balance"
                         inputMode="decimal"
-                        onChange={(event) => {
-                          setDepositDraft({ ...depositDraft, balance: event.target.value });
+                        onChange={(value) => {
+                          setDepositDraft({ ...depositDraft, balance: value });
                           setDepositDraftTouched(true);
                         }}
                         required
@@ -1386,24 +1501,25 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                       />
                     </Field>
                     <Field htmlFor="dep-rate" label="Годовая ставка %">
-                      <Input
+                      <MonthMoneyInput
                         className="input--money"
                         disabled={busy}
                         id="dep-rate"
-                        onChange={(event) => {
-                          setDepositDraft({ ...depositDraft, annual_rate: event.target.value });
+                        suffix="%"
+                        onChange={(value) => {
+                          setDepositDraft({ ...depositDraft, annual_rate: value });
                           setDepositDraftTouched(true);
                         }}
                         value={depositDraft.annual_rate}
                       />
                     </Field>
                     <Field htmlFor="dep-actual" label="Факт. процент">
-                      <Input
+                      <MonthMoneyInput
                         className="input--money"
                         disabled={busy}
                         id="dep-actual"
-                        onChange={(event) => {
-                          setDepositDraft({ ...depositDraft, actual_interest: event.target.value });
+                        onChange={(value) => {
+                          setDepositDraft({ ...depositDraft, actual_interest: value });
                           setDepositDraftTouched(true);
                         }}
                         value={depositDraft.actual_interest}
@@ -1460,6 +1576,9 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                       <tr key={row.id}>
                         <Td>
                           {row.name}
+                          {!readOnly && !row.include_in_capital ? (
+                            <small className={styles.cashAccount}>не в капитале</small>
+                          ) : null}
                           {cashRows.filter((cash) => cash.name === row.name).length > 1 &&
                           row.account_id != null ? (
                             <small className={styles.cashAccount}>
@@ -1468,33 +1587,49 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                           ) : null}
                         </Td>
                         <Td numeric>
-                          {formatMoney(moneyAmount(row.amount), {
-                            currency: currencySuffix(row.currency),
-                          })}
+                          {!readOnly ? (
+                            <MonthMoneyInput
+                              aria-label={`Сумма — ${row.name}`}
+                              disabled={busy}
+                              suffix={currencySuffix(row.currency)}
+                              value={cashEdits[row.id] ?? moneyAmount(row.amount)}
+                              onChange={(value) => {
+                                setNotice(null);
+                                setCashEdits((previous) => ({ ...previous, [row.id]: value }));
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" && cashEdits[row.id] !== undefined) {
+                                  event.preventDefault();
+                                  void handleToggleCashCapital(row, cashEdits[row.id]);
+                                }
+                                if (event.key === "Escape" && !busy)
+                                  setCashEdits((previous) => {
+                                    const next = { ...previous };
+                                    delete next[row.id];
+                                    return next;
+                                  });
+                              }}
+                            />
+                          ) : (
+                            formatMoney(moneyAmount(row.amount), {
+                              currency: currencySuffix(row.currency),
+                            })
+                          )}
                         </Td>
-                        {showCashCapital ? (
-                          <Td>
-                            {readOnly ? (
-                              row.include_in_capital ? (
-                                "да"
-                              ) : (
-                                "нет"
-                              )
-                            ) : (
-                              <Button
-                                disabled={busy || readOnly}
-                                onClick={() => void handleToggleCashCapital(row)}
-                                size="sm"
-                                type="button"
-                              >
-                                {row.include_in_capital ? "да" : "нет"}
-                              </Button>
-                            )}
-                          </Td>
+                        {readOnly && showCashCapital ? (
+                          <Td>{row.include_in_capital ? "да" : "нет"}</Td>
                         ) : null}
                         {!readOnly ? (
                           <Td className="month-cash-table__actions">
                             <OverflowMenu label={`Действия для денежной позиции «${row.name}»`}>
+                              <OverflowMenuItem
+                                disabled={busy}
+                                onClick={() => void handleToggleCashCapital(row)}
+                              >
+                                {row.include_in_capital
+                                  ? "Исключить из капитала"
+                                  : "Включить в капитал"}
+                              </OverflowMenuItem>
                               <OverflowMenuItem
                                 danger
                                 disabled={busy || readOnly}
@@ -1511,6 +1646,22 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                 </Table>
               )}
 
+              {!readOnly
+                ? cashRows
+                    .filter((row) => cashEdits[row.id] !== undefined)
+                    .map((row) => (
+                      <MonthSaveBar key={row.id} changed={1}>
+                        <Button
+                          disabled={busy}
+                          onClick={() => void handleToggleCashCapital(row, cashEdits[row.id])}
+                          type="button"
+                          variant="primary"
+                        >
+                          Сохранить сумму — {row.name}
+                        </Button>
+                      </MonthSaveBar>
+                    ))
+                : null}
               <div className="totals-bar">
                 <span>
                   Всего наличных: <strong>{cashTotalText}</strong>
@@ -1552,6 +1703,15 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
               ) : null}
 
               {!readOnly ? (
+                <Button
+                  type="button"
+                  aria-expanded={showNewCash}
+                  onClick={() => setShowNewCash(!showNewCash)}
+                >
+                  + Добавить денежную позицию
+                </Button>
+              ) : null}
+              {!readOnly && showNewCash ? (
                 <form className="form-stack asset-form" onSubmit={handleCreateCash}>
                   <p className="panel__label section-form-label">Новая денежная позиция</p>
                   <div className="editor-grid">
@@ -1568,13 +1728,13 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
                       />
                     </Field>
                     <Field htmlFor="cash-amount" label="Сумма наличных">
-                      <Input
+                      <MonthMoneyInput
                         className="input--money"
                         disabled={busy}
                         id="cash-amount"
                         inputMode="decimal"
-                        onChange={(event) => {
-                          setCashDraft({ ...cashDraft, amount: event.target.value });
+                        onChange={(value) => {
+                          setCashDraft({ ...cashDraft, amount: value });
                           setCashDraftTouched(true);
                         }}
                         required

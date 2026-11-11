@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { makeUiV2Checklist, makeUiV2Workflow } from "../test/uiV2Fixtures";
-import { MonthKpis, MonthOverview, MonthStepStrip } from "./UiV2MonthOverview";
+import {
+  isIncompleteMonthDraft,
+  MonthKpis,
+  MonthOverview,
+  MonthStepStrip,
+  INCOMPLETE_MONTH_COPY,
+} from "./UiV2MonthOverview";
 
 const pathFor = (panel: string) => `/v2/close?month=12&panel=${panel}`;
 
@@ -19,6 +25,71 @@ function renderOverview(workflow: MonthCloseWorkflow) {
 afterEach(cleanup);
 
 describe("Month overview (#1079 stage 2)", () => {
+  it.each(["overview", "close"] as const)(
+    "hides incomplete draft comparisons in %s KPIs",
+    (variant) => {
+      const workflow = makeUiV2Workflow();
+      workflow.checklist = makeUiV2Checklist();
+      const brokers = workflow.checklist.steps.find((step) => step.id === "brokers");
+      if (!brokers || !workflow.final_review.available) throw new Error("Fixture missing");
+      brokers.state = "empty";
+      workflow.final_review.kpis.liquid_capital_delta = { amount: "-123.00", currency: "RUB" };
+      workflow.final_review.kpis.passive_income_delta = { amount: "-45.00", currency: "RUB" };
+      const view = render(<MonthKpis workflow={workflow} variant={variant} />);
+      expect(view.container).toHaveTextContent("неполный · без брокерских счетов");
+      expect(view.container).not.toHaveTextContent(/за месяц|к прошлому месяцу|%/);
+      for (const label of ["Пассивный доход", "Покрытие расходов"]) {
+        const tile = screen.getByText(label).closest("div") as HTMLElement;
+        expect(within(tile).getByText("—")).toBeVisible();
+        expect(tile).toHaveTextContent("после загрузки выписок");
+      }
+      brokers.state = "done";
+      view.rerender(<MonthKpis workflow={workflow} variant={variant} />);
+      expect(view.container).not.toHaveTextContent("неполный · без брокерских счетов");
+      expect(view.container).toHaveTextContent("к прошлому месяцу");
+    },
+  );
+
+  it("uses only the explicit empty broker step in an open month", () => {
+    const workflow = makeUiV2Workflow();
+    expect(isIncompleteMonthDraft(workflow)).toBe(false);
+    workflow.checklist = makeUiV2Checklist();
+    const brokers = workflow.checklist.steps.find((step) => step.id === "brokers");
+    if (!brokers) throw new Error("Fixture missing");
+    for (const state of ["done", "attention", "optional"] as const) {
+      brokers.state = state;
+      expect(isIncompleteMonthDraft(workflow)).toBe(false);
+    }
+    brokers.state = "empty";
+    expect(isIncompleteMonthDraft(workflow)).toBe(true);
+    workflow.month.status = "closed";
+    expect(isIncompleteMonthDraft(workflow)).toBe(false);
+  });
+
+  it("keeps Close available, with progress and three checklist-ordered next steps without expenses", () => {
+    const workflow = makeUiV2Workflow();
+    workflow.checklist = makeUiV2Checklist();
+    const brokers = workflow.checklist.steps.find((step) => step.id === "brokers");
+    if (!brokers) throw new Error("Fixture missing");
+    brokers.state = "empty";
+    workflow.checklist.expenses.mandatory_items = [];
+    renderOverview(workflow);
+    expect(screen.getByText(INCOMPLETE_MONTH_COPY)).toBeVisible();
+    const remaining = screen.getByRole("navigation", { name: "Что осталось" });
+    expect(
+      within(remaining)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual([pathFor("income"), pathFor("budget"), pathFor("brokers")]);
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "value",
+      String(workflow.checklist.completed_count),
+    );
+    expect(screen.getByRole("link", { name: "Закрыть месяц" })).toHaveAttribute(
+      "href",
+      pathFor("close"),
+    );
+  });
   it("shows closed warnings once using the final review's existing findings", () => {
     const workflow = makeUiV2Workflow({ monthId: 91 });
     workflow.checklist = makeUiV2Checklist({ closed: true, attention: true });

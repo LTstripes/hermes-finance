@@ -291,6 +291,7 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   await expect(page.getByLabel("Категория расхода", { exact: true })).toHaveValue("");
   await expect(page.getByRole("status").filter({ hasText: /^Сохранено$/ })).toBeVisible();
   await tile(page, /Депозиты, накопления и деньги/);
+  await page.getByRole("button", { name: "+ Добавить вклад", exact: true }).click();
   await page
     .getByLabel("Название вклада", { exact: true })
     .fill("Синтетический длинный вклад: все суммы и действия доступны");
@@ -315,7 +316,7 @@ test("Owner October workspace: one area, existing forms, two XML accounts, stric
   await page.getByRole("link", { name: "← К месяцу", exact: true }).first().click();
   await expect(page.locator("#month-work-area")).toHaveCount(0);
   await page.goBack();
-  await expect(page.getByLabel("Название вклада", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ Добавить вклад", exact: true })).toBeVisible();
 
   await tile(page, /Брокерские выписки/);
   const buffers = await Promise.all(
@@ -561,8 +562,8 @@ for (const width of [1280, 1440, 1920])
       await page.screenshot({ path: info.outputPath("tiles.png"), fullPage: true });
       await tile(page, /Депозиты, накопления и деньги/);
       const table = page.locator(".month-deposits-table");
-      await expect(table).toContainText("12 345 678,90");
-      await expect(table).toContainText("12 345,67");
+      await expect(table.getByLabel(/^Баланс —/)).toHaveValue("12 345 678,9");
+      await expect(table.getByLabel(/^Получено —/)).toHaveValue("12 345,67");
       await expect(table.getByRole("button", { name: /Действия для вклада/ })).toBeVisible();
       await fits(page);
       await page.screenshot({ path: info.outputPath("deposits.png"), fullPage: true });
@@ -570,7 +571,7 @@ for (const width of [1280, 1440, 1920])
       await page.getByRole("menuitem", { name: /Изменить/ }).click();
       const fields = await table
         .locator(
-          'td[data-label="Баланс"] input, td[data-label="Получено"] input, td[data-label="Ставка"] input, td[data-label="Тип"] select',
+          'td[data-label="Баланс"] input, td[data-label="Получено"] input, input[aria-label^="Ставка —"], select[aria-label^="Тип —"]',
         )
         .evaluateAll((inputs) =>
           inputs.map((element) => {
@@ -600,9 +601,10 @@ for (const width of [1280, 1440, 1920])
       await fits(page);
       await page.screenshot({ path: info.outputPath("deposit-edit.png"), fullPage: true });
       await page.getByRole("button", { name: "Отмена", exact: true }).click();
-      await expect(table.locator("input, select")).toHaveCount(0);
-      await expect(table).toContainText("12 345 678,90");
-      await expect(table).toContainText("12 345,67");
+      await expect(table.getByRole("textbox")).toHaveCount(2);
+      await expect(table.getByRole("combobox")).toHaveCount(0);
+      await expect(table.getByLabel(/^Баланс —/)).toHaveValue("12 345 678,9");
+      await expect(table.getByLabel(/^Получено —/)).toHaveValue("12 345,67");
       await tile(page, /Брокерские выписки/);
       const sourceDetails = page.getByText("Подробности", { exact: true });
       await expect(sourceDetails).toBeVisible();

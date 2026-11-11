@@ -130,7 +130,7 @@ function monthRef(id: number) {
   };
 }
 
-function leaf(monthId: number, readOnly: boolean) {
+function leaf(monthId: number, readOnly: boolean, incompleteDraft = false) {
   const month: ReportingMonth = {
     ...monthRef(monthId),
     status: readOnly ? "closed" : "draft",
@@ -141,6 +141,7 @@ function leaf(monthId: number, readOnly: boolean) {
     refresh: async () => month,
     setDirty,
     returnToClose: null,
+    incompleteDraft,
   };
   return (
     <QueryClientProvider client={client}>
@@ -155,15 +156,27 @@ function renderLeaf(monthId = 7, readOnly = false) {
 }
 
 async function debtSection(): Promise<HTMLElement> {
-  return await screen.findByRole("region", { name: "Долги месяца" });
+  const section = await screen.findByRole("region", { name: "Долги месяца" });
+  section.querySelectorAll("details").forEach((details) => {
+    details.open = true;
+  });
+  return section;
 }
 
 async function propertySection(): Promise<HTMLElement> {
-  return await screen.findByRole("region", { name: "Недвижимость месяца" });
+  const section = await screen.findByRole("region", { name: "Недвижимость месяца" });
+  section.querySelectorAll("details").forEach((details) => {
+    details.open = true;
+  });
+  return section;
 }
 
 async function tables(): Promise<HTMLElement[]> {
-  return await screen.findAllByRole("table");
+  const result = await screen.findAllByRole("table");
+  document.querySelectorAll("details").forEach((details) => {
+    details.open = true;
+  });
+  return result;
 }
 
 /** Value of a `label: <strong>…</strong>` totals line inside the given section. */
@@ -280,6 +293,17 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     });
   });
 
+  it("keeps additions collapsed and starts a new debt with an empty name", async () => {
+    renderLeaf();
+    const section = await screen.findByRole("region", { name: "Долги месяца" });
+    const details = section.querySelector("details");
+    expect(details).not.toHaveAttribute("open");
+    await userEvent.click(within(section).getByText("+ Добавить долг", { exact: true }));
+    expect(details).toHaveAttribute("open");
+    expect(within(section).getByLabelText("Название долга")).toHaveValue("");
+    expect(createDebt).not.toHaveBeenCalled();
+  });
+
   it("renders exact money, provenance labels, and month totals", async () => {
     renderLeaf();
     const [debtTable, propertyTable] = await tables();
@@ -321,6 +345,33 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(within(block).queryByRole("columnheader", { name: "Ставка" })).not.toBeInTheDocument();
   });
 
+  it("hides all coverage metrics until broker statements arrive and restores them afterwards", async () => {
+    vi.mocked(getDashboard).mockResolvedValue({
+      month: monthRef(7),
+      mortgage: { coverage_pct: "75.25", gap: { amount: "1000.00", currency: "RUB" } },
+    } as never);
+    vi.mocked(getMonthSummary).mockResolvedValue({
+      month: monthRef(7),
+      coverage: { coverage_pct: "62.50" },
+    } as never);
+    client = createQueryClient();
+    const view = render(leaf(7, false, true));
+    const block = await propertySection();
+    expect(block).toHaveTextContent("Покрытие появится после загрузки выписок");
+    expect(block).not.toHaveTextContent(
+      /Покрытие ипотеки|Недостаток покрытия|Покрытие обязательных расходов|75,3%|62,5%/,
+    );
+    view.rerender(leaf(7, false, false));
+    await waitFor(() =>
+      expect(labelledValue(block, "Покрытие ипотеки (ориентир):")).toHaveTextContent("75,3%"),
+    );
+    expect(labelledValue(block, "Покрытие обязательных расходов:")).toHaveTextContent("62,5%");
+    view.rerender(leaf(7, true, true));
+    expect(
+      labelledValue(await propertySection(), "Покрытие ипотеки (ориентир):"),
+    ).toHaveTextContent("75,3%");
+  });
+
   it("keeps a missing dashboard and summary as dashes instead of zeros", async () => {
     vi.mocked(getDashboard).mockRejectedValue(
       new ApiClientError(422, {
@@ -345,6 +396,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const month = await debtSection();
 
+    await user.type(within(month).getByLabelText("Название долга"), "Synthetic new debt");
     await user.type(within(month).getByLabelText("Текущий баланс долга"), "100000.50");
     await user.click(within(month).getByRole("button", { name: "Добавить долг" }));
 
@@ -352,7 +404,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       expect(createDebt).toHaveBeenCalledWith({
         reporting_month_id: 7,
         debt_type: "credit_card",
-        name: "Кредитка",
+        name: "Synthetic new debt",
         current_balance: { amount: "100000.50", currency: "RUB" },
         include_in_liquid_capital: true,
         annual_rate: null,
@@ -361,7 +413,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       }),
     );
     expect(listDebts).toHaveBeenCalledTimes(2);
-    expect(await screen.findByText("Кредитка")).toBeInTheDocument();
+    expect(await screen.findByText("Synthetic new debt")).toBeInTheDocument();
     expect(screen.queryByDisplayValue("100000.50")).toBeNull();
   });
 
@@ -370,6 +422,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     renderLeaf();
     const month = await debtSection();
 
+    await user.type(within(month).getByLabelText("Название долга"), "Synthetic new debt");
     await user.type(within(month).getByLabelText("Текущий баланс долга"), "1000");
     await user.type(within(month).getByLabelText("Годовая ставка, % (пусто — неизвестно)"), "-1");
     await user.click(within(month).getByRole("button", { name: "Добавить долг" }));
@@ -715,6 +768,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const user = userEvent.setup();
     const view = renderLeaf(7);
     const month = await debtSection();
+    await user.type(within(month).getByLabelText("Название долга"), "Synthetic new debt");
     await user.type(within(month).getByLabelText("Текущий баланс долга"), "100000.50");
     await user.click(within(month).getByRole("button", { name: "Добавить долг" }));
     await waitFor(() => expect(release).not.toBeNull());
@@ -729,7 +783,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     expect(screen.queryByRole("alert")).toBeNull();
     expect(await debtSection()).toHaveTextContent("Долгов нет.");
-    expect(screen.queryByText("Кредитка")).toBeNull();
+    expect(screen.queryByText("Synthetic new debt")).toBeNull();
     expect(listDebts).toHaveBeenCalledTimes(3);
   });
 
@@ -741,13 +795,14 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     vi.mocked(listDebts).mockResolvedValueOnce([
       { ...debt, id: 99, name: "Чужой месяц", reporting_month_id: 99 },
     ]);
+    await user.type(within(month).getByLabelText("Название долга"), "Synthetic new debt");
     await user.type(within(month).getByLabelText("Текущий баланс долга"), "100000.50");
     await user.click(within(month).getByRole("button", { name: "Добавить долг" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Долг не подтверждён повторной загрузкой.",
     );
-    expect(screen.queryByText("Кредитка")).toBeNull();
+    expect(screen.queryByText("Synthetic new debt")).toBeNull();
     expect(screen.getByText("Основная карта")).toBeInTheDocument();
   });
 
@@ -1009,6 +1064,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const user = userEvent.setup();
     renderLeaf();
     let month = await debtSection();
+    await user.type(within(month).getByLabelText("Название долга"), "Synthetic new debt");
     await user.type(within(month).getByLabelText("Текущий баланс долга"), "100000.50");
     await user.click(within(month).getByRole("button", { name: "Добавить долг" }));
     await waitFor(() => expect(createDebt).toHaveBeenCalledTimes(1));
@@ -1027,7 +1083,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
       release?.();
     });
 
-    expect(await screen.findByText("Кредитка")).toBeInTheDocument();
+    expect(await screen.findByText("Synthetic new debt")).toBeInTheDocument();
     const monthAfter = await debtSection();
     expect(within(monthAfter).getByLabelText("Текущий баланс долга")).toHaveValue("");
     expect(within(monthAfter).getByLabelText("Текущий баланс долга")).toBeEnabled();

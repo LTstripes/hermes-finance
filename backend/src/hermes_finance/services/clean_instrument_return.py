@@ -563,7 +563,7 @@ def read_clean_overview(
     """Read each source account's outer saved period in one source snapshot."""
     from hermes_finance.services.returns_view import _accounts, _source_scopes
     from hermes_finance.services.source_monthly_returns import (
-        _selected_sources,
+        _source_read_inputs,
         source_read_snapshot,
     )
 
@@ -572,7 +572,7 @@ def read_clean_overview(
         labels = {a["id"]: a["label"] for a in _accounts(session, canonical)}
         accounts = []
         for account in sorted(set(canonical.values())):
-            selected, _ = _selected_sources(session, account)
+            selected, _ = _source_read_inputs(session, account)
             originals = [original for original, _, _ in selected if original is not None]
             if not originals:
                 continue

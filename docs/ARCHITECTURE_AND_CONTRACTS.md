@@ -6619,6 +6619,12 @@ receipt identities, never cached ORM instances. Writers and ordinary sessions
 recompute; no financial guard, reason code or authority changes. Presentation may
 collapse identical issue text, retaining all diagnostic reasons in the response.
 Accepted account/portfolio validation does not read unrelated source journals.
+Inside the source snapshot, Returns also batches the unchanged occurrence-owner
+inventory and reuses parsed import documents and the latest Money receipt heads.
+Every selected receipt still passes its existing currentness checks. Private
+builder operands remain internal; public results own their mutable data. The
+clean overview omits legacy instrument projections that its clean reader wholly
+replaces, and a lazy card limits that legacy analysis to its requested ISIN.
 The overview and instrument-detail adapters request selected-interval analysis
 without unused instrument monthly/all-time projections; the ordinary source
 reader keeps its full-history default. Selected metrics, events, reasons,

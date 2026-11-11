@@ -189,3 +189,26 @@
 .workTotal :global(#month-panel-total):empty::after {
   content: "—";
 }
+
+.saveBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.saveBar > span {
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.workArea :global(.input),
+.workArea :global(.select),
+.workArea textarea {
+  border-color: var(--field-line);
+}
+.workArea :global(.field) {
+  max-width: 320px;
+}
+.workArea input[type="date"] {
+  max-width: 150px;
+}

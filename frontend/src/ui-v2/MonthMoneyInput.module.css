@@ -1,0 +1,27 @@
+.field {
+  position: relative;
+  display: inline-block;
+  width: 160px;
+  max-width: 100%;
+  min-width: 0;
+}
+.rate {
+  width: 96px;
+}
+.field .input {
+  width: 100%;
+  min-width: 0;
+  padding-right: 28px;
+  border-color: var(--field-line);
+  text-align: right;
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+}
+.suffix {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}

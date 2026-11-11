@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { event, ISIN, source } from "../src/test/sourceInstrumentFixtures";
-import { makeUiV2Workflow } from "../src/test/uiV2Fixtures";
+import { makeUiV2Checklist, makeUiV2Workflow } from "../src/test/uiV2Fixtures";
+import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
 
 const closed = {
   id: 7,
@@ -12,6 +13,84 @@ const closed = {
   snapshot_date: "2030-04-30",
   source: "manual",
 };
+
+test("incomplete month draft keeps honest KPIs, next steps and panel findings at desktop zoom @viewport-owned", async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  const workflow = makeUiV2Workflow();
+  workflow.checklist = makeUiV2Checklist();
+  const brokers = workflow.checklist.steps.find((step) => step.id === "brokers");
+  if (!brokers || !workflow.final_review.available) throw new Error("Fixture missing");
+  brokers.state = "empty";
+  brokers.has_saved_facts = false;
+  brokers.figure = null;
+  workflow.checklist.completed_count = 4;
+  const general = workflow.checklist.steps.find((step) => step.id === "general");
+  if (general?.figure) general.figure.day = closed.snapshot_date;
+  workflow.final_review.close_readiness.items = [
+    {
+      code: "active_account_snapshot_missing",
+      severity: "warning",
+      message: "Синтетический остаток не сохранён.",
+      context: {},
+    },
+  ];
+  await installApi(page, { month: { ...closed, status: "draft" }, workflow });
+  for (const width of [1024, 1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const zoom of [1, 1.25]) {
+      for (const panel of ["", "close", "liabilities", "positions"]) {
+        await page.goto(`/v2/close?month=7${panel ? `&panel=${panel}` : ""}`);
+        await page.evaluate((scale) => {
+          document.documentElement.style.zoom = String(scale);
+        }, zoom);
+        if (panel === "liabilities") {
+          await expect(page.getByText("Покрытие появится после загрузки выписок")).toBeVisible();
+          await expect(page.getByText("Покрытие ипотеки (ориентир):")).toHaveCount(0);
+          await expect(page.getByText("Недостаток покрытия:")).toHaveCount(0);
+          await expect(page.getByText("Покрытие обязательных расходов:")).toHaveCount(0);
+        } else if (panel === "positions") {
+          await expect(page.getByText("Синтетический остаток не сохранён.")).toBeVisible();
+        } else {
+          const kpis = page.getByLabel(panel ? "Итоги месяца" : "Итог месяца", { exact: true });
+          await expect(kpis).toContainText("неполный · без брокерских счетов");
+          await expect(kpis).not.toContainText(/за месяц|к прошлому месяцу|%/);
+          for (const label of ["Пассивный доход", "Покрытие расходов"]) {
+            const tile = kpis
+              .locator("div")
+              .filter({ has: page.getByText(label, { exact: true }) });
+            await expect(tile.locator("dd").first()).toHaveText("—");
+          }
+          await expect(page.getByRole("progressbar")).toHaveAttribute(
+            "value",
+            String(workflow.checklist.completed_count),
+          );
+          if (!panel)
+            await expect(
+              page.getByRole("navigation", { name: "Что осталось" }).getByRole("link"),
+            ).toHaveCount(3);
+        }
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+        ).toBe(true);
+        if (width === 1280 && zoom === 1.25)
+          await page.screenshot({
+            path: info.outputPath(`draft-${panel || "overview"}-${width}-${zoom}.png`),
+            fullPage: true,
+          });
+      }
+    }
+  }
+  brokers.state = "done";
+  brokers.has_saved_facts = true;
+  brokers.figure = { kind: "count", amount: null, day: null, count: 2 };
+  workflow.checklist.completed_count = 5;
+  await page.goto("/v2/close?month=7");
+  const kpis = page.getByLabel("Итог месяца", { exact: true });
+  await expect(kpis).not.toContainText("неполный · без брокерских счетов");
+  await expect(kpis).toContainText("к прошлому месяцу");
+});
 
 test("ui-v2 final review keeps broker blockers, evidence and keyboard details @viewport-owned", async ({
   page,
@@ -301,6 +380,7 @@ async function installApi(
     accounts?: object[];
     properties?: object[];
     month?: typeof closed;
+    workflow?: MonthCloseWorkflow;
   } = {},
 ) {
   let month = { ...(overrides.month ?? closed) };
@@ -318,7 +398,7 @@ async function installApi(
     if (path === "/api/months" && request.method() === "GET") {
       await route.fulfill({ json: [month] });
     } else if (path === "/api/months/7/close-workflow") {
-      const workflow = makeUiV2Workflow();
+      const workflow = overrides.workflow ?? makeUiV2Workflow();
       workflow.month = { ...workflow.month, ...month, status: month.status as "draft" | "closed" };
       if (workflow.final_review.available) workflow.final_review.month_header = workflow.month;
       await route.fulfill({ json: workflow });
@@ -514,6 +594,9 @@ for (const width of [1280]) {
           budget: "Категория расхода",
           liabilities: "Название долга",
         }[id];
+        if (id === "assets")
+          await page.getByRole("button", { name: "+ Добавить вклад", exact: true }).click();
+        if (id === "liabilities") await page.getByText("+ Добавить долг", { exact: true }).click();
         await expect(page.getByLabel(writeField, { exact: true })).toBeEnabled();
         const url = new URL(page.url());
         expect(url.pathname).toBe("/v2/data/months/7");
@@ -973,6 +1056,7 @@ test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @vie
       });
       const nav = page.getByRole("navigation", { name: "Разделы месяца" });
       await nav.getByRole("link", { name: /Долги, кредитка и недвижимость/ }).click();
+      await page.getByText("+ Добавить объект", { exact: true }).click();
       const payment = page.locator("#prop-pay");
       const rate = page.locator("#prop-rate");
       await expect(payment).toBeVisible();
@@ -1512,4 +1596,104 @@ test("closed month internal panels fit all desktop widths and zoom @viewport-own
     }
   }
   expect(writes).toEqual([]);
+});
+
+test("month forms inline inputs fit desktop zoom and 720px with visible keyboard focus @viewport-owned", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  await installMonthUx(page);
+  await page.route("**/api/deposits?*", (route) =>
+    route.fulfill({
+      json: Array.from({ length: 5 }, (_, index) => ({
+        id: 71 + index,
+        reporting_month_id: 7,
+        account_id: 11,
+        name: `Синтетический длинный вклад ${index + 1}`,
+        deposit_type: index === 0 ? "savings" : "deposit",
+        balance: uxMoney("540000.00"),
+        annual_rate: "14.01",
+        expected_monthly_interest: uxMoney("1234.00"),
+        actual_interest_received: uxMoney("1000.00"),
+        updated_at: "2030-05-31T00:00:00",
+      })),
+    }),
+  );
+  for (const width of [1024, 1280, 1440, 1920]) {
+    for (const zoom of [1, 1.25]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/v2/close?month=7&panel=assets");
+      await page.evaluate((scale) => {
+        document.documentElement.style.zoom = String(scale);
+      }, zoom);
+      const area = page.locator("#month-work-area");
+      await expect(area.getByRole("textbox")).toHaveCount(10);
+      await expect(page.getByLabel("Название вклада", { exact: true })).toHaveCount(0);
+      await expectNoTableOverflow(page);
+      const table = area.locator(".month-deposits-table");
+      expect(await table.locator("tbody").evaluate((node) => getComputedStyle(node).display)).toBe(
+        "table-row-group",
+      );
+      if (width === 1440 && zoom === 1) {
+        expect(
+          await area.evaluate((node) => node.getBoundingClientRect().height),
+        ).toBeLessThanOrEqual(1100);
+        await area.evaluate((node) => {
+          node.style.maxWidth = "720px";
+          node.style.fontFamily = "Arial, sans-serif";
+        });
+        await expectNoTableOverflow(page);
+        await page
+          .getByRole("button", {
+            name: "Действия для вклада «Синтетический длинный вклад 1»",
+            exact: true,
+          })
+          .click();
+        await page.getByRole("menuitem", { name: "Изменить", exact: true }).click();
+        await expect(page.getByLabel("Название — Синтетический длинный вклад 1")).toBeFocused();
+        await expectNoTableOverflow(page);
+        await page.keyboard.press("Escape");
+        await expect(
+          page.getByRole("button", {
+            name: "Действия для вклада «Синтетический длинный вклад 1»",
+            exact: true,
+          }),
+        ).toBeFocused();
+      }
+      await page.screenshot({
+        path: info.outputPath(`month-inline-${width}-${zoom}.png`),
+        fullPage: true,
+      });
+      await page.goto("/v2/close?month=7&panel=income");
+      await page.evaluate((scale) => {
+        document.documentElement.style.zoom = String(scale);
+      }, zoom);
+      const gross = page.getByLabel("Зарплата до вычета налогов", { exact: true });
+      await expect(gross).toBeVisible();
+      expect(
+        await gross.evaluate(
+          (node) =>
+            node.getBoundingClientRect().width /
+            Number(getComputedStyle(document.documentElement).zoom),
+        ),
+      ).toBeLessThanOrEqual(200);
+      await gross.focus();
+      expect(
+        await gross.evaluate(
+          (node, scale) => Number.parseFloat(getComputedStyle(node).outlineWidth) * scale,
+          zoom,
+        ),
+      ).toBeGreaterThanOrEqual(3);
+      await page.getByText("Добавить другой доход", { exact: true }).focus();
+      expect(
+        await page
+          .getByText("Добавить другой доход", { exact: true })
+          .evaluate(
+            (node, scale) => Number.parseFloat(getComputedStyle(node).outlineWidth) * scale,
+            zoom,
+          ),
+      ).toBeGreaterThanOrEqual(3);
+      await expectNoTableOverflow(page);
+    }
+  }
 });
