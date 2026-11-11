@@ -3,6 +3,10 @@ import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+// These cases own mounted settings routes; cold loading has its own shell test.
+import "../ui-v2/UiV2DataOverviewPage";
+import "../ui-v2/UiV2DataSourcesPage";
+import "../ui-v2/UiV2DataAppPage";
 
 vi.mock("../ui-v2/UiV2ScenarioLabPage", () => ({
   default: function BrokenScenarioLabPage() {
@@ -67,7 +71,11 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByText("Загружаем основной интерфейс…")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Загружаем раздел…" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(screen.getByRole("navigation", { name: "Основная навигация" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
   });
 
@@ -120,7 +128,7 @@ describe("App", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { level: 1, name: title })).toBeVisible();
     expect(window.location.pathname + window.location.search + window.location.hash).toBe(path);
-    expect(screen.getByRole("navigation", { name: "Разделы настроек" })).toBeVisible();
+    expect(await screen.findByRole("navigation", { name: "Разделы настроек" })).toBeVisible();
   });
 
   it.each(["/v2/data/months?month=2", "/v2/reports?month=2"])(

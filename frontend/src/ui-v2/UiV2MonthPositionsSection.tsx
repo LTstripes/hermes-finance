@@ -982,23 +982,41 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                   </colgroup>
                   <thead>
                     <tr>
-                      <Th className="month-positions-table__instrument">Инструмент</Th>
-                      <Th numeric title="Количество">
+                      <Th scope="col" className="month-positions-table__instrument">
+                        Инструмент
+                      </Th>
+                      <Th scope="col" numeric title="Количество">
                         Кол-во
                       </Th>
                       {showAverage ? (
-                        <Th numeric title="Средняя цена приобретения">
+                        <Th scope="col" numeric title="Средняя цена приобретения">
                           Цена покупки, ₽
                         </Th>
                       ) : null}
-                      {showPrice ? <Th numeric>Цена, ₽</Th> : null}
-                      <Th numeric title="Стоимость и доля в итоге">
+                      {showPrice ? (
+                        <Th scope="col" numeric>
+                          Цена, ₽
+                        </Th>
+                      ) : null}
+                      <Th scope="col" numeric title="Стоимость и доля в итоге">
                         Стоимость, ₽
                       </Th>
-                      {showResult ? <Th numeric>Результат, ₽</Th> : null}
-                      {compact ? <Th numeric>Доля</Th> : null}
+                      {showResult ? (
+                        <Th scope="col" numeric>
+                          Результат, ₽
+                        </Th>
+                      ) : null}
+                      {compact ? (
+                        <Th scope="col" numeric>
+                          Доля
+                        </Th>
+                      ) : null}
                       {showActions ? (
-                        <Th className="month-positions-table__actions" aria-label="Действия">
+                        <Th
+                          scope="col"
+                          className="month-positions-table__actions"
+                          aria-label="Действия"
+                        >
                           ⋯
                         </Th>
                       ) : null}

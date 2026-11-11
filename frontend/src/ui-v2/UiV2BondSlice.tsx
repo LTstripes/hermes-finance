@@ -118,11 +118,11 @@ export function UiV2BondSlice({
                   <caption>Облигации выбранного счёта и периода</caption>
                   <thead>
                     <tr>
-                      <th>Облигация</th>
-                      <th>Количество на конец</th>
-                      <th>Стоимость по выписке</th>
-                      <th>Дата оценки</th>
-                      <th>Известные купоны</th>
+                      <th scope="col">Облигация</th>
+                      <th scope="col">Количество на конец</th>
+                      <th scope="col">Стоимость по выписке</th>
+                      <th scope="col">Дата оценки</th>
+                      <th scope="col">Известные купоны</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -698,21 +698,27 @@ it("links the report-context line to the contextual archive", async () => {
 });
 
 describe("UI v2 isolation", () => {
-  it("keeps the v1 escape in the initial lazy-loading fallback", () => {
+  it("keeps navigation and a content skeleton in the initial lazy-loading fallback", () => {
     const pending = new Promise<never>(() => undefined);
     function Pending(): never {
       throw pending;
     }
 
     render(
-      <MemoryRouter>
-        <Suspense fallback={<UiV2LoadingFallback />}>
-          <Pending />
-        </Suspense>
-      </MemoryRouter>,
+      <QueryClientProvider client={createQueryClient()}>
+        <MemoryRouter>
+          <Suspense fallback={<UiV2LoadingFallback />}>
+            <Pending />
+          </Suspense>
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("Загружаем основной интерфейс");
+    expect(screen.getByRole("status", { name: "Загружаем раздел…" })).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(screen.getByRole("navigation", { name: "Основная навигация" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Мои финансы" })).toHaveAttribute("href", "/v2");
   });
 

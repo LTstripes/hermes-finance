@@ -375,16 +375,16 @@ function FamilyCard({ family }: { family: FreshnessFamily }) {
         <details className={dataStyles.disclosure}>
           <summary>Показать записи</summary>
           <div className={dataStyles.provenance}>
-            <table>
+            <table aria-label="Записи источника">
               <thead>
                 <tr>
-                  <th>Запись</th>
-                  <th>Свежесть</th>
-                  <th>Источник</th>
-                  <th>Наблюдение</th>
-                  <th>Запрос</th>
-                  <th>Применение</th>
-                  <th>Правка</th>
+                  <th scope="col">Запись</th>
+                  <th scope="col">Свежесть</th>
+                  <th scope="col">Источник</th>
+                  <th scope="col">Наблюдение</th>
+                  <th scope="col">Запрос</th>
+                  <th scope="col">Применение</th>
+                  <th scope="col">Правка</th>
                 </tr>
               </thead>
               <tbody>

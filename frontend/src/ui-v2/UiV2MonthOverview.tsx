@@ -484,7 +484,11 @@ export function MonthOverview({
           ) : null}
           {GROUPS.map((group) => (
             <section aria-label={group.title} className={styles.group} key={group.id}>
-              <h3 className={styles.eyebrow}>{group.title}</h3>
+              {closed ? (
+                <h2 className={styles.eyebrow}>{group.title}</h2>
+              ) : (
+                <h3 className={styles.eyebrow}>{group.title}</h3>
+              )}
               <ul>
                 {STEP_ORDER.filter((id) =>
                   steps.size ? steps.get(id)?.group === group.id : DEFAULT_GROUP[id] === group.id,

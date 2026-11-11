@@ -6,7 +6,7 @@
   min-width: 0;
 }
 
-.eyebrow {
+.overview .eyebrow {
   margin: 0;
   color: var(--muted);
   font-size: var(--t-xs);

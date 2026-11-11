@@ -13,16 +13,25 @@ import styles from "./UiV2Page.module.css";
  * Without a loaded month it stays a plain link to the month workspace.
  */
 export function UiV2MonthPlate() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const statusQuery = useQuery({
     queryKey: queryKeys.monthWorkingStatus,
     queryFn: ({ signal }) => getMonthWorkingStatus(signal),
   });
+  const status = statusQuery.data;
+  const requestedMonths = new URLSearchParams(search).getAll("month");
+  const selected = requestedMonths.length === 1 ? requestedMonths[0] : null;
+  const routeMonth = /^\/v2\/(?:data\/months|reports)\/(\d+)$/.exec(pathname)?.[1];
+  const onMonth = pathname === "/v2/close" || routeMonth !== undefined;
+  const shownMonth = routeMonth ?? selected;
   const ariaCurrent =
-    pathname.startsWith("/v2/close") || pathname === "/v2/data/months" || pathname === "/v2/reports"
+    onMonth &&
+    status?.month &&
+    (shownMonth === String(status.month.id) ||
+      (pathname === "/v2/close" && requestedMonths.length === 0)) &&
+    (routeMonth !== undefined || requestedMonths.length <= 1)
       ? "page"
       : undefined;
-  const status = statusQuery.data;
   if (!status?.month) {
     return (
       <Link aria-current={ariaCurrent} className={styles.monthPlate} to="/v2/close">

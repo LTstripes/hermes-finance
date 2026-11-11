@@ -1,3 +1,4 @@
+import { rememberInstrumentScroll } from "./instrumentScroll";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -247,10 +248,12 @@ export default function UiV2ReturnsPage() {
   };
   const openInstrument = (isin: string) => {
     if (goldNavigation.dirty || goldNavigation.pending) setNextHref(instrumentHref(isin));
-    else
+    else {
+      rememberInstrumentScroll();
       navigate(instrumentHref(isin), {
         state: { instrumentName: rows.find((r) => r.isin === isin)?.name },
       });
+    }
   };
   const guardLink = (event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (goldNavigation.dirty || goldNavigation.pending) {
@@ -644,6 +647,7 @@ export default function UiV2ReturnsPage() {
                               ["xirr", "Годовых"],
                             ].map(([field, title]) => (
                               <th
+                                scope="col"
                                 key={field}
                                 aria-sort={
                                   sort.startsWith(field)
@@ -666,7 +670,7 @@ export default function UiV2ReturnsPage() {
                                 </button>
                               </th>
                             ))}
-                            <th>Купоны и дивиденды, ₽</th>
+                            <th scope="col">Купоны и дивиденды, ₽</th>
                           </tr>
                         </thead>
                         <tbody>

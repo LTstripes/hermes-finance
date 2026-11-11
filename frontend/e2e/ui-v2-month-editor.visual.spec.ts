@@ -547,7 +547,7 @@ const leaves = [
 ] as const;
 
 for (const [id, , heading] of leaves) {
-  test(`deep link ${id} uses exact CLOSED month`, async ({ page }) => {
+  test(`deep link ${id} uses exact CLOSED month`, async ({ page }, testInfo) => {
     const calls = await installApi(page);
     await page.goto(`/v2/data/months/7?section=${id}`);
     if (id === "assets" || id === "liabilities") {
@@ -558,6 +558,13 @@ for (const [id, , heading] of leaves) {
       await expect(page.getByRole("table")).toHaveCount(0);
     } else await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     await expect(page.getByTestId("data-month-context")).toContainText("Апрель 2030");
+    if (testInfo.project.name === "1920x1080") {
+      expect(
+        await page
+          .locator("[data-month-editor]")
+          .evaluate((element) => element.getBoundingClientRect().width),
+      ).toBeLessThanOrEqual(960);
+    }
     // Closed leaves expose no enabled mutation fields; filters remain available.
     const inputs = page.locator(
       'main input:not([type="search"]):not(#payout-exp-version), main textarea',
@@ -991,6 +998,25 @@ test("ui-v2 grouped month positions fit 720px with closed quote tools absent @vi
       ],
     }),
   );
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto("/v2/close?month=7&panel=positions");
+  const wideArea = page.locator("#month-work-area");
+  await expect(wideArea.getByRole("table").first()).toBeVisible();
+  expect(
+    await wideArea.evaluate((element) => element.getBoundingClientRect().width),
+  ).toBeLessThanOrEqual(960);
+  const nameGaps = await wideArea.locator("tbody tr").evaluateAll((rows) =>
+    rows.flatMap((row) => {
+      const name = row.querySelector('[class*="instrumentTitle"]');
+      const amount = row.querySelector("td:nth-child(2)");
+      if (!name || !amount) return [];
+      const range = document.createRange();
+      range.selectNodeContents(name);
+      return [amount.getBoundingClientRect().left - range.getBoundingClientRect().right];
+    }),
+  );
+  expect(nameGaps.length).toBeGreaterThan(0);
+  expect(Math.max(...nameGaps)).toBeLessThanOrEqual(480);
   for (const width of [1280, 1440, 1920]) {
     for (const zoom of [1, 1.25]) {
       await page.setViewportSize({ width, height: 1000 });

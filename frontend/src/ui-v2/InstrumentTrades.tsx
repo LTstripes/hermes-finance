@@ -93,13 +93,13 @@ export function InstrumentTrades({
             <p>Сделки не найдены. Это не доказывает отсутствия сделок за период.</p>
           ) : null}
           <div className={styles.tableWrap}>
-            <table className={styles.table}>
+            <table aria-label="Сделки инструмента" className={styles.table}>
               <thead>
                 <tr>
-                  <th>Наблюдаемая сделка</th>
-                  <th>Даты</th>
-                  <th>Денежные подтверждения</th>
-                  <th>Источник и ограничения</th>
+                  <th scope="col">Наблюдаемая сделка</th>
+                  <th scope="col">Даты</th>
+                  <th scope="col">Денежные подтверждения</th>
+                  <th scope="col">Источник и ограничения</th>
                 </tr>
               </thead>
               <tbody>

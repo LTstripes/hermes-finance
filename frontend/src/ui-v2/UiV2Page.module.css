@@ -38,8 +38,8 @@
 }
 
 .shell :is(button, a, input, select, textarea, summary):focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
 }
 
 .skipLink {
@@ -210,7 +210,7 @@
 }
 
 .main:focus-visible {
-  outline: 3px solid var(--focus);
+  outline: var(--focus-width) solid var(--focus);
   outline-offset: -3px;
 }
 
@@ -473,6 +473,8 @@
 
 .chart {
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   margin-top: 10px;
 }
 
@@ -1124,4 +1126,30 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+@media (min-width: 1600px) {
+  .main [data-month-editor] {
+    max-width: var(--month-content-max);
+  }
+}
+
+.shell .main :is(input, select, textarea) {
+  border-color: var(--field-line);
+}
+.shell .main :is(input, select, textarea):focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+.main :is(header, nav) a,
+.main a[href="/v2/data/months"],
+.main a[href="#returns-instruments"],
+.main a[href^="/v2/close"],
+.panelHeader a,
+.contextLink,
+.reportContext a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--action-target-min);
+  padding-block: 2px;
 }

@@ -713,17 +713,35 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
             aria-label="Фактические выплаты: горизонтальная прокрутка таблицы"
             className={styles.scroll}
           >
-            <Table className="month-flows-table">
+            <Table aria-label="Выплаты месяца" className="month-flows-table">
               <thead>
                 <tr>
-                  <Th>Дата</Th>
-                  <Th>Тип</Th>
-                  <Th>Счёт / инструмент</Th>
-                  {showGross ? <Th numeric>До налога, ₽</Th> : null}
-                  {showTax ? <Th numeric>Налог, ₽</Th> : null}
-                  {showCommission ? <Th numeric>Комиссия, ₽</Th> : null}
-                  <Th numeric>Получено, ₽</Th>
-                  {showActions ? <Th className="month-flows-table__actions">Действия</Th> : null}
+                  <Th scope="col">Дата</Th>
+                  <Th scope="col">Тип</Th>
+                  <Th scope="col">Счёт / инструмент</Th>
+                  {showGross ? (
+                    <Th scope="col" numeric>
+                      До налога, ₽
+                    </Th>
+                  ) : null}
+                  {showTax ? (
+                    <Th scope="col" numeric>
+                      Налог, ₽
+                    </Th>
+                  ) : null}
+                  {showCommission ? (
+                    <Th scope="col" numeric>
+                      Комиссия, ₽
+                    </Th>
+                  ) : null}
+                  <Th scope="col" numeric>
+                    Получено, ₽
+                  </Th>
+                  {showActions ? (
+                    <Th scope="col" className="month-flows-table__actions">
+                      Действия
+                    </Th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -1115,17 +1133,27 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
               aria-label="Ожидаемые выплаты: горизонтальная прокрутка таблицы"
               className={styles.scroll}
             >
-              <Table className="month-flows-table">
+              <Table aria-label="Денежные потоки месяца" className="month-flows-table">
                 <thead>
                   <tr>
-                    <Th>Дата</Th>
-                    <Th>Тип</Th>
-                    <Th>Инструмент</Th>
-                    <Th numeric>Брутто, ₽</Th>
-                    <Th numeric>Прогноз налога, ₽</Th>
-                    <Th numeric>Прогноз нетто, ₽</Th>
-                    <Th>Статус</Th>
-                    {!readOnly ? <Th className="month-flows-table__actions">Действия</Th> : null}
+                    <Th scope="col">Дата</Th>
+                    <Th scope="col">Тип</Th>
+                    <Th scope="col">Инструмент</Th>
+                    <Th scope="col" numeric>
+                      Брутто, ₽
+                    </Th>
+                    <Th scope="col" numeric>
+                      Прогноз налога, ₽
+                    </Th>
+                    <Th scope="col" numeric>
+                      Прогноз нетто, ₽
+                    </Th>
+                    <Th scope="col">Статус</Th>
+                    {!readOnly ? (
+                      <Th scope="col" className="month-flows-table__actions">
+                        Действия
+                      </Th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>

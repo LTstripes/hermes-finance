@@ -172,10 +172,10 @@ export function UiV2MonthInstruments({
                 <caption>Инструменты выбранного счёта и месяца</caption>
                 <thead>
                   <tr>
-                    <th>Инструмент / ISIN</th>
-                    <th>Количество на {closing}</th>
-                    <th>Полный P&amp;L</th>
-                    <th>Modified Dietz · приблизительно за период, не годовых</th>
+                    <th scope="col">Инструмент / ISIN</th>
+                    <th scope="col">Количество на {closing}</th>
+                    <th scope="col">Полный P&amp;L</th>
+                    <th scope="col">Modified Dietz · приблизительно за период, не годовых</th>
                   </tr>
                 </thead>
                 <tbody>

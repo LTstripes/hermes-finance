@@ -359,9 +359,13 @@ function MonthEditorFrame({
   ...props
 }: ComponentProps<typeof UiV2DataFrame> & { embedded: boolean }) {
   return embedded ? (
-    <div className={styles.embedded}>{children}</div>
+    <div className={styles.embedded} data-month-editor>
+      {children}
+    </div>
   ) : (
-    <UiV2DataFrame {...props}>{children}</UiV2DataFrame>
+    <UiV2DataFrame {...props}>
+      <div data-month-editor>{children}</div>
+    </UiV2DataFrame>
   );
 }
 

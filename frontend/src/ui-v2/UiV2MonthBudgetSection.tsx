@@ -892,13 +892,13 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                 {expenseGroup.title} · {formatMoney(expenseGroup.total)}
               </h3>
               {plan.length > 0 ? (
-                <Table className={styles.budgetTable}>
+                <Table aria-label="Расходы месяца" className={styles.budgetTable}>
                   <thead>
                     <tr>
-                      <Th>Категория</Th>
-                      {editingExpenseId !== null ? <Th>Тип</Th> : null}
-                      <Th>Факт</Th>
-                      <Th>План</Th>
+                      <Th scope="col">Категория</Th>
+                      {editingExpenseId !== null ? <Th scope="col">Тип</Th> : null}
+                      <Th scope="col">Факт</Th>
+                      <Th scope="col">План</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1226,16 +1226,18 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                   </tbody>
                 </Table>
               ) : (
-                <Table className={styles.budgetTable}>
+                <Table aria-label="Расходы месяца" className={styles.budgetTable}>
                   <thead>
                     <tr>
-                      <Th>Категория</Th>
-                      {editingExpenseId !== null ? <Th>Тип</Th> : null}
-                      <Th numeric>Сумма</Th>
+                      <Th scope="col">Категория</Th>
+                      {editingExpenseId !== null ? <Th scope="col">Тип</Th> : null}
+                      <Th scope="col" numeric>
+                        Сумма
+                      </Th>
                       {rows.some((row) => row.notes?.trim()) || editingExpenseId !== null ? (
-                        <Th>Комментарий</Th>
+                        <Th scope="col">Комментарий</Th>
                       ) : null}
-                      {!readOnly ? <Th>Действия</Th> : null}
+                      {!readOnly ? <Th scope="col">Действия</Th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -1471,15 +1473,17 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
             {savings.length === 0 ? (
               <p>Накоплений пока нет.</p>
             ) : (
-              <Table className={styles.budgetTable}>
+              <Table aria-label="Накопления месяца" className={styles.budgetTable}>
                 <thead>
                   <tr>
-                    <Th>Направление</Th>
-                    <Th numeric>Сумма</Th>
+                    <Th scope="col">Направление</Th>
+                    <Th scope="col" numeric>
+                      Сумма
+                    </Th>
                     {savings.some((row) => row.notes?.trim()) || editingSavingId !== null ? (
-                      <Th>Комментарий</Th>
+                      <Th scope="col">Комментарий</Th>
                     ) : null}
-                    {!readOnly ? <Th>Действия</Th> : null}
+                    {!readOnly ? <Th scope="col">Действия</Th> : null}
                   </tr>
                 </thead>
                 <tbody>

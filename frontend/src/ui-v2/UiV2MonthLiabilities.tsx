@@ -672,17 +672,21 @@ function DebtBlock({
       {debts.length === 0 ? (
         <p className={leafStyles.empty}>Долгов нет.</p>
       ) : (
-        <Table className={leafStyles.debtTable}>
+        <Table aria-label="Долги месяца" className={leafStyles.debtTable}>
           <thead>
             <tr>
-              <Th>Название</Th>
-              <Th>Тип</Th>
-              <Th numeric>Баланс</Th>
-              {debts.some((row) => row.annual_rate != null) ? <Th>Ставка</Th> : null}
-              {debts.some((row) => row.next_due_date) ? <Th>Ближайший платёж</Th> : null}
-              {debts.some((row) => row.contract_end_date) ? <Th>Окончание</Th> : null}
-              <Th>Учёт</Th>
-              {!readOnly ? <Th>Действия</Th> : null}
+              <Th scope="col">Название</Th>
+              <Th scope="col">Тип</Th>
+              <Th scope="col" numeric>
+                Баланс
+              </Th>
+              {debts.some((row) => row.annual_rate != null) ? <Th scope="col">Ставка</Th> : null}
+              {debts.some((row) => row.next_due_date) ? (
+                <Th scope="col">Ближайший платёж</Th>
+              ) : null}
+              {debts.some((row) => row.contract_end_date) ? <Th scope="col">Окончание</Th> : null}
+              <Th scope="col">Учёт</Th>
+              {!readOnly ? <Th scope="col">Действия</Th> : null}
             </tr>
           </thead>
           <tbody>
@@ -1356,15 +1360,23 @@ function PropertyBlock({
       {properties.length === 0 ? (
         <p className={leafStyles.empty}>Объектов нет.</p>
       ) : (
-        <Table className={leafStyles.propertyCards}>
+        <Table aria-label="Недвижимость месяца" className={leafStyles.propertyCards}>
           <thead>
             <tr>
-              <Th>Объект</Th>
-              <Th numeric>Стоимость</Th>
-              <Th numeric>Ипотека</Th>
-              <Th numeric>Платёж / мес</Th>
-              {properties.some((row) => row.mortgage_annual_rate != null) ? <Th>Ставка</Th> : null}
-              {!readOnly ? <Th>Действия</Th> : null}
+              <Th scope="col">Объект</Th>
+              <Th scope="col" numeric>
+                Стоимость
+              </Th>
+              <Th scope="col" numeric>
+                Ипотека
+              </Th>
+              <Th scope="col" numeric>
+                Платёж / мес
+              </Th>
+              {properties.some((row) => row.mortgage_annual_rate != null) ? (
+                <Th scope="col">Ставка</Th>
+              ) : null}
+              {!readOnly ? <Th scope="col">Действия</Th> : null}
             </tr>
           </thead>
           <tbody>

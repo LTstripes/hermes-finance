@@ -543,7 +543,7 @@ function DepositEstimates({ upcoming }: { upcoming: UpcomingEventsWindow }) {
         Расчётная сумма за {formatDate(upcoming.from_date)}–{formatDate(upcoming.to_date)}; дата
         выплаты неизвестна. Включённые оценки уже учтены в общем прогнозе.
       </p>
-      <table>
+      <table aria-label="Оценка процентов по вкладам">
         <thead>
           <tr>
             <th scope="col">Вклад</th>

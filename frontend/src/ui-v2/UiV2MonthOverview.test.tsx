@@ -207,7 +207,8 @@ describe("Month overview (#1079 stage 2)", () => {
     workflow.checklist = makeUiV2Checklist({ closed: true });
     renderOverview(workflow);
     const nav = screen.getByRole("navigation", { name: "Разделы месяца" });
-    expect(within(nav).queryByRole("heading", { level: 2 })).toBeNull();
+    expect(within(nav).getAllByRole("heading", { level: 2 })).toHaveLength(3);
+    expect(within(nav).queryByRole("heading", { level: 3 })).toBeNull();
     expect(within(nav).queryByRole("link", { name: "Закрыть месяц" })).toBeNull();
     expect(within(nav).getByRole("link", { name: "Итоги и замечания" })).toBeVisible();
     expect(screen.queryByText(/Прочие расходы/)).toBeNull();

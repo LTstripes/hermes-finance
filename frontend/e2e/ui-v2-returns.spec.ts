@@ -497,6 +497,43 @@ for (const retired of ["performance", "monthly-returns", "monthly-result", "stat
   });
 }
 
+test("ui-v2 instrument return restores table scroll and screen titles @viewport-owned", async ({
+  page,
+}) => {
+  const body = overallFixture();
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      if (await fulfillMonthPlate(route)) return;
+      const url = new URL(route.request().url());
+      expect(route.request().method()).toBe("GET");
+      if (url.pathname === "/api/returns/overall") await route.fulfill({ json: body });
+      else if (url.pathname === "/api/returns/instrument-card")
+        await route.fulfill({
+          json: instrumentCardFixture(url.searchParams.get("isin") ?? undefined),
+        });
+      else await route.fulfill({ status: 404, json: {} });
+    },
+  );
+  await page.goto("/v2/returns");
+  await expect(page).toHaveTitle("Доходность — Hermes Finance");
+  const table = page.getByRole("table", { name: "Все бумаги" });
+  const link = table.getByRole("link").first();
+  await link.scrollIntoViewIfNeeded();
+  const position = await page.evaluate(() => window.scrollY);
+  expect(position).toBeGreaterThan(100);
+  await link.click();
+  await expect(page).toHaveTitle("Инструмент — Hermes Finance");
+  await expect(page.getByRole("table", { name: "Инструмент по счетам" })).toBeVisible();
+  await expect(page.locator("table:not([aria-label]):not(:has(caption))")).toHaveCount(0);
+  await expect(page.locator("thead th:not([scope=col])")).toHaveCount(0);
+  await page.getByRole("button", { name: /К доходности/ }).click();
+  await expect(table).toBeVisible();
+  await expect(page).toHaveTitle("Доходность — Hermes Finance");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeCloseTo(position, 0);
+});
+
 test("Returns sidebar parent and AA contrast @viewport-owned", async ({ page }) => {
   await install(page);
   for (const destination of [

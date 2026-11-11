@@ -244,13 +244,13 @@ export function InstrumentCashIncome({
                 ) : null}
                 {data.event_count > 0 ? (
                   <div className={incomeStyles.tableWrap}>
-                    <table className={incomeStyles.table}>
+                    <table aria-label="Денежные выплаты инструмента" className={incomeStyles.table}>
                       <thead>
                         <tr>
-                          <th>Дата / вид</th>
-                          <th>Зачислено net</th>
-                          <th>Подтверждение</th>
-                          <th>Происхождение</th>
+                          <th scope="col">Дата / вид</th>
+                          <th scope="col">Зачислено net</th>
+                          <th scope="col">Подтверждение</th>
+                          <th scope="col">Происхождение</th>
                         </tr>
                       </thead>
                       <tbody>

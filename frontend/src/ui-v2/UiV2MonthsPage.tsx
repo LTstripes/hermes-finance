@@ -478,7 +478,11 @@ export default function UiV2MonthsPage() {
                 Часть сумм недоступна. Обнови список, чтобы повторить чтение.
               </p>
             ) : null}
-            <table className={styles.monthTable} data-testid="months-table">
+            <table
+              aria-label="Отчётные месяцы"
+              className={styles.monthTable}
+              data-testid="months-table"
+            >
               <thead>
                 <tr>
                   <th scope="col">Месяц</th>

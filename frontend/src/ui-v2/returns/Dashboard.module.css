@@ -633,3 +633,11 @@
 .list.list .instrumentRow td {
   border-bottom: 0;
 }
+
+@media (min-width: 1600px) {
+  .list,
+  .filters,
+  .income {
+    max-width: var(--returns-content-max);
+  }
+}

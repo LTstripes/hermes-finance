@@ -371,7 +371,7 @@ function IisAccountCard({
           <p className={styles.emptyCopy}>Нет сохранённых взносов.</p>
         ) : (
           <div className={styles.tableWrap}>
-            <table className={styles.contributionTable}>
+            <table aria-label="Взносы по налоговым годам" className={styles.contributionTable}>
               <thead>
                 <tr>
                   <th scope="col">Налоговый год</th>

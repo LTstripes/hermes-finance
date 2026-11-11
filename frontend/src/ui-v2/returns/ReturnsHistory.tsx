@@ -133,14 +133,17 @@ export function ReturnsHistory({
                 : ""}
               Прочерк означает отсутствие подтверждённого значения.
             </p>
-            <table className={`${layout.list} ${styles.monthTable}`}>
+            <table
+              aria-label="Результат по месяцам"
+              className={`${layout.list} ${styles.monthTable}`}
+            >
               <thead>
                 <tr>
-                  <th>Месяц</th>
-                  <th>{partial ? "Известная часть, ₽" : "Результат, ₽"}</th>
-                  <th>За месяц</th>
-                  {coupons && <th>Купоны, ₽</th>}
-                  {dividends && <th>Дивиденды, ₽</th>}
+                  <th scope="col">Месяц</th>
+                  <th scope="col">{partial ? "Известная часть, ₽" : "Результат, ₽"}</th>
+                  <th scope="col">За месяц</th>
+                  {coupons && <th scope="col">Купоны, ₽</th>}
+                  {dividends && <th scope="col">Дивиденды, ₽</th>}
                 </tr>
               </thead>
               <tbody>

@@ -1236,10 +1236,10 @@ function PayoutForecastTool({
                     >
                       <thead>
                         <tr>
-                          <th>Дата</th>
-                          <th>Бумага / счёт</th>
-                          <th>Вид</th>
-                          <th>Сумма</th>
+                          <th scope="col">Дата</th>
+                          <th scope="col">Бумага / счёт</th>
+                          <th scope="col">Вид</th>
+                          <th scope="col">Сумма</th>
                         </tr>
                       </thead>
                       <tbody>

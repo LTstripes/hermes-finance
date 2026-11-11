@@ -8,12 +8,12 @@ import {
   Cell,
   LabelList,
   ReferenceLine,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
+import { CssResponsiveContainer as ResponsiveContainer } from "../components/charts/CssResponsiveContainer";
 import { toKopecks } from "../lib/money";
 import { formatMoney } from "../lib/format";
 import { rubleAxisTick } from "./rubleAxis";
@@ -162,7 +162,7 @@ export function CapitalAreaChart({
   }
 
   return (
-    <ResponsiveContainer height={236} width="100%">
+    <ResponsiveContainer height={236}>
       <AreaChart data={data} margin={{ bottom: 0, left: 0, right: 12, top: 18 }}>
         <defs>
           <linearGradient id="home-capital-fill" x1="0" x2="0" y1="0" y2="1">
@@ -247,7 +247,7 @@ export function PassiveBarsChart({
   const axis = niceAxis([0, ...values, average ?? 0], goal, true);
   const lastIndex = data.length - 1;
   return (
-    <ResponsiveContainer height={200} width="100%">
+    <ResponsiveContainer height={200}>
       <BarChart data={data} margin={{ bottom: 0, left: 0, right: 8, top: 20 }}>
         <CartesianGrid stroke={C.line2} vertical={false} />
         <XAxis
@@ -377,7 +377,7 @@ export function CapitalWaterfallChart({ steps }: { steps: WaterfallStep[] }) {
   const fill = (bar: (typeof data)[number]) =>
     bar.kind === "start" ? C.base : bar.kind === "end" ? C.accent : bar.value < 0 ? C.neg : C.pos;
   return (
-    <ResponsiveContainer height={236} width="100%">
+    <ResponsiveContainer height={236}>
       <BarChart data={data} margin={{ bottom: 0, left: 4, right: 4, top: 22 }}>
         <XAxis
           axisLine={false}

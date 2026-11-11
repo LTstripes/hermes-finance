@@ -59,11 +59,11 @@ function Breakdown({
     <>
       {rows.length > 0 && (
         <div className={styles.tableScroll}>
-          <table className={styles.instruments}>
+          <table aria-label="Купоны по инструментам" className={styles.instruments}>
             <thead>
               <tr>
-                <th>Инструмент</th>
-                <th>Получено</th>
+                <th scope="col">Инструмент</th>
+                <th scope="col">Получено</th>
               </tr>
             </thead>
             <tbody>

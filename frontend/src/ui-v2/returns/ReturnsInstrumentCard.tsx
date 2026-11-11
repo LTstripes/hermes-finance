@@ -463,7 +463,10 @@ export function ReturnsInstrumentCard({
             <section className={styles.section} aria-label="Позиции и результат по счетам">
               <h2>По счетам</h2>
               <div className={styles.scroll}>
-                <table className={`${styles.table} ${styles.accountsTable}`}>
+                <table
+                  aria-label="Инструмент по счетам"
+                  className={`${styles.table} ${styles.accountsTable}`}
+                >
                   <colgroup>
                     <col />
                     <col />
@@ -474,12 +477,12 @@ export function ReturnsInstrumentCard({
                   </colgroup>
                   <thead>
                     <tr>
-                      <th>Счёт</th>
-                      <th>Количество</th>
-                      <th>Стоимость</th>
-                      <th>Результат</th>
-                      <th>На вложенное</th>
-                      {showAnnual && <th>Годовых</th>}
+                      <th scope="col">Счёт</th>
+                      <th scope="col">Количество</th>
+                      <th scope="col">Стоимость</th>
+                      <th scope="col">Результат</th>
+                      <th scope="col">На вложенное</th>
+                      {showAnnual && <th scope="col">Годовых</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -696,15 +699,18 @@ export function ReturnsInstrumentCard({
                         </span>
                       )}
                     </h3>
-                    <table className={`${styles.table} ${styles.lots}`}>
+                    <table
+                      aria-label="Покупки инструмента"
+                      className={`${styles.table} ${styles.lots}`}
+                    >
                       <thead>
                         <tr>
-                          <th>Дата покупки</th>
-                          <th>Куплено / осталось</th>
-                          <th>Вложено</th>
-                          <th>Продажи / остаток</th>
-                          <th>Результат без выплат</th>
-                          <th>К первоначальной стоимости</th>
+                          <th scope="col">Дата покупки</th>
+                          <th scope="col">Куплено / осталось</th>
+                          <th scope="col">Вложено</th>
+                          <th scope="col">Продажи / остаток</th>
+                          <th scope="col">Результат без выплат</th>
+                          <th scope="col">К первоначальной стоимости</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -836,14 +842,17 @@ export function ReturnsInstrumentCard({
               </div>
               {filtered.length > 0 ? (
                 <div className={styles.scroll}>
-                  <table className={`${styles.table} ${styles.operations}`}>
+                  <table
+                    aria-label="Операции инструмента"
+                    className={`${styles.table} ${styles.operations}`}
+                  >
                     <thead>
                       <tr>
-                        <th>Дата</th>
-                        <th>Операция</th>
-                        {data.accounts.length > 1 && <th>Счёт</th>}
-                        <th>Количество</th>
-                        <th>Сумма сделки</th>
+                        <th scope="col">Дата</th>
+                        <th scope="col">Операция</th>
+                        {data.accounts.length > 1 && <th scope="col">Счёт</th>}
+                        <th scope="col">Количество</th>
+                        <th scope="col">Сумма сделки</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -882,13 +891,16 @@ export function ReturnsInstrumentCard({
                 {data.summary.payouts.value !== null && ` · ${displayWhole(data.summary.payouts)}`}
               </summary>
               <div className={styles.scroll}>
-                <table className={`${styles.table} ${styles.operations}`}>
+                <table
+                  aria-label="Выплаты инструмента"
+                  className={`${styles.table} ${styles.operations}`}
+                >
                   <thead>
                     <tr>
-                      <th>Дата</th>
-                      <th>Выплата</th>
-                      {data.accounts.length > 1 && <th>Счёт</th>}
-                      <th>Получено</th>
+                      <th scope="col">Дата</th>
+                      <th scope="col">Выплата</th>
+                      {data.accounts.length > 1 && <th scope="col">Счёт</th>}
+                      <th scope="col">Получено</th>
                     </tr>
                   </thead>
                   <tbody>
