@@ -610,7 +610,7 @@ export default function UiV2ReportPage() {
           >
             <ul className={reportStyles.handoffList} data-testid="report-workspace-links">
               <li>
-                <Link to={`/v2/data/months/${position.point.reporting_month_id}`}>
+                <Link to={`/v2/close?month=${position.point.reporting_month_id}`}>
                   Данные отчётного месяца →
                 </Link>
               </li>

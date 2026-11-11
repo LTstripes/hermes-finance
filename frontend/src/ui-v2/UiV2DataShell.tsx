@@ -1,6 +1,6 @@
 import { IncomeTabs } from "./IncomeTabs";
 import type { ReactNode } from "react";
-import { Link, useLocation } from "react-router";
+import { useLocation } from "react-router";
 
 import type { ReportingMonth } from "../api/types";
 import { formatDate, formatMonth } from "../lib/format";
@@ -10,18 +10,14 @@ import {
   resolveMonthSelection,
   selectDiagnosticMonth,
 } from "./monthSelection";
-import dataStyles from "./UiV2Data.module.css";
 import styles from "./UiV2Page.module.css";
 import { UiV2Shell } from "./UiV2Shell";
+import { UiV2Tabs } from "./UiV2Tabs";
 
-const READ_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
-  { id: "sources", label: "Источники и актуальность" },
-  { id: "source-intake", label: "Разбор источника" },
-];
-
-const MUTATE_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
-  { id: "months", label: "Отчётные месяцы" },
-  { id: "catalogs", label: "Справочники и сопоставления" },
+const SETTINGS_SECTIONS: Array<{ id: DataAppSection; label: string }> = [
+  { id: "overview", label: "Обзор" },
+  { id: "catalogs", label: "Счета и инструменты" },
+  { id: "sources", label: "Источники данных" },
   { id: "files", label: "Экспорт и копии" },
   { id: "app", label: "Приложение" },
 ];
@@ -50,51 +46,18 @@ export function resolveDataMonth(
   return { kind: "ready", month: diagnostic, automatic: true };
 }
 
-function Chip({ active, label, to }: { active: boolean; label: string; to: string }) {
-  return (
-    <Link
-      aria-current={active ? "page" : undefined}
-      className={`${dataStyles.chip} ${active ? dataStyles.chipActive : ""}`}
-      to={to}
-    >
-      {label}
-    </Link>
-  );
-}
-
 export function UiV2DataSubnav({ active, monthId }: { active: DataAppSection; monthId?: number }) {
   const location = useLocation();
   return (
-    <nav aria-label="Разделы настроек" className={dataStyles.subnav}>
-      <div className={dataStyles.modeGroup}>
-        <p className={dataStyles.modeLabel}>
-          Проверить <span className={dataStyles.modeBadge}>Только чтение</span>
-        </p>
-        <div className={dataStyles.chips}>
-          {READ_SECTIONS.map((section) => (
-            <Chip
-              active={active === section.id}
-              key={section.id}
-              label={section.label}
-              to={dataAppPath(section.id, monthId, location.search, location.hash)}
-            />
-          ))}
-        </div>
-      </div>
-      <div className={dataStyles.modeGroup}>
-        <p className={dataStyles.modeLabel}>Заполнить и настроить</p>
-        <div className={dataStyles.chips}>
-          {MUTATE_SECTIONS.map((section) => (
-            <Chip
-              active={active === section.id}
-              key={section.id}
-              label={section.label}
-              to={dataAppPath(section.id, monthId, location.search, location.hash)}
-            />
-          ))}
-        </div>
-      </div>
-    </nav>
+    <UiV2Tabs
+      inheritMonth={false}
+      label="Разделы настроек"
+      tabs={SETTINGS_SECTIONS.map((section) => ({
+        label: section.label,
+        active: active === section.id || (active === "source-intake" && section.id === "app"),
+        to: dataAppPath(section.id, monthId, location.search, location.hash),
+      }))}
+    />
   );
 }
 

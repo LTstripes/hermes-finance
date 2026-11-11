@@ -8,10 +8,13 @@ export function UiV2Tabs({
   label,
   tabs,
   onNavigate,
+  inheritMonth = true,
 }: {
   label: string;
   tabs: { label: string; to: string; active: boolean }[];
   onNavigate?: (event: MouseEvent<HTMLAnchorElement>, to: string) => void;
+  /** Callers with an exact query already built can retain invalid/repeated values. */
+  inheritMonth?: boolean;
 }) {
   const { search } = useLocation();
   const month = new URLSearchParams(search).get("month");
@@ -21,7 +24,7 @@ export function UiV2Tabs({
         const [path, hash] = tab.to.split("#");
         const [pathname, query] = path.split("?");
         const params = new URLSearchParams(query);
-        if (month !== null) params.set("month", month);
+        if (inheritMonth && month !== null) params.set("month", month);
         const to = `${pathname}${params.size ? `?${params}` : ""}${hash ? `#${hash}` : ""}`;
         return (
           <Link

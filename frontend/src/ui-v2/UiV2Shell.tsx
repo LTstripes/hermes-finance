@@ -57,7 +57,7 @@ const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: ReactNode; 
         <circle cx="8" cy="17" r="2" />
       </>
     ),
-    to: "/v2/data/app",
+    to: "/v2/data/overview",
   },
 ];
 
@@ -119,7 +119,10 @@ export function UiV2Shell({
     NATIVE_SECTIONS.find((section) =>
       section.id === "home"
         ? pathname === "/v2" || pathname === "/"
-        : pathname === section.to || pathname.startsWith(`${section.to}/`),
+        : section.id === "data"
+          ? (pathname === "/v2/data" || pathname.startsWith("/v2/data/")) &&
+            !["/v2/data/months", "/v2/data/payouts"].includes(pathname)
+          : pathname === section.to || pathname.startsWith(`${section.to}/`),
     )?.id ?? active;
   return (
     <div className={styles.shell}>

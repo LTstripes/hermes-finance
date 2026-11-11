@@ -118,6 +118,10 @@ describe("UI v2 Data/App", () => {
 
   it("keeps the diagnostics deep link selected and focused without a duplicate sidebar entry", async () => {
     renderPage("/v2/data/app?month=7#diagnostics");
+    expect(await screen.findByRole("link", { name: "Разбор источника" })).toHaveAttribute(
+      "href",
+      "/v2/data/source-intake?month=7",
+    );
     const navigation = screen.getByRole("navigation", { name: "Настройки и диагностика" });
     expect(within(navigation).getByRole("link", { name: "Диагностика" })).toHaveAttribute(
       "aria-current",

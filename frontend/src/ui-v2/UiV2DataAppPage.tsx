@@ -16,6 +16,7 @@ import styles from "./UiV2DataApp.module.css";
 import { UiV2DataFrame } from "./UiV2DataShell";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+import { dataAppPath } from "./monthSelection";
 
 function settingsFieldErrors(error: unknown): Record<string, string> {
   if (!(error instanceof ApiClientError)) return {};
@@ -338,6 +339,9 @@ export default function UiV2DataAppPage() {
             </div>
             <div className={styles.diagnosticsAnchor} id="diagnostics" tabIndex={-1}>
               <h2 tabIndex={-1}>Диагностика</h2>
+              <Link to={dataAppPath("source-intake", undefined, location.search)}>
+                Разбор источника
+              </Link>
               <Link to="/v2/returns/account?scope=portfolio&diagnostics=performance">
                 Диагностика доходности
               </Link>

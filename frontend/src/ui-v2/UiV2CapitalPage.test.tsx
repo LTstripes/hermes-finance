@@ -590,7 +590,7 @@ it("presents account buckets, rows and exclusion labels without summing rows", a
   expect(screen.getByTestId("capital-assets")).toHaveTextContent("3 203 900 ₽");
   expect(screen.getByRole("link", { name: "Данные отчётного месяца →" })).toHaveAttribute(
     "href",
-    `/v2/data/months/${uiV2CapitalMonthId}`,
+    `/v2/close?month=${uiV2CapitalMonthId}`,
   );
 });
 

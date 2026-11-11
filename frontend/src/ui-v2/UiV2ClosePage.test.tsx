@@ -438,7 +438,7 @@ describe("native Monthly Close work mode", () => {
     fireEvent.click(screen.getByRole("link", { name: /^Настройки$/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Перейти без сохранения" }));
     await waitFor(() =>
-      expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/data/app"),
+      expect(screen.getByTestId("test-location")).toHaveTextContent("/v2/data/overview"),
     );
     expect(session.snapshot().file).toBe(file);
     expect(session.snapshot().confirmed).toBeNull();

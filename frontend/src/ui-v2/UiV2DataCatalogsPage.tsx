@@ -854,7 +854,7 @@ export default function UiV2DataCatalogsPage() {
   } else {
     monthContent = (
       <DataMonthContext automatic={resolution.automatic} month={resolution.month}>
-        <Link to={`/v2/data/months/${resolution.month.id}`}>Данные отчётного месяца →</Link>
+        <Link to={`/v2/close?month=${resolution.month.id}`}>Данные отчётного месяца →</Link>
       </DataMonthContext>
     );
   }
