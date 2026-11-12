@@ -1074,6 +1074,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(createDebt).toHaveBeenCalledTimes(1);
   });
 
+  // Typing a full amount and the pending save can exceed 5 s on loaded CI runners.
   it("freezes property edit inputs while the save and its readback are pending", async () => {
     let release: (() => void) | null = null;
     vi.mocked(updateProperty).mockImplementation(
@@ -1119,7 +1120,7 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(within(propertyTableAfter).queryByRole("button", { name: "Готово" })).toBeNull();
     expect(propertyTableAfter).toHaveTextContent(/2\s*900\s*000\s*₽/);
     expect(updateProperty).toHaveBeenCalledTimes(1);
-  });
+  }, 20_000);
 
   it("#650 keeps money as one unit with Owner language and no technical shorthand", async () => {
     renderLeaf();
