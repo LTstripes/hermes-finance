@@ -57,6 +57,9 @@ export function UiV2MonthPlate() {
       <span className={styles.monthPlateStatus} data-state={closed ? "closed" : "progress"}>
         {state}
       </span>
+      <span className={styles.monthPlateCompact} aria-hidden="true">
+        {title} · {closed ? "закрыт" : "черновик"}
+      </span>
     </Link>
   );
 }

@@ -564,3 +564,11 @@
     border-left: 0;
   }
 }
+
+/* Narrow screens: the status chip and the ⋯ menu wrap instead of overflowing. */
+@media (max-width: 550px) {
+  .titleRow {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}

@@ -1814,6 +1814,83 @@ test("month forms inline inputs fit desktop zoom and 720px with visible keyboard
   }
 });
 
+test("ui-v2 mobile positions keep values, editing and deposit cards bounded @viewport-owned", async ({
+  page,
+}, info) => {
+  await installMonthUx(page);
+  await page.route("**/api/accounts", (route) =>
+    route.fulfill({
+      json: [uxAccount, { ...uxAccount, id: 12, name: "Синтетический ИИС", account_type: "iis" }],
+    }),
+  );
+  await page.route("**/api/positions?*", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: 31,
+          reporting_month_id: 7,
+          account_id: 11,
+          instrument_id: 21,
+          quantity: "3.000000",
+          average_cost_per_unit: uxMoney("12345.67"),
+          market_price_per_unit: uxMoney("13456.78"),
+          market_value: uxMoney("40370.34"),
+          cost_basis: uxMoney("37037.01"),
+          unrealized_result: uxMoney("3333.33"),
+          accrued_interest: uxMoney("12.34"),
+          price_source: "manual",
+          price_date: "2030-05-31",
+        },
+        {
+          id: 32,
+          reporting_month_id: 7,
+          account_id: 12,
+          instrument_id: 21,
+          quantity: "3.000000",
+          average_cost_per_unit: null,
+          market_price_per_unit: null,
+          market_value: uxMoney("40370.34"),
+          cost_basis: null,
+          unrealized_result: null,
+          accrued_interest: null,
+          price_source: "broker_statement_native",
+          price_date: "2030-05-31",
+        },
+      ],
+    }),
+  );
+  for (const width of [375, 430]) {
+    await page.setViewportSize({ width, height: 812 });
+    await page.goto("/v2/close?month=7&panel=positions");
+    const area = page.locator("#month-work-area");
+    const row = area.locator("tbody tr").first();
+    await expect(row).toContainText("40 370");
+    expect(await row.evaluate((el) => getComputedStyle(el).display)).toBe("grid");
+    // The native row keeps its percentage below the value, without empty price cells.
+    const nativeShare = area.locator('[class*="mobileShare"]');
+    await expect(nativeShare).toHaveCount(1);
+    expect(await nativeShare.evaluate((el) => getComputedStyle(el).gridColumnStart)).toBe("2");
+    expect(await nativeShare.evaluate((el) => getComputedStyle(el).gridRowStart)).toBe("2");
+    const price = area.getByRole("textbox", { name: /^Цена позиции/ });
+    await price.fill("14000");
+    await expect(page.getByRole("button", { name: "Сохранить цены" })).toBeVisible();
+    await price.press("Escape");
+    await expect(price).toHaveValue("13456.78");
+    await expectNoTableOverflow(page);
+    await page.screenshot({
+      path: info.outputPath(`mobile-positions-${width}.png`),
+      fullPage: true,
+    });
+    await page.goto("/v2/close?month=7&panel=assets");
+    await expect(page.getByRole("heading", { name: /Депозиты/ }).first()).toBeVisible();
+    await expectNoTableOverflow(page);
+    await page.screenshot({
+      path: info.outputPath(`mobile-deposits-${width}.png`),
+      fullPage: true,
+    });
+  }
+});
+
 test("month positions keep three manual rows compact, disclosures explicit and prices cancellable @viewport-owned", async ({
   page,
 }, info) => {

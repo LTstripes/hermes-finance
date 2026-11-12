@@ -1215,9 +1215,15 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                                 : ""}
                             </div>
                           </Td>
-                          <Td numeric>{formatQuantity(row.quantity)}</Td>
+                          <Td numeric data-label="Количество">
+                            {formatQuantity(row.quantity)}
+                          </Td>
                           {showAverage ? (
-                            <Td numeric title={formatMoney(row.average_cost_per_unit?.amount)}>
+                            <Td
+                              numeric
+                              data-label="Цена покупки"
+                              title={formatMoney(row.average_cost_per_unit?.amount)}
+                            >
                               {displayCell(row.average_cost_per_unit, !fromStatement(row))}
                             </Td>
                           ) : null}
@@ -1225,6 +1231,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                             <Td
                               numeric
                               className={styles.priceCell}
+                              data-label="Цена"
                               title={formatMoney(row.market_price_per_unit?.amount)}
                             >
                               {!readOnly && !fromStatement(row) ? (
@@ -1270,7 +1277,11 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               ) : null}
                             </Td>
                           ) : null}
-                          <Td numeric title={formatMoney(row.market_value?.amount)}>
+                          <Td
+                            numeric
+                            className={styles.marketValue}
+                            title={formatMoney(row.market_value?.amount)}
+                          >
                             {displayCell(row.market_value, hasMarket)}
                             {!compact && displayShare(row.market_value, totals.market) ? (
                               <div className={`${styles.meta} ${styles.share}`}>
@@ -1279,10 +1290,16 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                             ) : null}
                           </Td>
                           {compact ? (
-                            <Td numeric>{displayShare(row.market_value, totals.market) || "—"}</Td>
+                            <Td numeric className={styles.mobileShare}>
+                              {displayShare(row.market_value, totals.market) || "—"}
+                            </Td>
                           ) : null}
                           {showResult ? (
-                            <Td numeric title={formatMoney(row.unrealized_result?.amount)}>
+                            <Td
+                              numeric
+                              data-label="Результат"
+                              title={formatMoney(row.unrealized_result?.amount)}
+                            >
                               <span
                                 className={styles.result}
                                 data-tone={moneyTone(row.unrealized_result)}

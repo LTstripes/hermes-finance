@@ -210,3 +210,82 @@ a.instrumentTitle:hover {
 .priceCell > .meta {
   line-height: 14px;
 }
+
+@media (max-width: 550px) {
+  .root :global(.month-positions-table),
+  .root :global(.month-positions-table) tbody {
+    display: block;
+  }
+  .root :global(.month-positions-table) colgroup {
+    display: none;
+  }
+  .root :global(.month-positions-table) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .root :global(.month-positions-table) caption {
+    display: block;
+  }
+  .root :global(.month-positions-table) tbody {
+    display: grid;
+    gap: var(--mobile-card-space);
+  }
+  .root :global(.month-positions-table) tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--mobile-card-space);
+    padding: var(--mobile-card-space);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+  }
+  .root :global(.month-positions-table) td {
+    min-width: 0;
+    border: 0;
+  }
+  .instrument {
+    grid-column: 1;
+    grid-row: 1 / 3;
+  }
+  .instrumentTitle,
+  .meta {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+  }
+  .root :global(.month-positions-table) .marketValue {
+    grid-column: 2;
+    grid-row: 1;
+    font-weight: var(--w-semibold);
+  }
+  .root :global(.month-positions-table) .mobileShare {
+    grid-column: 2;
+    grid-row: 2;
+    color: var(--muted);
+  }
+  .root :global(.month-positions-table) td[data-label] {
+    grid-column: 1 / -1;
+    text-align: right;
+  }
+  .root :global(.month-positions-table) td[data-label]::before {
+    content: attr(data-label);
+    float: left;
+    color: var(--muted);
+    font-family: var(--f-ui);
+    font-size: var(--t-xs);
+  }
+  .root :global(.month-positions-table) td:global(.month-positions-table__actions) {
+    grid-column: 1 / -1;
+  }
+  .root :global(.month-positions-table) :global(.month-positions-table__edit-row) {
+    display: block;
+  }
+  .addGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .groupValue {
+    flex-wrap: wrap;
+  }
+}
