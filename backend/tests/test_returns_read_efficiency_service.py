@@ -2019,3 +2019,81 @@ def test_compiled_attribution_keeps_whole_tokens_precedence_ambiguity_and_new_id
     identities["synthetic-a"]["names"].add("Added label")
     for text in (*texts, "NEW-ID", "Added label"):
         assert reader(text) == _attribute(text, identities)
+
+
+def test_xirr_reuses_exact_inputs_only_inside_source_snapshot(db, monkeypatch):
+    import importlib
+
+    solver = importlib.import_module("hermes_finance.domain.xirr")
+    original = solver._calculate_normalised_xirr
+    calls = []
+
+    def counted(*args):
+        calls.append(args)
+        return original(*args)
+
+    monkeypatch.setattr(solver, "_calculate_normalised_xirr", counted)
+    flows = (
+        solver.XirrCashFlow(date(2030, 1, 1), -10000),
+        solver.XirrCashFlow(date(2031, 1, 1), 11000),
+    )
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            first = solver.calculate_xirr(flows)
+            with source_read_snapshot(session):
+                assert solver.calculate_xirr(reversed(flows)) == first
+            assert len(calls) == 1
+            solver.calculate_xirr(flows, max_iterations=1)
+            assert len(calls) == 2
+            solver.calculate_xirr((flows[0], replace(flows[1], amount_kopecks=12000)))
+            assert len(calls) == 3
+        assert solver._READ_RESULTS.get() is None
+        with pytest.raises(RuntimeError), source_read_snapshot(session):
+            assert solver.calculate_xirr(flows) == first
+            raise RuntimeError("failed read")
+        assert solver._READ_RESULTS.get() is None
+        assert solver.calculate_xirr(flows) == first
+        assert len(calls) == 5
+
+
+def test_monthly_card_history_cache_returns_owned_results(db, monkeypatch):
+    from hermes_finance.services import source_monthly_returns as monthly
+
+    calls = []
+
+    def read(_session, **kwargs):
+        calls.append(kwargs)
+        return {"values": [len(calls)]}
+
+    monkeypatch.setattr(monthly, "_read_monthly_returns", read)
+    with db.session_factory() as session:
+        with source_read_snapshot(session):
+            first = monthly.read_monthly_for_card_history(session, source_account="synthetic")
+            first["values"].append(99)
+            assert monthly.read_monthly_for_card_history(session, source_account="synthetic") == {
+                "values": [1]
+            }
+            monthly.read_monthly_for_card_history(session, source_account="other")
+            assert len(calls) == 2
+        assert monthly.read_monthly_for_card_history(session, source_account="synthetic") == {
+            "values": [3]
+        }
+
+
+def test_inventory_projection_still_checks_each_fingerprint(db, monkeypatch):
+    from hermes_finance.persistence import SourceIntakeOriginal
+    from hermes_finance.statement_import.mybroker import MyBrokerError
+
+    basket_source(db)
+    with db.session_factory() as session:
+        intake_id = session.scalar(select(SourceIntakeOriginal.id))
+        before = source_intake.read_intake(session, intake_id)
+        original_digest = source_intake.digest
+        facts = before["observations"][0]["facts"]
+
+        def corrupted(value):
+            return "invalid" if value == facts else original_digest(value)
+
+        monkeypatch.setattr(source_intake, "digest", corrupted)
+        with pytest.raises(MyBrokerError, match="source_intake_inventory_invalid"):
+            source_intake.read_intake(session, intake_id)

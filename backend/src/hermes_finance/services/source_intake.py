@@ -663,7 +663,7 @@ def _assessment(proposal, state, head_seq, override_revision):
     }
 
 
-def _review_summary(original, state, observations, proposals, reasons, linked):
+def _review_summary(original, state, observations, proposals, reasons, linked, inventory):
     """Presentation of existing evidence only; never an input to financial gates."""
     proposal_reasons = {
         p["isin"]: set(p["currency_assessment"]["reasons"])
@@ -674,9 +674,9 @@ def _review_summary(original, state, observations, proposals, reasons, linked):
     refs_by_isin = {}
     source_values = []
     pending_observations = []
-    for observation in observations:
+    for observation, item in zip(observations, inventory, strict=True):
         sections.setdefault(observation.section, []).append(observation.id)
-        facts = json.loads(observation.facts_json)
+        facts = item[4]
         core = facts.get("core", facts)
         isin = core.get("isin")
         if isin is not None:
@@ -769,8 +769,16 @@ def _view(session, original, *, include_money_classifications=True):
     manifest = json.loads(events[0].payload_json)["manifest"]
     state = json.loads(events[-1].payload_json)["state"]
     observations = list(
-        session.scalars(
-            select(SourceIntakeObservation)
+        session.execute(
+            select(
+                SourceIntakeObservation.id,
+                SourceIntakeObservation.section,
+                SourceIntakeObservation.ordinal,
+                SourceIntakeObservation.locator,
+                SourceIntakeObservation.row_class,
+                SourceIntakeObservation.facts_json,
+                SourceIntakeObservation.row_fingerprint,
+            )
             .where(SourceIntakeObservation.original_id == original.id)
             .order_by(SourceIntakeObservation.id)
         )
@@ -779,11 +787,21 @@ def _view(session, original, *, include_money_classifications=True):
         (o.section, o.ordinal, o.locator, o.row_class, json.loads(o.facts_json))
         for o in observations
     ]
+    # Identical serialized facts have identical fingerprints. This local map
+    # saves repeated hashing without trusting any stored fingerprint.
+    fingerprints = {}
+
+    def fingerprint(observation, facts):
+        raw = observation.facts_json
+        if raw not in fingerprints:
+            fingerprints[raw] = digest(facts)
+        return fingerprints[raw]
+
     if (
         len(inventory) != manifest["inventory_count"]
         or digest(inventory) != manifest["observations_digest"]
         or any(
-            digest(item[4]) != observation.row_fingerprint
+            fingerprint(observation, item[4]) != observation.row_fingerprint
             for item, observation in zip(inventory, observations, strict=True)
         )
     ):
@@ -853,7 +871,7 @@ def _view(session, original, *, include_money_classifications=True):
         "document": manifest["source"],
         "proposals": proposals,
         "review_summary": _review_summary(
-            original, state, observations, proposals, reasons, link is not None
+            original, state, observations, proposals, reasons, link is not None, inventory
         ),
         **(
             {"money_classifications": list_classifications(session, original.id)}
@@ -1111,7 +1129,10 @@ def close_integrity_guards(session, month_id):
         except (MyBrokerError, ValueError, KeyError, TypeError):
             reasons.add("source_intake_journal_invalid")
     return tuple(
-        (code, "MyBroker: сохранённая привязка источника требует новой сверки.")
+        (
+            code,
+            "MyBroker: сохранённая привязка источника требует новой сверки.",
+        )
         for code in sorted(reasons)
     )
 

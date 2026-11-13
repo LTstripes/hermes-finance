@@ -15,13 +15,18 @@ from typing import Literal, Mapping
 
 from sqlalchemy import select
 
-from hermes_finance.database import coherent_read_operation, coherent_read_snapshot
+from hermes_finance.database import (
+    coherent_read_operation,
+    coherent_read_snapshot,
+    snapshot_read_result,
+)
 from hermes_finance.domain.broker_statement_provisional import ProvisionalAssumptions
 from hermes_finance.domain.monthly_return_chain import (
     MonthlyReturnRow,
     PeriodReturnTotals,
     calculate_monthly_return_chain,
 )
+from hermes_finance.domain.xirr import xirr_read_scope
 from hermes_finance.persistence import SourceIntakeOriginal, SourceMoneyClassification
 from hermes_finance.services import broker_statement_provisional as provisional
 from hermes_finance.services import source_intake
@@ -251,7 +256,7 @@ def source_read_snapshot(session):
     No value survives a request, including failed reads. Copies keep consumers
     from changing another reader's operands. Financial writers never use this.
     """
-    with coherent_read_snapshot(session):
+    with coherent_read_snapshot(session), xirr_read_scope():
         if _SOURCE_READ_VIEWS in session.info:
             yield
             return
@@ -593,7 +598,14 @@ def read_monthly_returns(
 @coherent_read_operation
 def read_monthly_for_card_history(session, *, source_account):
     """Private account-history input; optional proof XIRRs are not card inputs."""
-    return _read_monthly_returns(session, source_account=source_account, include_proof_xirr=False)
+    return snapshot_read_result(
+        session,
+        "monthly_card_history",
+        source_account,
+        lambda: _read_monthly_returns(
+            session, source_account=source_account, include_proof_xirr=False
+        ),
+    )
 
 
 @coherent_read_operation
