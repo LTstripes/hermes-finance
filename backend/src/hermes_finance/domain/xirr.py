@@ -9,6 +9,8 @@ without a valid or unambiguous root remain explicitly unavailable.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Context, Decimal, DecimalException, localcontext
@@ -243,6 +245,22 @@ def _deduplicate_roots(roots: Iterable[Decimal]) -> tuple[Decimal, ...]:
     return tuple(unique)
 
 
+_READ_RESULTS: ContextVar[dict | None] = ContextVar("xirr_read_results", default=None)
+
+
+@contextmanager
+def xirr_read_scope():
+    """Reuse exact solver results only for the owning source read snapshot."""
+    if _READ_RESULTS.get() is not None:
+        yield
+        return
+    token = _READ_RESULTS.set({})
+    try:
+        yield
+    finally:
+        _READ_RESULTS.reset(token)
+
+
 def calculate_xirr(
     cash_flows: Iterable[XirrCashFlow],
     *,
@@ -262,6 +280,16 @@ def calculate_xirr(
         return _unavailable(XirrReasonCode.CONVERGENCE_FAILED)
 
     normalised = _normalise_cash_flows(cash_flows)
+    cache = _READ_RESULTS.get()
+    if cache is None:
+        return _calculate_normalised_xirr(normalised, max_iterations)
+    key = (normalised, max_iterations)
+    if key not in cache:
+        cache[key] = _calculate_normalised_xirr(normalised, max_iterations)
+    return cache[key]
+
+
+def _calculate_normalised_xirr(normalised, max_iterations):
     if len(normalised) < 2 or normalised[0][0] == normalised[-1][0]:
         return _unavailable(XirrReasonCode.NO_VALID_ROOT)
 
