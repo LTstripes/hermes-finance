@@ -7180,10 +7180,22 @@ to quantity, without rounding the parts to kopecks. The weighted period is
 `sum(part_cost * held_days) / sum(purchase_cost)` in Decimal, without rounding
 days before comparison. Below 365 it gives NULL/`short_holding`; exactly 365 is
 eligible. Only the existing complete FIFO match establishes this measure. Missing
-or incomplete FIFO (including redemption histories unsupported by that matcher)
+or incomplete FIFO (including unproved or partial redemptions)
 gives NULL `weighted_holding_days` and XIRR reason `holding_period_unknown`;
 observed purchase facts and the first purchase date cannot substitute for it.
 Simple return remains independent and retains its existing availability rules.
+For a proved closed bond, XIRR also accepts an already recognized
+`analytical_full_redemption` as a FIFO disposal of the entire remaining inventory.
+It requires current, counted, uniquely owned positive redemption cash, exact
+negative quantity, dated delivery and complete existing clean-result evidence.
+The disposal consumes the lots at the delivery date; XIRR uses the actual cash
+posting date and retains later coupons. No terminal valuation is appended.
+Ambiguous same-day order, incomplete trades/redemption and unidentified bond
+amortization still give NULL, never a fabricated duration or zero rate.
+This extension changes only `xirr`; existing simple-return metadata and purchase
+contributions retain their compatibility shape and meaning. In particular, the
+new redemption duration is reported in `xirr.weighted_holding_days`, while the
+legacy simple-return duration remains NULL for such histories.
 Incomplete position inputs preserve the existing
 blockers, and the unchanged `domain/xirr.py` solver preserves no-root/ambiguity
 reasons. Unavailable/UNKNOWN values use the existing `status=unavailable` and

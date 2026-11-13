@@ -1027,49 +1027,58 @@ test("matching partial numbers never draw a complete equality", async () => {
   expect(region.queryByText(/по разным наборам данных/)).toBeNull();
 });
 
-test("one account card leads with the simple return and annual XIRR, not Modified Dietz", async () => {
-  const card = instrumentCardFixture();
-  const rate = (method: "simple_return" | "xirr", value: string | null) => ({
-    value,
-    status: "supported" as const,
-    reason_codes: value === null ? ["short_holding"] : [],
-    assumptions: [],
-    method,
-    annualized: method === "xirr",
-    invested_kopecks: "100000",
-    start_date: "2029-01-10",
-    end_date: "2030-05-31",
-    holding_days: 506,
-    weighted_holding_days: "506.00",
-  });
-  const clean = card.accounts[0].clean;
-  if (!clean) throw new Error("fixture needs a clean account");
-  card.accounts = [
-    {
-      ...card.accounts[0],
-      clean: {
-        ...clean,
-        modified_dietz: { ...clean.modified_dietz, value: "15.72" },
-        simple_return: rate("simple_return", "0.1004"),
-        xirr: rate("xirr", "0.1212"),
+test.each(["2030-05-31", "2030-02-10"])(
+  "one account card shows annual XIRR and holding end %s",
+  async (holdingEnd) => {
+    const card = instrumentCardFixture();
+    const rate = (method: "simple_return" | "xirr", value: string | null) => ({
+      value,
+      status: "supported" as const,
+      reason_codes: value === null ? ["short_holding"] : [],
+      assumptions: [],
+      method,
+      annualized: method === "xirr",
+      invested_kopecks: "100000",
+      start_date: "2029-01-10",
+      end_date: "2030-05-31",
+      holding_end_date: holdingEnd,
+      holding_days: 506,
+      weighted_holding_days: "506.00",
+    });
+    const clean = card.accounts[0].clean;
+    if (!clean) throw new Error("fixture needs a clean account");
+    card.accounts = [
+      {
+        ...card.accounts[0],
+        clean: {
+          ...clean,
+          modified_dietz: { ...clean.modified_dietz, value: "15.72" },
+          simple_return: rate("simple_return", "0.1004"),
+          xirr: rate("xirr", "0.1212"),
+        },
       },
-    },
-  ];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => response(card)),
-  );
-  setup("/v2/returns/instrument/RU000A000002");
-  await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
-  const result = screen
-    .getByRole("heading", { name: "Результат за всю историю" })
-    .closest("section");
-  expect(result).toHaveTextContent("+10,0%");
-  expect(result).toHaveTextContent("на вложенное · +12,1% годовых");
-  expect(screen.queryByText(/Modified Dietz/)).toBeNull();
-  expect(screen.queryByText(/1\s?572/)).toBeNull();
-  expect(screen.getByText("Подробнее о расчёте по счетам")).toBeInTheDocument();
-});
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response(card)),
+    );
+    setup("/v2/returns/instrument/RU000A000002");
+    await screen.findByRole("heading", { level: 1, name: "Учебная акция" });
+    const result = screen
+      .getByRole("heading", { name: "Результат за всю историю" })
+      .closest("section");
+    expect(result).toHaveTextContent("+10,0%");
+    expect(result).toHaveTextContent("на вложенное · +12,1% годовых");
+    expect(result).toHaveTextContent(
+      holdingEnd === "2030-02-10"
+        ? "Владение: 10.01.2029 — 10.02.2030 · выплаты учтены по 31.05.2030"
+        : "Владение: 10.01.2029 — 31.05.2030",
+    );
+    expect(screen.queryByText(/Modified Dietz/)).toBeNull();
+    expect(screen.queryByText(/1\s?572/)).toBeNull();
+    expect(screen.getByText("Подробнее о расчёте по счетам")).toBeInTheDocument();
+  },
+);
 
 test("purchases start at five per account, follow account rates and retain exact kopecks in titles", async () => {
   const card = instrumentCardFixture();

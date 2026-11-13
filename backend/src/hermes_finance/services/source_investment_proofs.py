@@ -36,8 +36,8 @@ VERSION = "source_return_investment_v1"
 # parsing, mybroker_return_structure, source_report_preview._money classification or
 # payout linking / _interval, XIRR / Decimal / money helpers, or proof evidence format.
 # The semantic-module list and SHA256 guard live in test_source_investment_semantics.py.
-SEMANTICS_REVISION = "source_investment_semantics_v20"
-_GIFT_COMPAT_REVISION = "source_investment_semantics_v20"
+SEMANTICS_REVISION = "source_investment_semantics_v21"
+_GIFT_COMPAT_REVISION = "source_investment_semantics_v21"
 _V3_COMPAT_CODE = "source_investment_semantics_v3"
 _GIFT_COMPAT_CODES = (
     "source_investment_semantics_v2",
@@ -342,7 +342,9 @@ def _snapshot(session, account, start, end, *, reserved=False, read_dependency=N
         # V18 extends clean closed-position inference to recognized full redemption.
         # V19 preserves anonymous bond amortization gaps only in the clean projection.
         # V20 limits those clean gaps by exact issue registration, without counting cash.
+        # V21 adds FIFO holding duration for clean full-redemption XIRR only.
         codes = (
+            "source_investment_semantics_v20",
             "source_investment_semantics_v19",
             "source_investment_semantics_v18",
             "source_investment_semantics_v17",

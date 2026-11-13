@@ -317,6 +317,9 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None, include_posi
         holding_period_resolver=lambda operands: clean_weighted_holding_days(
             analysis, operands, isin, instrument_type=instrument_type
         ),
+        annual_holding_period_resolver=lambda operands: clean_weighted_holding_days(
+            analysis, operands, isin, instrument_type=instrument_type, include_redemptions=True
+        ),
         inception_proven=opening == 0 and analysis.opening.quantity == 0,
         position_closed=analysis.closing.quantity == 0,
         result_assumptions=("account_money_unattributed",)

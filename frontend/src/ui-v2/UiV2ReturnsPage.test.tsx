@@ -547,6 +547,7 @@ test("a position shows the simple return on invested and annual XIRR instead of 
     invested_kopecks: "100000",
     start_date: "2029-01-10",
     end_date: "2030-05-31",
+    holding_end_date: "2030-02-10",
     holding_days: 506,
     weighted_holding_days: "506.00",
   });
@@ -580,6 +581,10 @@ test("a position shows the simple return on invested and annual XIRR instead of 
   const long = within(section).getByRole("row", { name: /Долгая бумага/ });
   expect(long).toHaveTextContent("+10,0%");
   expect(long).toHaveTextContent("+12,1%");
+  expect(within(long).getAllByRole("cell")[2]).toHaveAttribute(
+    "title",
+    "Владение: 10.01.2029 — 10.02.2030 · выплаты учтены по 31.05.2030",
+  );
   expect(long).not.toHaveTextContent("1 572");
   const short = within(section).getByRole("row", { name: /Короткая бумага/ });
   expect(short).toHaveTextContent("+23,1%");
