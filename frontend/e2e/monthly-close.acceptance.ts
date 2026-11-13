@@ -444,8 +444,8 @@ test("historical months stay exact through reopen, edit, direct review, quotes a
     await expect(quotes).toBeFocused();
     await expect(quotes).toBeInViewport();
     expect(quoteRequests).toBe(0);
-    await page.getByRole("link", { name: "Вернуться к закрытию", exact: true }).click();
-    await expect(page).toHaveURL(`/v2/close?month=${old}&step=market_quotes`);
+    await page.getByRole("link", { name: "← К месяцу", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/v2/close\\?.*month=${old}`));
     await page.goto(`/v2/data/months?month=${old}`);
     const reopened = page
       .getByRole("row")

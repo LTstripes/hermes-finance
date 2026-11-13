@@ -12,6 +12,8 @@ from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import os
+
 import uvicorn
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -87,7 +89,7 @@ def main():
         session.commit()
         session.close()
         app = create_app(database, static_dir=ROOT / "frontend" / "dist")
-        uvicorn.run(app, host="127.0.0.1", port=8000, access_log=False)
+        uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("HERMES_STATEMENT_TEST_PORT", "8000")), access_log=False)
         database.engine.dispose()
 
 

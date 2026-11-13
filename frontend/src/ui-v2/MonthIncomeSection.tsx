@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { formatApiError } from "../api/client";
-import { listIncomes } from "../api/incomes";
+import { listIncomes, updateIncome } from "../api/incomes";
 import { getMonthSummary } from "../api/summary";
 import type { IncomeEntry, SalaryTaxSummary } from "../api/types";
 import { formatRateBps } from "../components/SalaryTaxRateSummary";
@@ -193,6 +193,8 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
   );
 
   const incomes = incomesQuery.isSuccess ? incomesQuery.data : null;
+  const needsConfirmation =
+    incomes?.some((row) => row.actual_fact_origin === "clone_template_v1") ?? false;
   const draft = useMemo(() => (incomes ? formFromIncomes(incomes) : null), [incomes]);
   useEffect(() => {
     if (dirty || !draft) return;
@@ -218,7 +220,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (readOnly || saving || retryBlocked || !dirty) return;
+    if (readOnly || saving || retryBlocked || (!dirty && !needsConfirmation)) return;
     const token = ++operation.current;
     setSaving(true);
     setError(null);
@@ -244,21 +246,31 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
       const expected = expectedFormAfterSave(form, loaded, calcTax);
 
       writesStarted = true;
-      await upsertSalaryLine(monthId, {
-        gross: form.salaryGross,
-        actualNet: form.salaryActualNet,
-        existing: findIncome(loaded, "salary"),
-        calculatedTax: calcTax,
-      });
-      for (const line of SIMPLE_LINES) {
-        await upsertSimpleIncomeLine(monthId, {
-          type: line.type,
-          name: line.name,
-          amount: form[line.key],
-          existing: findIncome(loaded, line.type),
+      if (!dirty && needsConfirmation) {
+        for (const row of loaded.filter((row) => row.actual_fact_origin === "clone_template_v1")) {
+          await updateIncome(row.id, {
+            gross_amount: row.gross_amount,
+            tax_amount: row.tax_amount,
+            net_amount: row.net_amount,
+          });
+          if (operation.current !== token) return;
+        }
+      } else {
+        await upsertSalaryLine(monthId, {
+          gross: form.salaryGross,
+          actualNet: form.salaryActualNet,
+          existing: findIncome(loaded, "salary"),
+          calculatedTax: calcTax,
         });
+        for (const line of SIMPLE_LINES) {
+          await upsertSimpleIncomeLine(monthId, {
+            type: line.type,
+            name: line.name,
+            amount: form[line.key],
+            existing: findIncome(loaded, line.type),
+          });
+        }
       }
-
       // The month switched while the writes were in flight: they belong to the
       // original period, so never confirm them against the newly selected month.
       if (operation.current !== token) return;
@@ -275,8 +287,26 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
       if (freshMonth.status !== "draft") {
         throw new Error("Месяц закрыт во время сохранения. Данные не подтверждены.");
       }
+      if (
+        !dirty &&
+        needsConfirmation &&
+        loaded.some((row) => {
+          const fresh = freshIncomes.find((item) => item.id === row.id);
+          return (
+            !fresh ||
+            ["gross_amount", "tax_amount", "net_amount"].some(
+              (key) =>
+                moneyAmount(fresh[key as "gross_amount"]) !==
+                moneyAmount(row[key as "gross_amount"]),
+            ) ||
+            (row.actual_fact_origin === "clone_template_v1" &&
+              fresh.actual_fact_origin !== "saved_actual_v1")
+          );
+        })
+      )
+        throw new Error("Подтверждение не подтверждено повторной загрузкой.");
       const confirmed = formFromIncomes(freshIncomes);
-      if (!matchesExpected(confirmed, expected)) {
+      if (dirty && !matchesExpected(confirmed, expected)) {
         throw new Error("Сохранение не подтверждено повторной загрузкой данных.");
       }
 
@@ -376,6 +406,9 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
           </>
         ) : (
           <form onSubmit={(event) => void save(event)}>
+            {needsConfirmation && !readOnly ? (
+              <p>Перенесено из другого месяца — подтвердите или измените.</p>
+            ) : null}
             <div className="editor-grid">
               <Field htmlFor="salary-gross" label="Зарплата до вычета налогов">
                 <MonthMoneyInput
@@ -463,9 +496,15 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
                 ).length
               }
             >
-              {!readOnly && (dirty || saving) ? (
+              {!readOnly && (dirty || saving || needsConfirmation) ? (
                 <Button disabled={saving || retryBlocked} type="submit" variant="primary">
-                  {saving ? "Сохраняем…" : context.workspace ? "Сохранить" : "Сохранить доходы"}
+                  {saving
+                    ? "Сохраняем…"
+                    : !dirty && needsConfirmation
+                      ? "Подтвердить без изменений"
+                      : context.workspace
+                        ? "Сохранить"
+                        : "Сохранить доходы"}
                 </Button>
               ) : null}
             </MonthSaveBar>

@@ -14,7 +14,7 @@ export default defineConfig({
     watch: { ignored: ["**/.visual-audit/**", "**/test-results/**"] },
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8000",
+        target: `http://127.0.0.1:${process.env.HERMES_CHROMIUM_TEST_PORT ?? "8000"}`,
         changeOrigin: false,
         // Mocked visual runs have no backend. A request escaping their explicit
         // fixtures must fail locally, never reach an unrelated runtime on 8000.

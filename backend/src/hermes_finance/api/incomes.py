@@ -64,6 +64,8 @@ class SalaryReplace(BaseModel):
 class IncomeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    actual_fact_origin: str | None = None
+
     id: int
     reporting_month_id: int
     income_type: str
@@ -96,6 +98,7 @@ def _money(kopecks: int) -> MoneyValue:
 
 def _response(entry: object) -> IncomeResponse:
     return IncomeResponse(
+        actual_fact_origin=entry.actual_fact_origin,
         id=entry.id,
         reporting_month_id=entry.reporting_month_id,
         income_type=entry.income_type,

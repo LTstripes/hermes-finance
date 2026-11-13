@@ -1693,6 +1693,8 @@ transaction. Notes, dates, recurrence flags and empty updates cannot confirm it.
 The existing all-zero salary **replace/delete** command retains its deletion
 semantics; explicit zero income create/update remains a saved fact.
 
+API income/expense/saving reads expose nullable `actual_fact_origin`; checklist steps expose `has_templates`. The UI confirms copied rows through existing amount writers and readback, preserving explicit zero and salary replace/delete semantics. No writer or Close guard is bypassed. Clone source month identity is not persisted and must not be inferred.
+
 Migration `0064_month_template_provenance` adds nullable origin columns without
 backfilling or changing amounts. Legacy NULL/unknown versions cannot establish
 actual presence for these three families: their old writer did not distinguish

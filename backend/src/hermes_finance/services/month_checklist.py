@@ -22,10 +22,12 @@ from hermes_finance.domain.values import RubleAmount
 from hermes_finance.persistence import (
     BrokerMonthApply,
     ExpenseEntry,
+    IncomeEntry,
     InvestmentCashFlow,
     MonthlyComment,
     PositionSnapshot,
     ReportingMonth,
+    SavingAllocation,
 )
 from hermes_finance.services.close_readiness import CloseReadiness, CloseReadinessItem
 from hermes_finance.services.debts import total_debts
@@ -100,6 +102,7 @@ class ChecklistStep:
     group: ChecklistGroup
     required: bool
     has_saved_facts: bool
+    has_templates: bool
     state: ChecklistState
     attention_count: int
     figure: ChecklistFigure | None
@@ -288,6 +291,18 @@ def build_month_checklist(
                 group=group,
                 required=required,
                 has_saved_facts=has_facts,
+                has_templates=any(
+                    _count(
+                        session, model, month.id, model.actual_fact_origin == "clone_template_v1"
+                    )
+                    for model in (
+                        (IncomeEntry,)
+                        if step_id == "income"
+                        else (ExpenseEntry, SavingAllocation)
+                        if step_id == "budget"
+                        else ()
+                    )
+                ),
                 state=state,
                 attention_count=count,
                 # A figure of an empty section would read as a zero fact.

@@ -347,4 +347,31 @@ describe("native month editor frame", () => {
     expect(input).toHaveValue("123");
     expect(screen.getByTestId("location")).toHaveTextContent("/v2/data/months/7?section=income");
   });
+  it("embedded reread confirms discard, remounts forms and never writes", async () => {
+    const client = createQueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <UiV2MonthEditorPage embeddedMonthId={7} embeddedSection="general" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const field = await screen.findByLabelText("Дата снимка");
+    fireEvent.change(field, { target: { value: "2030-04-27" } });
+    fireEvent.click(screen.getByRole("button", { name: "Перечитать сохранённые данные" }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Отмена" }),
+    );
+    expect(field).toHaveValue("2030-04-27");
+    current = { ...current, snapshot_date: "2030-04-28" };
+    fireEvent.click(screen.getByRole("button", { name: "Перечитать сохранённые данные" }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Перечитать",
+      }),
+    );
+    await waitFor(() => expect(screen.getByLabelText("Дата снимка")).toHaveValue("2030-04-28"));
+    expect(updateMonth).not.toHaveBeenCalled();
+    expect(reopenMonth).not.toHaveBeenCalled();
+  });
 });

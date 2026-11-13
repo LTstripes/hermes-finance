@@ -1,5 +1,5 @@
 import { Component, lazy, type ReactNode, Suspense } from "react";
-import { Navigate, useLocation, useSearchParams } from "react-router";
+import { Navigate, useLocation, useSearchParams, useParams } from "react-router";
 import { ReturnsMonthRedirect } from "./returns/ReturnsMonthRedirect";
 import { validIsin } from "./returns/navigation";
 import { readDisplayNames } from "./returns/dashboard";
@@ -23,7 +23,7 @@ const UiV2DataSourcesPage = lazy(() => import("./UiV2DataSourcesPage"));
 const UiV2DataOverviewPage = lazy(() => import("./UiV2DataOverviewPage"));
 const UiV2SourceIntakePage = lazy(() => import("./UiV2SourceIntakePage"));
 const UiV2MonthsPage = lazy(() => import("./UiV2MonthsPage"));
-const UiV2MonthEditorPage = lazy(() => import("./UiV2MonthEditorPage"));
+
 const UiV2DataCatalogsPage = lazy(() => import("./UiV2DataCatalogsPage"));
 const UiV2DataFilesPage = lazy(() => import("./UiV2DataFilesPage"));
 const UiV2DataAppPage = lazy(() => import("./UiV2DataAppPage"));
@@ -178,11 +178,16 @@ export function UiV2MonthsEntry() {
 }
 
 export function UiV2MonthEditorEntry() {
-  return (
-    <SuspenseFrame>
-      <UiV2MonthEditorPage />
-    </SuspenseFrame>
-  );
+  const { monthId } = useParams();
+  const location = useLocation();
+  const query = new URLSearchParams(location.search);
+  const sections = query.getAll("section");
+  const section =
+    sections.length === 0 ? "general" : sections.length === 1 ? sections[0] : "invalid";
+  query.delete("section");
+  query.set("month", monthId ?? "invalid");
+  query.set("panel", section);
+  return <Navigate replace to={`/v2/close?${query}${location.hash}`} />;
 }
 
 export function UiV2DataCatalogsEntry() {
