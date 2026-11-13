@@ -102,6 +102,7 @@ function hintText(
     const count = step.attention_count;
     return `${countText(count, ["замечание", "замечания", "замечаний"])} ${count === 1 ? "требует" : "требуют"} решения`;
   }
+  if (step.has_templates) return "Перенесено из другого месяца — подтвердите или измените";
   if (step.state === "empty") return "Не заполнено";
   if (step.state === "optional") return "Необязательно";
   const secondary = step.secondary_count;

@@ -1,3 +1,4 @@
+import { makeUiV2Workflow } from "../test/uiV2Fixtures";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +8,8 @@ import { App } from "./App";
 import "../ui-v2/UiV2DataOverviewPage";
 import "../ui-v2/UiV2DataSourcesPage";
 import "../ui-v2/UiV2DataAppPage";
+import "../ui-v2/UiV2ClosePage";
+import "../ui-v2/UiV2MonthsPage";
 
 vi.mock("../ui-v2/UiV2ScenarioLabPage", () => ({
   default: function BrokenScenarioLabPage() {
@@ -93,7 +96,7 @@ describe("App", () => {
     ["/v2/data/reconciliation?month=12", "/v2/data?month=12"],
     ["/reconciliation", "/v2/data"],
     ["/months", "/v2/data/months"],
-    ["/months/7", "/v2/data/months/7"],
+    ["/months/7", "/v2/close?month=7&panel=general"],
     ["/monthly-close", "/v2/close"],
     ["/months/7/close", "/v2/close?month=7"],
     ["/payouts", "/v2/data/payouts"],
@@ -250,7 +253,14 @@ describe("App", () => {
     const month = { ...sampleMonths[0], id: 7 };
 
     function openLegacyMonth(query = "", status = "draft", id = "7") {
+      const selected = { ...month, status: status as "draft" | "closed" };
+      const workflow = makeUiV2Workflow();
+      workflow.month = selected;
+      if (workflow.final_review.available) workflow.final_review.month_header = selected;
       const fetch = mockFetchRouter({
+        "GET /api/months": () => jsonResponse([selected]),
+        "GET /api/months/7/close-workflow?include_checklist=true": () => jsonResponse(workflow),
+        "GET /api/months/7/close-workflow": () => jsonResponse(workflow),
         "GET /api/months/7": () => jsonResponse({ ...month, status }),
         "GET /api/accounts": () => jsonResponse([]),
         "GET /api/instruments?active=true": () => jsonResponse([]),
@@ -269,7 +279,8 @@ describe("App", () => {
     it("keeps positions, return context, raw query and quotes hash across redirect and reload", async () => {
       const query =
         "?section=positions&from=monthly-close-v2&monthId=7&step=market_quotes&extra=keep&extra=a%20b+%2B&month=2#month-quotes";
-      const target = `/v2/data/months/7${query}`;
+      const target =
+        "/v2/close?from=monthly-close-v2&monthId=7&step=market_quotes&extra=keep&extra=a+b+%2B&month=7&panel=positions#month-quotes";
       const view = openLegacyMonth(query);
       const assertEditor = async () => {
         await waitFor(() =>
@@ -278,11 +289,15 @@ describe("App", () => {
           ),
         );
         expect(
-          await screen.findByRole("link", { name: "Позиции", current: "page" }, { timeout: 5_000 }),
+          await screen.findByRole(
+            "link",
+            { name: "Счета и позиции", current: "page" },
+            { timeout: 5_000 },
+          ),
         ).toBeVisible();
-        expect(screen.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
+        expect(screen.getByRole("link", { name: "← К месяцу" })).toHaveAttribute(
           "href",
-          "/v2/close?month=7&step=market_quotes",
+          expect.stringContaining("month=7"),
         );
         await waitFor(() => expect(document.getElementById("month-quotes")).toBeInTheDocument());
         expect(window.location.pathname + window.location.search + window.location.hash).toBe(
@@ -304,7 +319,7 @@ describe("App", () => {
       const { fetch } = openLegacyMonth();
       expect(await screen.findByRole("region", { name: "Общие данные месяца" })).toBeVisible();
       expect(window.location.pathname + window.location.search + window.location.hash).toBe(
-        "/v2/data/months/7",
+        "/v2/close?month=7&panel=general",
       );
       expectOnlyReads(fetch);
     });
@@ -321,7 +336,7 @@ describe("App", () => {
         "Источник:",
       );
       expect(screen.queryByLabelText("Дата снимка")).not.toBeInTheDocument();
-      expect(window.location.search).toBe("?action=reopen");
+      expect(window.location.search).toBe("?action=reopen&month=7&panel=general");
       expectOnlyReads(fetch);
     });
 
@@ -339,11 +354,9 @@ describe("App", () => {
       "leaves invalid or repeated fields untouched for editor validators: %s",
       async (query, invalidSection) => {
         const { fetch } = openLegacyMonth(`${query}#month-quotes`, "closed");
-        await screen.findByRole("heading", { level: 1, name: "Редактор месяца" });
+        await waitFor(() => expect(window.location.pathname).toBe("/v2/close"));
         if (invalidSection) {
-          expect(
-            await screen.findByText("Неизвестный раздел. Выбери раздел редактора."),
-          ).toBeVisible();
+          expect(await screen.findByText("Неизвестный раздел")).toBeVisible();
           expect(
             screen.queryByRole("region", { name: "Общие данные месяца" }),
           ).not.toBeInTheDocument();
@@ -357,23 +370,28 @@ describe("App", () => {
           screen.queryByRole("link", { name: "Вернуться к закрытию" }),
         ).not.toBeInTheDocument();
         expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-        expect(window.location.pathname + window.location.search + window.location.hash).toBe(
-          `/v2/data/months/7${query}#month-quotes`,
-        );
+        expect(window.location.pathname).toBe("/v2/close");
+        expect(window.location.hash).toBe("#month-quotes");
+        const next = new URLSearchParams(window.location.search);
+        expect(next.get("month")).toBe("7");
+        for (const [key] of new URLSearchParams(query)) {
+          if (key !== "section")
+            expect(next.getAll(key)).toEqual(new URLSearchParams(query).getAll(key));
+        }
         expectOnlyReads(fetch);
       },
     );
 
     it.each([
-      ["0", "Некорректный идентификатор месяца."],
-      ["8", "Запрошенный месяц не найден. Выбери месяц из списка явно."],
+      ["0", "Некорректный месяц"],
+      ["8", "Месяц не найден"],
     ])(
       "keeps invalid or missing path ID %s instead of selecting query month",
       async (id, message) => {
         const { fetch } = openLegacyMonth("?month=7", "draft", id);
         expect(await screen.findByText(message)).toBeVisible();
         expect(window.location.pathname + window.location.search).toBe(
-          `/v2/data/months/${id}?month=7`,
+          `/v2/close?month=${id}&panel=general`,
         );
         expect(fetch.mock.calls.some(([url]) => String(url) === "/api/months/7")).toBe(false);
       },
@@ -393,7 +411,7 @@ describe("App", () => {
       await act(async () => window.history.forward());
       await screen.findByRole("region", { name: "Общие данные месяца" });
       expect(window.location.pathname + window.location.search + window.location.hash).toBe(
-        "/v2/data/months/7?section=general#month-quotes",
+        "/v2/close?month=7&panel=general#month-quotes",
       );
       expect(window.history.length).toBe(historyLength);
       expectOnlyReads(fetch);

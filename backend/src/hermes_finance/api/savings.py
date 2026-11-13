@@ -39,6 +39,8 @@ class SavingUpdate(BaseModel):
 class SavingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    actual_fact_origin: str | None = None
+
     id: int
     reporting_month_id: int
     destination: str
@@ -56,6 +58,7 @@ def _money(kopecks: int) -> MoneyValue:
 
 def _response(allocation: object) -> SavingResponse:
     return SavingResponse(
+        actual_fact_origin=allocation.actual_fact_origin,
         id=allocation.id,
         reporting_month_id=allocation.reporting_month_id,
         destination=allocation.destination,

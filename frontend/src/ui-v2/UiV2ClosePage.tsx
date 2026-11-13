@@ -283,7 +283,9 @@ export default function UiV2ClosePage() {
     query.delete("section");
     query.delete("step");
     if (next) query.set("panel", next);
-    return monthId ? monthWorkspacePath(monthId, undefined, query.toString()) : "/v2/close";
+    return monthId
+      ? `${monthWorkspacePath(monthId, undefined, query.toString())}${location.hash}`
+      : "/v2/close";
   };
   useEffect(() => {
     if (selection.kind === "automatic" && selectedMonth)

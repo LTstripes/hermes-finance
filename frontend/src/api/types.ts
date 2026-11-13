@@ -369,6 +369,7 @@ export type PerformanceAttribution = {
 export type IncomeType = "salary" | "bonus" | "side_income" | "cashback" | "other" | string;
 
 export type IncomeEntry = {
+  actual_fact_origin?: string | null;
   id: number;
   reporting_month_id: number;
   income_type: IncomeType;
@@ -1279,6 +1280,7 @@ export type ExpectedFlowCreate = {
 };
 
 export type ExpenseEntry = {
+  actual_fact_origin?: string | null;
   id: number;
   reporting_month_id: number;
   category: string;
@@ -1297,6 +1299,7 @@ export type ExpenseUpdate = {
 };
 
 export type SavingAllocation = {
+  actual_fact_origin?: string | null;
   id: number;
   reporting_month_id: number;
   destination: string;

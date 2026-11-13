@@ -192,6 +192,7 @@ export function useMonthCloseLifecycle(
       assertPersistedMonthIdentity(latest, monthId, latest.status, expectedPeriod);
       if (pendingLifecycle === "close" && latest.status !== "draft") {
         await refetchAuthoritativeWorkflow();
+        await queryClient.invalidateQueries({ queryKey: ["month-editor", monthId] });
         setPendingLifecycle(null);
         setLifecycleError(
           latest.status === "closed"
@@ -202,6 +203,7 @@ export function useMonthCloseLifecycle(
       }
       if (pendingLifecycle === "reopen" && latest.status !== "closed") {
         await refetchAuthoritativeWorkflow();
+        await queryClient.invalidateQueries({ queryKey: ["month-editor", monthId] });
         setPendingLifecycle(null);
         setLifecycleError("Месяц уже открыт для редактирования. Состояние обновлено.");
         return;
@@ -232,6 +234,7 @@ export function useMonthCloseLifecycle(
         predicate: (query) => query.queryKey[0] !== "month-close-workflow",
         refetchType: "none",
       });
+      await queryClient.invalidateQueries({ queryKey: ["month-editor", monthId] });
       setPendingLifecycle(null);
     } catch (error) {
       if (
@@ -243,6 +246,7 @@ export function useMonthCloseLifecycle(
         expectedReadback.current = null;
         setLifecycleRecovery(false);
       }
+      await queryClient.invalidateQueries({ queryKey: ["month-editor", monthId] });
       setPendingLifecycle(null);
       setLifecycleError(formatApiError(error));
       try {

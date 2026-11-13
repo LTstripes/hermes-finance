@@ -290,6 +290,7 @@ class ChecklistStepOut(BaseModel):
     group: Literal["data", "sources", "plan", "close"]
     required: bool
     has_saved_facts: bool
+    has_templates: bool = False
     state: Literal["done", "attention", "empty", "optional"]
     attention_count: int
     figure: ChecklistFigureOut | None
@@ -690,6 +691,7 @@ def _checklist_out(checklist: MonthChecklist) -> MonthChecklistOut:
                 group=step.group,
                 required=step.required,
                 has_saved_facts=step.has_saved_facts,
+                has_templates=step.has_templates,
                 state=step.state,
                 attention_count=step.attention_count,
                 figure=(

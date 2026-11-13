@@ -43,6 +43,8 @@ class ExpenseUpdate(BaseModel):
 class ExpenseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    actual_fact_origin: str | None = None
+
     id: int
     reporting_month_id: int
     category: str
@@ -70,6 +72,7 @@ def _money(kopecks: int) -> MoneyValue:
 
 def _response(entry: object) -> ExpenseResponse:
     return ExpenseResponse(
+        actual_fact_origin=entry.actual_fact_origin,
         id=entry.id,
         reporting_month_id=entry.reporting_month_id,
         category=entry.category,

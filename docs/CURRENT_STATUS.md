@@ -50,6 +50,8 @@ confirmed re-read with form reload. Green CI and copy checks do not establish Ow
 <a id="s3"></a>
 ## 3. Next actions
 
+Local uncommitted candidate `codex/month-draft-reread-20261113` adds explicit clone-template confirmation, confirmed form reread in manual Month panels, and legacy editor redirects. It is not integrated or Owner-accepted; its checks and remaining limits are reported separately. The installed 1.16.0 limitations below remain unchanged.
+
 1. Owner UAT of installed 1.16.0 of the redesigned screens together with the pending UAT of
    1.13.0–1.15.0.
 2. Remaining leftovers: a confirmed re-read action in the month panels before the

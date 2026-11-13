@@ -707,3 +707,57 @@ describe("UiV2MonthBudgetSection readback confirmation", () => {
     expect(screen.queryByText("Расход сохранён и подтверждён.")).not.toBeInTheDocument();
   });
 });
+
+it("confirms copied expenses and savings through amount writers and readback", async () => {
+  const expense = { ...expenseFoodMandatory, actual_fact_origin: "clone_template_v1" };
+  const saving = { ...savingRow, actual_fact_origin: "clone_template_v1" };
+  vi.mocked(listExpenses).mockImplementation(async () => [expense]);
+  vi.mocked(listSavings).mockImplementation(async () => [saving]);
+  vi.mocked(updateExpense).mockImplementation(async () => {
+    expense.actual_fact_origin = "saved_actual_v1";
+    return expense;
+  });
+  vi.mocked(updateSaving).mockImplementation(async () => {
+    saving.actual_fact_origin = "saved_actual_v1";
+    return saving;
+  });
+  const context = contextWith();
+  renderLeaf(context);
+  await userEvent.click(await screen.findByRole("button", { name: "Подтвердить без изменений" }));
+  await waitFor(() => expect(context.refresh).toHaveBeenCalled());
+  expect(updateExpense).toHaveBeenCalledWith(expense.id, { amount: expense.amount });
+  expect(updateSaving).toHaveBeenCalledWith(saving.id, { amount: saving.amount });
+  expect(createExpense).not.toHaveBeenCalled();
+  expect(createSaving).not.toHaveBeenCalled();
+  expect(updatePlannedBudget).not.toHaveBeenCalled();
+  expect(
+    screen.queryByRole("button", { name: "Подтвердить без изменений" }),
+  ).not.toBeInTheDocument();
+});
+
+it.each(["missing", "changed"])(
+  "does not confirm template readback that is %s",
+  async (failure) => {
+    const row = { ...expenseFoodMandatory, actual_fact_origin: "clone_template_v1" };
+    vi.mocked(listExpenses)
+      .mockResolvedValueOnce([row])
+      .mockResolvedValue(
+        failure === "missing"
+          ? []
+          : [
+              {
+                ...row,
+                actual_fact_origin: "saved_actual_v1",
+                amount: { amount: "1.00", currency: "RUB" },
+              },
+            ],
+      );
+    vi.mocked(updateExpense).mockResolvedValue({ ...row, actual_fact_origin: "saved_actual_v1" });
+    const context = contextWith();
+    renderLeaf(context);
+    await userEvent.click(await screen.findByRole("button", { name: "Подтвердить без изменений" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Правка не подтверждена");
+    expect(context.refresh).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Подтвердить без изменений" })).toBeInTheDocument();
+  },
+);

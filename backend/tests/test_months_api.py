@@ -628,3 +628,52 @@ def test_payout_counts_follow_payouts_and_the_calendar(
     payouts = _checklist_steps(_checklist_workflow(client, month_id))["payouts"]
     assert payouts["figure"]["count"] == 1
     assert payouts["secondary_count"] == 1
+
+
+def test_cloned_templates_require_explicit_unchanged_amount_confirmation(
+    client: TestClient,
+) -> None:
+    source = client.post(
+        "/api/months", json={"year": 2040, "month": 1, "snapshot_date": "2040-01-31"}
+    ).json()
+    money = {"amount": "123.45", "currency": "RUB"}
+    created = client.post(
+        "/api/expenses",
+        json={
+            "reporting_month_id": source["id"],
+            "category": "Synthetic",
+            "amount": money,
+            "expense_type": "mandatory",
+            "is_recurring": True,
+        },
+    )
+    assert created.status_code == 201
+    clone = client.post(
+        f"/api/months/{source['id']}/clone",
+        json={"year": 2040, "month": 2, "snapshot_date": "2040-02-29"},
+    )
+    assert clone.status_code == 201
+    mid = clone.json()["id"]
+
+    def budget() -> dict:
+        response = client.get(f"/api/months/{mid}/close-workflow?include_checklist=true")
+        assert response.status_code == 200
+        return next(
+            step for step in response.json()["checklist"]["steps"] if step["id"] == "budget"
+        )
+
+    assert budget()["has_templates"] is True
+    assert budget()["has_saved_facts"] is False
+    row = client.get(f"/api/expenses?month_id={mid}").json()[0]
+    assert row["actual_fact_origin"] == "clone_template_v1"
+    assert (
+        client.patch(f"/api/expenses/{row['id']}", json={"notes": "Synthetic note"}).status_code
+        == 200
+    )
+    assert budget()["has_saved_facts"] is False
+    confirmed = client.patch(f"/api/expenses/{row['id']}", json={"amount": row["amount"]})
+    assert confirmed.status_code == 200
+    assert confirmed.json()["amount"] == money
+    assert confirmed.json()["actual_fact_origin"] == "saved_actual_v1"
+    assert budget()["has_templates"] is False
+    assert budget()["has_saved_facts"] is True

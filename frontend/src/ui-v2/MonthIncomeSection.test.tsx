@@ -831,3 +831,29 @@ describe("native month editor income leaf", () => {
     expect(within(section).queryByRole("alert")).not.toBeInTheDocument();
   });
 });
+
+it("confirms a copied zero salary without invoking the salary deletion command", async () => {
+  store = [entry({ id: 1, income_type: "salary", actual_fact_origin: "clone_template_v1" })];
+  vi.mocked(updateIncome).mockImplementation(async (id, payload) => {
+    const row = store.find((item) => item.id === id);
+    if (!row) throw new Error("missing");
+    Object.assign(row, payload, { actual_fact_origin: "saved_actual_v1" });
+    return cloneEntry(row);
+  });
+  renderSection();
+  await userEvent.click(await screen.findByRole("button", { name: "Подтвердить без изменений" }));
+  await waitFor(() =>
+    expect(updateIncome).toHaveBeenCalledWith(1, {
+      gross_amount: money("0.00"),
+      tax_amount: money("0.00"),
+      net_amount: money("0.00"),
+    }),
+  );
+  expect(replaceSalaryIncome).not.toHaveBeenCalled();
+  expect(deleteIncome).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Подтвердить без изменений" }),
+    ).not.toBeInTheDocument(),
+  );
+});

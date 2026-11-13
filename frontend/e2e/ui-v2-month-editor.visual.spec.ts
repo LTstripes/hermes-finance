@@ -338,7 +338,7 @@ for (const outcome of ["success", "expired", "ambiguous"] as const) {
       });
     });
     await page.goto("/v2/data/months/7?section=positions#month-quotes");
-    await expect(page.getByRole("heading", { name: "Позиции", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Счета и позиции", exact: true })).toBeVisible();
     expect(previewCalls).toBe(0);
     expect(applyCalls).toBe(0);
     expect(calls.every((call) => call.startsWith("GET "))).toBe(true);
@@ -476,13 +476,14 @@ test("browser Back keeps an unsaved month until the user confirms", async ({ pag
   await page.goto("/v2/data/months");
   await page.goto("/v2/data/months/7");
   await expect(page.getByLabel("Дата снимка")).toHaveCount(0);
-  await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-  await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+  await page.getByRole("button", { name: "Действия месяца" }).click();
+  await page.getByRole("menuitem", { name: "Открыть месяц заново" }).click();
+  await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
   await page.getByLabel("Дата снимка").fill("2030-04-29");
   page.once("dialog", (dialog) => void dialog.dismiss());
   await page.evaluate(() => window.history.back());
   await expect(page.getByLabel("Дата снимка")).toHaveValue("2030-04-29");
-  await expect(page).toHaveURL(/\/v2\/data\/months\/7$/);
+  await expect(page).toHaveURL(/\/v2\/close\?month=7&panel=general$/);
   page.once("dialog", (dialog) => void dialog.accept());
   await page.evaluate(() => window.history.back());
   await expect(page).toHaveURL(/\/v2\/data\/months$/);
@@ -492,11 +493,12 @@ test("saving removes the history guard and Back returns to the month list", asyn
   await installApi(page);
   await page.goto("/v2/data/months");
   await page.goto("/v2/data/months/7");
-  await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-  await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+  await page.getByRole("button", { name: "Действия месяца" }).click();
+  await page.getByRole("menuitem", { name: "Открыть месяц заново" }).click();
+  await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
   await page.getByLabel("Дата снимка").fill("2030-04-29");
   await page.getByRole("button", { name: "Сохранить общие данные" }).click();
-  await expect(page.getByText("Общие данные сохранены и подтверждены.")).toBeVisible();
+  await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.history.state?.monthEditorDirtyGuard ?? null))
     .toBeNull();
@@ -512,17 +514,20 @@ for (const width of [1280]) {
       await page.setViewportSize({ width, height: 900 });
       const calls = await installApi(page);
       await page.goto("/v2/data/months/7?from=monthly-close-v2&monthId=7&step=month_setup");
-      await expect(page.getByRole("heading", { level: 1, name: "Редактор месяца" })).toBeVisible();
-      await expect(page.getByTestId("data-month-context").getByText("Апрель 2030")).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Апрель 2030" })).toBeVisible();
+      await expect(
+        page.getByRole("main").getByText("Апрель 2030", { exact: true }).first(),
+      ).toBeVisible();
       await expect(page.getByLabel("Дата снимка")).toHaveCount(0);
-      await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
+      await expect(page.getByRole("link", { name: "← К месяцу" })).toHaveAttribute(
         "href",
-        "/v2/close?month=7&step=month_setup",
+        expect.stringContaining("month=7"),
       );
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("A");
-      await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-      await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+      await page.getByRole("button", { name: "Действия месяца" }).click();
+      await page.getByRole("menuitem", { name: "Открыть месяц заново" }).click();
+      await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
       await expect(page.getByLabel("Дата снимка")).toBeEnabled();
       expect(calls.filter((call) => call === "GET /api/months/7").length).toBeGreaterThanOrEqual(2);
       expect(calls).toContain("POST /api/months/7/reopen");
@@ -538,12 +543,12 @@ for (const width of [1280]) {
 }
 
 const leaves = [
-  ["income", "Зарплата и прочее", "Зарплата и прочее"],
-  ["assets", "Активы", "Депозиты"],
-  ["positions", "Позиции", "Позиции"],
-  ["payouts", "Выплаты", "Фактические выплаты"],
-  ["budget", "Бюджет", "Расходы"],
-  ["liabilities", "Долги и недвижимость", "Долги"],
+  ["income", "Зарплата и другие доходы", "Зарплата и другие доходы"],
+  ["assets", "Депозиты, накопления и деньги", "Депозиты, накопления и деньги"],
+  ["positions", "Счета и позиции", "Счета и позиции"],
+  ["payouts", "Выплаты", "Выплаты"],
+  ["budget", "Расходы и план", "Расходы и план"],
+  ["liabilities", "Долги, кредитка и недвижимость", "Долги, кредитка и недвижимость"],
 ] as const;
 
 for (const [id, , heading] of leaves) {
@@ -551,13 +556,11 @@ for (const [id, , heading] of leaves) {
     const calls = await installApi(page);
     await page.goto(`/v2/data/months/7?section=${id}`);
     if (id === "assets" || id === "liabilities") {
-      await expect(
-        page.getByRole("heading", { name: "Редактор месяца", exact: true }),
-      ).toBeVisible();
-      await expect(page.getByRole("heading", { name: heading, exact: true })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Апрель 2030", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
       await expect(page.getByRole("table")).toHaveCount(0);
     } else await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
-    await expect(page.getByTestId("data-month-context")).toContainText("Апрель 2030");
+    await expect(page.getByRole("main")).toContainText("Апрель 2030");
     if (testInfo.project.name === "1920x1080") {
       expect(
         await page
@@ -585,10 +588,11 @@ for (const width of [1280]) {
       await page.goto(
         "/v2/data/months/7?from=monthly-close-v2&monthId=7&step=month_setup&extra=keep#editor",
       );
-      await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-      await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+      await page.getByRole("button", { name: "Действия месяца" }).click();
+      await page.getByRole("menuitem", { name: "Открыть месяц заново" }).click();
+      await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
       await expect(page.getByLabel("Дата снимка")).toBeEnabled();
-      const tabs = page.getByRole("navigation", { name: "Разделы редактора месяца" });
+      const tabs = page.getByRole("navigation", { name: "Разделы месяца" });
       for (const [id, label, heading] of leaves) {
         await tabs.getByRole("link", { name: label, exact: true }).focus();
         await page.keyboard.press("Enter");
@@ -606,28 +610,28 @@ for (const width of [1280]) {
         if (id === "liabilities") await page.getByText("+ Добавить долг", { exact: true }).click();
         await expect(page.getByLabel(writeField, { exact: true })).toBeEnabled();
         const url = new URL(page.url());
-        expect(url.pathname).toBe("/v2/data/months/7");
-        expect(url.searchParams.get("section")).toBe(id);
+        expect(url.pathname).toBe("/v2/close");
+        expect(url.searchParams.get("panel")).toBe(id);
         expect(url.searchParams.get("extra")).toBe("keep");
         expect(url.hash).toBe("#editor");
-        await expect(page.getByRole("link", { name: "Вернуться к закрытию" })).toHaveAttribute(
+        await expect(page.getByRole("link", { name: "← К месяцу" })).toHaveAttribute(
           "href",
-          "/v2/close?month=7&step=month_setup",
+          expect.stringContaining("month=7"),
         );
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
         ).toBe(true);
         await page.screenshot({ path: testInfo.outputPath(`${id}-${width}.png`), fullPage: true });
       }
-      await tabs.getByRole("link", { name: "Бюджет", exact: true }).click();
+      await tabs.getByRole("link", { name: "Расходы и план", exact: true }).click();
       await page.getByLabel("Категория расхода", { exact: true }).fill("Синтетический расход");
       await page.getByLabel("Сумма расхода", { exact: true }).fill("123.45");
-      await tabs.getByRole("link", { name: "Активы", exact: true }).click();
+      await tabs.getByRole("link", { name: "Депозиты, накопления и деньги", exact: true }).click();
       await expect(page.getByRole("alertdialog")).toBeVisible();
       await page.getByRole("button", { name: "Остаться", exact: true }).click();
       await expect(page.getByLabel("Сумма расхода", { exact: true })).toHaveValue("123,45");
       await page.getByRole("button", { name: "Добавить расход", exact: true }).click();
-      await expect(page.getByText("Расход сохранён и подтверждён.")).toBeVisible();
+      await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
       const write = calls.indexOf("POST /api/expenses");
       expect(write).toBeGreaterThan(-1);
       expect(calls.slice(write + 1)).toContain("GET /api/expenses");
@@ -642,8 +646,8 @@ for (const width of [1280]) {
         path: testInfo.outputPath(`budget-readback-${width}.png`),
         fullPage: true,
       });
-      await tabs.getByRole("link", { name: "Активы", exact: true }).click();
-      await tabs.getByRole("link", { name: "Бюджет", exact: true }).click();
+      await tabs.getByRole("link", { name: "Депозиты, накопления и деньги", exact: true }).click();
+      await tabs.getByRole("link", { name: "Расходы и план", exact: true }).click();
       await expect(
         page.getByRole("cell", { name: "Синтетический расход", exact: true }),
       ).toBeVisible();
@@ -655,7 +659,7 @@ test("invalid and duplicate sections fail closed", async ({ page }) => {
   await installApi(page);
   for (const query of ["section=unknown", "section=income&section=budget", "section=constructor"]) {
     await page.goto(`/v2/data/months/7?${query}`);
-    await expect(page.getByText("Неизвестный раздел. Выбери раздел редактора.")).toBeVisible();
+    await expect(page.getByText("Неизвестный раздел")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Зарплата и прочее", exact: true })).toHaveCount(
       0,
     );
@@ -666,21 +670,24 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
   await installApi(page);
   await page.goto("/v2/data/months");
   await page.goto("/v2/data/months/7");
-  await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-  await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+  await page.getByRole("button", { name: "Действия месяца" }).click();
+  await page.getByRole("menuitem", { name: "Открыть месяц заново" }).click();
+  await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
   await page
-    .getByRole("navigation", { name: "Разделы редактора месяца" })
-    .getByRole("link", { name: "Бюджет", exact: true })
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: "Расходы и план", exact: true })
     .click();
   await page.getByLabel("Категория расхода", { exact: true }).fill("Черновик");
-  expect(
-    await page.evaluate(() => {
-      const event = new Event("beforeunload", { cancelable: true });
-      window.dispatchEvent(event);
-      return event.defaultPrevented;
-    }),
-  ).toBe(true);
-  await page.getByRole("link", { name: "← Отчётные месяцы" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      }),
+    )
+    .toBe(true);
+  await page.getByRole("link", { name: "← К месяцу" }).click();
   await page.getByRole("button", { name: "Остаться", exact: true }).click();
   page.once("dialog", (dialog) => void dialog.dismiss());
   await page.evaluate(() => window.history.back());
@@ -689,13 +696,13 @@ test("dirty leaf guards link, tab, beforeunload and browser Back", async ({ page
   await page.evaluate(() => window.history.back());
   await expect(page.getByLabel("Дата снимка")).toBeVisible();
   await page
-    .getByRole("navigation", { name: "Разделы редактора месяца" })
-    .getByRole("link", { name: "Бюджет", exact: true })
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: "Расходы и план", exact: true })
     .click();
   await page.getByLabel("Категория расхода", { exact: true }).fill("Отбросить");
   await page
-    .getByRole("navigation", { name: "Разделы редактора месяца" })
-    .getByRole("link", { name: "Активы", exact: true })
+    .getByRole("navigation", { name: "Разделы месяца" })
+    .getByRole("link", { name: "Депозиты, накопления и деньги", exact: true })
     .click();
   await page.getByRole("button", { name: "Перейти без сохранения", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Депозиты", exact: true })).toBeVisible();
@@ -742,11 +749,12 @@ for (const width of [1280]) {
 
       await page.goto("/v2/data/months");
       await page.goto("/v2/data/months/7");
-      await page.getByRole("button", { name: "Открыть для редактирования" }).click();
-      await page.getByRole("button", { name: "Открыть месяц", exact: true }).click();
+      await page.getByRole("button", { name: "Действия месяца" }).click();
+      await page.getByRole("menuitem", { name: "Открыть месяц заново" }).click();
+      await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
       await page
-        .getByRole("navigation", { name: "Разделы редактора месяца" })
-        .getByRole("link", { name: "Долги и недвижимость", exact: true })
+        .getByRole("navigation", { name: "Разделы месяца" })
+        .getByRole("link", { name: "Долги, кредитка и недвижимость", exact: true })
         .click();
       await expect(page.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
 
@@ -938,7 +946,7 @@ async function installMonthUx(page: Page, status = "draft") {
 
 async function expectNoTableOverflow(page: Page) {
   const geometry = await page
-    .locator("main .table-wrap")
+    .locator("main .table-wrap:visible")
     .evaluateAll((nodes) =>
       nodes.map((node) => ({ width: node.clientWidth, scroll: node.scrollWidth })),
     );
@@ -1070,7 +1078,9 @@ test("ui-v2 Month UX positions payouts property desktop 100 and 125 percent @vie
       await page.evaluate((scale) => {
         document.documentElement.style.zoom = String(scale);
       }, zoom);
-      await expect(page.getByRole("heading", { name: "Позиции", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Счета и позиции", exact: true }),
+      ).toBeVisible();
       await expect(
         page.getByRole("columnheader", { name: "Результат, ₽", exact: true }),
       ).toBeVisible();

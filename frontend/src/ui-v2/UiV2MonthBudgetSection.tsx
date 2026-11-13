@@ -392,6 +392,71 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     );
   }
 
+  const templates = [...expenses, ...savings].filter(
+    (row) => row.actual_fact_origin === "clone_template_v1",
+  );
+  async function confirmTemplates() {
+    if (readOnly || busy || localDirty || !templates.length) return;
+    const expenseTemplates = expenses.filter(
+      (row) => row.actual_fact_origin === "clone_template_v1",
+    );
+    const savingTemplates = savings.filter((row) => row.actual_fact_origin === "clone_template_v1");
+    const token = ++operation.current;
+    setBusy(true);
+    setActionError(null);
+    try {
+      for (const row of expenseTemplates) {
+        await updateExpense(row.id, { amount: row.amount });
+        if (isStale(token, monthId)) return;
+      }
+      for (const row of savingTemplates) {
+        await updateSaving(row.id, { amount: row.amount });
+        if (isStale(token, monthId)) return;
+      }
+      const snapshot = await refetchBudget(monthId);
+      if (isStale(token, monthId)) return;
+      if (
+        [...snapshot.expenses, ...snapshot.savings].some(
+          (row) => row.actual_fact_origin === "clone_template_v1",
+        )
+      )
+        throw new Error("Подтверждение не подтверждено повторной загрузкой.");
+      for (const row of expenseTemplates) {
+        const fresh = snapshot.expenses.find((item) => item.id === row.id);
+        if (
+          !fresh ||
+          fresh.actual_fact_origin !== "saved_actual_v1" ||
+          !expenseMatches(fresh, {
+            category: row.category,
+            expense_type: row.expense_type,
+            amount: moneyAmount(row.amount),
+            notes: row.notes ?? "",
+          })
+        )
+          throw staleRowError("expense", row.id);
+      }
+      for (const row of savingTemplates) {
+        const fresh = snapshot.savings.find((item) => item.id === row.id);
+        if (
+          !fresh ||
+          fresh.actual_fact_origin !== "saved_actual_v1" ||
+          !savingMatches(fresh, {
+            destination: row.destination,
+            amount: moneyAmount(row.amount),
+            notes: row.notes ?? "",
+          })
+        )
+          throw staleRowError("saving", row.id);
+      }
+      installSnapshot(snapshot);
+      await refreshMonthChecked(token, monthId);
+    } catch (cause) {
+      if (!isStale(token, monthId)) setActionError(formatApiError(cause));
+    } finally {
+      if (!isStale(token, monthId)) setBusy(false);
+    }
+  }
+
   async function addExpense(event: FormEvent) {
     event.preventDefault();
     if (readOnly || busy) return;
@@ -796,6 +861,18 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
       ) : null}
       {notice ? <p role="status">{context.workspace ? "Сохранено" : notice}</p> : null}
 
+      {!readOnly && templates.length > 0 ? (
+        <div>
+          <p>Перенесено из другого месяца — подтвердите или измените.</p>
+          <button
+            type="button"
+            disabled={busy || localDirty}
+            onClick={() => void confirmTemplates()}
+          >
+            Подтвердить без изменений
+          </button>
+        </div>
+      ) : null}
       <section aria-label="Расходы месяца" className={styles.panel}>
         {!context.workspace && <h2>Расходы</h2>}
         {(

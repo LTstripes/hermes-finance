@@ -239,6 +239,7 @@ export type MonthChecklistStep = {
   group: "data" | "sources" | "plan" | "close";
   required: boolean;
   has_saved_facts: boolean;
+  has_templates?: boolean;
   state: "done" | "attention" | "empty" | "optional";
   attention_count: number;
   figure: {

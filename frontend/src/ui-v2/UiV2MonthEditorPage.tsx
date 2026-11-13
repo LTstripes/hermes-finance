@@ -113,6 +113,7 @@ export default function UiV2MonthEditorPage({
     [],
   );
   const pending = Object.values(pendingSections).some(Boolean);
+  const [confirmReread, setConfirmReread] = useState(false);
   const [rereadNotice, setRereadNotice] = useState<string | null>(null);
   const [rereadVersion, setRereadVersion] = useState(0);
   const [rereading, setRereading] = useState(false);
@@ -181,7 +182,8 @@ export default function UiV2MonthEditorPage({
     : null;
 
   async function rereadSavedData() {
-    if (!month || dirty || rereading || monthQuery.isFetching) return;
+    if (!month || pending || rereading || monthQuery.isFetching) return;
+    setConfirmReread(false);
     const token = ++rereadOperation.current;
     const scope = location.key;
     const active = () => token === rereadOperation.current && rereadScope.current === scope;
@@ -195,7 +197,18 @@ export default function UiV2MonthEditorPage({
         result.data.id === month.id &&
         result.data.year === month.year &&
         result.data.month === month.month;
-      if (confirmed) setRereadVersion((value) => value + 1);
+      if (confirmed) {
+        setDirtySections({});
+        setRereadVersion((value) => value + 1);
+        if (embedded) {
+          queryClient.setQueryData<ReportingMonth[]>(queryKeys.months, (rows) =>
+            rows?.map((row) => (row.id === result.data.id ? result.data : row)),
+          );
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.monthCloseWorkflow(monthId as number),
+          });
+        }
+      }
       setRereadNotice(
         confirmed
           ? "Сведения о месяце перечитаны. Сохранённые данные раздела загружаются заново."
@@ -250,6 +263,25 @@ export default function UiV2MonthEditorPage({
           </button>
         </div>
       )}
+      {embedded ? (
+        <button
+          type="button"
+          disabled={!month || pending || rereading || monthQuery.isFetching}
+          onClick={() => setConfirmReread(true)}
+        >
+          Перечитать сохранённые данные
+        </button>
+      ) : null}
+      <ConfirmDialog
+        open={confirmReread}
+        title="Перечитать сохранённые данные?"
+        description="Несохранённые изменения будут отброшены. Формы загрузятся заново."
+        confirmLabel="Перечитать"
+        cancelLabel="Отмена"
+        busy={rereading}
+        onCancel={() => setConfirmReread(false)}
+        onConfirm={() => void rereadSavedData()}
+      />
       {rereadNotice ? <p role="status">{rereadNotice}</p> : null}
       {!onNavigationStateChange && (
         <MonthNavigationGuard
@@ -382,9 +414,7 @@ function GeneralSection({
   const [baseline, setBaseline] = useState(month.snapshot_date);
   const [saving, setSaving] = useState(false);
   const [reopening, setReopening] = useState(false);
-  const [confirmReopen, setConfirmReopen] = useState(
-    requestReopen && readOnly && !context.workspace,
-  );
+  const [confirmReopen, setConfirmReopen] = useState(requestReopen && readOnly);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const operation = useRef(0);
