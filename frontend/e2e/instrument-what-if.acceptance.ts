@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("parent focus read invalidates late hypothetical response after synthetic payout retraction", async ({
+test("focus preserves evidence; explicit read invalidates late hypothetical response after payout retraction", async ({
   page,
   request,
 }, info) => {
@@ -51,8 +51,10 @@ test("parent focus read invalidates late hypothetical response after synthetic p
   const heldB = new Promise<void>((resolve) => {
     releaseB = resolve;
   });
+  let evidenceReads = 0;
   const eod = `**/api/instruments/${stock.id}/eod-observations?**`;
   await page.route(eod, async (route) => {
+    evidenceReads++;
     const response = await route.fetch();
     const body = await response.json();
     // Change only the synthetic network response; never write a source receipt or database.
@@ -76,8 +78,16 @@ test("parent focus read invalidates late hypothetical response after synthetic p
       delete (document as unknown as Record<string, unknown>).visibilityState;
     });
   await focusRefresh();
+  // Allow the visibility listener and query notifications to settle: focus is
+  // deliberately not an authority refresh. The explicit native action is.
+  await page.waitForTimeout(300);
+  expect(evidenceReads).toBe(0);
+  await expect(parent.getByTestId("known-payouts-result")).toBeVisible();
+  await expect(panel).toBeVisible();
+  await read.click();
   await expect(parent.getByText("Проверяем записи и текущие подтверждения…")).toBeVisible();
   await expect(panel).toHaveCount(0);
+  expect(evidenceReads).toBe(1);
   releaseB();
   await expect(parent.getByText(/Записей не обнаружено/)).toBeVisible();
   for (const checkbox of await panel.getByRole("checkbox").all())
@@ -86,7 +96,7 @@ test("parent focus read invalidates late hypothetical response after synthetic p
   await finishedA;
   await expect(parent.getByText(/Условно:/)).toHaveCount(0);
   expect(evaluations).toBe(1);
-  await parent.screenshot({ path: info.outputPath("focus-retracted-payout-late-a-1440.png") });
+  await parent.screenshot({ path: info.outputPath("explicit-retracted-payout-late-a-1440.png") });
 
   await page.unroute(conditional);
   await page.unroute(eod);
@@ -103,10 +113,14 @@ test("parent focus read invalidates late hypothetical response after synthetic p
     }),
   );
   await focusRefresh();
+  await expect(panel.getByText("Условно: +50,00 ₽ / +5% за период")).toBeVisible();
+  await read.click();
   await expect(parent.getByText("Не удалось проверить выплаты. Повторите чтение.")).toBeVisible();
   await expect(parent.getByText(/Условно:/)).toHaveCount(0);
   await expect(panel).toHaveCount(0);
-  await parent.screenshot({ path: info.outputPath("focus-failed-refresh-no-scenario-1440.png") });
+  await parent.screenshot({
+    path: info.outputPath("explicit-failed-refresh-no-scenario-1440.png"),
+  });
   expect(errors).toEqual([]);
 });
 

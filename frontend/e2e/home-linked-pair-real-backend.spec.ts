@@ -59,7 +59,9 @@ test("Home linked pair: real backend correction, reclose and readback", async ({
     await write(`/months/${month.id}/close`, {}, "POST", 200);
   }
   await page.goto("/v2");
-  await expect(page.getByText(/Для части счетов нет явной связи/)).toBeVisible();
+  await page.getByRole("button", { name: "Почему часть счетов не объединена" }).click();
+  await expect(page.getByRole("tooltip")).toContainText("Для части счетов нет явной связи");
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("v2-capital-change")).toHaveText("0 ₽");
   await write(`/months/${months[0].id}/reopen`, {}, "POST", 200);
   await write(`/debts/${debts[0].id}/linked-account`, { account_id: account.id }, "PUT", 200);
@@ -67,7 +69,9 @@ test("Home linked pair: real backend correction, reclose and readback", async ({
   await page.reload();
   const summary = page.locator("summary").filter({ hasText: "Synthetic Home linked account" });
   await expect(summary).toHaveCount(1);
-  await expect(page.getByText(/Для части счетов нет явной связи/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Почему часть счетов не объединена" })).toHaveCount(
+    0,
+  );
   await summary.click();
   await expect(page.getByText(/счёт 100\s*₽/)).toBeVisible();
   await expect(page.getByText(/счёт 40\s*₽/)).toBeVisible();
@@ -77,6 +81,8 @@ test("Home linked pair: real backend correction, reclose and readback", async ({
   await write(`/months/${months[0].id}/close`, {}, "POST", 200);
   await page.reload();
   await expect(summary).toHaveCount(0);
-  await expect(page.getByText(/Для части счетов нет явной связи/)).toBeVisible();
+  await page.getByRole("button", { name: "Почему часть счетов не объединена" }).click();
+  await expect(page.getByRole("tooltip")).toContainText("Для части счетов нет явной связи");
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("v2-capital-change")).toHaveText("0 ₽");
 });

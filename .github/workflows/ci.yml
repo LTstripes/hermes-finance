@@ -354,6 +354,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts --project=chromium --retries=0
 
+      - name: Run home linked-pair real-backend journey
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- home-linked-pair-real-backend.spec.ts --project=chromium --retries=0
+
       - name: Build native frontend for retained acceptance journeys
         working-directory: frontend
         run: npm run build
@@ -388,6 +394,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e -- --project=instrument-uat
 
+      - name: Run conditional instrument return and stale evidence protection
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- --project=instrument-what-if
+
       - name: Run read-only two-account bond source desktop journey
         env:
           TMPDIR: ${{ runner.temp }}
@@ -414,6 +426,7 @@ jobs:
             ${{ runner.temp }}/hermes-broker-month-playwright
             ${{ runner.temp }}/hermes-provisional-playwright
             ${{ runner.temp }}/hermes-instrument-uat-playwright
+            ${{ runner.temp }}/hermes-instrument-what-if-playwright
             ${{ runner.temp }}/hermes-bond-source-playwright
           if-no-files-found: warn
 
