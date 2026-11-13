@@ -57,7 +57,7 @@ def _unordered_buys_resolve_as_a_group(group, prefix, by_day):
             sales = [
                 row
                 for row in by_day[day]
-                if row[0].kind == "SELL"
+                if row[0].kind in {"SELL", "REDEMPTION"}
                 and (
                     day > group[0][1]
                     or (group[0][2] is not None and row[2] is not None and row[2] > group[0][2])
@@ -159,15 +159,25 @@ def clean_purchase_price_contributions(analysis, clean, isin, *, instrument_type
     )
 
 
-def clean_weighted_holding_days(analysis, clean, isin, *, instrument_type):
+def clean_weighted_holding_days(
+    analysis, clean, isin, *, instrument_type, include_redemptions=False
+):
     """Use only the complete existing FIFO match, never observed-lot fallback."""
+    if include_redemptions and (clean.redemption.value is None or clean.redemption.reason_codes):
+        return None
     result = _fifo_purchase_price_contributions(
-        analysis, clean, isin, instrument_type=instrument_type
+        analysis,
+        clean,
+        isin,
+        instrument_type=instrument_type,
+        include_redemptions=include_redemptions,
     )
     return result[1] if result is not None else None
 
 
-def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type):
+def _fifo_purchase_price_contributions(
+    analysis, clean, isin, *, instrument_type, include_redemptions=False
+):
     """FIFO price/sale contributions, exclusive of payouts and all costs.
 
     A zero opening inventory and complete source/quantity evidence are needed.
@@ -255,9 +265,25 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             continue
         if reconciled and (event.isin is None or event.kind == "UNRESOLVED"):
             continue
+        redemption = include_redemptions and event.kind == "REDEMPTION"
+        if redemption and (
+            instrument_type != "bond"
+            or analysis.closing.quantity != 0
+            or clean.closing_value.value != 0
+            or clean.redemption.reason_codes
+            or event.attribution_basis != "analytical_full_redemption"
+            or not event.counted
+            or event.reason_codes
+            or event.event_date is None
+            or event.depository_settlement_date != event.event_date
+            or len(event.cash_legs) != 1
+            or event.cash_legs[0].role != "redemption"
+            or event.cash_legs[0].account_cash_kopecks <= 0
+        ):
+            return None
         if (
             event.isin != isin
-            or event.kind not in {"BUY", "SELL"}
+            or (event.kind not in {"BUY", "SELL"} and not redemption)
             or not event.current
             or (
                 not event.counted
@@ -280,6 +306,12 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         settlement = clean_trade_date(event)
         amount = trade_amount_with_nkd(event) if event.counted or cost_only_trade(event) else None
         day, instant = _execution(event)
+        if redemption:
+            # The existing source recognizer owns identity, cancellation and
+            # cash. A date-only disposal gains no invented intraday order.
+            day, instant = event.depository_settlement_date, None
+            settlement = event.cash_legs[0].date
+            amount = event.cash_legs[0].account_cash_kopecks
         q = event.quantity_delta
         if (
             q is None
@@ -351,7 +383,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
         context.prec = 200
         lots = []
         buy_sum = sell_sum = 0
-        last_sale_day = max((row[1] for row in trades if row[0].kind == "SELL"), default=None)
+        last_sale_day = max((row[1] for row in trades if row[0].kind != "BUY"), default=None)
         for index, (event, day, _instant, settlement, q, amount) in enumerate(trades):
             if ambiguous_at is not None and index >= ambiguous_at:
                 if index == ambiguous_at:
@@ -359,7 +391,7 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
                         if lot["remaining"]:
                             lot["remaining"] = None
                             if repo_barrier is None or any(
-                                t[0].kind == "SELL" for t in trades[index:]
+                                t[0].kind != "BUY" for t in trades[index:]
                             ):
                                 lot["proceeds"] = None
                 if event.kind == "BUY":
@@ -399,6 +431,10 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             if amount is not None:
                 sell_sum += amount
             pending = -q
+            if event.kind == "REDEMPTION" and pending != sum(
+                (lot["remaining"] for lot in lots), Decimal(0)
+            ):
+                return None
             consumed = []
             for lot in lots:
                 part = min(pending, lot["remaining"])
@@ -445,7 +481,8 @@ def _fifo_purchase_price_contributions(analysis, clean, isin, *, instrument_type
             or (
                 ambiguous_at is None
                 and clean.sells.status == "supported"
-                and sell_sum != clean.sells.value
+                and sell_sum
+                != clean.sells.value + (clean.redemption.value if include_redemptions else 0)
             )
         ):
             return None

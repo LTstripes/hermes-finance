@@ -1051,6 +1051,212 @@ def test_fifo_closed_position_does_not_age_until_report_end(days):
     assert (result.xirr.value is not None) == (days >= 365)
 
 
+def redeemed_analysis(days=400, *, late_coupon=True):
+    first = date(2028, 1, 2)
+    end = first + timedelta(days=days)
+    purchase = replace(
+        buy("lot", 102000, "1", first),
+        accrued_interest_kopecks=2000,
+        native_total_basis="includes_paid_nkd",
+    )
+    redemption = replace(
+        cash("REDEMPTION", 100000),
+        isin=ISIN,
+        event_date=end,
+        depository_settlement_date=end,
+        quantity_delta=Decimal(-1),
+        attribution_basis="analytical_full_redemption",
+        cash_legs=(CashLeg("redemption", end + timedelta(days=2), 100000, -100000, ("r",), "r"),),
+    )
+    paid = end + timedelta(days=3) if late_coupon else end
+    coupon = replace(
+        cash("COUPON", 15000),
+        isin=ISIN,
+        event_date=end,
+        cash_legs=(CashLeg("coupon", paid, 15000, -15000, ("c",), "c"),),
+    )
+    return holding_analysis(
+        [purchase, redemption, coupon], quantity="0", closing=0, days=max(600, days + 10)
+    )
+
+
+@pytest.mark.parametrize("days", [100, 364, 365, 400])
+def test_redeemed_bond_annual_return_uses_fifo_duration_and_actual_cash_npv(days):
+    analysis = redeemed_analysis(days)
+    result = project_clean_analysis(analysis, ISIN, instrument_type="bond")
+    annual = result.xirr
+    first = analysis.events[0].execution_date
+    assert result.pnl.value == 13000
+    with localcontext() as context:
+        context.prec = 60
+        assert result.simple_return.value == Decimal(13000) / Decimal(102000)
+    assert result.simple_return.weighted_holding_days is None  # existing DTO stays compatible
+    assert annual.weighted_holding_days == days
+    assert annual.holding_end_date == first + timedelta(days=days)
+    assert annual.end_date == first + timedelta(days=days + 3)
+    if days < 365:
+        assert annual.value is None
+        assert annual.reason_codes == ("short_holding",)
+    else:
+        assert annual.value is not None
+        assert annual.reason_codes == ()
+        # Independent direct NPV equation, without the production XIRR kernel.
+        with localcontext() as context:
+            context.prec = 60
+            npv = -Decimal(102000)
+            npv += Decimal(100000) / (1 + annual.value) ** (Decimal(days + 2) / 365)
+            npv += Decimal(15000) / (1 + annual.value) ** (Decimal(days + 3) / 365)
+            assert abs(npv) < Decimal("1e-20")
+
+
+def test_redemption_duration_preserves_all_other_operands_and_purchase_projection(monkeypatch):
+    from hermes_finance.services import clean_instrument_return as service
+    from hermes_finance.services import clean_purchase_returns as purchases
+
+    analysis = redeemed_analysis()
+    updated = service.project_clean_analysis(analysis, ISIN, instrument_type="bond")
+    resolver = purchases.clean_weighted_holding_days
+    monkeypatch.setattr(
+        purchases,
+        "clean_weighted_holding_days",
+        lambda *args, **kwargs: resolver(*args, **{**kwargs, "include_redemptions": False}),
+    )
+    previous = service.project_clean_analysis(analysis, ISIN, instrument_type="bond")
+    assert previous.xirr.value is None
+    assert previous.xirr.reason_codes == ("holding_period_unknown",)
+    assert replace(updated, xirr=previous.xirr) == previous
+    assert clean_purchase_price_contributions(
+        analysis, updated, ISIN, instrument_type="bond"
+    ) == clean_purchase_price_contributions(analysis, previous, ISIN, instrument_type="bond")
+
+
+@pytest.mark.parametrize(
+    "gap",
+    [
+        "trade",
+        "redemption",
+        "payout",
+        "anonymous_amortization",
+        "unrecognized",
+        "partial",
+        "same_day",
+        "missing_delivery",
+        "stale",
+        "unknown_coverage",
+    ],
+)
+def test_closed_redemption_never_turns_incomplete_data_into_zero_or_annual_rate(gap):
+    analysis = redeemed_analysis()
+    purchase, redemption, coupon = analysis.events
+    events = list(analysis.events)
+    if gap == "trade":
+        events[0] = replace(purchase, counted=False, reason_codes=("trade_money_cash_conflict",))
+    elif gap == "redemption":
+        events[1] = replace(redemption, counted=False)
+    elif gap == "payout":
+        events[2] = replace(coupon, counted=False)
+    elif gap == "anonymous_amortization":
+        events.append(
+            replace(
+                cash("UNRESOLVED", 1000),
+                isin=None,
+                event_date=redemption.event_date,
+                reason_codes=("redemption_amortization_unsupported",),
+                cash_legs=(CashLeg("redemption", redemption.event_date, 1000, -1000, ("a",), "a"),),
+            )
+        )
+    elif gap == "unrecognized":
+        events[1] = replace(redemption, attribution_basis=None)
+    elif gap == "partial":
+        # Two cancellations cannot establish two full-redemption events.
+        events[1] = replace(redemption, quantity_delta=Decimal("-0.5"))
+        events.append(
+            replace(
+                redemption,
+                event_key="second",
+                quantity_delta=Decimal("-0.5"),
+                event_date=redemption.event_date + timedelta(days=1),
+                depository_settlement_date=redemption.event_date + timedelta(days=1),
+                cash_legs=(replace(redemption.cash_legs[0], ownership="second"),),
+            )
+        )
+    elif gap == "same_day":
+        events[0] = buy("lot", 102000, "1", redemption.event_date)
+    elif gap == "missing_delivery":
+        events[1] = replace(redemption, depository_settlement_date=None)
+    elif gap == "stale":
+        events[1] = replace(redemption, current=False)
+    else:
+        analysis.coverage["events"] = Coverage(False)
+    analysis.events = tuple(events)
+    result = project_clean_analysis(analysis, ISIN, instrument_type="bond")
+    assert result.xirr.value is None
+    assert result.xirr.status == "unavailable"
+    if gap == "anonymous_amortization":
+        assert "redemption_incomplete" in result.xirr.reason_codes
+
+
+def test_partial_sale_then_full_redemption_weights_each_lot_without_aging_closed_capital():
+    analysis = redeemed_analysis()
+    first = analysis.events[0].execution_date
+    early = buy("early", 100000, "2", first)
+    late = buy("late", 300000, "2", first + timedelta(days=100))
+    sale = replace(buy("sale", 180000, "-3", first + timedelta(days=200)), kind="SELL")
+    analysis.events = (early, late, sale, *analysis.events[1:])
+    result = project_clean_analysis(analysis, ISIN, instrument_type="bond")
+    # Early: 200 days, late: half 100 and half 300 days => 200 for each lot.
+    assert result.xirr.weighted_holding_days == 200
+    assert result.xirr.value is None
+    assert result.xirr.reason_codes == ("short_holding",)
+
+
+def test_redeemed_bond_account_dto_keeps_existing_fields_and_formats_new_duration(monkeypatch):
+    from hermes_finance.api.clean_return_types import CleanInstrument
+    from hermes_finance.services import returns_view, source_instrument_returns
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    analysis = redeemed_analysis()
+    row = SimpleNamespace(
+        analysis=analysis, isin=ISIN, instrument_type="bond", source_name="Synthetic bond"
+    )
+    source = SimpleNamespace(instruments=[row], native_source_account="synthetic", gaps=[])
+    monkeypatch.setattr(
+        source_instrument_returns, "read_instrument_returns", lambda *a, **k: source
+    )
+    monkeypatch.setattr(returns_view, "_catalogue_names", lambda *a: {})
+    response = read_clean_account(
+        None, "synthetic", analysis.opening_date, analysis.closing_date, include_position_rates=True
+    )
+    dto = CleanInstrument.model_validate(response["instruments"][0]).model_dump(mode="json")
+    assert dto["xirr"]["weighted_holding_days"] == "400.00"
+    assert dto["xirr"]["holding_days"] == 400
+    assert dto["xirr"]["value"] is not None
+    assert dto["simple_return"]["weighted_holding_days"] is None
+    assert dto["redemption"]["value"] == "100000"
+
+
+@pytest.mark.parametrize("kind", ["SELL", "REDEMPTION"])
+def test_closed_bond_same_day_purchase_group_and_disposal_have_exact_annual_rate(kind):
+    analysis = redeemed_analysis(365, late_coupon=False)
+    first = analysis.events[0].execution_date
+    end = first + timedelta(days=365)
+    purchases = [buy("one", 40000, "1", first), buy("two", 60000, "1", first)]
+    disposal = (
+        replace(buy("sale", 110000, "-2", end), kind="SELL")
+        if kind == "SELL"
+        else replace(
+            analysis.events[1],
+            quantity_delta=Decimal(-2),
+            cash_legs=(CashLeg("redemption", end, 110000, -110000, ("r",), "r"),),
+        )
+    )
+    analysis.events = (*purchases, disposal)
+    result = project_clean_analysis(analysis, ISIN, instrument_type="bond")
+    assert result.xirr.weighted_holding_days == 365
+    assert abs(result.xirr.value - Decimal("0.1")) < Decimal("1e-25")
+    assert result.xirr.end_date == result.xirr.holding_end_date == end
+
+
 @pytest.mark.parametrize("gap", ["no_delivery", "ambiguous_order", "redemption"])
 def test_no_complete_fifo_keeps_simple_return_and_withholds_holding_period(gap):
     first = date(2028, 1, 2)

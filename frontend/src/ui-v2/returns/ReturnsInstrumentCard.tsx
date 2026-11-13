@@ -14,6 +14,7 @@ import {
   getInstrumentCard,
   type InstrumentCard,
   positionRateMetric,
+  positionRatePeriod,
   selectCardScope,
 } from "./cards";
 import styles from "./InstrumentCard.module.css";
@@ -332,6 +333,9 @@ export function ReturnsInstrumentCard({
                       </Info>
                     </span>
                   )}
+                  {annualRate && (
+                    <small className={sheet.muted}>{positionRatePeriod(onlyClean?.xirr)}</small>
+                  )}
                   {simpleRate &&
                     !annualRate &&
                     onlyClean?.xirr?.reason_codes.includes("short_holding") && (
@@ -523,7 +527,9 @@ export function ReturnsInstrumentCard({
                           </td>
                           <td data-tone={tone(simple)}>{displayCompactRate(simple)}</td>
                           {showAnnual && (
-                            <td data-tone={tone(annual)}>{displayCompactRate(annual)}</td>
+                            <td data-tone={tone(annual)} title={positionRatePeriod(clean?.xirr)}>
+                              {displayCompactRate(annual)}
+                            </td>
                           )}
                         </tr>
                       );

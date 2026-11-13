@@ -1,5 +1,5 @@
 import type { InstrumentAnalysis } from "../../api/sourceReturns";
-import { type PositionRate, positionRateMetric } from "./cards";
+import { type PositionRate, positionRateMetric, positionRatePeriod } from "./cards";
 import styles from "./InstrumentResult.module.css";
 import { displayMetric, type Metric, unavailable } from "./model";
 import { Explanation, MissingMetricNote, Value, visibleReturnReasons } from "./ReturnsInfo";
@@ -89,6 +89,7 @@ export function ReturnsInstrumentResult({
           </div>
         )}
       </dl>
+      {annual && <small>{positionRatePeriod(positionRates?.xirr)}</small>}
       {showMissingNote && <MissingMetricNote metrics={[pnl, rate]} />}
       {rate.method === "modified_dietz" && <small>Modified Dietz · за период, не годовая</small>}
       {positionRates && !annual && shortHolding && rate.value !== null && (

@@ -51,14 +51,14 @@ SEMANTIC_MODULES = (
 )
 
 # Pin the revision alongside the digest so bumping either alone fails the guard.
-# Request-scoped read reuse retains V20: no financial interpretation or receipt
-# dependency changes. The implementation digest also covers its private indexes.
+# V21 adds clean full-redemption XIRR eligibility. Investment-proof operands
+# and dependencies stay unchanged; V20 receipts retain exact-dependency checks.
 # V5 carries dated redemption quantity and scopes structure-only confirmations;
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v20",
-    "036f7c4df38cc016b18563ac7584f8ada11cb03d99b560dbfa07869e80218f9a",
+    "source_investment_semantics_v21",
+    "daede767e4b041da7b089326a2d92b5a0856c465f3b48938bc38534d1fd296a5",
 )
 
 

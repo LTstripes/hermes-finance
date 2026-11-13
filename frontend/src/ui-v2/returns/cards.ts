@@ -4,6 +4,7 @@ import {
   type AccountLink,
   type Detail,
   detailMatchesContext,
+  dateLabel,
   type Metric,
   type Period,
 } from "./model";
@@ -38,11 +39,20 @@ export type PositionRate = InstrumentMetric<string> & {
   start_date: string | null;
   end_date: string;
   holding_days: number | null;
+  holding_end_date?: string | null;
   weighted_holding_days: string | null;
 };
 
 export function positionRateMetric(rate: PositionRate): Metric {
   return { ...cleanMetric(rate, true), method: rate.method };
+}
+
+export function positionRatePeriod(rate?: PositionRate | null): string | undefined {
+  if (!rate?.start_date) return undefined;
+  const end = rate.holding_end_date ?? rate.end_date;
+  return `Владение: ${dateLabel(rate.start_date)} — ${dateLabel(end)}${
+    end !== rate.end_date ? ` · выплаты учтены по ${dateLabel(rate.end_date)}` : ""
+  }`;
 }
 
 export function cleanMetric(value: InstrumentMetric<string>, rate = false): Metric {

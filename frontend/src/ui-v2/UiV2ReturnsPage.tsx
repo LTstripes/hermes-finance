@@ -6,7 +6,7 @@ import { ConfirmDialog } from "../components/ui";
 import { reasonCopy } from "../lib/reasonCopy";
 import { shortInstrumentName } from "./instrumentName";
 import sheet from "./ReportSheet.module.css";
-import { positionRateMetric } from "./returns/cards";
+import { positionRateMetric, positionRatePeriod } from "./returns/cards";
 import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
@@ -759,6 +759,9 @@ export default function UiV2ReturnsPage() {
                                 </td>
                                 <td
                                   data-label="Годовых"
+                                  title={
+                                    row.grouped ? undefined : positionRatePeriod(row.account.xirr)
+                                  }
                                   data-tone={row.grouped ? undefined : tone(row.annual)}
                                 >
                                   {row.grouped ? (

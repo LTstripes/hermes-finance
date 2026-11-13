@@ -561,6 +561,10 @@ invested purchases (not annualized) and, when the capital-weighted holding perio
 is at least 365 days, by its annual XIRR (owner decision on #1016). A shorter
 holding shows no annual figure and says so once. Position Modified Dietz is not
 shown; Modified Dietz stays an account period return, not annualized.
+Closed positions, including proved full bond redemptions, use the same annual
+eligibility rule. Show the holding period from the first purchase to final
+disposal; if cash arrives later, distinguish the last included payment date.
+Do not extend holding duration to the report date after the position closes.
 
 All exact ISIN groups, including sold instruments and separate account contexts,
 remain reachable from Returns. Entering an instrument opens its own exact-ISIN page

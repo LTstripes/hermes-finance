@@ -61,6 +61,7 @@ def _position_rates(
     inception_proven,
     position_closed,
     weighted_holding_days,
+    annual_weighted_holding_days,
 ):
     """Keep inception, denominator and annualization eligibility independent."""
     invested = buys.value if inception_proven and not buys.reason_codes else None
@@ -108,6 +109,10 @@ def _position_rates(
         reasons,
         **metadata,
     )
+    # New closed-redemption eligibility belongs to XIRR. Preserve the existing
+    # simple-return DTO (including its descriptive metadata) for consumers.
+    weighted_holding_days = annual_weighted_holding_days
+    metadata["weighted_holding_days"] = weighted_holding_days
     xirr_reasons = list(reasons)
     if start is None:
         xirr_reasons.append("first_purchase_date_unknown")
@@ -549,6 +554,7 @@ def calculate_clean_return(
     position_closed: bool = False,
     weighted_holding_days: Decimal | None = None,
     holding_period_resolver: Callable[[CleanInstrumentReturn], Decimal | None] | None = None,
+    annual_holding_period_resolver: Callable[[CleanInstrumentReturn], Decimal | None] | None = None,
 ) -> CleanInstrumentReturn:
     """Calculate from attributable current observations, preserving partial facts.
 
@@ -797,6 +803,15 @@ def calculate_clean_return(
     # interval-return calculation or its numerical solver.
     if holding_period_resolver is not None:
         weighted_holding_days = holding_period_resolver(clean)
+    annual_days = weighted_holding_days
+    if (
+        annual_days is None
+        and position_closed
+        and clean.pnl.value is not None
+        and not clean.pnl.reason_codes
+        and annual_holding_period_resolver is not None
+    ):
+        annual_days = annual_holding_period_resolver(clean)
     simple, annual = _position_rates(
         closing_date,
         closing_clean,
@@ -808,5 +823,6 @@ def calculate_clean_return(
         inception_proven=opening_clean == 0 if inception_proven is None else inception_proven,
         position_closed=position_closed,
         weighted_holding_days=weighted_holding_days,
+        annual_weighted_holding_days=annual_days,
     )
     return replace(clean, simple_return=simple, xirr=annual)
