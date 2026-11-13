@@ -1097,7 +1097,11 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const mortgage = screen.getByDisplayValue("3000000.00");
     await user.clear(mortgage);
     await user.type(mortgage, "2900000.00");
-    await user.click(within(propertyTable).getByRole("button", { name: "Готово" }));
+    // «Готово» is disabled while any earlier operation is busy; a click on a
+    // disabled button is silently lost on a loaded runner, so wait for it.
+    const done = within(propertyTable).getByRole("button", { name: "Готово" });
+    await waitFor(() => expect(done).toBeEnabled(), { timeout: 5000 });
+    await user.click(done);
     // CI can be slow to start the save; the assertion itself is unchanged.
     await waitFor(() => expect(updateProperty).toHaveBeenCalledTimes(1), { timeout: 5000 });
 
