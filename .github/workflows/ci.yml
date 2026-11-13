@@ -352,7 +352,13 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
-        run: npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts home-linked-pair-real-backend.spec.ts --project=chromium --retries=0
+        run: npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts --project=chromium --retries=0
+
+      - name: Run home linked-pair real-backend journey
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- home-linked-pair-real-backend.spec.ts --project=chromium --retries=0
 
       - name: Build native frontend for retained acceptance journeys
         working-directory: frontend
