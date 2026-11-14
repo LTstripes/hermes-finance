@@ -156,7 +156,7 @@ if /I "%~1"=="ls" (
 )
 if /I "%~1"=="run" if /I "%~2"=="build" (
     if not exist "dist" mkdir "dist"
-    >"dist\index.html" echo Hermes Finance
+    >"dist\index.html" echo ^<title^>Finance^</title^>
     >"dist\assets.txt" echo synthetic bundle
     exit /b 0
 )
@@ -196,7 +196,7 @@ frontend/dist/
     Write-Utf8NoBom -Path (Join-Path $Checkout "backend\uv.lock") -Content "version = 1`n"
     Write-Utf8NoBom -Path (Join-Path $Checkout "frontend\package.json") -Content '{"name":"hermes-finance-frontend","version":"0.0.0"}'
     Write-Utf8NoBom -Path (Join-Path $Checkout "frontend\package-lock.json") -Content '{"name":"hermes-finance-frontend","lockfileVersion":3}'
-    Write-Utf8NoBom -Path (Join-Path $Checkout "frontend\index.html") -Content "<div id='root'>Hermes Finance</div>`n"
+    Write-Utf8NoBom -Path (Join-Path $Checkout "frontend\index.html") -Content "<title>Finance</title><div id='root'></div>`n"
     Write-Utf8NoBom -Path (Join-Path $Checkout "frontend\tsconfig.json") -Content '{}'
     Write-Utf8NoBom -Path (Join-Path $Checkout "frontend\tsconfig.app.json") -Content '{}'
     Write-Utf8NoBom -Path (Join-Path $Checkout "frontend\tsconfig.node.json") -Content '{}'
