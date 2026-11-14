@@ -1094,18 +1094,20 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     await user.click(
       await rowAction(user, within(propertyTable), "Изменить объект «Синтетическая квартира»"),
     );
-    const mortgage = screen.getByDisplayValue("3000000.00");
-    await user.clear(mortgage);
-    await user.type(mortgage, "2900000.00");
-    // On a loaded runner the typed value can land after the click; wait until the
-    // field holds it, otherwise validation sees an empty mortgage and never saves.
-    await waitFor(
-      () =>
-        expect((mortgage as HTMLInputElement).value.replace(/\s/g, "")).toMatch(
-          /^2900000([.,]00)?$/,
-        ),
-      { timeout: 5000 },
-    );
+    // On a loaded runner the edit row can re-render while typing and drop the
+    // value; re-find the field and retype until it holds the new amount.
+    const typedMortgage = () =>
+      (document.getElementById("prop-edit-mortgage_balance") as HTMLInputElement).value.replace(
+        /\s/g,
+        "",
+      );
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const mortgage = document.getElementById("prop-edit-mortgage_balance") as HTMLInputElement;
+      await user.clear(mortgage);
+      await user.type(mortgage, "2900000.00");
+      if (/^2900000([.,]00)?$/.test(typedMortgage())) break;
+    }
+    await waitFor(() => expect(typedMortgage()).toMatch(/^2900000([.,]00)?$/), { timeout: 5000 });
     // «Готово» is disabled while any earlier operation is busy; a click on a
     // disabled button is silently lost on a loaded runner, so wait for it.
     const done = within(propertyTable).getByRole("button", { name: "Готово" });

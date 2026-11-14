@@ -71,6 +71,12 @@ faster returns reads:
 There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
 checks do not establish Owner UAT.
 
+Prepared for 1.19.0 ([release notes](release-notes-1.19.0.md)):
+[#1209](https://github.com/LTstripes/hermes-finance/pull/1209) goal plan (`goal_plan_v1`,
+closes #1129 MVP) and passive-income capital estimate;
+[#1208](https://github.com/LTstripes/hermes-finance/pull/1208) quiet instrument links.
+No new migrations.
+
 Shipped in 1.18.0 ([release notes](release-notes-1.18.0.md)):
 [#1205](https://github.com/LTstripes/hermes-finance/pull/1205) overall annual portfolio
 rate (B9): annual XIRR over brokerage and IIS accounts from the first operation;
@@ -108,9 +114,8 @@ establish Owner UAT.
 1. The Owner monitors numbers in everyday use and reports problems as new issues
    (formal UAT card #711 closed on 14.11.2026). At month close the Owner compares
    deposit balances with the bank on the snapshot date.
-2. Candidate development, Owner to choose: goals and contribution to a target
-   ([#1129](https://github.com/LTstripes/hermes-finance/issues/1129)), actual monthly
-   saving, payout reconciliation exceptions
+2. Candidate development, Owner to choose: goal plan pauses and one-off expenses
+   (#1129 extension), actual monthly saving, payout reconciliation exceptions
    ([#1033](https://github.com/LTstripes/hermes-finance/issues/1033)).
 3. Deferred by the Owner: annual tax and IIS reconciliation
    ([#1130](https://github.com/LTstripes/hermes-finance/issues/1130), documents first);

@@ -129,6 +129,16 @@ def prepare(root: Path, new: str) -> list[str]:
         assert_plain_path(root / "docs", directory=True)
     replacements = {}
     for name, text in contents.items():
+        if name == paths[1]:
+            # A dependency may share the version string (alembic 1.19.0 did), so
+            # anchor the lock replacement to this project's own package entry.
+            anchor = re.compile(
+                rf'(name = "{re.escape(project["name"])}"\r?\nversion = )"{re.escape(old)}"'
+            )
+            if len(anchor.findall(text)) != 1:
+                raise ValueError(f"Unexpected version occurrences in {name}")
+            replacements[name] = anchor.sub(lambda m: f'{m.group(1)}"{new}"', text)
+            continue
         needle = f'"{old}"'
         expected = 2 if name.endswith("package-lock.json") else 1
         if text.count(needle) != expected:
