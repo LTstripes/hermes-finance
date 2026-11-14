@@ -9,6 +9,14 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.17.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.17.1)
+  (hotfix, `41260fe677518c1233972ae70ebb1abaa49e27c1`, exact-main CI
+  [43620042362](https://github.com/LTstripes/hermes-finance/actions/runs/43620042362),
+  guarded publication
+  [43621817007](https://github.com/LTstripes/hermes-finance/actions/runs/43621817007),
+  [release notes](release-notes-1.17.1.md)) is installed on the Owner computer on
+  2026-11-14 by backup-first OPS02, then Prepare and Start; health reads 1.17.1 and
+  the returns overview carries short names again. Owner UAT has not been performed.
 - [v1.17.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.17.0)
   is published at `229def1f296ceb70673a9772df9bebbcf14a9eb9` with
   [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/43613070222)
@@ -83,7 +91,7 @@ establish Owner UAT.
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Owner UAT of installed 1.17.0 together with the pending UAT of 1.13.0-1.16.0,
+1. Owner UAT of installed 1.17.1 together with the pending UAT of 1.13.0-1.16.0,
    tracked in [#711](https://github.com/LTstripes/hermes-finance/issues/711).
 2. Development: overall portfolio annual rate (B9) by the Owner rule of 14.11.2026:
    annual XIRR over brokerage and IIS accounts from the first operation; own
