@@ -63,6 +63,12 @@ faster returns reads:
 There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
 checks do not establish Owner UAT.
 
+Prepared for 1.18.0 ([release notes](release-notes-1.18.0.md)):
+[#1205](https://github.com/LTstripes/hermes-finance/pull/1205) overall annual portfolio
+rate (B9): annual XIRR over brokerage and IIS accounts from the first operation;
+provisional between 90 and 365 capital-weighted days, hidden below 90; annual return
+and securities realized/unrealized results in the AI export. No new migrations.
+
 Shipped in 1.17.0 ([release notes](release-notes-1.17.0.md)); 1.17.1 ([release notes](release-notes-1.17.1.md)) fixes missing short names in the returns overview ([#1202](https://github.com/LTstripes/hermes-finance/pull/1202)):
 
 - Speed: [#1199](https://github.com/LTstripes/hermes-finance/pull/1199) bounded
@@ -91,16 +97,19 @@ establish Owner UAT.
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Owner UAT of installed 1.17.1 together with the pending UAT of 1.13.0-1.16.0,
-   tracked in [#711](https://github.com/LTstripes/hermes-finance/issues/711).
-2. Development: overall portfolio annual rate (B9) by the Owner rule of 14.11.2026:
-   annual XIRR over brokerage and IIS accounts from the first operation; own
-   transfers are not income.
-3. Deferred by the Owner: annual tax and IIS reconciliation
+1. Publish 1.18.0 and install it on the Owner computer by backup-first OPS02.
+2. The Owner monitors numbers in everyday use and reports problems as new issues
+   (formal UAT card #711 closed on 14.11.2026). At month close the Owner compares
+   deposit balances with the bank on the snapshot date.
+3. Candidate development, Owner to choose: goals and contribution to a target
+   ([#1129](https://github.com/LTstripes/hermes-finance/issues/1129)), actual monthly
+   saving, payout reconciliation exceptions
+   ([#1033](https://github.com/LTstripes/hermes-finance/issues/1033)).
+4. Deferred by the Owner: annual tax and IIS reconciliation
    ([#1130](https://github.com/LTstripes/hermes-finance/issues/1130), documents first);
    a market-data supplement for amortizing bonds (until one is held).
-4. Apply the proportional verification rule of the Owner and never infer UAT from
-   green CI. No financial Apply/Close or data repair is implied by release.
+5. Never infer UAT from green CI. No financial Apply/Close or data repair is
+   implied by release.
 
 <a id="s4"></a>
 ## 4. Evidence boundaries
