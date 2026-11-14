@@ -20,6 +20,7 @@ from hermes_finance.services.close_readiness import (
     build_close_readiness,
 )
 from hermes_finance.services.intentional_empty_close import EmptyCloseIdentity
+from hermes_finance.services.source_monthly_returns import source_read_snapshot
 
 router = APIRouter(prefix="/api/months", tags=["close-readiness"])
 
@@ -93,10 +94,11 @@ def get_close_readiness(
     database: Database = Depends(_database_for_request),
 ) -> CloseReadinessOut:
     today = moscow_today(request)
-    result = build_close_readiness(
-        session,
-        month_id,
-        today=today,
-        latest_backup=_latest_backup(database),
-    )
-    return _readiness_out(result)
+    with source_read_snapshot(session):
+        result = build_close_readiness(
+            session,
+            month_id,
+            today=today,
+            latest_backup=_latest_backup(database),
+        )
+        return _readiness_out(result)

@@ -13,6 +13,7 @@ from hermes_finance.api.clean_return_types import (
     CleanPositionRate,
     CleanPurchase,
 )
+from hermes_finance.api.read_cache import cached_read_endpoint
 from hermes_finance.api.returns_view import (
     DTO,
     AccountLink,
@@ -34,6 +35,44 @@ from hermes_finance.services.returns_overall import (
 )
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
+
+
+class HomeResult(DTO):
+    amount: Metric
+    partial: bool
+
+
+class HomeAccount(DTO):
+    scope: str
+    label: str
+    account_link: AccountLink | None
+
+
+class HomeInstrument(DTO):
+    isin: str
+    name: str
+    pnl: Metric
+    accounts: list[HomeAccount]
+
+
+class HomeSummary(DTO):
+    contract_version: Literal["returns_home_summary_v1"]
+    result: HomeResult
+    positive: int
+    negative: int
+    unknown: int
+    unchanged: int
+    mixed_periods: bool
+    ranked: list[HomeInstrument]
+
+
+@router.get("/home-summary", response_model=HomeSummary)
+@cached_read_endpoint
+def home_summary(response: Response, session: Session = Depends(session_for_request)):
+    from hermes_finance.services.returns_home import read_home_summary
+
+    no_store(response)
+    return read_home_summary(session)
 
 
 class OverallResult(DTO):
@@ -237,6 +276,7 @@ class Overall(DTO):
 
 
 @router.get("/overall", response_model=Overall)
+@cached_read_endpoint
 def overall(
     request: Request,
     response: Response,
@@ -337,6 +377,7 @@ class InstrumentCard(DTO):
 
 
 @router.get("/income", response_model=Income)
+@cached_read_endpoint
 def income(
     request: Request,
     response: Response,
@@ -351,6 +392,7 @@ def income(
 
 
 @router.get("/instrument-card", response_model=InstrumentCard, response_model_exclude_unset=True)
+@cached_read_endpoint
 def instrument_card(
     request: Request,
     response: Response,

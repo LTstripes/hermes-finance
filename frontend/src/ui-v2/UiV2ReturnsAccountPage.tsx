@@ -1,4 +1,5 @@
 import { useAccountName } from "./returns/useAccountName";
+import { useReturnsPrefetch } from "./returns/useReturnsPrefetch";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -100,6 +101,7 @@ export default function UiV2ReturnsAccountPage() {
   const busy = context.isFetching || (selectionValid && overview.isFetching);
   const error = context.isError || (selectionValid && overview.isError);
   const data = !busy && !error && selectionValid ? overview.data : undefined;
+  useReturnsPrefetch("account", Boolean(data) && !params.has("diagnostics"));
   const choose = (p: Period) => {
     const next = new URLSearchParams(params);
     next.set("start", p.start);

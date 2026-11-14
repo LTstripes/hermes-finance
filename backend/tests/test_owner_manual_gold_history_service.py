@@ -754,3 +754,26 @@ def test_draft_month_quote_uses_actual_date_with_future_snapshot_placeholder(sou
     assert row["result"]["valuation_provisional"]
     assert row["result"]["total_result_kopecks"] == "1032500"
     assert economic_rows(database) == before
+
+
+def test_content_cache_rechecks_committed_manual_gold_history(source):
+    from hermes_finance.api.read_cache import cached_read_endpoint
+
+    database, writer = source[:2]
+    calls = []
+
+    @cached_read_endpoint
+    def read_history(session):
+        calls.append(1)
+        return gold.read_gold_histories(session)
+
+    with database.session_factory() as reader:
+        before = read_history(reader)
+        assert read_history(reader) == before
+        assert len(calls) == 1
+    confirm(writer, intent(source))
+    with database.session_factory() as reader:
+        after = read_history(reader)
+        assert after != before
+        assert read_history(reader) == after
+        assert len(calls) == 2
