@@ -593,7 +593,18 @@ def test_clean_api_uses_saved_original_without_account_confirmation(db, fee):
     assert card.status_code == 200, card.text
     card_row = card.json()["accounts"][0]
     assert card.json()["contract_version"] == "returns_instrument_card_v2"
-    assert card_row["clean"] == row
+    assert set(card_row["clean"]) == set(row) | {
+        "realized_result",
+        "unrealized_result",
+        "current_value",
+        "is_open",
+        "position_reason_codes",
+    }
+    assert {key: card_row["clean"][key] for key in row} == row
+    assert card_row["clean"]["realized_result"]["value"] == "0"
+    assert card_row["clean"]["unrealized_result"]["value"] == "10000"
+    assert card_row["clean"]["current_value"]["value"] == "110000"
+    assert card_row["clean"]["is_open"] is True
     assert card_row["period"] == period
     selected = client.get("/api/returns/overview", params={"scope": f"source:{ACCOUNT}", **period})
     assert selected.status_code == 200, selected.text

@@ -21,6 +21,7 @@ SEMANTIC_MODULES = (
     "services/clean_closed_position.py",
     "services/clean_instrument_return.py",
     "services/clean_purchase_returns.py",
+    "services/position_results.py",
     "services/clean_repo_pairs.py",
     "services/clean_redemption.py",
     "services/clean_sale_nkd.py",
@@ -51,14 +52,14 @@ SEMANTIC_MODULES = (
 )
 
 # Pin the revision alongside the digest so bumping either alone fails the guard.
-# V21 adds clean full-redemption XIRR eligibility. Investment-proof operands
-# and dependencies stay unchanged; V20 receipts retain exact-dependency checks.
+# V22 adds position decomposition and combined instrument rates. Proof operands
+# and dependencies stay unchanged; V21 receipts retain exact-dependency checks.
 # V5 carries dated redemption quantity and scopes structure-only confirmations;
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v21",
-    "daede767e4b041da7b089326a2d92b5a0856c465f3b48938bc38534d1fd296a5",
+    "source_investment_semantics_v22",
+    "58c2fe9d23f0b8912c12b134b54e342ab624e9691e042f93952667151892deda",
 )
 
 

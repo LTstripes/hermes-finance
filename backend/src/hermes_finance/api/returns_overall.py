@@ -73,9 +73,33 @@ class CleanInstrumentAccount(InstrumentAccount):
     simple_return: CleanPositionRate
     xirr: CleanPositionRate
     modified_dietz: CleanDietzMetric | CleanMetric
+    realized_result: Metric
+    unrealized_result: Metric
+    current_value: Metric
+    is_open: bool | None
+    position_reason_codes: list[str]
+
+
+class PositionResults(DTO):
+    realized_result: CleanMetric
+    unrealized_result: CleanMetric
+    current_value: CleanMetric
+    is_open: bool | None
+    position_reason_codes: list[str]
+
+
+class InstrumentAggregate(PositionResults):
+    pnl: CleanMetric
+    simple_return: CleanPositionRate
+    xirr: CleanPositionRate
+
+
+class InstrumentPosition(CleanInstrument, PositionResults):
+    pass
 
 
 class OverallInstrument(DTO):
+    aggregate: InstrumentAggregate | None = None
     isin: str
     name: str
     kind: str | None
@@ -296,12 +320,13 @@ class CardAccount(DTO):
     exclusion_reason: str | None
     reason_codes: list[str]
     detail: Detail | None
-    clean: CleanInstrument | None = None
+    clean: InstrumentPosition | CleanInstrument | None = None
     ai_account_ref: str | None = None
     purchases: list[CleanPurchase] | None = None
 
 
 class InstrumentCard(DTO):
+    aggregate: InstrumentAggregate | None = None
     contract_version: Literal["returns_instrument_card_v1", "returns_instrument_card_v2"]
     isin: str
     name: str

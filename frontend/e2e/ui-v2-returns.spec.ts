@@ -15,6 +15,100 @@ import {
 import { instrumentCardFixture, overallFixture } from "../src/ui-v2/returns/overallFixtures";
 import { fulfillMonthPlate } from "./visual-fixtures";
 
+test("paper aggregate, open filter and result split fit 720px at desktop zoom @viewport-owned", async ({
+  page,
+}, info) => {
+  const body = overallFixture();
+  const card = instrumentCardFixture();
+  const metric = (value: string | null) => ({
+    value,
+    status: "supported" as const,
+    reason_codes: [],
+    assumptions: [],
+  });
+  const rate = (method: "simple_return" | "xirr") => ({
+    ...metric("0.125"),
+    method,
+    annualized: method === "xirr",
+    invested_kopecks: "100000000",
+    start_date: "2028-01-01",
+    end_date: "2030-01-01",
+    holding_days: 731,
+    weighted_holding_days: "731.00",
+  });
+  const aggregate = {
+    pnl: metric("12500000"),
+    realized_result: metric("10000000"),
+    unrealized_result: metric("2500000"),
+    current_value: metric("102500000"),
+    is_open: true,
+    position_reason_codes: [],
+    simple_return: rate("simple_return"),
+    xirr: rate("xirr"),
+  };
+  body.instruments = [
+    { ...body.instruments[0], aggregate },
+    {
+      ...body.instruments[1],
+      name: "Проданная бумага",
+      aggregate: {
+        ...aggregate,
+        is_open: false,
+        current_value: metric("0"),
+        unrealized_result: metric("0"),
+        realized_result: metric("12500000"),
+      },
+    },
+  ];
+  card.aggregate = aggregate;
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      if (await fulfillMonthPlate(route)) return;
+      expect(route.request().method()).toBe("GET");
+      await route.fulfill({
+        json: new URL(route.request().url()).pathname.endsWith("instrument-card") ? card : body,
+      });
+    },
+  );
+  for (const zoom of [1, 1.25]) {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/v2/returns?split=1");
+    await page.evaluate((scale) => {
+      document.documentElement.style.zoom = String(scale);
+    }, zoom);
+    const table = page.getByRole("table", { name: "Все бумаги", exact: true });
+    await expect(table.getByText("Учебная акция", { exact: true })).toBeVisible();
+    await expect(table).toContainText("Зафикс.");
+    await expect(table.getByText("Проданная бумага")).toHaveCount(0);
+    const geometry = await table.evaluate((element) => {
+      const parent = element.parentElement;
+      if (!parent) throw new Error("No table parent");
+      parent.style.maxWidth = "720px";
+      return {
+        client: parent.clientWidth,
+        scroll: parent.scrollWidth,
+        overflow: [...element.querySelectorAll("td")]
+          .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+          .map((cell) => cell.textContent),
+      };
+    });
+    expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
+    expect(geometry.overflow).toEqual([]);
+    await table.screenshot({ path: info.outputPath(`position-split-${zoom}.png`) });
+    await table.getByRole("link", { name: "Учебная акция", exact: true }).click();
+    const result = page.getByRole("region", { name: "Разложение результата" });
+    await expect(result.getByLabel("Подробнее: Зафиксировано", { exact: true })).toBeVisible();
+    await expect(result.getByLabel("Подробнее: В цене", { exact: true })).toBeVisible();
+    await result.screenshot({ path: info.outputPath(`position-card-${zoom}.png`) });
+    await page.getByRole("button", { name: "К доходности", exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: "Разложение результата" })).toBeChecked();
+    await page.getByRole("combobox", { name: "Позиции", exact: true }).selectOption("sold");
+    await expect(table.getByText("Проданная бумага")).toBeVisible();
+    await expect(table.getByText("Учебная акция", { exact: true })).toHaveCount(0);
+  }
+});
+
 async function install(page: Page, extendedHistory = false) {
   const calls: string[] = [];
   const state = { error: false, unavailable: false };
@@ -544,29 +638,33 @@ test("Returns sidebar parent and AA contrast @viewport-owned", async ({ page }) 
     const nav = page.getByRole("navigation", { name: "Основная навигация" });
     const active = nav.getByRole("link", { name: "Доходность", exact: true });
     await expect(active).toHaveAttribute("aria-current", "page");
-    const colors = await active.evaluate((element) => {
-      const style = getComputedStyle(element);
-      const luminance = (value: string) => {
-        const channels = (value.match(/\d+(?:\.\d+)?/g) ?? [])
-          .slice(0, 3)
-          .map(Number)
-          .map((v) => {
-            const channel = v / 255;
-            return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-          });
-        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-      };
-      const text = luminance(style.color);
-      const background = luminance(style.backgroundColor);
-      const sibling = element.parentElement?.querySelector('a:not([aria-current="page"])');
-      return {
-        contrast: (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05),
-        background: style.backgroundColor,
-        inactiveBackground: sibling ? getComputedStyle(sibling).backgroundColor : null,
-        marker: style.boxShadow,
-      };
-    });
-    expect(colors.contrast).toBeGreaterThanOrEqual(4.5);
+    // The route can expose aria-current before its stylesheet has been applied.
+    // Wait for rendered colors, retaining the actual AA contrast assertion.
+    const readColors = () =>
+      active.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const luminance = (value: string) => {
+          const channels = (value.match(/\d+(?:\.\d+)?/g) ?? [])
+            .slice(0, 3)
+            .map(Number)
+            .map((v) => {
+              const channel = v / 255;
+              return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+            });
+          return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+        };
+        const text = luminance(style.color);
+        const background = luminance(style.backgroundColor);
+        const sibling = element.parentElement?.querySelector('a:not([aria-current="page"])');
+        return {
+          contrast: (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05),
+          background: style.backgroundColor,
+          inactiveBackground: sibling ? getComputedStyle(sibling).backgroundColor : null,
+          marker: style.boxShadow,
+        };
+      });
+    await expect.poll(async () => (await readColors()).contrast).toBeGreaterThanOrEqual(4.5);
+    const colors = await readColors();
     expect(colors.background).not.toBe(colors.inactiveBackground);
     expect(colors.marker).not.toBe("none");
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);

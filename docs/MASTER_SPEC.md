@@ -570,8 +570,15 @@ All exact ISIN groups, including sold instruments and separate account contexts,
 remain reachable from Returns. Entering an instrument opens its own exact-ISIN page
 over all available account histories; individual account periods, rates and
 local gaps remain visible through the existing detail presentation. The instrument list
-shows each account's RUB result, simple return and, when eligible, annual XIRR on a
-compact summary row.
+shows a server-owned paper aggregate with its simple return and eligible annual
+XIRR, followed by account rows for papers on multiple accounts. «Стоимость» shows
+the open-lot valuation. «В портфеле / Проданные / Все» defaults to «В портфеле»
+and uses quantity at valuation; unknown quantity stays visible and is not sold.
+The optional «Разложение результата» reveals «Зафиксировано» and «В цене» inside
+the result column, keeping the table within 720px content. Selection and breakdown
+are retained in the URL and on Back. The instrument card shows both amounts below
+the result, with explanations of FIFO cost, received income and remaining value.
+Unknown figures show dashes with reasons; a closed position has exactly zero «В цене».
 Account dates, explanation and assumptions expand on demand;
 unavailable values show a dash and a short review reason. The shared instrument
 card also exposes the calculation's assumptions briefly, with expandable details. The default

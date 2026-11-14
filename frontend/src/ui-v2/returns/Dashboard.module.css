@@ -363,6 +363,22 @@
   font-size: var(--t-sm);
 }
 
+.filters label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.filters input[type="checkbox"] {
+  min-height: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+}
+.instrumentTable {
+  container-type: inline-size;
+}
+
 .list {
   width: 100%;
   table-layout: fixed;
@@ -370,19 +386,51 @@
   font-size: var(--t-sm);
 }
 .list col:nth-child(1) {
-  width: 31%;
+  width: 25%;
 }
 .list col:nth-child(2) {
-  width: 19%;
+  width: 18%;
 }
 .list col:nth-child(3) {
-  width: 15%;
-}
-.list col:nth-child(4) {
   width: 14%;
 }
+.list col:nth-child(4) {
+  width: 12%;
+}
 .list col:nth-child(5) {
-  width: 21%;
+  width: 16%;
+}
+.list col:nth-child(6) {
+  width: 15%;
+}
+@container (max-width: 650px) {
+  .list col:nth-child(1) {
+    width: 18%;
+  }
+  .list col:nth-child(2) {
+    width: 20%;
+  }
+  .list col:nth-child(3),
+  .list col:nth-child(4) {
+    width: 12%;
+  }
+  .list col:nth-child(5) {
+    width: 20%;
+  }
+  .list col:nth-child(6) {
+    width: 18%;
+  }
+  .list .payoutLabel {
+    display: none;
+  }
+  .list.list thead button {
+    overflow-wrap: anywhere;
+  }
+}
+.resultSplit {
+  display: grid;
+  color: var(--muted);
+  font-size: var(--t-xs);
 }
 .list.list td,
 .list.list th {
