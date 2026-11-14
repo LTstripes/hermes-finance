@@ -936,7 +936,10 @@ def test_http_preview_repeated_original_is_zero_write_and_keeps_confirmation(dat
             k: v
             for k, v in first.json().items()
             if k not in ("metadata_evidence", "empty_money_layout_evidence")
-        } == original
+        } == {
+            **original,
+            "instrument_labels": [{"isin": "RU000A000000", "short_name": "Synthetic security"}],
+        }
         assert first.json()["metadata_evidence"] == evidence(raw)
         assert first.json()["empty_money_layout_evidence"]["status"] == "BLOCKED"
         assert not {"INSERT", "UPDATE", "DELETE", "REPLACE"} & set(statements)

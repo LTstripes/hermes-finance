@@ -11,7 +11,6 @@ from hermes_finance.api.instrument_cash_income import InstrumentRef, KnownPayout
 from hermes_finance.api.instrument_eod_observations import EodObservation
 from hermes_finance.api.instrument_trades import KnownTrades
 from hermes_finance.api.settings import session_for_request
-from hermes_finance.services.instrument_names import with_reference_short_names
 from hermes_finance.services.instrument_what_if import instrument_what_if
 
 router = APIRouter(prefix="/api/instruments", tags=["instruments"])
@@ -91,21 +90,18 @@ def evaluate(
 ):
     response.headers["Cache-Control"] = "no-store"
     try:
-        return with_reference_short_names(
+        return instrument_what_if(
             session,
-            instrument_what_if(
-                session,
-                account_id,
-                instrument_id,
-                t0,
-                t1,
-                {
-                    "no_unobserved_movements": no_unobserved_movements,
-                    "no_unobserved_payouts": no_unobserved_payouts,
-                    "no_other_costs_or_taxes": no_other_costs_or_taxes,
-                },
-                request_nonce,
-            ),
+            account_id,
+            instrument_id,
+            t0,
+            t1,
+            {
+                "no_unobserved_movements": no_unobserved_movements,
+                "no_unobserved_payouts": no_unobserved_payouts,
+                "no_other_costs_or_taxes": no_other_costs_or_taxes,
+            },
+            request_nonce,
         )
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error

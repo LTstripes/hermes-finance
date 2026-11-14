@@ -154,7 +154,7 @@ def test_source_backed_stock_api_exact_50_and_5_no_dml(database):
             },
         )
         assert response.status_code == 200, response.text
-        assert _original_fields(response.json()) == result
+        assert response.json() == result
         assert response.headers["cache-control"] == "no-store"
         assert writes == []
     finally:
@@ -493,16 +493,3 @@ def test_late_s1_original_derived_controls_cannot_be_assumed_away(database, kind
             "cash_control_mismatch" if kind == "opening_cash" else "quantity_control_mismatch"
         )
         assert expected in result["hard_blockers"]
-
-
-def _original_fields(value):
-    """All pre-existing response fields must still equal the authoritative reader."""
-    if isinstance(value, list):
-        return [_original_fields(item) for item in value]
-    if not isinstance(value, dict):
-        return value
-    result = {key: _original_fields(item) for key, item in value.items()}
-    if isinstance(result.get("instrument"), dict) and "name" in result["instrument"]:
-        name = result["instrument"].pop("short_name")
-        assert name is None or isinstance(name, str) and bool(name.strip())
-    return result

@@ -88,6 +88,17 @@ def instrument_names(session):
     return InstrumentNames(session.scalars(select(Instrument).order_by(Instrument.id)))
 
 
+def instrument_reference(instrument):
+    """Use the already selected catalogue row in every canonical reader."""
+    return {
+        "id": instrument.id,
+        "name": instrument.name,
+        "short_name": short_instrument_name(
+            instrument.name, isin=instrument.isin, ticker=instrument.ticker
+        ),
+    }
+
+
 def with_short_names(session, value):
     return instrument_names(session).project(value)
 

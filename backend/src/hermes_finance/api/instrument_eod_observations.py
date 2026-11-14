@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.instrument_cash_income import KnownPayouts, Ref
+from hermes_finance.api.instrument_cash_income import InstrumentRef, KnownPayouts, Ref
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.services.instrument_eod_observations import instrument_eod_observations
 
@@ -50,7 +50,7 @@ class InstrumentObservations(BaseModel):
     method: Literal["persisted-instrument-eod-pair"]
     version: Literal[1]
     account: Ref
-    instrument: Ref
+    instrument: InstrumentRef
     t0: date
     t1: date
     currency: Literal["RUB"]

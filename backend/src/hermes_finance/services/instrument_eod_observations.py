@@ -34,6 +34,7 @@ from hermes_finance.services.instrument_cash_income import (
     _historical_identity,
     known_instrument_cash_income,
 )
+from hermes_finance.services.instrument_names import instrument_reference
 from hermes_finance.services.mybroker_corrections import _source_integrity
 from hermes_finance.services.mybroker_dispositions import accepted_account_binding
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
@@ -319,7 +320,7 @@ def instrument_eod_observations(session, account_id: int, instrument_id: int, t0
         "method": METHOD,
         "version": VERSION,
         "account": {"id": account.id, "name": account.name},
-        "instrument": {"id": instrument.id, "name": instrument.name},
+        "instrument": instrument_reference(instrument),
         "t0": str(t0),
         "t1": str(t1),
         "currency": "RUB",

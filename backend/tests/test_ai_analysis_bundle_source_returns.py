@@ -1620,6 +1620,12 @@ def test_v32_preserves_saved_v3_validation(database, monkeypatch, version):
     report["sections"]["clean_returns"]["data"] = legacy
     for row in report["sections"]["current_portfolio"]["data"]["positions"]:
         row.pop("cost_basis_state")
+    # Recreate the saved format: current-only display metadata is not a v3/v3.1 field.
+    portfolio = report["sections"]["current_portfolio"]["data"]
+    for row in portfolio["instruments"]:
+        row.pop("short_name")
+    for row in portfolio["positions"]:
+        row.pop("short_name", None)
     validate_ai_financial_review(report)
 
 
