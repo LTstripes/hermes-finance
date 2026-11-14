@@ -46,34 +46,45 @@ faster returns reads:
 There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
 checks do not establish Owner UAT.
 
-Merged to `main` after 1.16.0 and not yet released:
+Prepared for 1.17.0 (release PR; [release notes](release-notes-1.17.0.md)):
 
-- Month: [#1187](https://github.com/LTstripes/hermes-finance/pull/1187) confirms
-  rows copied into a draft month in one step, adds a confirmed re-read to the month
-  panels and redirects the legacy month editor (`/v2/data/months/:id`) to them.
-- Returns: [#1189](https://github.com/LTstripes/hermes-finance/pull/1189) third read-reuse
-  layer (instrument details about twice as fast, responses byte-identical);
+- Speed: [#1199](https://github.com/LTstripes/hermes-finance/pull/1199) bounded
+  read cache keyed by the whole committed SQLite snapshot (repeat reads of Returns
+  and Month in hundredths of a second, byte-identical responses), Home returns
+  summary (B3) and idle prefetch; [#1189](https://github.com/LTstripes/hermes-finance/pull/1189);
+  lazy month position and securities results in [#1194](https://github.com/LTstripes/hermes-finance/pull/1194).
+- Returns: [#1193](https://github.com/LTstripes/hermes-finance/pull/1193) realized and
+  unrealized result per instrument (FIFO, semantics v22);
+  [#1198](https://github.com/LTstripes/hermes-finance/pull/1198) one server short
+  instrument name everywhere (B8) and the gold FIFO split (semantics v23);
   [#1191](https://github.com/LTstripes/hermes-finance/pull/1191) annual XIRR for fully
-  redeemed bonds over the FIFO-weighted holding period, source-proof semantics v21.
-- Tests and CI: [#1188](https://github.com/LTstripes/hermes-finance/pull/1188) and
-  [#1190](https://github.com/LTstripes/hermes-finance/pull/1190).
+  redeemed bonds; audit tails B1, B2, B5, B6, B7, B10-B12 in #1193/#1194.
+- Month and gold: [#1187](https://github.com/LTstripes/hermes-finance/pull/1187),
+  [#1195](https://github.com/LTstripes/hermes-finance/pull/1195).
+- Visible product name "Finance" ([#1197](https://github.com/LTstripes/hermes-finance/pull/1197),
+  stage 1 of [#1196](https://github.com/LTstripes/hermes-finance/issues/1196); internal
+  names, env vars and the AI export application name unchanged).
+- Tests, CI and status: [#1188](https://github.com/LTstripes/hermes-finance/pull/1188),
+  [#1190](https://github.com/LTstripes/hermes-finance/pull/1190),
+  [#1192](https://github.com/LTstripes/hermes-finance/pull/1192).
 
-No new database migrations. The installed 1.16.0 does not contain these changes.
+No new database migrations since 1.16.0. Green CI and copy checks do not
+establish Owner UAT.
 
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Owner UAT of installed 1.16.0 together with the pending UAT of 1.13.0–1.15.0;
-   the remaining acceptance scope is tracked in
-   [#711](https://github.com/LTstripes/hermes-finance/issues/711).
-2. Release 1.17.0 with #1187–#1191 on the Owner's decision.
-3. Development: realized and unrealized result per instrument; backend item B11
-   for audit task 26.D.
+1. Publish 1.17.0 and install it on the Owner computer by backup-first OPS02.
+2. Owner UAT of the installed version together with the pending UAT of
+   1.13.0-1.16.0, tracked in [#711](https://github.com/LTstripes/hermes-finance/issues/711).
+3. Development: overall portfolio annual rate (B9) by the Owner rule of 14.11.2026:
+   annual XIRR over brokerage and IIS accounts from the first operation; own
+   transfers are not income.
 4. Deferred by the Owner: annual tax and IIS reconciliation
    ([#1130](https://github.com/LTstripes/hermes-finance/issues/1130), documents first);
    a market-data supplement for amortizing bonds (until one is held).
-5. Apply the Owner's proportional verification rule and never infer UAT from green
-   CI. No financial Apply/Close or data repair is implied by release.
+5. Apply the proportional verification rule of the Owner and never infer UAT from
+   green CI. No financial Apply/Close or data repair is implied by release.
 
 <a id="s4"></a>
 ## 4. Evidence boundaries
