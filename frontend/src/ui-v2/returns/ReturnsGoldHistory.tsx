@@ -1,8 +1,10 @@
 import { reasonCopy } from "../../lib/reasonCopy";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { Button, Input, Select } from "../../components/ui";
+import formStyles from "./ReturnsGoldHistory.module.css";
 import { ApiClientError } from "../../api/client";
-import { formatQuantity } from "../../lib/format";
+import { formatDate, formatQuantity } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { MonthNavigationGuard } from "../MonthNavigationGuard";
 import { money } from "../SourceInstrumentDetail";
@@ -130,21 +132,23 @@ function Result({
       )}
       {valuation && (
         <p className={styles.muted}>
-          Оценка {money(valuation.market_value_kopecks)} на {valuation.price_date};{" "}
-          {formatQuantity(valuation.quantity)} г; снимок месяца {valuation.snapshot_date}
+          Оценка {money(valuation.market_value_kopecks)} на {formatDate(valuation.price_date)};{" "}
+          {formatQuantity(valuation.quantity)} г; снимок месяца{" "}
+          {formatDate(valuation.snapshot_date)}
           {valuation.provisional || valuation.month_status === "draft" ? " · предварительная" : ""}.
         </p>
       )}
       <p className={styles.muted}>
-        Операции учтены по {value.as_of_date}
+        Операции учтены по {formatDate(value.as_of_date)}
         {!valuation ? "; оценка не подтверждена" : ""}.
       </p>
       <details className={styles.details}>
         <summary>Основа расчёта</summary>
         {!!value.reason_codes.length && <code>{value.reason_codes.join(", ")}</code>}
         <p>
-          История с {value.period.covered_from} по {value.period.covered_to ?? value.as_of_date}.
-          Комиссии и налоги не входят в результат.{" "}
+          История с {formatDate(value.period.covered_from)} по{" "}
+          {formatDate(value.period.covered_to ?? value.as_of_date)}. Комиссии и налоги не входят в
+          результат.{" "}
           {value.amount_basis === "derived"
             ? "Суммы операций выведены из цены за грамм."
             : "Использованы фактические суммы операций."}
@@ -176,6 +180,7 @@ export function ReturnsGoldHistory({
   targetLabel?: string;
   cleanResult?: Metric | null;
 }) {
+  const formId = useId();
   const queryClient = useQueryClient();
   const key = ["returns", "gold-history", accountId, instrumentId, revision];
   const storageKey = goldPendingKey(accountId, instrumentId);
@@ -256,6 +261,7 @@ export function ReturnsGoldHistory({
     setPending(null);
     setPreview(null);
     setDirty(false);
+    setFormOpen(false);
     setDraft(empty(accountId, instrumentId));
     setMessage(`История подтверждена независимым чтением: ревизия ${receipt.accepted_revision}.`);
     try {
@@ -331,7 +337,7 @@ export function ReturnsGoldHistory({
     }
   }
   return (
-    <section className={styles.gold} aria-label="История золота владельца">
+    <section className={formStyles.history} aria-label="История золота владельца">
       <MonthNavigationGuard
         dirty={dirty}
         pending={blocked}
@@ -340,18 +346,20 @@ export function ReturnsGoldHistory({
           setPreview(null);
         }}
       />
-      <h3>История операций</h3>
+      <header className={formStyles.heading}>
+        <h3>История операций</h3>
+        {histories?.length === 0 && <p>История операций пока не сохранена.</p>}
+      </header>
       {query.isError ? (
         <p role="alert">
           Не удалось прочитать историю.{" "}
-          <button type="button" onClick={() => void query.refetch()}>
+          <Button type="button" onClick={() => void query.refetch()}>
             Повторить чтение истории
-          </button>
+          </Button>
         </p>
       ) : query.isFetching ? (
         <p role="status">Читаем историю золота…</p>
       ) : null}
-      {histories?.length === 0 && <p>История операций пока не сохранена.</p>}
       {histories && histories.length > 1 && (
         <p role="alert">
           Найдено несколько историй для одной точной пары. Редактирование заблокировано.
@@ -359,39 +367,56 @@ export function ReturnsGoldHistory({
       )}
       {current && (
         <>
-          <h4>Сохранённая история · ревизия {current.revision}</h4>
+          <div className={formStyles.savedHeading}>
+            <h4>Сохранённая история · ревизия {current.revision}</h4>
+            <Button
+              disabled={blocked || !current.events_loaded}
+              aria-expanded={formOpen}
+              onClick={() => {
+                setFormOpen(true);
+                setDraft(edit(current));
+                setDirty(false);
+                setPreview(null);
+                setMessage("");
+              }}
+            >
+              Исправить
+            </Button>
+          </div>
           <p>
             {current.currentness === "current"
               ? "Основа актуальна"
               : "Зависимости изменились; прежний результат не является актуальным"}{" "}
-            · {current.declaration.covered_from} — {current.declaration.covered_to}
+            · {formatDate(current.declaration.covered_from)} —{" "}
+            {formatDate(current.declaration.covered_to)}
           </p>
           <Result value={current.result} valuation={current.valuation} clean={cleanResult} />
-          <details>
-            <summary>Сохранённые операции ({current.events.length})</summary>
-            <ul>
+          <table className={formStyles.savedTable} aria-label="Сохранённые операции">
+            <thead>
+              <tr>
+                <th scope="col">Дата</th>
+                <th scope="col">Операция</th>
+                <th scope="col">Граммы</th>
+                <th scope="col">Сумма, ₽</th>
+                <th scope="col">Комиссия</th>
+              </tr>
+            </thead>
+            <tbody>
               {current.events.map((row) => (
-                <li key={row.event_id}>
-                  {row.event_date} · {row.side === "BUY" ? "Покупка" : "Продажа"} ·{" "}
-                  {formatQuantity(row.grams)} г · {money(row.amount_kopecks)} · комиссия{" "}
-                  {money(row.separate_fee_kopecks)}
-                </li>
+                <tr key={row.event_id}>
+                  <td data-label="Дата">{formatDate(row.event_date)}</td>
+                  <td data-label="Операция">{row.side === "BUY" ? "Покупка" : "Продажа"}</td>
+                  <td data-label="Граммы">{formatQuantity(row.grams)}</td>
+                  <td data-label="Сумма, ₽">{money(row.amount_kopecks)}</td>
+                  <td data-label="Комиссия">
+                    {row.separate_fee_kopecks === null
+                      ? "Неизвестна"
+                      : money(row.separate_fee_kopecks)}
+                  </td>
+                </tr>
               ))}
-            </ul>
-          </details>
-          <button
-            type="button"
-            disabled={blocked || !current.events_loaded}
-            onClick={() => {
-              setFormOpen(true);
-              setDraft(edit(current));
-              setDirty(false);
-              setPreview(null);
-              setMessage("");
-            }}
-          >
-            Изменить сохранённую историю
-          </button>
+            </tbody>
+          </table>
         </>
       )}
       {message && <p role="status">{message}</p>}
@@ -399,12 +424,16 @@ export function ReturnsGoldHistory({
       {pending && (
         <p>
           Исход отправки требует чтения квитанции.{" "}
-          <button type="button" disabled={busy} onClick={() => void recover()}>
+          <Button type="button" disabled={busy} onClick={() => void recover()}>
             Проверить результат сохранения
-          </button>
+          </Button>
         </p>
       )}
-      <details open={formOpen} onToggle={(event) => setFormOpen(event.currentTarget.open)}>
+      <details
+        className={`${formStyles.editor} ${current ? formStyles.editorSaved : ""}`}
+        open={formOpen}
+        onToggle={(event) => setFormOpen(event.currentTarget.open)}
+      >
         <summary>Ввести или исправить историю операций</summary>
         <form
           onSubmit={(event) => {
@@ -412,75 +441,98 @@ export function ReturnsGoldHistory({
             void previewDraft();
           }}
         >
-          <fieldset disabled={blocked || unavailable} className={styles.goldForm}>
-            <legend>
+          <fieldset disabled={blocked || unavailable} className={formStyles.form}>
+            <legend className={formStyles.visuallyHidden}>
               {draft.expected_revision
                 ? "Полная новая ревизия истории"
                 : "Новая история: заполните фактические сведения"}
             </legend>
-            <label>
-              История с
-              <input
-                type="date"
-                required
-                value={draft.covered_from}
-                onChange={(event) => change({ ...draft, covered_from: event.target.value })}
-              />
-            </label>
-            <label>
-              История по
-              <input
-                type="date"
-                required
-                value={draft.covered_to}
-                onChange={(event) =>
-                  change({
-                    ...draft,
-                    covered_to: event.target.value,
-                    current_quantity_date: event.target.value,
-                  })
-                }
-              />
-            </label>
-            <label>
-              Заявленное количество на конец истории, г
-              <input
-                required
-                inputMode="decimal"
-                pattern="(0|[1-9][0-9]{0,11})([.][0-9]{1,6})?"
-                value={draft.current_quantity}
-                onChange={(event) => change({ ...draft, current_quantity: event.target.value })}
-              />
-            </label>
-            <label>
-              Источник: документ или запись
-              <input
-                required
-                maxLength={128}
-                value={draft.provenance_reference}
-                onChange={(event) => change({ ...draft, provenance_reference: event.target.value })}
-              />
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={draft.complete}
-                onChange={(event) => change({ ...draft, complete: event.target.checked })}
-              />
-              История за указанный период полная
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={draft.zero_start}
-                onChange={(event) => change({ ...draft, zero_start: event.target.checked })}
-              />
-              На начало периода золота не было
-            </label>
+            <div className={formStyles.headerFields}>
+              <label htmlFor={`${formId}-from`}>
+                С
+                <Input
+                  id={`${formId}-from`}
+                  type="date"
+                  required
+                  aria-label="История с"
+                  value={draft.covered_from}
+                  onChange={(event) => change({ ...draft, covered_from: event.target.value })}
+                />
+              </label>
+              <label htmlFor={`${formId}-to`}>
+                По
+                <Input
+                  id={`${formId}-to`}
+                  type="date"
+                  required
+                  aria-label="История по"
+                  value={draft.covered_to}
+                  onChange={(event) =>
+                    change({
+                      ...draft,
+                      covered_to: event.target.value,
+                      current_quantity_date: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label htmlFor={`${formId}-quantity`}>
+                Остаток на конец, г
+                <Input
+                  id={`${formId}-quantity`}
+                  required
+                  inputMode="decimal"
+                  pattern="(0|[1-9][0-9]{0,11})([.][0-9]{1,6})?"
+                  title="Заявленное количество на конец истории, г"
+                  aria-label="Заявленное количество на конец истории, г"
+                  className="input--money"
+                  value={draft.current_quantity}
+                  onChange={(event) => change({ ...draft, current_quantity: event.target.value })}
+                />
+              </label>
+              <label htmlFor={`${formId}-source`}>
+                Источник
+                <Input
+                  id={`${formId}-source`}
+                  required
+                  maxLength={128}
+                  title="Источник: документ или запись"
+                  aria-label="Источник: документ или запись"
+                  value={draft.provenance_reference}
+                  onChange={(event) =>
+                    change({
+                      ...draft,
+                      provenance_reference: event.target.value,
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <div className={formStyles.checks}>
+              <label htmlFor={`${formId}-complete`}>
+                <Input
+                  id={`${formId}-complete`}
+                  type="checkbox"
+                  checked={draft.complete}
+                  onChange={(event) => change({ ...draft, complete: event.target.checked })}
+                />
+                История за указанный период полная
+              </label>
+              <label htmlFor={`${formId}-zero-start`}>
+                <Input
+                  id={`${formId}-zero-start`}
+                  type="checkbox"
+                  checked={draft.zero_start}
+                  onChange={(event) => change({ ...draft, zero_start: event.target.checked })}
+                />
+                На начало периода золота не было
+              </label>
+            </div>
             {!!draft.expected_revision && (
-              <label>
+              <label htmlFor={`${formId}-reason`}>
                 Причина исправления
-                <input
+                <Input
+                  id={`${formId}-reason`}
                   required
                   maxLength={500}
                   value={draft.change_reason ?? ""}
@@ -488,132 +540,191 @@ export function ReturnsGoldHistory({
                 />
               </label>
             )}
-            {draft.events.map((row, index) => (
-              <fieldset key={row.event_id} className={styles.goldOperation}>
-                <legend>Операция {index + 1}</legend>
-                <label>
-                  Дата операции
-                  <input
-                    type="date"
-                    required
-                    value={row.event_date}
-                    onChange={(event) => changeEvent(index, { event_date: event.target.value })}
-                  />
-                </label>
-                <label>
-                  Покупка или продажа
-                  <select
-                    value={row.side}
-                    onChange={(event) =>
-                      changeEvent(index, { side: event.target.value as GoldEventInput["side"] })
-                    }
-                  >
-                    <option value="BUY">Покупка</option>
-                    <option value="SELL">Продажа</option>
-                  </select>
-                </label>
-                <label>
-                  Граммы
-                  <input
-                    required
-                    inputMode="decimal"
-                    pattern="(0|[1-9][0-9]{0,11})([.][0-9]{1,6})?"
-                    value={row.grams}
-                    onChange={(event) => changeEvent(index, { grams: event.target.value })}
-                  />
-                </label>
-                <label>
-                  Основа суммы
-                  <select
-                    value={row.amount_basis}
-                    onChange={(event) =>
-                      changeEvent(index, {
-                        amount_basis: event.target.value as GoldEventInput["amount_basis"],
-                        amount_rub: event.target.value === "actual" ? "" : null,
-                        unit_price_rub: event.target.value === "derived_unit_price" ? "" : null,
-                      })
-                    }
-                  >
-                    <option value="actual">Фактическая сумма</option>
-                    <option value="derived_unit_price">Цена за грамм — производная сумма</option>
-                  </select>
-                </label>
-                <label>
-                  {row.amount_basis === "actual"
-                    ? "Сумма операции без отдельной комиссии, ₽"
-                    : "Цена за грамм без отдельной комиссии, ₽"}
-                  <input
-                    required
-                    inputMode="decimal"
-                    pattern="(0|[1-9][0-9]{0,13})([.][0-9]{1,2})?"
-                    value={
-                      (row.amount_basis === "actual" ? row.amount_rub : row.unit_price_rub) ?? ""
-                    }
-                    onChange={(event) =>
-                      changeEvent(
-                        index,
-                        row.amount_basis === "actual"
-                          ? { amount_rub: event.target.value }
-                          : { unit_price_rub: event.target.value },
-                      )
-                    }
-                  />
-                </label>
-                <label>
-                  Отдельная комиссия
-                  <select
-                    value={row.fee_state}
-                    onChange={(event) =>
-                      changeEvent(index, {
-                        fee_state: event.target.value as GoldEventInput["fee_state"],
-                        fee_rub: event.target.value === "known" ? "" : null,
-                      })
-                    }
-                  >
-                    <option value="unknown">Неизвестна</option>
-                    <option value="known_zero">Известно, что комиссии нет</option>
-                    <option value="known">Известная сумма</option>
-                  </select>
-                </label>
-                {row.fee_state === "known" && (
-                  <label>
-                    Сумма комиссии, ₽
-                    <input
+            <div>
+              <div className={formStyles.columns} aria-hidden="true">
+                <span>Дата</span>
+                <span>Операция</span>
+                <span>Граммы</span>
+                <span>Основа суммы</span>
+                <span>Сумма, ₽</span>
+                <span>Комиссия</span>
+                <span />
+              </div>
+              {draft.events.map((row, index) => (
+                <fieldset key={row.event_id} className={formStyles.operation}>
+                  <legend className={formStyles.visuallyHidden}>Операция {index + 1}</legend>
+                  <label htmlFor={`${formId}-${row.event_id}-date`}>
+                    <span className={formStyles.fieldLabel}>Дата</span>
+                    <Input
+                      id={`${formId}-${row.event_id}-date`}
+                      aria-label="Дата операции"
+                      type="date"
                       required
-                      inputMode="decimal"
-                      value={row.fee_rub ?? ""}
-                      onChange={(event) => changeEvent(index, { fee_rub: event.target.value })}
+                      value={row.event_date}
+                      onChange={(event) => changeEvent(index, { event_date: event.target.value })}
                     />
                   </label>
-                )}
-                <button
-                  type="button"
-                  disabled={draft.events.length === 1}
-                  onClick={() =>
-                    change({
-                      ...draft,
-                      events: draft.events.filter((_, rowIndex) => rowIndex !== index),
-                    })
-                  }
-                >
-                  Удалить операцию
-                </button>
-              </fieldset>
-            ))}
-            <p>
-              Сумма сделки или граммы × цена — без отдельно уплаченной комиссии. Для продажи укажите
-              полную сумму сделки, а не поступление после удержания комиссии. Комиссию укажите
-              отдельно: известный ноль, известная сумма или неизвестно. Неизвестная комиссия не
-              считается нулевой. Налоги не выводятся автоматически.
-            </p>
-            <button
+                  <label htmlFor={`${formId}-${row.event_id}-side`}>
+                    <span className={formStyles.fieldLabel}>Операция</span>
+                    <Select
+                      id={`${formId}-${row.event_id}-side`}
+                      aria-label="Покупка или продажа"
+                      value={row.side}
+                      onChange={(event) =>
+                        changeEvent(index, {
+                          side: event.target.value as GoldEventInput["side"],
+                        })
+                      }
+                    >
+                      <option value="BUY">Покупка</option>
+                      <option value="SELL">Продажа</option>
+                    </Select>
+                  </label>
+                  <label htmlFor={`${formId}-${row.event_id}-grams`}>
+                    <span className={formStyles.fieldLabel}>Граммы</span>
+                    <Input
+                      id={`${formId}-${row.event_id}-grams`}
+                      required
+                      inputMode="decimal"
+                      pattern="(0|[1-9][0-9]{0,11})([.][0-9]{1,6})?"
+                      aria-label="Граммы"
+                      value={row.grams}
+                      onChange={(event) => changeEvent(index, { grams: event.target.value })}
+                    />
+                  </label>
+                  <label htmlFor={`${formId}-${row.event_id}-basis`}>
+                    <span className={formStyles.fieldLabel}>Основа суммы</span>
+                    <Select
+                      id={`${formId}-${row.event_id}-basis`}
+                      aria-label="Основа суммы"
+                      value={row.amount_basis}
+                      onChange={(event) =>
+                        changeEvent(index, {
+                          amount_basis: event.target.value as GoldEventInput["amount_basis"],
+                          amount_rub: event.target.value === "actual" ? "" : null,
+                          unit_price_rub: event.target.value === "derived_unit_price" ? "" : null,
+                        })
+                      }
+                    >
+                      <option value="actual">Сумма сделки</option>
+                      <option value="derived_unit_price">Цена за грамм</option>
+                    </Select>
+                  </label>
+                  <label htmlFor={`${formId}-${row.event_id}-amount`} className={formStyles.amount}>
+                    <span
+                      className={row.amount_basis === "actual" ? formStyles.fieldLabel : undefined}
+                    >
+                      {row.amount_basis === "actual" ? "Сумма, ₽" : "Цена, ₽/г"}
+                    </span>
+                    <Input
+                      id={`${formId}-${row.event_id}-amount`}
+                      className="input--money"
+                      aria-label={
+                        row.amount_basis === "actual"
+                          ? "Сумма операции без отдельной комиссии, ₽"
+                          : "Цена за грамм без отдельной комиссии, ₽"
+                      }
+                      required
+                      inputMode="decimal"
+                      pattern="(0|[1-9][0-9]{0,13})([.][0-9]{1,2})?"
+                      value={
+                        (row.amount_basis === "actual" ? row.amount_rub : row.unit_price_rub) ?? ""
+                      }
+                      onChange={(event) =>
+                        changeEvent(
+                          index,
+                          row.amount_basis === "actual"
+                            ? { amount_rub: event.target.value }
+                            : { unit_price_rub: event.target.value },
+                        )
+                      }
+                    />
+                  </label>
+                  <div className={formStyles.fee}>
+                    <label htmlFor={`${formId}-${row.event_id}-fee-state`}>
+                      <span className={formStyles.fieldLabel}>Комиссия</span>
+                      <Select
+                        id={`${formId}-${row.event_id}-fee-state`}
+                        aria-label="Отдельная комиссия"
+                        value={row.fee_state}
+                        onChange={(event) =>
+                          changeEvent(index, {
+                            fee_state: event.target.value as GoldEventInput["fee_state"],
+                            fee_rub: event.target.value === "known" ? "" : null,
+                          })
+                        }
+                      >
+                        <option value="unknown">Неизвестна</option>
+                        <option value="known_zero">Нет · 0 ₽</option>
+                        <option value="known">Известная сумма</option>
+                      </Select>
+                    </label>
+                    {row.fee_state === "known" && (
+                      <label htmlFor={`${formId}-${row.event_id}-fee-amount`}>
+                        <span className={formStyles.visuallyHidden}>Сумма комиссии, ₽</span>
+                        <Input
+                          id={`${formId}-${row.event_id}-fee-amount`}
+                          required
+                          inputMode="decimal"
+                          className="input--money"
+                          placeholder="Сумма, ₽"
+                          value={row.fee_rub ?? ""}
+                          onChange={(event) => changeEvent(index, { fee_rub: event.target.value })}
+                        />
+                      </label>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className={formStyles.remove}
+                    aria-label={`Удалить операцию ${index + 1}`}
+                    title={
+                      draft.events.length === 1
+                        ? "В истории должна остаться хотя бы одна операция"
+                        : `Удалить операцию ${index + 1}`
+                    }
+                    disabled={draft.events.length === 1}
+                    onClick={() =>
+                      change({
+                        ...draft,
+                        events: draft.events.filter((_, rowIndex) => rowIndex !== index),
+                      })
+                    }
+                  >
+                    <span aria-hidden="true">×</span>
+                  </Button>
+                </fieldset>
+              ))}
+            </div>
+            <Button
               type="button"
+              variant="ghost"
+              className={formStyles.add}
               disabled={draft.events.length >= 100}
               onClick={() => change({ ...draft, events: [...draft.events, event()] })}
             >
               Добавить операцию
-            </button>
-            <button type="submit">Предпросмотр истории</button>
+            </Button>
+            <div>
+              <p className={formStyles.hint}>
+                Сумма сделки — без отдельной комиссии; комиссию укажите отдельно.
+              </p>
+              <details className={formStyles.help}>
+                <summary>Как считать сумму</summary>
+                <p>
+                  Сумма сделки или граммы × цена — без отдельно уплаченной комиссии. Для продажи
+                  укажите полную сумму сделки, а не поступление после удержания комиссии. Комиссию
+                  укажите отдельно: известный ноль, известная сумма или неизвестно. Неизвестная
+                  комиссия не считается нулевой. Налоги не выводятся автоматически.
+                </p>
+              </details>
+            </div>
+            <div className={formStyles.actions}>
+              <Button type="submit" variant="primary">
+                Предпросмотр истории
+              </Button>
+            </div>
           </fieldset>
         </form>
       </details>
@@ -628,7 +739,8 @@ export function ReturnsGoldHistory({
                 : "без изменения сведений"}
           </h4>
           <p>
-            {preview.value.declaration.covered_from} — {preview.value.declaration.covered_to} ·{" "}
+            {formatDate(preview.value.declaration.covered_from)} —{" "}
+            {formatDate(preview.value.declaration.covered_to)} ·{" "}
             {preview.value.declaration.events.length} операций
           </p>
           <Result
@@ -636,13 +748,13 @@ export function ReturnsGoldHistory({
             valuation={preview.value.valuation}
             clean={preview.value.clean_result}
           />
-          <button
+          <Button
             type="button"
             disabled={blocked || !preview.value.can_apply}
             onClick={() => void confirm()}
           >
             Подтвердить сохранение истории
-          </button>
+          </Button>
         </section>
       )}
     </section>

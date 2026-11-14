@@ -121,8 +121,8 @@ test("gold preview binds exact intent; confirmation waits for independent GET be
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Предпросмотр истории" }));
   const preview = await screen.findByRole("region", { name: "Предпросмотр истории золота" });
-  expect(preview).toHaveTextContent("2044-03-30");
-  expect(preview).toHaveTextContent("снимок месяца 2044-03-31");
+  expect(preview).toHaveTextContent("30.03.2044");
+  expect(preview).toHaveTextContent("снимок месяца 31.03.2044");
   expect(preview).toHaveTextContent("Комиссии и налоги не входят в результат");
   expect(preview).toHaveTextContent("1 000,00 ₽");
   fireEvent.click(within(preview).getByRole("button", { name: "Подтвердить сохранение истории" }));
@@ -135,6 +135,9 @@ test("gold preview binds exact intent; confirmation waits for independent GET be
   await screen.findByText(/подтверждена независимым чтением/);
   expect(onConfirmed).toHaveBeenCalledTimes(1);
   expect(sessionStorage.getItem(goldPendingKey(10, 20))).toBeNull();
+  expect(
+    screen.getByText("Ввести или исправить историю операций").parentElement,
+  ).not.toHaveAttribute("open");
 });
 test("gold any edit invalidates preview and derived basis sends only its chosen amount field", async () => {
   const api = install();
@@ -225,7 +228,13 @@ test("gold correction explicitly loads existing revision and requires reason wit
   setup();
   await screen.findByText(/Сохранённая история · ревизия 1/);
   expect(screen.getByLabelText("Сумма операции без отдельной комиссии, ₽")).toHaveValue("");
-  fireEvent.click(screen.getByRole("button", { name: "Изменить сохранённую историю" }));
+  const correction = screen.getByRole("button", { name: "Исправить" });
+  expect(correction).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByRole("table", { name: "Сохранённые операции" })).toHaveTextContent(
+    "5 000,00 ₽",
+  );
+  fireEvent.click(correction);
+  expect(correction).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByLabelText("Сумма операции без отдельной комиссии, ₽")).toHaveValue("5000.00");
   const reason = screen.getByLabelText("Причина исправления");
   expect(reason).toBeRequired();
@@ -236,6 +245,46 @@ test("gold correction explicitly loads existing revision and requires reason wit
   expect(api.intent().change_reason).toBe("Synthetic document correction");
 });
 
+test("gold saved operations keep unknown fees distinct from an explicit zero", async () => {
+  const intent = goldIntentFixture();
+  intent.events.push({
+    ...intent.events[0],
+    event_id: "synthetic_unknown_fee",
+    fee_state: "unknown",
+  });
+  install({ histories: [goldHistoryFixture(intent)] });
+  setup();
+  const table = await screen.findByRole("table", { name: "Сохранённые операции" });
+  const rows = within(table).getAllByRole("row");
+  expect(rows).toHaveLength(3);
+  expect(within(rows[1]).getAllByRole("cell").at(-1)).toHaveTextContent("0,00 ₽");
+  expect(within(rows[2]).getAllByRole("cell").at(-1)).toHaveTextContent("Неизвестна");
+});
+
+test("gold row deletion identifies its operation and preserves remaining draft values", async () => {
+  const api = install();
+  setup();
+  await fill();
+  expect(screen.getByRole("button", { name: "Удалить операцию 1" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Добавить операцию" }));
+  fireEvent.change(screen.getAllByLabelText("Граммы")[1], { target: { value: "3" } });
+  fireEvent.click(screen.getByRole("button", { name: "Удалить операцию 2" }));
+  expect(screen.getAllByLabelText("Граммы")).toHaveLength(1);
+  expect(screen.getByLabelText("Граммы")).toHaveValue("2");
+  fireEvent.change(screen.getByLabelText("Отдельная комиссия"), { target: { value: "known" } });
+  expect(screen.getByLabelText("Сумма комиссии, ₽")).toBeRequired();
+  fireEvent.change(screen.getByLabelText("Сумма комиссии, ₽"), { target: { value: "12.34" } });
+  fireEvent.click(screen.getByRole("button", { name: "Предпросмотр истории" }));
+  await screen.findByRole("region", { name: "Предпросмотр истории золота" });
+  expect(api.intent().events[0]).toMatchObject({ fee_state: "known", fee_rub: "12.34" });
+  fireEvent.change(screen.getByLabelText("Отдельная комиссия"), { target: { value: "unknown" } });
+  expect(screen.queryByLabelText("Сумма комиссии, ₽")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Подтвердить сохранение истории" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Предпросмотр истории" }));
+  await screen.findByRole("region", { name: "Предпросмотр истории золота" });
+  expect(api.intent().events[0]).toMatchObject({ fee_state: "unknown", fee_rub: null });
+});
+
 test("gold saved DRAFT quote keeps its actual quote date and separate snapshot date", async () => {
   const history = goldHistoryFixture();
   if (!history.valuation) throw new Error("synthetic quote missing");
@@ -244,9 +293,9 @@ test("gold saved DRAFT quote keeps its actual quote date and separate snapshot d
   history.result.valuation_provisional = true;
   install({ histories: [history] });
   setup();
-  const quote = await screen.findByText(/Оценка.*2044-03-30/);
+  const quote = await screen.findByText(/Оценка.*30.03.2044/);
   expect(quote).toHaveTextContent("предварительная");
-  expect(quote).toHaveTextContent("снимок месяца 2044-03-31");
+  expect(quote).toHaveTextContent("снимок месяца 31.03.2044");
   expect(screen.queryByLabelText(/Новая цена/)).toBeNull();
 });
 
