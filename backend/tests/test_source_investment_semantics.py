@@ -11,6 +11,7 @@ from hermes_finance.services import source_investment_proofs as proofs
 SEMANTIC_MODULES = (
     "api/read_cache.py",
     "services/returns_home.py",
+    "services/portfolio_annual_return.py",
     "domain/clean_instrument_return.py",
     "domain/instrument_return.py",
     "domain/money_security.py",
@@ -58,12 +59,13 @@ SEMANTIC_MODULES = (
 # Pin the revision alongside the digest so bumping either alone fails the guard.
 # V23 adds clean gold FIFO decomposition. Source operands and receipt
 # dependencies stay unchanged; V22 retains exact-dependency compatibility.
+# B9 adds an independently guarded read projection, without changing receipts.
 # V5 carries dated redemption quantity and scopes structure-only confirmations;
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v23",
-    "724c4a7e999a4830ed0bcf3a65126c9ef2f03d82ec8880a941ce155467d1ad9e",
+    "87e55ab707789d495fdd5750e1d968db875935e60b90ff1d88b0ca740de9ebe2",
 )
 
 

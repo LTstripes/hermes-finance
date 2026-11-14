@@ -6745,10 +6745,59 @@ is introduced by a Returns GET.
 <a id="c7-returns-overall"></a>
 ### All-history overview and mixed known result
 
+#### B9: inception annual return for brokerage and IIS (Owner, 14.11.2026)
+
+Only `GET /api/returns/overall` adds `annual_return={portfolio,accounts}` and
+replaces `overall.rate/pnl` with this specifically bounded brokerage/IIS scope.
+Other fields, endpoint meanings, mixed known result, deposits and gold retain
+their existing contracts. Current `Account.include_in_returns=true` selects the
+entire history of each brokerage/IIS account; legacy dated PERF membership is
+not an alternative B9 selector. A missing/ambiguous source mapping blocks the
+whole selected scope. Source receipts remain source authority, independently of Close.
+
+Require a current from-zero investment proof and its complete dated external
+schedule, extended through newer months by the existing account-history reader.
+Require zero opening value, complete flow totals, no unresolved account economics
+and complete closing securities plus cash from that same reader. All selected
+accounts use one valuation date. Stale proofs, unsupported inception, incomplete
+flows, unknown valuation or unproved transfer pairs yield NULL with specific
+`overall_*` reasons, never a numeric partial-scope result. This projection neither
+re-attests a proof nor changes its dependencies or meaning: retain semantics v23
+and update the semantic-module digest only.
+
+External deposits are negative investor cash flows, withdrawals positive; add
+closing value once. Retained coupons/dividends/cash interest are never additional
+external flows; a bank withdrawal of income is a withdrawal. A paired transfer
+inside the selected scope contributes neither leg. A single-account boundary
+includes money transferred into/out of that account. Pairing needs explicit
+source identity, opposite amounts, distinct accounts and the same date; equal
+amounts alone never prove pairing. Existing source schedules omit cross-account
+pair identities: any recognized broker transfer currently blocks B9 rather than
+being silently excluded or called an external portfolio flow.
+
+Use `domain/xirr.calculate_xirr` with integer kopecks and Decimal. Weighted days
+are `sum(contributed_principal * days_until_FIFO_withdrawal_or_valuation) /
+sum(contributed_principal)`, including fully withdrawn lots. Same-day incoming
+capital is admitted before FIFO outgoing capital; no intraday times are inferred.
+Withdrawal beyond evidenced contributed principal makes duration unknown.
+Compare unrounded days with 365; a shorter/unknown duration blocks only annual
+rate, independently of complete P&L. P&L is closing value minus net external
+contributions, never the sum of known position subtotals.
+
+The new field carries per-scope `pnl/rate`, `first_operation_date`,
+`valuation_date`, nullable Decimal-string `weighted_holding_days`, and
+`eligibility_basis=capital_weighted_holding_days`; account rows also carry `scope`.
+Money/rate units remain kopeck/fraction strings. Existing `overall.partial` and
+legacy aggregation reasons retain their mixed-category scope; they do not assert
+that the separate B9 brokerage/IIS metric is complete.
+
+#### Existing mixed-result composition
+
 `GET /api/returns/overall` is a no-store, read-only coherent composition over
 existing producers. It does not read the AI export, calculate hidden calendar
 months, change PerformanceScope, import operations, write receipts or invoke
-providers. Money remains exact integer-kopeck strings. Selecting a subset may
+providers. B9 adds only the explicitly scoped annual calculation above. Money
+remains exact integer-kopeck strings. Selecting a subset may
 sum those already eligible nonoverlapping producer components with BigInt for
 presentation; the browser does not calculate returns, infer authority, or add
 account totals to their breakdowns. Detail and account/month reads are lazy.

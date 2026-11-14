@@ -35,6 +35,71 @@ async function fulfillReturnsNeighbour(route: Route) {
   return false;
 }
 
+test("B9 annual portfolio rate and one account's unknown reason fit desktop zoom @viewport-owned", async ({
+  page,
+}, info) => {
+  const body = overallFixture();
+  const annual = {
+    pnl: body.overall.pnl,
+    rate: {
+      ...body.overall.rate,
+      value: "0.125",
+      reason_codes: [],
+      method: "portfolio_inception_xirr",
+    },
+    first_operation_date: "2028-01-01",
+    valuation_date: "2030-12-31",
+    weighted_holding_days: "500",
+    eligibility_basis: "capital_weighted_holding_days" as const,
+  };
+  body.annual_return = {
+    portfolio: annual,
+    accounts: [
+      {
+        ...annual,
+        scope: body.source_accounts[0].scope,
+        rate: { ...annual.rate, value: null, reason_codes: ["overall_source_proof_stale"] },
+      },
+    ],
+  };
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      if (await fulfillMonthPlate(route)) return;
+      expect(route.request().method()).toBe("GET");
+      await route.fulfill({ json: body });
+    },
+  );
+  for (const zoom of [1, 1.25]) {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/v2/returns");
+    await page.evaluate((scale) => {
+      document.documentElement.style.zoom = String(scale);
+    }, zoom);
+    const rate = page.getByRole("region", { name: "Годовая доходность" });
+    await expect(rate).toContainText("12,5");
+    await expect(rate).toContainText("годовых, с");
+    await rate.screenshot({ path: info.outputPath(`b9-annual-${zoom}.png`) });
+    await page
+      .getByRole("button", {
+        name: body.source_accounts[0].account_link?.label ?? body.source_accounts[0].label,
+        exact: true,
+      })
+      .click();
+    await expect(rate).toHaveCount(0);
+    const reason = page.getByText(
+      "Годовая доходность пока неизвестна: подтверждение истории счёта требует проверки.",
+      { exact: true },
+    );
+    await expect(reason).toBeVisible();
+    await expect(page.getByText("overall_source_proof_stale", { exact: true })).toHaveCount(0);
+    await reason.screenshot({ path: info.outputPath(`b9-unknown-${zoom}.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+  }
+});
+
 test("paper aggregate, open filter and result split fit 720px at desktop zoom @viewport-owned", async ({
   page,
 }, info) => {

@@ -30,6 +30,7 @@ import { capitalGoldTarget, goldTargets } from "./returns/navigation";
 import { accountHref, type GoldTarget, getOverall } from "./returns/overall";
 import styles from "./returns/Returns.module.css";
 import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
+import { ReturnsAnnualRate } from "./returns/ReturnsAnnualRate";
 import { useAccountName } from "./returns/useAccountName";
 import { useReturnsInvalidated } from "./returns/useReturnsInvalidated";
 import { useReturnsPrefetch } from "./returns/useReturnsPrefetch";
@@ -442,6 +443,13 @@ export default function UiV2ReturnsPage() {
                         </small>
                       </section>
                     )}
+                    <ReturnsAnnualRate
+                      value={
+                        scope === "all"
+                          ? data.annual_return?.portfolio
+                          : data.annual_return?.accounts.find((a) => a.scope === scope)
+                      }
+                    />
                     {(result?.partial || incomeCaveat) && (
                       <p className={layout.caveat}>
                         {result?.partial

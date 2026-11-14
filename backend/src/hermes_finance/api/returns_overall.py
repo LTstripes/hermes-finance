@@ -84,6 +84,24 @@ class OverallResult(DTO):
     reason_codes: list[str]
 
 
+class AnnualReturn(DTO):
+    pnl: Metric
+    rate: Metric
+    first_operation_date: date | None
+    valuation_date: date | None
+    weighted_holding_days: str | None
+    eligibility_basis: Literal["capital_weighted_holding_days"]
+
+
+class AccountAnnualReturn(AnnualReturn):
+    scope: str
+
+
+class AnnualReturns(DTO):
+    portfolio: AnnualReturn
+    accounts: list[AccountAnnualReturn]
+
+
 class SourceAccount(DTO):
     account_link: AccountLink | None = None
     valuation_date: date | None
@@ -268,6 +286,7 @@ class CouponIncome(DTO):
 class Overall(DTO):
     contract_version: Literal["returns_overall_v1", "returns_overall_v2"]
     overall: OverallResult
+    annual_return: AnnualReturns | None = None
     source_accounts: list[SourceAccount]
     instruments: list[OverallInstrument]
     deposits: Deposits
@@ -295,10 +314,15 @@ def overall(
     from hermes_finance.services.instrument_names import with_short_names
 
     reader = read_clean_overall if basis == "clean" else read_overall
-    return with_short_names(
-        session,
-        reader(session, include_instrument_details=include_instrument_summaries == "true"),
-    )
+    from hermes_finance.services.portfolio_annual_return import read_annual_return
+    from hermes_finance.services.source_monthly_returns import source_read_snapshot
+
+    with source_read_snapshot(session):
+        value = reader(session, include_instrument_details=include_instrument_summaries == "true")
+        annual = read_annual_return(session, value["source_accounts"])
+        value["annual_return"] = annual
+        value["overall"].update(pnl=annual["portfolio"]["pnl"], rate=annual["portfolio"]["rate"])
+        return with_short_names(session, value)
 
 
 class IncomeInstrumentAccount(DTO):

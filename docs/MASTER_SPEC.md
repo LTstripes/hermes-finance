@@ -554,6 +554,17 @@ separate amount and period percentage labelled **Без нераспределё
 unknown valuations or movements into zero to obtain this estimate.
 
 The ordinary `/v2/returns` entry opens **Обзор** for all available history.
+Owner rule B9 (14.11.2026): beside the main result show one annual XIRR for
+brokerage and IIS accounts with `include_in_returns=true`, or the selected
+account's own XIRR. Use dated external deposits/withdrawals from each account's
+first operation and the complete securities-plus-cash valuation on one date.
+Transfers within the selected portfolio cancel only with proved paired identity;
+coupons, dividends and cash interest retained inside it are income, not deposits.
+Their withdrawal to a bank is a withdrawal. Annual eligibility requires at least
+365 capital-weighted days; never use the age of a token first contribution.
+Caption: «годовых, с <дата первой операции>». One sentence explains XIRR on hover.
+Incomplete history, valuation or transfer evidence shows one plain-language
+reason, with no percentage, technical code or partial annual estimate.
 The main journey follows the compact account layout: result cards, a graph of
 supported observations, searchable instruments and leaders. Both available broker
 accounts are selected initially; a selector chooses one or both, each with its own
