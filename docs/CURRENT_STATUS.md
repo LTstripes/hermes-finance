@@ -9,6 +9,15 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.17.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.17.0)
+  is published at `229def1f296ceb70673a9772df9bebbcf14a9eb9` with
+  [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/43613070222)
+  and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/43614408690)
+  successful, with [release notes](release-notes-1.17.0.md).
+- 1.17.0 is installed on the Owner computer on 2026-11-14 by backup-first OPS02,
+  then Prepare and Start; the running health version reads back 1.17.0, the page
+  title reads "Finance", and a pre-update SQLite backup exists in the update backup
+  directory. Detailed numeric Owner UAT of 1.17.0 has not been performed.
 - [v1.16.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.16.0)
   is published at `33496ec450f8ce7f8709e89e1e59c22b58cea2ae` with
   [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/43474463116)
@@ -17,7 +26,7 @@ retains its original dated history and sources; it is not current installation e
 - 1.16.0 is installed on the Owner computer on 2026-11-13 by backup-first OPS02,
   then Prepare and Start; the running health version reads back 1.16.0 and a
   pre-update SQLite backup exists in the update backup directory. Detailed numeric
-  Owner UAT of 1.16.0 has not been performed.
+  Owner UAT of 1.16.0 has not been performed; it was superseded on Stable by 1.17.0.
 - [v1.15.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.15.0)
   (`62f0a50eef0eb04c9ce031c39fbbf9fa49efacfc`, exact-main CI
   [42904115400](https://github.com/LTstripes/hermes-finance/actions/runs/42904115400),
@@ -46,7 +55,7 @@ faster returns reads:
 There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
 checks do not establish Owner UAT.
 
-Prepared for 1.17.0 (release PR; [release notes](release-notes-1.17.0.md)):
+Shipped in 1.17.0 ([release notes](release-notes-1.17.0.md)):
 
 - Speed: [#1199](https://github.com/LTstripes/hermes-finance/pull/1199) bounded
   read cache keyed by the whole committed SQLite snapshot (repeat reads of Returns
@@ -74,16 +83,15 @@ establish Owner UAT.
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Publish 1.17.0 and install it on the Owner computer by backup-first OPS02.
-2. Owner UAT of the installed version together with the pending UAT of
-   1.13.0-1.16.0, tracked in [#711](https://github.com/LTstripes/hermes-finance/issues/711).
-3. Development: overall portfolio annual rate (B9) by the Owner rule of 14.11.2026:
+1. Owner UAT of installed 1.17.0 together with the pending UAT of 1.13.0-1.16.0,
+   tracked in [#711](https://github.com/LTstripes/hermes-finance/issues/711).
+2. Development: overall portfolio annual rate (B9) by the Owner rule of 14.11.2026:
    annual XIRR over brokerage and IIS accounts from the first operation; own
    transfers are not income.
-4. Deferred by the Owner: annual tax and IIS reconciliation
+3. Deferred by the Owner: annual tax and IIS reconciliation
    ([#1130](https://github.com/LTstripes/hermes-finance/issues/1130), documents first);
    a market-data supplement for amortizing bonds (until one is held).
-5. Apply the proportional verification rule of the Owner and never infer UAT from
+4. Apply the proportional verification rule of the Owner and never infer UAT from
    green CI. No financial Apply/Close or data repair is implied by release.
 
 <a id="s4"></a>
