@@ -9,6 +9,14 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.19.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.19.0)
+  (`f6e244d50a8f546a87ad0757494989f2fbe644b8`, exact-main CI
+  [43645700173](https://github.com/LTstripes/hermes-finance/actions/runs/43645700173),
+  guarded publication
+  [43646788043](https://github.com/LTstripes/hermes-finance/actions/runs/43646788043),
+  [release notes](release-notes-1.19.0.md)) is installed on the Owner computer on
+  2026-11-15 by backup-first OPS02, then Prepare and Start; health reads 1.19.0 and the
+  goal plan reads back for the capital goal.
 - [v1.18.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.18.0)
   (`099e443641d350c822459c77b46f13c91072c358`, exact-main CI
   [43635231842](https://github.com/LTstripes/hermes-finance/actions/runs/43635231842),
@@ -71,7 +79,7 @@ faster returns reads:
 There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
 checks do not establish Owner UAT.
 
-Prepared for 1.19.0 ([release notes](release-notes-1.19.0.md)):
+Shipped in 1.19.0 ([release notes](release-notes-1.19.0.md)):
 [#1209](https://github.com/LTstripes/hermes-finance/pull/1209) goal plan (`goal_plan_v1`,
 closes #1129 MVP) and passive-income capital estimate;
 [#1208](https://github.com/LTstripes/hermes-finance/pull/1208) quiet instrument links.
