@@ -133,7 +133,7 @@ function Wait-ForProductionStack {
                 $health.StatusCode -eq 200 -and
                 $months.StatusCode -eq 200 -and
                 $frontend.StatusCode -eq 200 -and
-                $frontend.Content -match "Hermes Finance"
+                $frontend.Content -match "<title>Finance</title>"
             ) {
                 Assert-NoSecretMaterial -Label "/api/health" -Content ([string]$health.Content)
                 Assert-NoSecretMaterial -Label "/api/months" -Content ([string]$months.Content)
