@@ -456,7 +456,10 @@ def _read(session, history, *, include_events=True):
         result["reason_codes"] = sorted(set(result["reason_codes"] + reasons))
         for key in ("total_reason_codes", "realized_reason_codes", "unrealized_reason_codes"):
             result[key] = sorted(set(result[key] + reasons))
+    from hermes_finance.services.clean_gold_returns import clean_gold_decomposition
+
     return dict(
+        clean_decomposition=clean_gold_decomposition(declaration, result, current=not reasons),
         contract_version=VERSION,
         source_kind=SOURCE,
         authority="owner_attestation",

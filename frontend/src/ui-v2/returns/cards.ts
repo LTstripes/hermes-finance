@@ -3,8 +3,8 @@ import type { InstrumentMetric } from "../../api/sourceReturns";
 import {
   type AccountLink,
   type Detail,
-  detailMatchesContext,
   dateLabel,
+  detailMatchesContext,
   type Metric,
   type Period,
 } from "./model";
@@ -86,6 +86,7 @@ export type InstrumentCard = {
   aggregate?: InstrumentAggregate;
   contract_version: "returns_instrument_card_v2";
   isin: string;
+  short_name?: string | null;
   name: string;
   kind: string | null;
   summary: {
@@ -226,6 +227,7 @@ export type Income = {
   summary: CouponIncome;
   instruments: {
     isin: string;
+    short_name?: string | null;
     name: string;
     amount: Metric;
     accounts: { scope: string; label: string; period: Period | null; amount: Metric }[];
@@ -234,6 +236,7 @@ export type Income = {
     scope: string;
     label: string;
     isin: string | null;
+    short_name?: string | null;
     name: string | null;
     date: string;
     amount: Metric;

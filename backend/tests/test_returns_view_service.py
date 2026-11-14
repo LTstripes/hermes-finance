@@ -466,7 +466,7 @@ def test_exact_catalogue_name_is_presentation_only(
         )
 
     monkeypatch.setattr(view, "read_instrument_returns", named)
-    original = api_overview(db).instruments[0].model_dump(exclude={"name"})
+    original = api_overview(db).instruments[0].model_dump(exclude={"name", "short_name"})
     if catalogue_name is not None:
         with db.session_factory() as session:
             session.add(
@@ -480,7 +480,13 @@ def test_exact_catalogue_name_is_presentation_only(
             view.read_detail(session, scope=SCOPE, start=START, end=END, isin=ISIN)
         )
     assert result.name == detail.name == expected
-    assert result.model_dump(exclude={"name"}) == original
+    from hermes_finance.services.instrument_names import short_instrument_name
+
+    assert result.short_name == (
+        short_instrument_name(catalogue_name, isin=ISIN)
+        or short_instrument_name(expected, isin=ISIN)
+    )
+    assert result.model_dump(exclude={"name", "short_name"}) == original
     assert snapshot(db) == before
 
 

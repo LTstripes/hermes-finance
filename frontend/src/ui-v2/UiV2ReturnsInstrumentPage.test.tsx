@@ -134,9 +134,10 @@ test("the relocated Refresh keeps the shell's global cache invalidation", async 
   await screen.findByRole("heading", { name: "Результат за всю историю" });
 });
 
-test("keeps the overview short name before and after loading the full instrument name", async () => {
+test("uses the canonical server short name after the navigation hint", async () => {
   const card = instrumentCardFixture();
   card.name = "Полное учебное название ПАО ао";
+  card.short_name = "Короткое имя";
   let finish: (response: Response) => void = () => {
     throw new Error("Request not started");
   };
@@ -156,7 +157,8 @@ test("keeps the overview short name before and after loading the full instrument
   await act(async () => finish(response(card)));
   await screen.findByRole("heading", { name: "Результат за всю историю" });
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Короткое имя");
-  expect(screen.getByText(/Полное учебное название ПАО ао/)).toBeVisible();
+  expect(screen.queryByText(/Полное учебное название ПАО ао/)).toBeNull();
+  expect(screen.getAllByText("RU000A000002", { exact: false }).length).toBeGreaterThan(0);
 });
 
 test("selected scope and exact period show only that account's known return", async () => {

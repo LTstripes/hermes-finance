@@ -16,7 +16,7 @@ export type InstrumentWhatIfResult = {
   authority: "hypothetical";
   request_nonce: string;
   account: { id: number; name: string };
-  instrument: { id: number; name: string };
+  instrument: { id: number; name: string; short_name?: string | null };
   t0: string;
   t1: string;
   interval: "(t0,t1]";

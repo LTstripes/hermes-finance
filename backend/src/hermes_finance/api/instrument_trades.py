@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.instrument_cash_income import Ref
+from hermes_finance.api.instrument_cash_income import InstrumentRef, Ref
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.services.instrument_trades import known_instrument_trades
 
@@ -73,7 +73,7 @@ class KnownTrades(Strict):
     method: Literal["known-instrument-trades"]
     version: Literal[1]
     account: Ref
-    instrument: Ref
+    instrument: InstrumentRef
     t0: date
     t1: date
     currency: Literal["RUB"]

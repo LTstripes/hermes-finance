@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.api.uploads import BoundedUploadRoute
+from hermes_finance.services.instrument_names import with_document_short_names
 from hermes_finance.services.mybroker_import import (
     apply_mybroker,
     preview_mybroker,
@@ -112,12 +113,15 @@ async def preview(
             reviewed = SkipReview.model_validate_json(decisions)
         except ValidationError:
             raise HTTPException(422, "instrument_decisions_invalid") from None
-        return preview_mybroker(
+        return with_document_short_names(
             session,
-            document=await _bytes(file),
-            filename=file.filename or "",
-            skipped_isins=tuple(reviewed.skipped_isins),
-            owner_reviewed=reviewed.owner_reviewed,
+            preview_mybroker(
+                session,
+                document=await _bytes(file),
+                filename=file.filename or "",
+                skipped_isins=tuple(reviewed.skipped_isins),
+                owner_reviewed=reviewed.owner_reviewed,
+            ),
         )
     except MyBrokerError as error:
         raise HTTPException(422, str(error)) from None
@@ -135,7 +139,7 @@ async def apply(
         # Do not echo invalid confirmation/provider input into logs or responses.
         raise HTTPException(422, "confirmation_invalid") from None
     try:
-        return apply_mybroker(
+        result = apply_mybroker(
             session,
             document=await _bytes(file),
             filename=file.filename or "",
@@ -146,6 +150,7 @@ async def apply(
             owner_reviewed=reviewed.owner_reviewed,
             request_id=reviewed.request_id,
         )
+        return with_document_short_names(session, result)
     except MyBrokerError as error:
         raise HTTPException(409, str(error)) from None
 
@@ -237,6 +242,6 @@ def correction_readback(request_id: str, session: Session = Depends(session_for_
 @router.get("/{import_id}")
 def readback(import_id: int, session: Session = Depends(session_for_request)):
     try:
-        return read_mybroker_import(session, import_id)
+        return with_document_short_names(session, read_mybroker_import(session, import_id))
     except MyBrokerError as error:
         raise HTTPException(404, str(error)) from None

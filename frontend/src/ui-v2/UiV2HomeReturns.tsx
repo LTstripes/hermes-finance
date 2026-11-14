@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { shortInstrumentName } from "./instrumentName";
 import { getHomeSummary } from "./returns/homeSummary";
 import { displayMetric, displayWhole, tone } from "./returns/model";
 import { useAccountName } from "./returns/useAccountName";
@@ -95,10 +94,15 @@ export function UiV2HomeReturns({ mainSettled }: { mainSettled: boolean }) {
                   <li key={row.isin}>
                     <Link
                       to={`/v2/returns/instrument/${encodeURIComponent(row.isin)}?back=%2Fv2`}
-                      state={{ instrumentName: row.name }}
+                      state={{
+                        instrumentName:
+                          row.short_name === undefined
+                            ? row.name
+                            : (row.short_name ?? "Без названия"),
+                      }}
                       title={row.name}
                     >
-                      {shortInstrumentName({ name: row.name, isin: row.isin, ticker: null })}
+                      {row.short_name === undefined ? row.name : (row.short_name ?? "Без названия")}
                       <small>{names.join(" · ")}</small>
                     </Link>
                     <span

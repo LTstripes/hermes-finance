@@ -102,7 +102,11 @@ export function PayoutPaymentsCalendar({ months }: { months: PayoutCalendarMonth
                     </Td>
                     <Td>
                       <div>
-                        <strong>{item.instrument_name ?? `#${item.instrument_id}`}</strong>
+                        <strong>
+                          {item.short_name === undefined
+                            ? (item.instrument_name ?? "Без названия")
+                            : (item.short_name ?? "Без названия")}
+                        </strong>
                       </div>
                       <div className="muted tiny">{item.account_name}</div>
                     </Td>

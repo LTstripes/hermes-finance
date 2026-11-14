@@ -59,6 +59,7 @@ class CleanInstrument(BaseModel):
 
     isin: Annotated[str, Field(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")]
     name: str | None
+    short_name: str | None = None
     instrument_type: str | None
     opening_date: date
     closing_date: date

@@ -327,7 +327,10 @@ def test_http_diagnostic_is_zero_write_and_preserves_receipts_replay_get(databas
             key: value
             for key, value in preview.items()
             if key not in ("metadata_evidence", "empty_money_layout_evidence")
-        } == original
+        } == {
+            **original,
+            "instrument_labels": [{"isin": "RU000A000000", "short_name": "Synthetic security"}],
+        }
         assert not {"INSERT", "UPDATE", "DELETE", "REPLACE"} & set(statements)
     finally:
         event.remove(database.engine, "before_cursor_execute", observe)

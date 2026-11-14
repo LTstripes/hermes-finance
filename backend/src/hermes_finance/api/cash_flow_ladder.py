@@ -33,6 +33,7 @@ class CashFlowLadderEventOut(BaseModel):
     account_name: str
     instrument_id: int | None
     instrument_name: str | None
+    short_name: str | None = None
     expected_net_amount: MoneyValue
     is_approximate: bool
     source: str
@@ -186,6 +187,35 @@ def get_cash_flow_ladder(
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
     session: Session = Depends(session_for_request),
 ) -> CashFlowLadderOut:
-    return cash_flow_ladder_to_out(
-        build_cash_flow_ladder(session, month_id, forecast_version=forecast_version)
+    return with_event_short_names(
+        session,
+        cash_flow_ladder_to_out(
+            build_cash_flow_ladder(session, month_id, forecast_version=forecast_version)
+        ),
     )
+
+
+def with_event_short_names(session, response):
+    """Enrich fresh response DTOs without altering the ladder or its read policy."""
+    from hermes_finance.services.instrument_names import instrument_names
+
+    events = []
+
+    def visit(value):
+        if isinstance(value, CashFlowLadderEventOut):
+            events.append(value)
+        elif isinstance(value, BaseModel):
+            for key in type(value).model_fields:
+                visit(getattr(value, key))
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(response)
+    if events:
+        names = instrument_names(session)
+        for event in events:
+            event.short_name = names.name(
+                instrument_id=event.instrument_id, name=event.instrument_name
+            )
+    return response

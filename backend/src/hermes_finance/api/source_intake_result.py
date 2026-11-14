@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.instrument_cash_income import KnownPayouts, Ref
 from hermes_finance.api.instrument_trades import KnownTrades
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.services.instrument_names import with_reference_short_names
 from hermes_finance.services.source_intake_result import source_intake_instrument_result
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
@@ -46,6 +47,7 @@ class IntakeRef(StrictModel):
 
 
 class InstrumentRef(StrictModel):
+    short_name: str | None = None
     isin: str
     instrument_type: Literal["stock", "bond"] | None
     hermes_id: int | None
@@ -147,16 +149,19 @@ def read_instrument_result(
 ):
     response.headers["Cache-Control"] = "no-store"
     try:
-        return source_intake_instrument_result(
+        return with_reference_short_names(
             session,
-            intake_id,
-            isin,
-            {
-                "no_unobserved_movements": no_unobserved_movements,
-                "no_unobserved_payouts": no_unobserved_payouts,
-                "no_other_costs_or_taxes": no_other_costs_or_taxes,
-            },
-            request_nonce,
+            source_intake_instrument_result(
+                session,
+                intake_id,
+                isin,
+                {
+                    "no_unobserved_movements": no_unobserved_movements,
+                    "no_unobserved_payouts": no_unobserved_payouts,
+                    "no_other_costs_or_taxes": no_other_costs_or_taxes,
+                },
+                request_nonce,
+            ),
         )
     except MyBrokerError as error:
         raise HTTPException(

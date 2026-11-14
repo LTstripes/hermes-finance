@@ -26,7 +26,8 @@ export function ReturnsAcceptedIncome({ value }: { value: AcceptedIncome }) {
           {value.instruments.map((row) => (
             <tr key={row.id}>
               <th scope="row">
-                {row.name} {row.isin} · {row.account}
+                {row.short_name === undefined ? row.name : (row.short_name ?? "Без названия")}{" "}
+                {row.isin} · {row.account}
               </th>
               <td>{money(row.coupons_kopecks)}</td>
               <td>{money(row.dividends_kopecks)}</td>

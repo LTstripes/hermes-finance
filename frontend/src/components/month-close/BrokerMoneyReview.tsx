@@ -1,16 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { listInstruments } from "../../api/instruments";
-import { formatApiError } from "../../api/client";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   applyBrokerMoney,
-  previewBrokerMoney,
-  readBrokerMoney,
   type MoneyDecision,
   type MoneyIntent,
   type MoneyPreview,
   type MoneyReadback,
+  previewBrokerMoney,
+  readBrokerMoney,
 } from "../../api/brokerMoney";
+import { formatApiError } from "../../api/client";
+import { listInstruments } from "../../api/instruments";
 import { formatDate, formatMoney } from "../../lib/format";
 import { Button, Table, Td, Th } from "../ui";
 import styles from "./BrokerMonthReview.module.css";
@@ -766,7 +766,10 @@ export function BrokerMoneyReview({
                           )
                           .map((i) => (
                             <option key={i.id} value={i.id}>
-                              {i.name} · {i.isin}
+                              {i.short_name === undefined
+                                ? i.name
+                                : (i.short_name ?? "Без названия")}{" "}
+                              · {i.isin}
                             </option>
                           ))}
                       </select>

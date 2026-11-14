@@ -386,6 +386,8 @@ const COPY: Record<
   position_flows_before_first_purchase: "Есть движения по бумаге раньше первой известной покупки.",
   position_result_unknown: "Итог позиции пока неизвестен.",
   selected_components_incomplete: "Показана только известная часть результата.",
+  gold_fifo_order_unproven:
+    "Порядок покупок и продаж в один день не подтверждён; разложение результата недоступно.",
   gold_separate_fees_unknown: "Уточните отдельные комиссии.",
   gold_amount_derived: "Сумма сделки рассчитана по сохранённой цене и количеству.",
   gold_quantity_mismatch: "Количество по операциям не совпадает с заявленным остатком.",

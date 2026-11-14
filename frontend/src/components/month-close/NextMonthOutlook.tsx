@@ -18,7 +18,8 @@ function moneyValue(value: MoneyValue | null | undefined, fallback = "Недос
 }
 
 function eventLabel(event: CashFlowLadderEvent): string {
-  return `${formatDate(event.expected_date)} · ${ownerEventLabel(event.component)} · ${event.instrument_name ?? event.account_name}`;
+  const name = event.short_name === undefined ? event.instrument_name : event.short_name;
+  return `${formatDate(event.expected_date)} · ${ownerEventLabel(event.component)} · ${name ?? (event.instrument_id == null ? event.account_name : "Без названия")}`;
 }
 
 function unavailableReason(reasonCode: string | null): string {

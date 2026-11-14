@@ -12,6 +12,7 @@ export type HomeSummary = {
   ranked: {
     isin: string;
     name: string;
+    short_name?: string | null;
     pnl: Metric;
     accounts: { scope: string; label: string; account_link?: AccountLink | null }[];
   }[];

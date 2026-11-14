@@ -31,6 +31,7 @@ import { Badge, Button, Field, Input } from "./ui";
 
 /** Minimal authoritative subject needed to open the mapping dialog. */
 export type InstrumentMappingSubject = {
+  short_name?: string | null;
   id: number;
   name: string;
   instrument_type: string;
@@ -195,7 +196,11 @@ export function InstrumentMappingDialog({
         </p>
 
         <div className="stack-8">
-          <strong>{instrument.name}</strong>
+          <strong>
+            {instrument.short_name === undefined
+              ? instrument.name
+              : (instrument.short_name ?? "Без названия")}
+          </strong>
           <div>
             <Badge tone={mappingStateTone(state)}>{labelOf(MAPPING_STATE_LABELS, state)}</Badge>
           </div>

@@ -1019,6 +1019,8 @@ def apply(session, intent, *, request_id, confirmation_digest):
             session.rollback()
             return {**read(session, request_id), "duplicate": True}
         plan = _plan(session, intent)
+        if "payout_involved_scope_requires_reopen" in plan["blockers"]:
+            raise MyBrokerError("payout_involved_scope_requires_reopen")
         if plan["confirmation_digest"] != confirmation_digest:
             raise MyBrokerError("payout_preview_stale")
         if not plan["can_apply"]:

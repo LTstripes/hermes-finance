@@ -4,8 +4,8 @@ import type { InstrumentAnalysis } from "../../api/sourceReturns";
 import { formatMoney, formatMoneyDelta } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
 import { formatSourceReturnRate } from "../../lib/sourceReturnFormat";
-import { wholeMoneyDeltaText, wholeMoneyText } from "../wholeMoney";
 import { percentText } from "../valueFormat";
+import { wholeMoneyDeltaText, wholeMoneyText } from "../wholeMoney";
 import type { ReturnBreakdown } from "./breakdown";
 import type { CleanInstrument } from "./cards";
 
@@ -31,6 +31,7 @@ export type Result = {
 };
 export type Instrument = Omit<Result, "period"> & {
   isin: string;
+  short_name?: string | null;
   name: string;
   kind: string | null;
   period: Period;
@@ -63,6 +64,7 @@ export type AcceptedIncome = AcceptedIncomeAmounts & {
   instruments: (AcceptedIncomeAmounts & {
     id: string;
     account: string;
+    short_name?: string | null;
     name: string;
     isin: string | null;
   })[];

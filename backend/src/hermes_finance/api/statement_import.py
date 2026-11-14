@@ -86,6 +86,8 @@ class StatementCandidateOut(BaseModel):
 
 
 class StatementRowOut(BaseModel):
+    short_name: str | None = None
+
     model_config = ConfigDict(extra="forbid")
 
     status: str
@@ -345,7 +347,13 @@ async def prepare_statement_endpoint(
         account_mappings=_account_mappings(account_mappings),
         instrument_mappings=_instrument_mappings(instrument_mappings),
     )
-    return _preparation_response(result)
+    from hermes_finance.services.instrument_names import instrument_names
+
+    response = _preparation_response(result)
+    names = instrument_names(session)
+    for row in response.rows:
+        row.short_name = names.name(instrument_id=row.expected_hermes_instrument_id, isin=row.isin)
+    return response
 
 
 @router.post("/apply", response_model=StatementApplyResponse)

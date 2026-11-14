@@ -212,7 +212,10 @@ export function SourceIntakeInstrumentResult({ intake }: { intake: SourceIntake 
         <div className={styles.summary} data-testid="source-intake-result">
           <h4>
             {data.account ? `${data.account.name} · ` : "Без счёта · "}
-            {data.instrument.name ?? data.instrument.isin} · ({data.t0}, {data.t1}] · RUB
+            {data.instrument.short_name === undefined
+              ? (data.instrument.name ?? "Без названия")
+              : (data.instrument.short_name ?? "Без названия")}{" "}
+            · ({data.t0}, {data.t1}] · RUB
           </h4>
           <p>
             Разбор #{data.intake.id}, версия {data.intake.head_seq}.{" "}

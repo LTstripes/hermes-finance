@@ -207,6 +207,8 @@ def clean_gold_metric(observed, *, current=True):
         and all(value is not None for value in operands)
         else None
     )
+    if "gold_separate_fees_unknown" in observed.get("reason_codes", ()):
+        reasons = tuple(sorted((*reasons, "gold_separate_fees_unknown")))
     return metric(value, reasons=reasons, method="clean_gold_history", estimate=bool(reasons))
 
 

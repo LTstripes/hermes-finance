@@ -588,7 +588,11 @@ export default function UiV2DataCatalogsPage() {
                 <tr key={instrument.id}>
                   <td>
                     <div className={styles.cellStack}>
-                      <strong>{instrument.name}</strong>
+                      <strong>
+                        {instrument.short_name === undefined
+                          ? instrument.name
+                          : (instrument.short_name ?? "Без названия")}
+                      </strong>
                       <span className={styles.cellHint}>
                         {instrument.isin ?? instrument.ticker ?? "Идентификатор не задан"}
                       </span>
@@ -648,7 +652,9 @@ export default function UiV2DataCatalogsPage() {
                       >
                         Изменить
                       </Button>
-                      <OverflowMenu label={`Действия для инструмента ${instrument.name}`}>
+                      <OverflowMenu
+                        label={`Действия для инструмента ${instrument.short_name === undefined ? instrument.name : (instrument.short_name ?? "Без названия")}`}
+                      >
                         {mapping ? (
                           <OverflowMenuItem onClick={() => openMapping(instrument)}>
                             Настроить источник

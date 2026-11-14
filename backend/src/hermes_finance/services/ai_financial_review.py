@@ -2179,5 +2179,8 @@ def assemble_ai_financial_review(
         }
     )
     report["field_states"].sort(key=lambda item: str(item["path"]))
+    from hermes_finance.services.instrument_names import with_short_names
+
+    report = with_short_names(session, report)
     validate_ai_financial_review(report)
     return report

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.instrument_cash_income import KnownPayouts, Ref
+from hermes_finance.api.instrument_cash_income import InstrumentRef, KnownPayouts, Ref
 from hermes_finance.api.instrument_eod_observations import EodObservation
 from hermes_finance.api.instrument_trades import KnownTrades
 from hermes_finance.api.settings import session_for_request
@@ -58,7 +58,7 @@ class InstrumentWhatIf(StrictModel):
     authority: Literal["hypothetical"]
     request_nonce: str
     account: Ref
-    instrument: Ref
+    instrument: InstrumentRef
     t0: date
     t1: date
     interval: Literal["(t0,t1]"]

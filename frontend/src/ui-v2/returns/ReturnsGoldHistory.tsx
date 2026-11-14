@@ -1,17 +1,18 @@
-import { reasonCopy } from "../../lib/reasonCopy";
+import { GoldResultSplit } from "./GoldResultSplit";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
-import { Button, Input, Select } from "../../components/ui";
-import formStyles from "./ReturnsGoldHistory.module.css";
 import { ApiClientError } from "../../api/client";
+import { Button, Input, Select } from "../../components/ui";
 import { formatDate, formatQuantity } from "../../lib/format";
 import { fromKopecks } from "../../lib/money";
+import { reasonCopy } from "../../lib/reasonCopy";
 import { MonthNavigationGuard } from "../MonthNavigationGuard";
 import { money } from "../SourceInstrumentDetail";
 import {
   applyGoldHistory,
   checkGoldHistory,
   GOLD_VERSION,
+  type GoldDecomposition,
   type GoldEventInput,
   type GoldHistory,
   type GoldIntent,
@@ -27,6 +28,7 @@ import {
 } from "./goldHistory";
 import styles from "./InstrumentCard.module.css";
 import type { Metric } from "./model";
+import formStyles from "./ReturnsGoldHistory.module.css";
 
 const event = (): GoldEventInput => ({
   event_id: `g_${crypto.randomUUID().replaceAll("-", "")}`,
@@ -91,10 +93,12 @@ function Result({
   value,
   valuation,
   clean,
+  decomposition,
 }: {
   value: GoldResult;
   valuation: GoldValuation | null;
   clean?: Metric | null;
+  decomposition?: GoldDecomposition;
 }) {
   const limitations = [
     ...new Set(
@@ -121,6 +125,7 @@ function Result({
                 <dd>{money(amount)}</dd>
               </div>
             ))}
+          {decomposition && <GoldResultSplit value={decomposition} />}
         </dl>
       )}
       {clean?.value == null && (
@@ -390,7 +395,12 @@ export function ReturnsGoldHistory({
             · {formatDate(current.declaration.covered_from)} —{" "}
             {formatDate(current.declaration.covered_to)}
           </p>
-          <Result value={current.result} valuation={current.valuation} clean={cleanResult} />
+          <Result
+            value={current.result}
+            valuation={current.valuation}
+            clean={cleanResult}
+            decomposition={current.clean_decomposition}
+          />
           <table className={formStyles.savedTable} aria-label="Сохранённые операции">
             <thead>
               <tr>
@@ -747,6 +757,7 @@ export function ReturnsGoldHistory({
             value={preview.value.result}
             valuation={preview.value.valuation}
             clean={preview.value.clean_result}
+            decomposition={preview.value.clean_decomposition}
           />
           <Button
             type="button"

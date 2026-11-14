@@ -107,8 +107,8 @@ function PreviewRow({
             <input
               aria-label={
                 row.status === "stale"
-                  ? `Выбрать старую котировку ${row.instrument_name}`
-                  : `Выбрать ${row.instrument_name}`
+                  ? `Выбрать старую котировку ${row.short_name === undefined ? row.instrument_name : (row.short_name ?? "Без названия")}`
+                  : `Выбрать ${row.short_name === undefined ? row.instrument_name : (row.short_name ?? "Без названия")}`
               }
               checked={selected}
               onChange={(event) => onToggle(event.target.checked)}
@@ -119,10 +119,16 @@ function PreviewRow({
       </Td>
       <Td>
         <div className="quote-preview-instrument">
-          <strong>{row.instrument_name}</strong>
+          <strong>
+            {row.short_name === undefined
+              ? row.instrument_name
+              : (row.short_name ?? "Без названия")}
+          </strong>
           <span className="muted tiny">{labelOf(INSTRUMENT_TYPE_LABELS, row.instrument_type)}</span>
           {row.identity ? (
-            <HelpTip label={`Идентичность внешнего источника для ${row.instrument_name}`}>
+            <HelpTip
+              label={`Идентичность внешнего источника для ${row.short_name === undefined ? row.instrument_name : (row.short_name ?? "Без названия")}`}
+            >
               {formatMarketIdentity(row.identity)}
             </HelpTip>
           ) : null}
@@ -131,7 +137,9 @@ function PreviewRow({
       <Td numeric>
         <span className="quote-preview-price">
           <span>{formatMoney(currentAmount)}</span>
-          <HelpTip label={`Текущая оценка для ${row.instrument_name}`}>
+          <HelpTip
+            label={`Текущая оценка для ${row.short_name === undefined ? row.instrument_name : (row.short_name ?? "Без названия")}`}
+          >
             <div>Источник: {labelOf(PRICE_SOURCE_LABELS, row.current_price_source)}</div>
             <div>Дата оценки: {formatDate(row.current_price_date)}</div>
           </HelpTip>
@@ -154,7 +162,7 @@ function PreviewRow({
           ) : null}
           {onMap ? (
             <Button
-              aria-label={`Сопоставить инструмент ${row.instrument_name}`}
+              aria-label={`Сопоставить инструмент ${row.short_name === undefined ? row.instrument_name : (row.short_name ?? "Без названия")}`}
               onClick={onMap}
               size="sm"
               type="button"
@@ -163,7 +171,9 @@ function PreviewRow({
             </Button>
           ) : null}
           {hasStatusDetail ? (
-            <HelpTip label={`Подробности статуса для ${row.instrument_name}`}>
+            <HelpTip
+              label={`Подробности статуса для ${row.short_name === undefined ? row.instrument_name : (row.short_name ?? "Без названия")}`}
+            >
               {row.status === "stale" ? (
                 <div>
                   Не обычное обновление. Дата внешней котировки:{" "}

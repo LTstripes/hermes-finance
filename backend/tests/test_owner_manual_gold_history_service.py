@@ -1,6 +1,7 @@
 """Synthetic Owner gold source commands and financial evidence boundaries."""
 
 import sqlite3
+from copy import deepcopy
 from datetime import date
 
 import pytest
@@ -31,6 +32,97 @@ from hermes_finance.services.reporting_months import (
     create_reporting_month,
     reopen_reporting_month,
 )
+
+
+@pytest.mark.parametrize(
+    ("buys", "sold", "valuation", "expected"),
+    [
+        ([("3", 100)], "1", 120, (17, 53)),
+        ([("3", 100)], "0", 120, (0, 20)),
+        ([("3", 100)], "1", None, (17, None)),
+        ([("3", 100)], "3", None, (50, 0)),
+        ([("2", 101), ("3", 300)], "3", 250, (-51, 50)),
+    ],
+)
+@pytest.mark.parametrize("unknown_fee", [False, True])
+def test_clean_gold_fifo_split(buys, sold, valuation, expected, unknown_fee):
+    from decimal import Decimal
+
+    from hermes_finance.services.clean_gold_returns import clean_gold_decomposition
+    from hermes_finance.services.clean_instrument_return import clean_gold_metric
+
+    quantity = sum(Decimal(grams) for grams, _ in buys) - Decimal(sold)
+    events = [
+        dict(
+            event_id=f"buy-{index}",
+            event_date=f"2033-02-{index + 1:02}",
+            side="BUY",
+            grams=grams,
+            amount_kopecks=str(cost),
+            amount_basis="actual",
+            separate_fee_kopecks=None if unknown_fee else "7",
+        )
+        for index, (grams, cost) in enumerate(buys)
+    ]
+    if Decimal(sold):
+        events.append(
+            dict(
+                events[0],
+                event_id="sale",
+                event_date="2033-03-01",
+                side="SELL",
+                grams=sold,
+                amount_kopecks=str(int(Decimal(sold) * 50)),
+            )
+        )
+    declaration = dict(
+        events=events,
+        complete=True,
+        zero_start=True,
+        current_quantity=str(quantity),
+        covered_from="2033-02-01",
+        covered_to="2033-03-31",
+    )
+    quote = (
+        None
+        if valuation is None
+        else dict(
+            date="2033-03-31",
+            price_date="2033-03-31",
+            snapshot_date="2033-03-31",
+            quantity=str(quantity),
+            market_value_kopecks=str(valuation),
+            provisional=False,
+        )
+    )
+    observed = gold._result(declaration, quote)
+    before = deepcopy(observed)
+    result = clean_gold_decomposition(declaration, observed)
+    actual = tuple(
+        None if result[key]["value"] is None else int(result[key]["value"])
+        for key in ("realized_result", "unrealized_result")
+    )
+    assert actual == expected
+    assert observed == before
+    assert result["realized_result"]["estimate"] is unknown_fee
+    total = clean_gold_metric(observed)
+    if total["value"] is not None:
+        assert sum(actual) == int(total["value"])
+    assert (
+        clean_gold_decomposition(declaration, observed, current=False)["realized_result"]["value"]
+        is None
+    )
+
+
+def test_clean_gold_fifo_does_not_invent_same_day_order(source):
+    from hermes_finance.services.clean_gold_returns import clean_gold_decomposition
+
+    payload = intent(source)
+    payload["events"][1]["event_date"] = payload["events"][0]["event_date"]
+    preview = gold.preview_gold_history(source[1], payload)
+    split = clean_gold_decomposition(preview["declaration"], preview["result"])
+    assert split["realized_result"]["value"] is None
+    assert "gold_fifo_order_unproven" in split["realized_result"]["reason_codes"]
 
 
 @pytest.fixture
@@ -158,8 +250,10 @@ def test_clean_overview_gold_ignores_fees_without_changing_receipt(source, fee_u
     overview = read_clean_overall(session)
     history = overview["gold"]["histories"][0]
     assert history["total_result"]["value"] == "950000"
-    assert history["realized_result"]["value"] is None
-    assert history["unrealized_result"]["value"] is None
+    assert history["realized_result"]["value"] == "200000"
+    assert history["unrealized_result"]["value"] == "750000"
+    assert history["realized_result"]["estimate"] is fee_unknown
+    assert history["total_result"]["estimate"] is fee_unknown
     report = assemble_ai_financial_review(session)
     exported = report["sections"]["clean_returns"]["data"]["gold"][0]
     assert exported["total_result"] == history["total_result"]
@@ -167,6 +261,8 @@ def test_clean_overview_gold_ignores_fees_without_changing_receipt(source, fee_u
     assert exported["name"] == "Synthetic gold"
     assert exported["account_name"] == "Synthetic vault"
     assert exported["split_status"] == "unknown"
+    assert exported["clean_decomposition"]["realized_result"] == history["realized_result"]
+    assert exported["clean_decomposition"]["unrealized_result"] == history["unrealized_result"]
     snapshot = report["sections"]["clean_returns"]["data"]["gold_snapshots"][0]
     assert snapshot["current_value"]["value"] == "3150000"
     assert snapshot["cost_basis"]["value"] == "2700000"

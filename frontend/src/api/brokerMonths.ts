@@ -1,5 +1,5 @@
 import { apiMultipart, apiRequest } from "./client";
-import type { MyBrokerDocument } from "./mybrokerImport";
+import type { InstrumentLabel, MyBrokerDocument } from "./mybrokerImport";
 import type { MoneyReadback } from "./brokerMoney";
 
 export type InstrumentDecision = {
@@ -37,6 +37,7 @@ export function lookupPublicIdentities(isins: string[], signal?: AbortSignal) {
 }
 export type AccountBindingDecision = { identity: string; hermes_id: number };
 export type BrokerMonthPreview = BrokerMonthIntent & {
+  instrument_labels?: InstrumentLabel[];
   contract_version: "broker_month_v1";
   confirmation_digest: string;
   account_bindings: AccountBindingDecision[];
@@ -83,6 +84,7 @@ export type BrokerMonthPreview = BrokerMonthIntent & {
 };
 export type BrokerMonthReadback = BrokerMonthIntent & {
   money_acceptance?: MoneyReadback | null;
+  instrument_labels?: InstrumentLabel[];
   contract_version: "broker_month_v1";
   request_id: string;
   confirmation_digest: string;

@@ -163,6 +163,7 @@ export type PayoutApplyResult = {
 };
 
 export type PayoutCalendarItem = {
+  short_name?: string | null;
   source_kind: "manual" | "provider" | string;
   source_id: number;
   expected_date: string;
@@ -200,6 +201,7 @@ export type PayoutCalendarMonth = {
 };
 
 export type DraftPayoutPosition = {
+  short_name?: string | null;
   account_id: number;
   account_name: string;
   instrument_id: number;

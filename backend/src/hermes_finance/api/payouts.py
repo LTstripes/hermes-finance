@@ -137,6 +137,7 @@ class DraftPayoutPositionOut(BaseModel):
     account_name: str
     instrument_id: int
     instrument_name: str
+    short_name: str | None = None
     isin: str | None
     position_snapshot_id: int
     quantity: str
@@ -295,6 +296,7 @@ class PayoutCalendarItemOut(BaseModel):
     account_name: str
     instrument_id: int
     instrument_name: str | None
+    short_name: str | None = None
     expected_net_amount: MoneyValue
     is_confirmed: bool | None
     is_approximate: bool
@@ -712,7 +714,15 @@ def draft_payout_context_endpoint(
     session: Session = Depends(session_for_request),
 ):
     try:
-        return draft_payouts.read_context(session, month_id)
+        from hermes_finance.services.instrument_names import instrument_names
+
+        result = draft_payouts.read_context(session, month_id)
+        names = instrument_names(session)
+        for item in result["items"]:
+            item["short_name"] = names.name(
+                instrument_id=item["instrument_id"], isin=item["isin"], name=item["instrument_name"]
+            )
+        return result
     except ReportingMonthNotFoundError as error:
         raise HTTPException(status_code=404, detail="Reporting month not found") from error
 
@@ -1062,6 +1072,9 @@ def payout_calendar_endpoint(
     from_date: date | None = Query(default=None),
     session: Session = Depends(session_for_request),
 ) -> list[PayoutCalendarMonthOut]:
+    from hermes_finance.services.instrument_names import instrument_names
+
+    names = instrument_names(session)
     months = merged_payout_calendar(
         session,
         reporting_month_id=month_id,
@@ -1090,6 +1103,9 @@ def payout_calendar_endpoint(
                     account_name=item.account_name,
                     instrument_id=item.instrument_id,
                     instrument_name=item.instrument_name,
+                    short_name=names.name(
+                        instrument_id=item.instrument_id, name=item.instrument_name
+                    ),
                     expected_net_amount=_money_amount(item.expected_net_amount),
                     is_confirmed=item.is_confirmed,
                     is_approximate=item.is_approximate,

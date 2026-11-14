@@ -32,6 +32,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services import broker_month_journal as journal
 from hermes_finance.services.broker_money import material
+from hermes_finance.services.instrument_names import instrument_reference
 from hermes_finance.services.mybroker_dispositions import effective_bindings, resolve
 from hermes_finance.services.mybroker_import import _prepare
 from hermes_finance.services.source_cash_coupons import authority
@@ -317,7 +318,7 @@ def known_instrument_cash_income(
         "method": METHOD,
         "version": VERSION,
         "account": {"id": account.id, "name": account.name},
-        "instrument": {"id": instrument.id, "name": instrument.name},
+        "instrument": instrument_reference(instrument),
         "t0": t0.isoformat(),
         "t1": t1.isoformat(),
         "currency": "RUB",

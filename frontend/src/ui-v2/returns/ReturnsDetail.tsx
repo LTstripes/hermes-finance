@@ -1,15 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { SourceInstrumentDetail } from "../SourceInstrumentDetail";
 import { formatQuantity } from "../../lib/format";
+import { SourceInstrumentDetail } from "../SourceInstrumentDetail";
 import { analysisBreakdown } from "./breakdown";
-import { dateLabel, type Detail, getDetail, type Period } from "./model";
+import { cleanMetric } from "./cards";
+import { type Detail, dateLabel, displayMetric, getDetail, type Period } from "./model";
 import styles from "./Returns.module.css";
 import { MissingName } from "./ReturnsAvailable";
 import { ReturnsBreakdown } from "./ReturnsBreakdown";
-import { ReturnsResultMeta } from "./ReturnsResultMeta";
-import { cleanMetric } from "./cards";
-import { displayMetric } from "./model";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
+import { ReturnsResultMeta } from "./ReturnsResultMeta";
 
 export function ReturnsDetail({
   scope,
@@ -45,7 +44,11 @@ export function ReturnsDetailBody({ detail: d }: { detail: Detail }) {
     return (
       <div className={styles.detail}>
         <h3>
-          {d.name} <MissingName name={d.name} isin={d.isin} />
+          {d.short_name === undefined ? d.name : (d.short_name ?? "Без названия")}{" "}
+          <MissingName
+            name={d.short_name === undefined ? d.name : (d.short_name ?? "Без названия")}
+            isin={d.isin}
+          />
         </h3>
         <ReturnsResultMeta
           period={d.period}
@@ -98,9 +101,13 @@ export function ReturnsDetailBody({ detail: d }: { detail: Detail }) {
   return (
     <div className={styles.detail}>
       <h3>
-        {d.name} <MissingName name={d.name} isin={d.isin} />
+        {d.short_name === undefined ? d.name : (d.short_name ?? "Без названия")}{" "}
+        <MissingName
+          name={d.short_name === undefined ? d.name : (d.short_name ?? "Без названия")}
+          isin={d.isin}
+        />
       </h3>
-      {d.name !== d.isin && <small>{d.isin}</small>}
+      <small>{d.isin}</small>
       <ReturnsResultMeta
         period={d.period}
         valuationDate={d.valuation_date}

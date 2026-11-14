@@ -41,6 +41,7 @@ export type OverallInstrumentAccount = Pick<
 export type OverallInstrument = {
   aggregate?: InstrumentAggregate;
   isin: string;
+  short_name?: string | null;
   name: string;
   kind: string | null;
   accounts: OverallInstrumentAccount[];

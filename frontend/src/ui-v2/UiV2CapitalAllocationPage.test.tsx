@@ -40,7 +40,8 @@ function concentration(overrides: Partial<RiskConcentrationMetric> = {}): RiskCo
         account_id: 1,
         account_name: "Счёт А",
         instrument_id: 1,
-        instrument_name: "Облигация",
+        instrument_name: "Длинное исходное имя",
+        short_name: "Облигация",
         instrument_type: "bond",
         position_id: 1,
         event_count: null,
@@ -262,8 +263,9 @@ describe("UiV2CapitalAllocationPage", () => {
       "open",
     );
     expect(
-      within(screen.getByRole("table", { name: "Погашения" })).getByText("Погашение облигации"),
+      within(screen.getByRole("table", { name: "Погашения" })).getByText("Счёт А / Облигация"),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Длинное исходное имя")).toBeNull();
     expect(screen.queryByText("Остальные измерения и ограничения")).toBeNull();
     expect(screen.queryByText(/API сообщает/)).toBeNull();
     const accountDetails = accounts.closest("details") as HTMLElement;

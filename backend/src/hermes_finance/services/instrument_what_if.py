@@ -20,6 +20,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services import broker_months, mybroker_import
 from hermes_finance.services.instrument_eod_observations import instrument_eod_observations
+from hermes_finance.services.instrument_names import instrument_reference
 from hermes_finance.services.instrument_trades import known_instrument_trades
 from hermes_finance.services.mybroker_corrections import _source_integrity
 from hermes_finance.services.mybroker_dispositions import accepted_account_binding, resolve
@@ -313,7 +314,7 @@ def instrument_what_if(
         "authority": "hypothetical",
         "request_nonce": request_nonce,
         "account": {"id": account.id, "name": account.name},
-        "instrument": {"id": instrument.id, "name": instrument.name},
+        "instrument": instrument_reference(instrument),
         "t0": str(t0),
         "t1": str(t1),
         "interval": "(t0,t1]",

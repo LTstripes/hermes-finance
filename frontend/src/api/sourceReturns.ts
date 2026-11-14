@@ -305,6 +305,7 @@ export type SourceInstrumentReturns = {
     account_link: ReturnAccountLink | null;
     isin: string;
     source_name: string | null;
+    short_name?: string | null;
     instrument_type: string | null;
     analysis: InstrumentAnalysis;
     months: Array<

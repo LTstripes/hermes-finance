@@ -298,7 +298,7 @@ test("October primary entry exposes saved sources and historical stock/bond quan
   await expect(
     instruments.getByRole("heading", { name: /Фактические строки источника/ }),
   ).toHaveCount(0);
-  await instruments.getByRole("button", { name: "Synthetic entry bond", exact: true }).click();
+  await instruments.getByRole("button", { name: "Synthetic bond", exact: true }).click();
   // The old stock's date control must retire before choosing the bond's date.
   // Wait for the new ISIN panel, not a timeout or retry of a stale event.
   await expect(

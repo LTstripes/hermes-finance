@@ -179,6 +179,7 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
         "rates": "Purchase return_fraction is simple price result on purchase cost, excludes payouts and is not annualized. Fractions use 1 = 100%, 0.1 = 10%. Position Modified Dietz is omitted; only account calendar-month totals may use it. Position simple_return is the whole position result on invested purchases, not annualized; position xirr is annualized and published only when the capital-weighted holding period is at least 365 days, otherwise null with a reason.",
         "split": "Realized/unrealized split is unknown unless the backend proves a closed position with a known result. Do not infer a split from sales or FIFO lots.",
         "gold": "Gold histories and saved snapshots can overlap; snapshots are not extra profit. Clean gold split remains unknown.",
+        "gold_decomposition": "The legacy gold guide and split_status describe the retained legacy split. Each gold history now adds clean_decomposition with backend FIFO realized_result and unrealized_result, in kopecks. When both are known they sum to clean total. Missing valuation withholds only unrealized_result; unknown separate fees remain an estimate. Do not add snapshots to this result.",
     }
     sources = {row["scope"]: row for row in overall["source_accounts"]}
     raw_accounts = {row["scope"]: row for row in overview["accounts"]}
@@ -300,7 +301,10 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
     for row, original in zip(data["gold"], overall["gold"]["histories"], strict=True):
         row["name"] = instrument_names.get(original["instrument_id"], "Золото")
         row["account_name"] = account_names.get(original["account_id"], "Счёт золота")
-        row["split_status"] = "unknown"
+        row["split_status"] = "unknown"  # Retain the historical export field.
+        row["clean_decomposition"] = {
+            key: deepcopy(original[key]) for key in ("realized_result", "unrealized_result")
+        }
     data["gold_snapshots"] = [
         {
             "name": instrument_names.get(row["instrument_id"], "Золото"),

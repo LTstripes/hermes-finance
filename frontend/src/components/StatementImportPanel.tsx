@@ -491,7 +491,7 @@ export function StatementImportPanel({
     if (kind !== "save" || !instrument) {
       if (kind === "conflict" && instrument) {
         setMessage(
-          `У инструмента «${instrument.name}» уже указан ISIN ${instrument.isin}. ISIN из отчёта ${isin} не записан.`,
+          `У инструмента «${instrument.short_name ?? instrument.name}» уже указан ISIN ${instrument.isin}. ISIN из отчёта ${isin} не записан.`,
         );
       }
       return;
@@ -885,7 +885,7 @@ export function StatementImportPanel({
                           </option>
                           {localInstruments.map((instrument) => (
                             <option key={instrument.id} value={instrument.id}>
-                              {instrument.name}
+                              {instrument.short_name ?? instrument.name}
                               {instrument.isin ? ` · ${instrument.isin}` : ""}
                             </option>
                           ))}
@@ -1002,10 +1002,11 @@ export function StatementImportPanel({
                 const correction = row.duplicate_class === "correction";
                 const inPeriod = rowMatchesTargetPeriod(row, target);
                 const selectable = row.status === "matched" && !duplicate && inPeriod;
-                const instrumentName = lookupName(
-                  row.expected_hermes_instrument_id,
-                  localInstruments,
-                );
+                const instrumentName =
+                  row.short_name ??
+                  localInstruments.find((item) => item.id === row.expected_hermes_instrument_id)
+                    ?.short_name ??
+                  "Без названия";
                 const accountName = lookupName(row.expected_hermes_account_id, accounts);
                 return (
                   <tr key={key}>

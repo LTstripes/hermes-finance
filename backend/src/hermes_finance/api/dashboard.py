@@ -14,7 +14,11 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.analytics import MonthlyCapitalChangeOut, capital_change_to_out
-from hermes_finance.api.cash_flow_ladder import CashFlowLadderOut, cash_flow_ladder_to_out
+from hermes_finance.api.cash_flow_ladder import (
+    CashFlowLadderOut,
+    cash_flow_ladder_to_out,
+    with_event_short_names,
+)
 from hermes_finance.api.read_cache import cached_read_endpoint
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.database import coherent_read_snapshot
@@ -750,11 +754,14 @@ def get_month_dashboard(
     include_capital_change: bool = True,
     session: Session = Depends(session_for_request),
 ) -> DashboardOut:
-    return dashboard_to_out(
-        build_dashboard(
-            session,
-            month_id,
-            forecast_version=forecast_version,
-            include_capital_change=include_capital_change,
-        )
+    return with_event_short_names(
+        session,
+        dashboard_to_out(
+            build_dashboard(
+                session,
+                month_id,
+                forecast_version=forecast_version,
+                include_capital_change=include_capital_change,
+            )
+        ),
     )

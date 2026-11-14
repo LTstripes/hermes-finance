@@ -67,6 +67,25 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
+test("uses the server short name and keeps a missing name separate from ISIN", async () => {
+  const data = overallFixture();
+  data.instruments[0].name = "Long source label (SYN)";
+  data.instruments[0].short_name = "Короткое имя";
+  data.instruments[1].name = data.instruments[1].isin;
+  data.instruments[1].short_name = null;
+  install(data);
+  setup();
+  const table = await screen.findByRole("table", { name: "Все бумаги" });
+  expect(within(table).getByRole("link", { name: "Короткое имя" })).toBeVisible();
+  expect(within(table).getByRole("link", { name: "Без названия" })).toBeVisible();
+  expect(within(table).queryByText("Long source label (SYN)")).toBeNull();
+  fireEvent.change(screen.getByRole("searchbox", { name: "Поиск" }), {
+    target: { value: "Короткое" },
+  });
+  expect(within(table).getByRole("link", { name: "Короткое имя" })).toBeVisible();
+  expect(within(table).queryByRole("link", { name: "Без названия" })).toBeNull();
+});
+
 test("server instrument aggregate supplies rates, value, split and open/sold filtering", async () => {
   const data = overallFixture();
   const metric = (value: string | null) => ({

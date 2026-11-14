@@ -20,6 +20,7 @@ from hermes_finance.persistence import Base
 from hermes_finance.services.applied_payouts import create_applied_payout
 
 POSITION_KEYS = {
+    "short_name",
     "id",
     "reporting_month_id",
     "account_id",

@@ -12,7 +12,7 @@ import {
 import { formatApiError } from "../../api/client";
 import type { SourceIntake } from "../../api/sourceIntake";
 import { getMonth } from "../../api/months";
-import type { MyBrokerDocument } from "../../api/mybrokerImport";
+import type { InstrumentLabel, MyBrokerDocument } from "../../api/mybrokerImport";
 import { previewOriginalContext } from "../../api/mybrokerPreflight";
 import { formatDate, formatMoney } from "../../lib/format";
 import { queryKeys } from "../../queryClient";
@@ -24,7 +24,14 @@ import { BrokerMonthSummary, sourceTotal } from "./BrokerMonthSummary";
 import { useBrokerOriginalSession } from "./brokerOriginalSession";
 import { SourceIntakeJournal, useSourceIntakeRecovery } from "./SourceIntakeJournal";
 
-function SourceInventory({ document }: { document: MyBrokerDocument }) {
+function SourceInventory({
+  document,
+  labels,
+}: {
+  document: MyBrokerDocument;
+  labels?: InstrumentLabel[];
+}) {
+  const names = new Map(labels?.map((item) => [item.isin, item.short_name]));
   return (
     <div className={styles.stack}>
       <p>
@@ -41,7 +48,7 @@ function SourceInventory({ document }: { document: MyBrokerDocument }) {
         <caption>Позиции по исходному отчёту</caption>
         <thead>
           <tr>
-            <Th>ISIN</Th>
+            <Th>Бумага</Th>
             <Th numeric>Количество в начале</Th>
             <Th numeric>Количество в конце</Th>
             <Th numeric>Начальная оценка</Th>
@@ -51,7 +58,11 @@ function SourceInventory({ document }: { document: MyBrokerDocument }) {
         <tbody>
           {document.positions.map((p) => (
             <tr key={`${p.source_account}:${p.ordinal}`}>
-              <Td>{p.isin}</Td>
+              <Td>
+                {names.get(p.isin) ?? "Без названия"}
+                <br />
+                <small>{p.isin}</small>
+              </Td>
               <Td numeric>{p.beginning_actual_quantity ?? "Неизвестно"}</Td>
               <Td numeric>{p.actual_quantity}</Td>
               <Td numeric>{formatMoney(p.beginning_value ?? null)}</Td>
@@ -75,7 +86,7 @@ function SourceInventory({ document }: { document: MyBrokerDocument }) {
           <thead>
             <tr>
               <Th>Строка</Th>
-              <Th>ISIN</Th>
+              <Th>Бумага</Th>
               <Th>Дата</Th>
               <Th>Количество</Th>
               <Th>Сумма источника</Th>
@@ -88,7 +99,11 @@ function SourceInventory({ document }: { document: MyBrokerDocument }) {
                 <Td>
                   {trade.section} #{trade.ordinal + 1}
                 </Td>
-                <Td>{trade.core.isin}</Td>
+                <Td>
+                  {names.get(trade.core.isin) ?? "Без названия"}
+                  <br />
+                  <small>{trade.core.isin}</small>
+                </Td>
                 <Td>{trade.core.trade_time}</Td>
                 <Td>{trade.core.quantity}</Td>
                 <Td>
@@ -595,7 +610,7 @@ export function BrokerMonthReview({
               <summary>Полный состав источника и привязки</summary>
               <div className={styles.stack}>
                 {!preview.account_bindings.length ? <AccountAliases preview={preview} /> : null}
-                <SourceInventory document={preview.document} />
+                <SourceInventory document={preview.document} labels={preview.instrument_labels} />
               </div>
             </details>
           </>
@@ -612,7 +627,10 @@ export function BrokerMonthReview({
                   : "Черновик неполный; замечания сохранены."}
               </p>
               {previous.accepted.document ? (
-                <SourceInventory document={previous.accepted.document} />
+                <SourceInventory
+                  document={previous.accepted.document}
+                  labels={previous.instrument_labels}
+                />
               ) : (
                 <p role="alert">
                   Исходные доказательства изменены. Сохранённая оценка не подтверждена.

@@ -19,6 +19,10 @@ class Ref(BaseModel):
     name: str
 
 
+class InstrumentRef(Ref):
+    short_name: str | None = None
+
+
 class PayoutEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     cash_flow_id: int
@@ -50,7 +54,7 @@ class KnownPayouts(BaseModel):
     method: Literal["known-booked-net-payouts"]
     version: Literal[1]
     account: Ref
-    instrument: Ref
+    instrument: InstrumentRef
     t0: date
     t1: date
     currency: Literal["RUB"]

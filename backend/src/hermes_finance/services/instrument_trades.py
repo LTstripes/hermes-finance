@@ -30,6 +30,7 @@ from hermes_finance.services import executed_trades as executions
 from hermes_finance.services.broker_money import latest_proofs, material, proof_blockers
 from hermes_finance.services.broker_trade_money import effective_proof, is_stock_proof
 from hermes_finance.services.instrument_cash_income import _historical_identity
+from hermes_finance.services.instrument_names import instrument_reference
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
 METHOD = "known-instrument-trades"
@@ -329,7 +330,7 @@ def known_instrument_trades(session, account_id: int, instrument_id: int, t0: da
         "method": METHOD,
         "version": VERSION,
         "account": {"id": account.id, "name": account.name},
-        "instrument": {"id": instrument.id, "name": instrument.name},
+        "instrument": instrument_reference(instrument),
         "t0": str(t0),
         "t1": str(t1),
         "currency": "RUB",
