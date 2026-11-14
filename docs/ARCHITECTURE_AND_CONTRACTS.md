@@ -7249,6 +7249,35 @@ blockers, and the unchanged `domain/xirr.py` solver preserves no-root/ambiguity
 reasons. Unavailable/UNKNOWN values use the existing `status=unavailable` and
 `value=null` representation. Each metric remains independently available.
 
+The overall instrument-account row and card's account `clean` object additionally
+expose `realized_result`, `unrealized_result`, `current_value`, nullable `is_open`
+and `position_reason_codes`. Realized result is FIFO disposal proceeds minus the
+disposed purchase cost plus received coupons/dividends. Unrealized result is
+closing value minus the remaining FIFO purchase cost, on the same statement/NKD
+basis and with the same source assumptions as P&L; fees and taxes remain excluded.
+Each lot's remaining cost is rounded to kopecks with ROUND_HALF_UP; disposed cost
+is original cost minus that remainder. Both parts sum exactly to full P&L when
+all three are known. Missing valuation does not hide proved realized result.
+A proved zero closing quantity gives exactly zero unrealized result. Unknown
+quantity is not sold. Observed-purchase fallback never proves FIFO allocation.
+Full redemption uses the existing recognized disposal. Unresolved or partial
+amortization remains UNKNOWN without source-proven cash and cost allocation.
+
+Each instrument also has an additive `aggregate`, shared by overall and card:
+full P&L, both parts, current value, position state, simple return and annual XIRR.
+Every account must be complete for each particular metric; an independent known
+component survives another component's gap. Conflicting or duplicate mapped
+identities withhold aggregation. Simple return divides full P&L by all purchases.
+XIRR solves the combined dated cash flows, with each open account's valuation at
+its own closing date and no terminal valuation for closed accounts. Different
+inception dates are preserved. Capital-weighted days combine original purchase
+cost weights without intermediate rounding, with the same >=365 eligibility rule.
+An individual short holding is not missing flow evidence; eligibility is evaluated
+for the combined population. Rates are never summed or averaged. Existing fields,
+portfolio/monthly results and export projections remain unchanged. Revision v22
+guards these additive producers; v21 receipt compatibility still checks every
+exact dependency without rewriting saved receipts.
+
 Position `modified_dietz` remains numerically compatible and is explicitly
 `for_position_comparison=false`, `annualized=false`; the legacy `rate` alias has
 the same restriction. Account monthly Dietz is unchanged. The API readers opt

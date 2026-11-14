@@ -138,7 +138,17 @@ export function ReturnsInstrumentCard({
     ? selectCardScope(query.data, selectedScope, selectedStart, selectedEnd)
     : null;
   const invalidated = useReturnsInvalidated(["returns", "instrument-card", isin, revision]);
-  const data = !query.isError && !invalidated ? selection?.card : undefined;
+  const card = !query.isError && !invalidated ? selection?.card : undefined;
+  const data = card?.aggregate
+    ? {
+        ...card,
+        summary: {
+          ...card.summary,
+          pnl: cleanMetric(card.aggregate.pnl),
+          reported_value: cleanMetric(card.aggregate.current_value),
+        },
+      }
+    : card;
   const catalogueName = useAccountName(data?.accounts.map((a) => a.account_link) ?? []);
   const accountName = (scope: string, fallback: string) => {
     const link = data?.accounts.find((account) => account.scope === scope)?.account_link;
@@ -202,8 +212,9 @@ export function ReturnsInstrumentCard({
     ? [data.summary.valuation_and_trades, data.summary.payouts, data.summary.pnl]
     : [];
   // Positions are compared by the simple return on invested and, after a capital-weighted
-  // year, by annual XIRR (#1016). There is no combined rate across accounts.
-  const onlyClean = data?.accounts.length === 1 ? data.accounts[0].clean : null;
+  // year, by annual XIRR. The server owns the combined account cash flows.
+  const onlyClean =
+    data?.aggregate ?? (data?.accounts.length === 1 ? data.accounts[0].clean : null);
   const simpleRate =
     onlyClean?.simple_return && onlyClean.simple_return.value !== null
       ? positionRateMetric(onlyClean.simple_return)
@@ -303,6 +314,37 @@ export function ReturnsInstrumentCard({
                 <strong className={sheet.hero} title={displayMetric(data.summary.pnl, true)}>
                   {displayWhole(data.summary.pnl, true)}
                 </strong>
+                {data.aggregate && (
+                  <dl className={styles.resultSplit}>
+                    {(
+                      [
+                        [
+                          "Зафиксировано",
+                          data.aggregate.realized_result,
+                          "Результат продаж и погашений за вычетом FIFO-стоимости выбывших лотов, плюс полученные купоны и дивиденды. НКД учтён в стоимости сделок; комиссии и налоги исключены.",
+                        ],
+                        [
+                          "В цене",
+                          data.aggregate.unrealized_result,
+                          "Текущая оценка открытых лотов минус их FIFO-стоимость. Для закрытой позиции — ноль.",
+                        ],
+                      ] as const
+                    ).map(([label, value, explanation]) => (
+                      <div key={label}>
+                        <dt>
+                          {label}{" "}
+                          <Info label={label}>
+                            <p>{explanation}</p>
+                            <Explanation codes={[...value.reason_codes, ...value.assumptions]} />
+                          </Info>
+                        </dt>
+                        <dd title={displayMetric(cleanMetric(value), true)}>
+                          {displayWhole(cleanMetric(value), true)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
                 <div className={styles.totalMeta}>
                   {partialTotal && data.summary.pnl.value !== null && (
                     <span className={styles.estimate}>по доступным данным</span>

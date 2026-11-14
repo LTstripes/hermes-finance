@@ -1160,6 +1160,13 @@ def test_position_comparison_api_matches_card_without_changing_export_projection
     for field in ("simple_return", "xirr", "modified_dietz"):
         assert pair[field] == clean[field]
     assert clean["simple_return"]["value"] == "0.2"
+    assert clean["realized_result"]["value"] == "0"
+    assert clean["unrealized_result"]["value"] == "2000"
+    assert pair["realized_result"]["value"] == "0"
+    assert pair["is_open"] is True
+    assert pair["current_value"]["value"] == "12000"
+    assert card["aggregate"]["simple_return"]["value"] == "0.2"
+    assert card["aggregate"]["pnl"]["value"] == "2000"
     assert clean["simple_return"]["invested_kopecks"] == "10000"
     assert clean["simple_return"]["start_date"] == "2030-04-15"
     assert clean["simple_return"]["end_date"] == "2030-04-30"
