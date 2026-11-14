@@ -344,7 +344,7 @@ function localizeApiMessage(error: ApiClientError): string {
     case "tax_brackets_year_locked":
       return "Налоговые ступени этого года зафиксированы закрытыми отчётными месяцами. Сначала открой их, если действительно хочешь пересчитать историю.";
     case "network_error":
-      return "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.";
+      return "Не удалось подключиться к локальному приложению. Проверь, что приложение запущено.";
     case "http_error":
       return "Не удалось выполнить запрос к локальному приложению.";
     case "internal_error":

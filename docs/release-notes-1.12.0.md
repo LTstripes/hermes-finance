@@ -1,4 +1,4 @@
-# Hermes Finance 1.12.0
+# Finance 1.12.0
 
 ## Интерфейс
 

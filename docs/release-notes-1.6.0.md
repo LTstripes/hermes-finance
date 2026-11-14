@@ -1,6 +1,6 @@
-# Hermes Finance 1.6.0
+# Finance 1.6.0
 
-Hermes Finance **1.6.0** packages the Owner-accepted Month and Returns screens
+Finance **1.6.0** packages the Owner-accepted Month and Returns screens
 from #962/#964/#965. It improves presentation and source-only review while
 preserving existing financial readers, writers, calculations and schema
 **0065_source_return_proofs**. There is no database transition from v1.5.0.

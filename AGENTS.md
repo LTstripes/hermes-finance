@@ -1,4 +1,4 @@
-# AGENTS.md — Hermes Finance
+# AGENTS.md — Finance
 
 Read the current issue and latest applicable accepted Integrator notes, then only the five-book sections needed for this task.
 
@@ -13,7 +13,7 @@ Read the current issue and latest applicable accepted Integrator notes, then onl
 
 Owner decides product direction/private UAT; Integrator owns acceptance and authorized integration; Worker owns one candidate without self-acceptance; Reviewer independently assesses it without implementation ownership. Tool access is not authority.
 
-Hermes is a local single-user Windows app, loopback by default. Financial logic uses Decimal, integer minor units and ROUND_HALF_UP, never binary float. CLOSED months require explicit Reopen. Frontend is not financial authority. Preserve UNKNOWN/NULL/zero distinctions, source/receipt/currentness/writer/Close boundaries in C.
+Finance is a local single-user Windows app, loopback by default. Financial logic uses Decimal, integer minor units and ROUND_HALF_UP, never binary float. CLOSED months require explicit Reopen. Frontend is not financial authority. Preserve UNKNOWN/NULL/zero distinctions, source/receipt/currentness/writer/Close boundaries in C.
 
 User-facing screens lead with useful numbers, graphs and actions. Keep technical
 provenance and codes out of the ordinary path; explain a material gap once in

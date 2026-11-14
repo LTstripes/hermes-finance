@@ -31,6 +31,7 @@ def test_server_defaults_to_loopback() -> None:
 
     assert settings.host == "127.0.0.1"
     assert settings.port == 8000
+    assert settings.app_name == "Finance API"
 
 
 def test_settings_read_prefixed_environment(monkeypatch: MonkeyPatch) -> None:

@@ -1,4 +1,4 @@
-# Hermes Finance 1.9.0
+# Finance 1.9.0
 
 This release brings the available-history Returns workspace and the canonical
 AI review into one guarded local release. Current publication, installation and

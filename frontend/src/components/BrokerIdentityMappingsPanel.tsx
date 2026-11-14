@@ -26,7 +26,7 @@ export function BrokerIdentityMappingsPanel() {
           <tr>
             <th>Источник</th>
             <th>Идентификатор</th>
-            <th>Объект Hermes</th>
+            <th>Объект в приложении</th>
             <th>Состояние</th>
           </tr>
         </thead>

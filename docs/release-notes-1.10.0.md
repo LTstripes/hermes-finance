@@ -1,4 +1,4 @@
-# Hermes Finance 1.10.0
+# Finance 1.10.0
 
 This release collects the month-close, returns and maintenance work merged after 1.9.4.
 

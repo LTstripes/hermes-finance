@@ -238,7 +238,7 @@ Implementation was completed end-to-end:
 
 The canonical coverage helper is shared with the AI bundle so owner-facing and AI/export surfaces cannot diverge on what counts as capital evidence.
 
-**Effect:** Hermes can show “known subtotal: exact, coverage: partial” truthfully instead of choosing between a false zero and a falsely complete total.
+**Effect:** Finance can show “known subtotal: exact, coverage: partial” truthfully instead of choosing between a false zero and a falsely complete total.
 
 <a id="c2"></a>
 ## 2. Money, formulas, NULL and coverage
@@ -1055,7 +1055,7 @@ These words are separate. A single field must not collapse them.
 
 This claim answers one question: for this reporting month, does every account required for liquid capital have a persisted snapshot?
 
-**Required set (read time, current catalog).** An account is required when `status = active` and `include_in_capital = true`. Hermes has no effective-dated capital-inclusion history. ADR 0007 does not snapshot global account flags. Until a separate architecture adds that history, this current catalog is the required set. Closed-month immutability protects persisted month rows. It does not freeze this coverage label.
+**Required set (read time, current catalog).** An account is required when `status = active` and `include_in_capital = true`. Finance has no effective-dated capital-inclusion history. ADR 0007 does not snapshot global account flags. Until a separate architecture adds that history, this current catalog is the required set. Closed-month immutability protects persisted month rows. It does not freeze this coverage label.
 
 **Represented.** The month represents that account when it has at least one of:
 
@@ -3159,7 +3159,7 @@ Previously accepted S1 v2 records remain unchanged.
   every affected position/trade reference and linked Money evidence.
 - The Owner chooses `map` or `skip` for each exact ISIN. `map` uses the existing
   compatible effective registry binding. `skip` creates neither an Instrument nor
-  a BrokerIdentityMapping and supplies no Hermes instrument ID or historical class.
+  a BrokerIdentityMapping and supplies no Finance instrument ID or historical class.
 - Accounts always require their existing explicit mappings. Undecided instruments,
   contradictory/ambiguous mappings and source integrity/reconciliation conflicts
   still block source Apply. Skip cannot override any source-level conflict.
@@ -3642,7 +3642,7 @@ must keep its separate stale-form/restore/duplicate-protection identity.
 
 [#1036](https://github.com/LTstripes/hermes-finance/issues/1036) retires Alfa Pro transport, diagnostics, snapshot preview/apply and live reconciliation. The removed APIs are `POST /api/months/{month_id}/broker-snapshot-preview`, `broker-snapshot-apply`, `broker-baseline-apply` and `broker-reconciliation-preview`; they return 404. No provider is constructed at startup or by generic reads. Close workflow omits the retired baseline/reconciliation steps, their actions and final-review reconciliation diagnostics.
 
-The provider-neutral `BrokerIdentityMapping` registry and its explicit confirm/revoke/remap API remain shared by supported source intake. Keys stay `(provider, subject_kind, provider_identity)`; account/instrument targets remain Hermes identities. Confirmations are explicit; no name/date/amount guessing or automatic backfill is introduced. Revoke/remap preserves history and does not rewrite accepted financial rows. The catalog shows saved mappings for all providers as read-only history.
+The provider-neutral `BrokerIdentityMapping` registry and its explicit confirm/revoke/remap API remain shared by supported source intake. Keys stay `(provider, subject_kind, provider_identity)`; account/instrument targets remain Finance identities. Confirmations are explicit; no name/date/amount guessing or automatic backfill is introduced. Revoke/remap preserves history and does not rewrite accepted financial rows. The catalog shows saved mappings for all providers as read-only history.
 
 Keep released migration bytes and ORM models for `broker_identity_mappings`, `broker_baseline_applies`, `broker_baseline_apply_items`, positions and journals. Removal performs no data migration, deletion, relabelling, or reinterpretation. Historical `alfa_pro` source identifiers remain valid in source labels and export allowlists. CLOSED months still require explicit Reopen.
 
@@ -3663,13 +3663,13 @@ Statuses:
 
 While `effective`, uniqueness is fail-closed as follows, per provider:
 
-1. **Forward (accounts and instruments):** at most one `effective` Hermes target for `(provider, subject_kind, provider_identity)`. A second distinct target for the same provider identity requires explicit remap.
-2. **Reverse (instruments):** at most one `effective` `provider_instrument_id` for `(provider, hermes_instrument_id)`. A second provider instrument id for the same Hermes instrument requires explicit remap.
-3. **Reverse (accounts):** multiple provider accounts may point at one Hermes account only when the owner confirms each pair explicitly. This does not authorize position aggregation.
+1. **Forward (accounts and instruments):** at most one `effective` Finance target for `(provider, subject_kind, provider_identity)`. A second distinct target for the same provider identity requires explicit remap.
+2. **Reverse (instruments):** at most one `effective` `provider_instrument_id` for `(provider, hermes_instrument_id)`. A second provider instrument id for the same Finance instrument requires explicit remap.
+3. **Reverse (accounts):** multiple provider accounts may point at one Finance account only when the owner confirms each pair explicitly. This does not authorize position aggregation.
 
-Identical repeated confirmation of an already effective pair is idempotent (no new successor). Confirming a **different** Hermes target for an effective provider identity without an explicit remap/revoke is a **conflict** and must not write. The same applies to a second `effective` provider instrument id for one Hermes instrument.
+Identical repeated confirmation of an already effective pair is idempotent (no new successor). Confirming a **different** Finance target for an effective provider identity without an explicit remap/revoke is a **conflict** and must not write. The same applies to a second `effective` provider instrument id for one Finance instrument.
 
-Observed ISIN is optional confirmation evidence, never the provider identity key. A contradictory present Hermes/provider ISIN fails closed. Revoke/remap never changes accepted positions, cost, quotes or journals. No silent backfill from market mappings, names, dates, amounts or closed history is permitted.
+Observed ISIN is optional confirmation evidence, never the provider identity key. A contradictory present Finance/provider ISIN fails closed. Revoke/remap never changes accepted positions, cost, quotes or journals. No silent backfill from market mappings, names, dates, amounts or closed history is permitted.
 
 <a id="c5"></a>
 
@@ -3784,7 +3784,7 @@ can be reused. Existing coupon/PDF behavior and financial formulas are unchanged
 
 Migration `0049_executed_trade_truth` adds four empty tables without backfill:
 
-- `executed_trades`: stable Hermes ID, unique provider/source account/ordered
+- `executed_trades`: stable Finance ID, unique provider/source account/ordered
   native-ID pair, frozen economic core and exact accepted mapping IDs/targets;
 - `executed_trade_occurrences`: unique S1 import/section/ordinal references and
   source fingerprints, separate from economic execution identity;
@@ -4157,7 +4157,7 @@ Dates and accounts above are synthetic. Select every account relevant to the
 intended scope, including non-MyBroker accounts. This API reports the explicit
 selection; it does not infer a portfolio universe from current inclusion flags.
 Missing source or historical membership for a selected account remains visible.
-Selections allow up to 100 distinct existing Hermes accounts and 36,600 days.
+Selections allow up to 100 distinct existing Finance accounts and 36,600 days.
 
 The response exposes structural evidence only:
 
@@ -4198,7 +4198,7 @@ an inventory review identity, not an Apply confirmation or an acceptance token.
 Event-history observation, exact source endpoint acceptance, monthly
 materialization, account/portfolio XIRR, class no-crossing/crossing XIRR and exact
 TWRR availability are separate fields. H0 does not call solvers or reinterpret
-existing Hermes return availability. Complete source endpoints/materialization
+existing Finance return availability. Complete source endpoints/materialization
 require the separate H1 contract; return consumers remain unevaluated here.
 Opaque section event dates cannot be recovered from S1's retained structural flags.
 Quiet/empty reports, missing securities or missing cash never establish zero
@@ -4207,7 +4207,7 @@ capital, inception or complete financial coverage.
 No migration, persistence, financial mutation, coverage promotion, provider
 request, backfill, price/class/cost/P&L inference or month close/reopen occurs.
 The output excludes native source identifiers, holdings, amounts, filenames,
-raw XML and arbitrary source text. Hermes IDs, source identity digests, dates
+raw XML and arbitrary source text. Finance IDs, source identity digests, dates
 and structural flags support Owner-local review. Do not publish Owner-local
 reports or responses as agent/GitHub artifacts; synthetic tests supply evidence.
 Independent candidate review, Integrator acceptance and applicable Owner UAT
@@ -5258,10 +5258,10 @@ contribution/withdrawal.
 
 If `source_leg.event_date < destination_leg.event_date`, the interval from the
 source departure through destination arrival is transfer transit. Money in
-transit is economically still part of the owner portfolio, but current Hermes
+transit is economically still part of the owner portfolio, but current Finance
 valuation components do not represent a synthetic in-transit asset.
 
-Hermes must not synthesize cash-in-transit, move leg dates, temporarily classify
+Finance must not synthesize cash-in-transit, move leg dates, temporarily classify
 the transfer as external, or silently treat omitted transit value as return.
 
 A required whole-portfolio valuation is unsafe when its effective/observation
@@ -5314,7 +5314,7 @@ a required valuation even when both leg dates lie outside that request window.
 <a id="c6-performance_v1_reconciliation_2026-09-06-62-h1-b--in-kind-securities-crossing-a-performance-boundary"></a>
 #### H1-B — in-kind securities crossing a performance boundary
 
-Hermes must never synthesize cash for a security or other non-cash asset merely
+Finance must never synthesize cash for a security or other non-cash asset merely
 to satisfy XIRR/TWRR inputs.
 
 Absence of `ExternalFlow` or legacy cash deposit/withdrawal rows is not proof
@@ -5338,7 +5338,7 @@ Minimum coverage states:
 - `COMPLETE` — the required account/interval is explicitly covered and every
   in-kind boundary movement is known, including the valid case where there
   were none;
-- `UNKNOWN` — Hermes cannot establish whether such movement occurred.
+- `UNKNOWN` — Finance cannot establish whether such movement occurred.
 
 `COMPLETE` means the history is known; it does not mean the movement set is
 empty. A known but unvalued movement continues to block exact performance.
@@ -5358,7 +5358,7 @@ contract:
 `not_computable_in_kind_movement_unvalued`
 
 An in-kind movement between two historically in-scope accounts is conceptually
-internal at portfolio scope, but until Hermes has accepted non-cash
+internal at portfolio scope, but until Finance has accepted non-cash
 transfer/valuation evidence sufficient to preserve valuation continuity, exact
 portfolio performance across that known movement remains unavailable rather
 than assuming continuity. Full non-cash flow support is deferred.
@@ -5386,7 +5386,7 @@ The separation is deterministic only when accepted source evidence establishes
 the actual outside-scope amount and the tax/fee component. Evidence may be one
 authoritative source contract with explicit gross/tax/net meaning or multiple
 canonical events that deterministically reconcile to the same primary owner
-transaction. Hermes must not infer boundary meaning from legacy field names.
+transaction. Finance must not infer boundary meaning from legacy field names.
 If the actual boundary amount cannot be proven:
 
 `not_computable_external_flows_incomplete`
@@ -6238,7 +6238,7 @@ return behavior, including when `filename_period_mismatch` is present.
 
 In both monthly and instrument source-return readers, a selected filename account
 alias may select the single native row account evidenced by that same document.
-This is document-local source selection, not a Hermes account mapping or suffix
+This is document-local source selection, not a Finance account mapping or suffix
 heuristic. A document with multiple row accounts remains ambiguous; conflicting
 single-account associations for the selected alias across documents withhold the
 selection. Scope-inapplicable documents cannot supply zero coupons/dividends:
@@ -7143,7 +7143,7 @@ value, result and percentage are unknown; observed sales remain at instrument
 level. Conflicting or duplicate identities do not establish separate purchases.
 An execution may precede the opening EOD when both its cash settlement and
 delivery are inside the selected period; preserve its actual execution date.
-This is Hermes analysis, not broker tax accounting, and excludes payouts,
+This is Finance analysis, not broker tax accounting, and excludes payouts,
 fees, taxes and NKD. If no individual purchase can be proved, unsupported
 histories return `purchases=null`; underlying operations remain visible.
 The additive account-level card field is also present in AI report 3.1.0 with
@@ -7378,7 +7378,7 @@ cash is selected in `(opening_date, closing_date]`. Without dates the disclosed
 interval is the saved-source outer span, never an inferred acquisition date.
 The root returns the requested `source_account` alias separately from resolved
 `native_source_account`; scope remains provider + exact native account + ISIN.
-Binding an intake to Hermes metadata grants no additional authority.
+Binding an intake to Finance metadata grants no additional authority.
 
 Each instrument and existing monthly row adds `analysis` with
 `contract_version=instrument_return_v2`, actual dates, source history span,
@@ -7915,8 +7915,8 @@ frozen legacy grammar) from the uploaded bytes. A parser or original mismatch re
 rather than reinterpreting saved observations. Two scopes exist:
 
 - **`scope=account`** — the previously accepted bound path: the journal has one bound
-  Hermes account, all source aliases resolve to it under the existing effective
-  mapping/currentness rules, and `account_id` is that Hermes account.
+  Finance account, all source aliases resolve to it under the existing effective
+  mapping/currentness rules, and `account_id` is that Finance account.
 - **`scope=native_source`** — the journal is intentionally unbound (`account_id` and
   `reporting_month_id` are `null`, as in the accepted #769 source-only history) and no
   accepted financial binding exists. The scope identity comes from the statement rows:
@@ -8522,7 +8522,7 @@ Do not merge a failed response with cached metrics from a different generation.
 #### 1. Purpose and source-of-truth boundary
 
 PERF-04A defines the first truthful attribution surface that can be supported
-by the accepted Hermes evidence. It is deliberately narrower than a general
+by the accepted Finance evidence. It is deliberately narrower than a general
 investment-performance decomposition.
 
 The accepted R08 contracts remain authoritative for:
@@ -8676,7 +8676,7 @@ when all evidence is otherwise exact.
 #### 3.2 Money, precision and rounding
 
 - Persisted and internal arithmetic uses integer minor units (`kopecks`) under
-  the existing Hermes money contract.
+  the existing Finance money contract.
 - Any future calculation layer must preserve exact integer arithmetic for the
   bridge and must not use binary floating-point financial semantics.
 - API money values use the existing exact decimal-string plus three-letter
@@ -10066,7 +10066,7 @@ For v0.2, the configuration unit is one complete tax-bracket rule set per calend
 
 The API exposes a semantic source label for the effective values:
 
-- `official_default` — the effective set exactly matches the built-in official progressive scale used by Hermes Finance;
+- `official_default` — the effective set exactly matches the built-in official progressive scale used by Finance;
 - `manual_configuration` — the effective set differs from that scale.
 
 This is a classification of the effective values, not a historical audit trail of who changed them.
@@ -10882,7 +10882,7 @@ paths; plus frontend tests for editing and unknown-vs-0 display.
 **Ruleset version:** `v1`
 **Endpoint:** `GET /api/months/{month_id}/deterministic-insights`
 
-The engine is a small read-only composition layer over accepted Hermes
+The engine is a small read-only composition layer over accepted Finance
 contracts.  It does not recalculate their financial semantics.  The endpoint
 uses only persisted local state and the caller's evaluation date; it never
 calls a provider, performs network I/O, calls an LLM, predicts a future value,
@@ -12814,10 +12814,10 @@ providers, refresh quotes, apply snapshots, or invent timestamps.
 
 | Clock | Meaning | Used for freshness? |
 |---|---|---|
-| Source timestamp | Provider observation or event date that Hermes actually stored (`price_date`, `payment_date`, `event_date`, `fetched_at` when that is the observation) | Only when the family has a defined freshness rule |
-| Import/apply time | When the owner accepted the data into Hermes | Never |
+| Source timestamp | Provider observation or event date that Finance actually stored (`price_date`, `payment_date`, `event_date`, `fetched_at` when that is the observation) | Only when the family has a defined freshness rule |
+| Import/apply time | When the owner accepted the data into Finance | Never |
 | Reporting month | Selected `year`/`month` plus `snapshot_date` | Identifies the slice; not a freshness clock |
-| Local edit time | Hermes `updated_at` for manual rows | Never |
+| Local edit time | Finance `updated_at` for manual rows | Never |
 
 `generated_at` / `evaluated_on` are evaluation-clock inputs, not financial observations.
 
@@ -12884,7 +12884,7 @@ Active Alfa depository income-report events linked to this month’s investment 
 <a id="c9-freshness_provenance-1-manual_month_data"></a>
 #### `manual_month_data`
 
-Local month entries that Hermes already treats as owner-maintained: incomes, expenses,
+Local month entries that Finance already treats as owner-maintained: incomes, expenses,
 savings, expected cash flows, and position snapshots whose current `price_source` is
 `manual` or `alfa_pdf`.
 
@@ -12963,7 +12963,7 @@ informational vs warning only. This endpoint never promotes a warning to a close
 <a id="c9-t-invest-market-data-1"></a>
 ### T-Invest authority, quote units and payout support
 
-Hermes Finance uses **T-Invest** as the production read-only source for owner-triggered quote preview and, in 0.5, future investment payout events. Direct MOEX ISS is not a production quote fallback. The separate explicit bounded official identity/denomination lookup in C4 is supported and is not quote authority.
+Finance uses **T-Invest** as the production read-only source for owner-triggered quote preview and, in 0.5, future investment payout events. Direct MOEX ISS is not a production quote fallback. The separate explicit bounded official identity/denomination lookup in C4 is supported and is not quote authority.
 
 Alfa depository income-payment PDF import remains supported under C3/C9. The retired snapshot path and retained broker history are specified in C4. This file remains the T-Invest quote/payout guide.
 
@@ -13024,13 +13024,13 @@ You need a T-Invest / T-Bank brokerage account, even an empty one.
 HERMES_FINANCE_T_INVEST_READ_ONLY_TOKEN=
 ```
 
-Hermes always reads `<repository-root>/.env`, including when `scripts/start-local.ps1` starts the backend from the `backend/` directory. Process environment variables still override the file.
+Finance always reads `<repository-root>/.env`, including when `scripts/start-local.ps1` starts the backend from the `backend/` directory. Process environment variables still override the file.
 
-4. Restart the local Hermes backend after changing the token.
+4. Restart the local Finance backend after changing the token.
 
 The token never belongs in Git, the SQLite database, the browser, API responses, logs, tests, or reports.
 
-Hermes cannot prove that a pasted token is read-only without calling forbidden trading methods. The guarantee on our side is documentation plus a client that implements **no** order, cancel, replace, sandbox-trading, or money-transfer methods.
+Finance cannot prove that a pasted token is read-only without calling forbidden trading methods. The guarantee on our side is documentation plus a client that implements **no** order, cancel, replace, sandbox-trading, or money-transfer methods.
 
 
 <a id="c9-t-invest-market-data-1-preview"></a>
@@ -13042,7 +13042,7 @@ Quote preview remains an explicit button. A missing token fails calmly and does 
 <a id="c9-t-invest-market-data-1-payouts-05"></a>
 #### Payouts (0.5)
 
-Future coupons, dividends and redemptions use explicit owner preview or the financial-DRAFT acceptance trigger specified above. Hermes positions remain local: there is no broker portfolio/account import. Apply freezes the quantity from the local `PositionSnapshot` and never edits manual expected-flow rows. Unresolved duplicates stay manual-only. Provider coupons may feed C04; provider dividends stay calendar-visible and do not change the historical C04 dividend component; redemption is cash flow, never passive income. Reaching an event date does not create a realized investment cash flow. Startup, dashboard and month reads do not call T-Invest.
+Future coupons, dividends and redemptions use explicit owner preview or the financial-DRAFT acceptance trigger specified above. Finance positions remain local: there is no broker portfolio/account import. Apply freezes the quantity from the local `PositionSnapshot` and never edits manual expected-flow rows. Unresolved duplicates stay manual-only. Provider coupons may feed C04; provider dividends stay calendar-visible and do not change the historical C04 dividend component; redemption is cash flow, never passive income. Reaching an event date does not create a realized investment cash flow. Startup, dashboard and month reads do not call T-Invest.
 
 
 <a id="c9-t-invest-market-data-1-live-probe-developer-only"></a>
@@ -13116,8 +13116,8 @@ Each response `rows[]` item has exactly one canonical `state`:
 |---|---|
 | `matched` | Account/instrument identity is resolved and Decimal quantities are equal. |
 | `differs` | Identity is resolved and the provider/local quantities differ. |
-| `missing_local` | A resolved provider position has no local Hermes position. |
-| `missing_provider` | A local Hermes position has no resolved provider row. |
+| `missing_local` | A resolved provider position has no local Finance position. |
+| `missing_provider` | A local Finance position has no resolved provider row. |
 | `unresolved` | Mapping, duplicate identity, quantity, compatibility or freshness prevents a safe comparison. |
 
 An unresolved provider position is retained as a row with an explicit
@@ -13132,7 +13132,7 @@ account/instrument label, ticker and ISIN fields where available.
 - `provider_broker_unit_price`, `provider_accounting_price`,
   `provider_market_value`, `provider_accrued_interest_nkd` and
   `provider_unrealized_result` are comparison-only observations. Their names
-  are listed in `comparison_only_fields`; none can overwrite Hermes values.
+  are listed in `comparison_only_fields`; none can overwrite Finance values.
 - Identity reuses explicit account mapping, explicit instrument mapping and
   exact unique ISIN matching from the accepted reconciliation preview.
 - An incomplete, stale, non-eligible or compatibility-unknown snapshot is
@@ -13465,7 +13465,7 @@ Reasons:
 - stock, fund/ETF and bond market data are documented;
 - historical daily candles support deterministic as-of lookup beyond the 30-day ADR window;
 - bond market price semantics are documented as percent of nominal, with nominal and currency available through exact `MoneyValue`/`Quotation` values;
-- official materials support downloading/storing market history for private statistics; redistribution/public retransmission remains outside Hermes Finance scope;
+- official materials support downloading/storing market history for private statistics; redistribution/public retransmission remains outside Finance scope;
 - API limits are far above the expected manual monthly refresh load.
 
 Recommended T-Invest identity:
@@ -13486,12 +13486,12 @@ Alfa Pro is retired; [C4](#c4-0016-owner-approved-alfa-baseline-and-broker-mappi
 <a id="c9-0010-market-and-broker-provider-strategy-17-3-market-data-and-broker-holdings-are-separate-bounded-contexts"></a>
 #### 3. Market data and broker holdings are separate bounded contexts
 
-A single Hermes instrument may have multiple provider projections.
+A single Finance instrument may have multiple provider projections.
 
 Example conceptually:
 
 ```text
-Hermes Instrument
+Finance Instrument
   stable local identity / ISIN / ticker metadata
 
 MarketData mapping
@@ -13536,7 +13536,7 @@ without semantic lying.
 <a id="c9-0011-automatic-investment-payout-calendar-18-decision-summary"></a>
 #### Decision summary
 
-Hermes SHALL use a separate provider-payout bounded context rather than silently inserting provider rows into the existing owner-entered `expected_cash_flows` table.
+Finance SHALL use a separate provider-payout bounded context rather than silently inserting provider rows into the existing owner-entered `expected_cash_flows` table.
 
 The lifecycle is:
 
@@ -13698,7 +13698,7 @@ All provider timestamps used as financial calendar dates MUST be converted throu
 - `coupon_start_date` / `coupon_end_date`: coupon-period metadata and possible identity fallback;
 - `coupon_date`: **canonical payout calendar date**.
 
-If `coupon_date` is absent, Hermes MUST NOT invent the payout date from `coupon_end_date`; the row is tentative/incomplete and not applyable.
+If `coupon_date` is absent, Finance MUST NOT invent the payout date from `coupon_end_date`; the row is tentative/incomplete and not applyable.
 
 
 <a id="c9-0011-automatic-investment-payout-calendar-18-dividend"></a>
@@ -13709,7 +13709,7 @@ If `coupon_date` is absent, Hermes MUST NOT invent the payout date from `coupon_
 - `record_date`: owner registry/fix date and preferred natural identity anchor;
 - `payment_date`: **canonical payout calendar date**.
 
-If `payment_date` is absent, Hermes MAY show the event as tentative in preview but MUST NOT synthesize a date or apply it to the cash-flow calendar.
+If `payment_date` is absent, Finance MAY show the event as tentative in preview but MUST NOT synthesize a date or apply it to the cash-flow calendar.
 
 No rule such as `record_date + N business days` is part of 0.5.
 
@@ -13765,7 +13765,7 @@ T-Invest currently documents `dividend_net` as the dividend amount per security 
 
 0.5 stores/interprets it as the provider-announced per-unit payout amount unless the live probe establishes a stronger semantic contract.
 
-Hermes MUST NOT fabricate 13%/15% or any other personal tax amount. Tax remains unknown; the UI must label the amount accordingly.
+Finance MUST NOT fabricate 13%/15% or any other personal tax amount. Tax remains unknown; the UI must label the amount accordingly.
 
 `Daily Accrual`, `Return of Capital` and other non-ordinary dividend types are not silently treated as ordinary passive-income dividends. They require explicit normalization rules or remain unsupported. `Return of Capital` is not passive income.
 
@@ -13924,7 +13924,7 @@ A previously applied event MUST NOT be labeled `missing_from_provider` merely be
 
 If network/auth/malformed/unknown-window conditions exist, no `missing_from_provider` inference is made.
 
-This is especially important for dividends because T-Invest `GetDividends` filters requests by `record_date`, while Hermes calendars cash by `payment_date`.
+This is especially important for dividends because T-Invest `GetDividends` filters requests by `record_date`, while Finance calendars cash by `payment_date`.
 
 `missing_from_provider` is a **derived refresh/preview state**, not automatic cancellation and not automatic database deletion. The last applied event remains active/countable unless the owner explicitly changes its lifecycle.
 
@@ -14024,7 +14024,7 @@ If the same identity reappears, it becomes `unchanged` or `revised`. There is no
 <a id="c9-0011-automatic-investment-payout-calendar-18-identity-changes"></a>
 #### Identity changes
 
-If the provider changes data such that the stable identity no longer matches and equivalence cannot be proved, Hermes represents old `missing` plus new `new`. It MUST NOT heuristic-auto-merge identities.
+If the provider changes data such that the stable identity no longer matches and equivalence cannot be proved, Finance represents old `missing` plus new `new`. It MUST NOT heuristic-auto-merge identities.
 
 
 <a id="c9-0011-automatic-investment-payout-calendar-18-manual-reconciliation"></a>
@@ -14229,6 +14229,12 @@ The transport, compatibility diagnostics and field mapping are removed under [C4
 
 ## 10. Export formats, schema versions and compatibility
 
+The visible product name is **Finance** (Owner decision 2026-11-14, #1196).
+For saved-file and reader compatibility, `application.name` in
+`ai_analysis_bundle`, `ai_financial_review` and `portfolio_review_package`
+remains `Hermes Finance`; schema identifiers and `docs/schemas` stay unchanged.
+UI labels use Finance without rewriting that data.
+
 Machine schemas and their synthetic/example packages live together in `docs/schemas/`: `ai_analysis_bundle.schema.json`, `ai_financial_review.schema.json`, `portfolio_review_package.schema.json` and their fixtures; `legacy_month_mapping.schema.json`/example and `private_seed.schema.json`/example remain public supported formats. Co-location preserves relative schema references; schema identifiers, bytes and format versions are unchanged by the directory move. Format versions are independent of application version. AI analysis bundle format is 1.4.0. Integers/Decimal strings, units, nullable values, coverage and compatibility remain explicit. `portfolio_review_package.assistant-evaluation.json` is a synthetic expected-answer contract, not model accounting.
 
 Legacy mapping imports require their declared schema and explicit field mappings; unsupported columns/identity never silently become financial facts. Private seed is an explicit local bootstrap input outside Git with real payloads excluded from CI; the retained public example is synthetic. Preserve historical receipt formats and reject unsupported versions rather than reinterpreting them. The detailed consumer contracts follow.
@@ -14265,8 +14271,8 @@ by the #331 report.
 #### Purpose and boundary
 
 The AI Analysis Bundle is a deterministic, read-only export of the financial picture already
-defined by Hermes Finance. It is intended for an explicit owner download and later, separate
-submission to an AI assistant. Hermes does not send the bundle anywhere, call an LLM or cloud
+defined by Finance. It is intended for an explicit owner download and later, separate
+submission to an AI assistant. Finance does not send the bundle anywhere, call an LLM or cloud
 API, persist an AI interpretation, or change financial data while generating it.
 
 This contract does not introduce a financial model. The exporter calls existing
@@ -14277,7 +14283,7 @@ The `/api/export/ai-analysis-bundle/json` alias is removed. The `media` query
 selector is removed and returns `422` on either retained endpoint, with guidance
 to choose the endpoint instead; it never silently selects a different format.
 `forecast_version` and `generated_at` retain their existing validation.
-By the Owner decision of 2026-11-08, Hermes UI is the sole AI-export API consumer;
+By the Owner decision of 2026-11-08, Finance UI is the sole AI-export API consumer;
 there are no external clients or scripts requiring these compatibility routes.
 
 
@@ -14321,14 +14327,14 @@ shape, including NULL value and unknown precision when no effective amount exist
   `(severity, code, scope)`. The same persisted state, generation inputs, and `generated_at`
   produce byte-equivalent logical content after canonical JSON serialization.
 - `generated_at` is an explicit generation input, not a financial observation. Financial
-  freshness is expressed by snapshot, price, source-as-of, or event dates where Hermes really
+  freshness is expressed by snapshot, price, source-as-of, or event dates where Finance really
   has them. The contract does not invent freshness timestamps.
 
 
 <a id="c10-ai_analysis_bundle-1-normative-semantic-sources"></a>
 #### Normative semantic sources
 
-| Bundle area | Authoritative Hermes source | Required interpretation |
+| Bundle area | Authoritative Finance source | Required interpretation |
 |---|---|---|
 | Reporting period and status | `ReportingMonth` and reporting-month lifecycle | `closed` is immutable history; `draft` remains provisional. |
 | Liquid assets and net capital | `liquid_capital_for_month` and `asset_allocation_for_month` / ADR 0007 | `liquid_assets_total - included_debts = liquid_capital_net`; real estate and mortgage are outside liquid capital. |
@@ -14345,7 +14351,7 @@ shape, including NULL value and unknown precision when no effective amount exist
 | Salary consistency | persisted salary gross/net plus the read-only salary-tax calculation | `reporting_history[].kpis.salary` retains `gross`, `calculated_tax`, `calculated_net`, and `actual_net` as separate facts. `salary_net_mismatch` is a warning when `gross - calculated_tax != actual_net`. The same mapping is exposed for the selected month as `salary_tax_context.selected_month`: authoritative persisted `gross`/`actual_net`, derived `calculated_tax`/`calculated_net` that become `unavailable` when the tax history is incomplete, and `consistency` of `consistent`/`mismatch`/`unavailable`. It is read from the same builder as the KPI block; export code computes no tax itself. |
 | Property quality | structured `PropertySnapshot` rows | Each row remains authoritative and notes are excluded and never parsed as a competing balance. When `property_equity_suspicious_jump` or `duplicate_property_snapshot` affects a reporting month, the affected aggregate property value, mortgage, equity, payment and coverage metrics are unavailable with those reason codes; raw rows remain available in the canonical report. No deterministic dedupe is attempted without authoritative identity. |
 | Upcoming cash flows | `merged_payout_calendar` / ADR 0011 | Manual/provider reconciliation decides which row counts. Provider totals with unknown personal tax remain provider-announced approximate amounts, never labelled net. An unresolved duplicate uses the existing safe manual-only behavior. Calendar total, non-principal calendar amount total, and principal total are separate. |
-| Provenance | persisted manual/provider/statement provenance already accepted by Hermes | `manual`, `t_invest`, `alfa_pro`, and `alfa_statement` are reported only where meaningful. Raw protocol payloads and provider correlation IDs are excluded. |
+| Provenance | persisted manual/provider/statement provenance already accepted by Finance | `manual`, `t_invest`, `alfa_pro`, and `alfa_statement` are reported only where meaningful. Raw protocol payloads and provider correlation IDs are excluded. |
 | Deterministic insights | `build_deterministic_insights` (close readiness, freshness, payouts, risk, tax) | Optional `deterministic_insights` carries the sanitized allowlist (`code`, `type`, `severity`, `message`, `source`, `as_of`, `provenance`, `reason`). The open `evidence` map remains on the dedicated `GET /deterministic-insights` endpoint and never enters the bundle. The section is evaluated for the bundle's selected `reporting_period` at `generated_at` (`evaluated_on`), preserving the engine's deterministic `(severity, code, source, reason)` order. |
 
 The historical `actual_history_metric_path` is a path, not a duplicate series. A consumer reads
@@ -14468,7 +14474,7 @@ values are not omitted: they use the explicit unavailable shape. An optional app
 is represented as `null` when it cannot be obtained safely.
 
 No schema registry or remote lookup is required. The exported file identifies the version, and
-Hermes ships the matching schema with the application.
+Finance ships the matching schema with the application.
 
 
 <a id="c10-ai_analysis_bundle-1-privacy-and-intentional-exclusions"></a>
@@ -14541,7 +14547,7 @@ advertise generation support. [C7](#c7) owns the current clean-return meaning.
 
 `hermes.finance.ai_financial_review` is the one canonical, full-scope export
 that the owner should choose for a normal monthly review in ChatGPT or another
-AI assistant. It is a deterministic, read-only handoff of Hermes facts and
+AI assistant. It is a deterministic, read-only handoff of Finance facts and
 owner-entered context. The JSON file is canonical; a future Markdown download
 may be rendered from the same DTO in a later scope and must not have separate
 financial semantics. Markdown is not part of the #331 implementation scope.
@@ -15136,7 +15142,7 @@ an absent JSON key.
 | `context` (goals, debt/property, IIS/tax) | Omitted by profile | Included when each source is available; individual metrics can still be unavailable |
 | `deterministic_insights` | Omitted by profile | Included only as the typed, sanitized insight shape; unavailable/omitted is explicit if not assembled |
 
-The contract allows a full profile to mark a source `unavailable` when Hermes has
+The contract allows a full profile to mark a source `unavailable` when Finance has
 no authoritative value. `omitted` means the owner/profile intentionally did not
 request the field. These states are different and must not be collapsed into an
 empty array or zero.
@@ -15175,7 +15181,7 @@ empty array or zero.
 | Package section | Existing source/read model | Boundary |
 | --- | --- | --- |
 | `capital` | `liquid_capital_for_month`, `property_equity` | Liquid capital remains separate from property equity and mortgage |
-| `positions` | current `ai_analysis_bundle` projection over account/instrument/position/deposit/cash snapshots | Provider observations do not replace Hermes valuation or identity |
+| `positions` | current `ai_analysis_bundle` projection over account/instrument/position/deposit/cash snapshots | Provider observations do not replace Finance valuation or identity |
 | `dynamics` | `reporting_history` from the current bundle and historical batch/read models | Missing months stay unknown; no fabricated deltas/returns |
 | `passive_income` | `passive_income_for_month`, `passive_income_average`, `forecast_passive_income` | Actual, forecast, dividend-history component, and redemption remain distinct |
 | `future_cash_flows` | `merged_payout_calendar` | Calendar total, non-principal total, and principal total remain separate |

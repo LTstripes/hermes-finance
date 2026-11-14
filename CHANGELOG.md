@@ -4,6 +4,11 @@
 Точное состояние установленной версии и UAT — только в
 [CURRENT_STATUS](docs/CURRENT_STATUS.md).
 
+## [Unreleased]
+
+- #1196: видимое имя приложения изменено с «Hermes Finance» на «Finance»;
+  внутренние имена и совместимость AI-экспорта сохранены.
+
 ## [1.10.4] - 2026-11-04
 
 - Fix redemption principal/quantity/date, overlapping payout components and

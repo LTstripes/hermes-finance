@@ -15,9 +15,9 @@ import {
 } from "./marketData";
 
 describe("marketData helpers", () => {
-  it("keeps local Hermes-down text distinct from T-Invest network failure", () => {
+  it("keeps local app-down text distinct from T-Invest network failure", () => {
     const localDown =
-      "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.";
+      "Не удалось подключиться к локальному приложению. Проверь, что приложение запущено.";
     const providerDown = quoteFailureGuidance("provider_network");
     expect(providerDown).toContain("Внешний источник");
     expect(providerDown).not.toContain("не запущен");

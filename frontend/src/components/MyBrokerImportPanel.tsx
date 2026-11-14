@@ -369,8 +369,8 @@ export function MyBrokerImportPanel() {
           <ul>
             {preview.mappings.map((mapping) => (
               <li key={`${mapping.kind}:${mapping.identity}`}>
-                {mapping.kind === "account" ? "Счёт" : "Инструмент"} {mapping.identity} → Hermes #
-                {mapping.hermes_id}
+                {mapping.kind === "account" ? "Счёт" : "Инструмент"} {mapping.identity} → объект в
+                приложении #{mapping.hermes_id}
               </li>
             ))}
           </ul>

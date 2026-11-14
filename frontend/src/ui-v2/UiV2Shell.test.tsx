@@ -459,5 +459,5 @@ it.each([
   ["/v2/income/goals", "Цели"],
 ])("names the browser tab for %s", (path, title) => {
   renderShell(path);
-  expect(document.title).toBe(`${title} — Hermes Finance`);
+  expect(document.title).toBe(`${title} — Finance`);
 });

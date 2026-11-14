@@ -59,7 +59,7 @@ function familyOrigin(family: FreshnessFamily): string {
     const providers = family.providers.map(sourceLabel);
     return providers.length > 0 ? `Получено из ${providers.join(" · ")}` : "Локальные данные";
   }
-  return "Введено вручную в Hermes";
+  return "Введено вручную в приложении";
 }
 
 function familySavedState(family: FreshnessFamily): { label: string; tone: string } {

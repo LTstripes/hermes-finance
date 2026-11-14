@@ -87,7 +87,7 @@ export function UiV2Shell({
   const { pathname, search, hash } = useLocation();
   const main = useRef<HTMLElement>(null);
   useEffect(() => {
-    document.title = `${screenTitle(pathname)} — Hermes Finance`;
+    document.title = `${screenTitle(pathname)} — Finance`;
   }, [pathname]);
   useEffect(() => {
     if (main.current && !busy)
@@ -146,7 +146,7 @@ export function UiV2Shell({
             H
           </span>
           <span>
-            Hermes Finance<small>Только на этом компьютере</small>
+            Finance<small>Только на этом компьютере</small>
           </span>
         </Link>
         <nav aria-label="Основная навигация" className={styles.navigation}>
