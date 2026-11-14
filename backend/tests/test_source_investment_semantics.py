@@ -12,6 +12,7 @@ SEMANTIC_MODULES = (
     "api/read_cache.py",
     "services/returns_home.py",
     "services/portfolio_annual_return.py",
+    "services/portfolio_annual_evidence.py",
     "domain/clean_instrument_return.py",
     "domain/instrument_return.py",
     "domain/money_security.py",
@@ -65,7 +66,7 @@ SEMANTIC_MODULES = (
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v23",
-    "87e55ab707789d495fdd5750e1d968db875935e60b90ff1d88b0ca740de9ebe2",
+    "01c127a0298f87f964e68c06d186df673366c2b06ab5ac8521b786a85dba46aa",
 )
 
 

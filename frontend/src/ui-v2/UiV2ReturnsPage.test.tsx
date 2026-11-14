@@ -67,50 +67,57 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-test("shows the backend annual portfolio rate and switches to the account's own rate", async () => {
-  const data = overallFixture();
-  const annual = {
-    pnl: data.overall.pnl,
-    rate: {
-      ...data.overall.rate,
-      value: "0.125",
-      reason_codes: [],
-      method: "portfolio_inception_xirr",
-    },
-    first_operation_date: "2028-01-01",
-    valuation_date: "2030-12-31",
-    weighted_holding_days: "500",
-    eligibility_basis: "capital_weighted_holding_days" as const,
-  };
-  data.annual_return = {
-    portfolio: annual,
-    accounts: [
-      {
-        ...annual,
-        scope: data.source_accounts[0].scope,
-        rate: { ...annual.rate, value: null, reason_codes: ["overall_source_proof_stale"] },
+test.each([false, true])(
+  "shows the backend annual portfolio rate (estimate=%s) and switches to the account's own rate",
+  async (estimate) => {
+    const data = overallFixture();
+    const annual = {
+      pnl: data.overall.pnl,
+      rate: {
+        ...data.overall.rate,
+        value: "0.125",
+        estimate,
+        reason_codes: estimate ? ["overall_small_unknown_assumed_internal"] : [],
+        method: "portfolio_inception_xirr",
       },
-    ],
-  };
-  install(data);
-  setup();
-  const rate = await screen.findByRole("region", { name: "Годовая доходность" });
-  expect(rate).toHaveTextContent("12,5");
-  expect(rate).toHaveTextContent("годовых, с");
-  expect(rate).toHaveTextContent("2028");
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: data.source_accounts[0].account_link?.label ?? data.source_accounts[0].label,
-    }),
-  );
-  expect(
-    await screen.findByText(
-      "Годовая доходность пока неизвестна: подтверждение истории счёта требует проверки.",
-    ),
-  ).toBeVisible();
-  expect(screen.queryByRole("region", { name: "Годовая доходность" })).toBeNull();
-  expect(screen.queryByText("overall_source_proof_stale")).toBeNull();
-});
+      first_operation_date: "2028-01-01",
+      valuation_date: "2030-12-31",
+      weighted_holding_days: "500",
+      eligibility_basis: "capital_weighted_holding_days" as const,
+    };
+    data.annual_return = {
+      portfolio: annual,
+      accounts: [
+        {
+          ...annual,
+          scope: data.source_accounts[0].scope,
+          rate: { ...annual.rate, value: null, reason_codes: ["overall_source_proof_stale"] },
+        },
+      ],
+    };
+    install(data);
+    setup();
+    const rate = await screen.findByRole("region", { name: "Годовая доходность" });
+    expect(rate).toHaveTextContent("12,5");
+    expect(rate).toHaveTextContent("годовых, с");
+    expect(rate).toHaveTextContent("2028");
+    expect(rate.textContent?.includes("Оценка: нераспознанные операции менее 100 ₽")).toBe(
+      estimate,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: data.source_accounts[0].account_link?.label ?? data.source_accounts[0].label,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        "Годовая доходность пока неизвестна: подтверждение истории счёта требует проверки.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Годовая доходность" })).toBeNull();
+    expect(screen.queryByText("overall_source_proof_stale")).toBeNull();
+  },
+);
 
 test("uses the server short name and keeps a missing name separate from ISIN", async () => {
   const data = overallFixture();

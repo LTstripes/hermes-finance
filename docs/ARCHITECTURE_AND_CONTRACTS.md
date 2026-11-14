@@ -6755,15 +6755,33 @@ entire history of each brokerage/IIS account; legacy dated PERF membership is
 not an alternative B9 selector. A missing/ambiguous source mapping blocks the
 whole selected scope. Source receipts remain source authority, independently of Close.
 
-Require a current from-zero investment proof and its complete dated external
-schedule, extended through newer months by the existing account-history reader.
-Require zero opening value, complete flow totals, no unresolved account economics
-and complete closing securities plus cash from that same reader. All selected
-accounts use one valuation date. Stale proofs, unsupported inception, incomplete
+Read current retained native statements independently of legacy investment-proof
+economics, like the clean Returns reader (Owner refinement, 14.11.2026).
+Require the sealed Owner from-zero declaration bound to its exact retained
+source, explicit zero opening cash and security quantities, continuous dated
+source coverage, complete occurrence-deduplicated external flows and a complete
+closing securities-plus-cash value from the existing native-EOD reader. Missing
+historical prices on explicitly zero opening quantities do not invent value.
+All selected accounts use one valuation date. Unsupported inception, incomplete
 flows, unknown valuation or unproved transfer pairs yield NULL with specific
-`overall_*` reasons, never a numeric partial-scope result. This projection neither
-re-attests a proof nor changes its dependencies or meaning: retain semantics v23
-and update the semantic-module digest only.
+`overall_*` reasons. Legacy stale proofs remain stale; they supply no operands
+or new financial authority to this independent calculation. Only the saved
+inception declaration is checked separately against its sealed evidence digest,
+exact source identity/period, zero cash/quantities and earliest observed activity;
+a zero balance alone cannot prove that the account has no earlier history.
+Source/receipt guards and
+semantics v23 remain unchanged; update the semantic-module digest only.
+
+Reuse the clean full-redemption event only when its current exact issue,
+negative cancellation quantity and dated cash leg agree with every overlapping
+Money occurrence. This is internal portfolio cash, never a contribution.
+Unresolved custody cancellations still block the rate. Reuse persisted source
+cash directions and source-operation rules for default UNKNOWNs, preserving
+explicit Owner UNKNOWN. An otherwise valid UNKNOWN Money occurrence with
+absolute amount below 100 RUB may be assumed internal only for B9, with
+`estimate=true`, `overall_small_unknown_assumed_internal` and a visible plain
+language explanation. An unknown amount at or above 100 RUB still blocks the
+whole scope. No Money value, classification or proof is written.
 
 External deposits are negative investor cash flows, withdrawals positive; add
 closing value once. Retained coupons/dividends/cash interest are never additional

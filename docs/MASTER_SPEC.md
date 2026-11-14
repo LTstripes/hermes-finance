@@ -564,7 +564,10 @@ Their withdrawal to a bank is a withdrawal. Annual eligibility requires at least
 365 capital-weighted days; never use the age of a token first contribution.
 Caption: «годовых, с <дата первой операции>». One sentence explains XIRR on hover.
 Incomplete history, valuation or transfer evidence shows one plain-language
-reason, with no percentage, technical code or partial annual estimate.
+reason, with no percentage or technical code. For otherwise complete history,
+unknown operations below 100 RUB may be assumed internal only for this metric;
+show an explicitly labelled estimate explaining that assumption. Retained bond
+redemptions and amortizations are internal portfolio events, not contributions.
 The main journey follows the compact account layout: result cards, a graph of
 supported observations, searchable instruments and leaders. Both available broker
 accounts are selected initially; a selector chooses one or both, each with its own

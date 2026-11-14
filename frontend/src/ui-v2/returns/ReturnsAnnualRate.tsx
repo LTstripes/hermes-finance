@@ -31,6 +31,11 @@ export function ReturnsAnnualRate({ value }: { value?: AnnualReturn }) {
       <small className={sheet.muted}>
         годовых{value.first_operation_date ? `, с ${dateLabel(value.first_operation_date)}` : ""}
       </small>
+      {value.rate.reason_codes.includes("overall_small_unknown_assumed_internal") && (
+        <p className={sheet.muted}>
+          Оценка: нераспознанные операции менее 100 ₽ условно отнесены к внутренним.
+        </p>
+      )}
     </section>
   );
 }

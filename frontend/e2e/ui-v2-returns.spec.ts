@@ -44,7 +44,8 @@ test("B9 annual portfolio rate and one account's unknown reason fit desktop zoom
     rate: {
       ...body.overall.rate,
       value: "0.125",
-      reason_codes: [],
+      estimate: true,
+      reason_codes: ["overall_small_unknown_assumed_internal"],
       method: "portfolio_inception_xirr",
     },
     first_operation_date: "2028-01-01",
@@ -79,6 +80,7 @@ test("B9 annual portfolio rate and one account's unknown reason fit desktop zoom
     const rate = page.getByRole("region", { name: "Годовая доходность" });
     await expect(rate).toContainText("12,5");
     await expect(rate).toContainText("годовых, с");
+    await expect(rate).toContainText("Оценка: нераспознанные операции менее 100 ₽");
     await rate.screenshot({ path: info.outputPath(`b9-annual-${zoom}.png`) });
     await page
       .getByRole("button", {

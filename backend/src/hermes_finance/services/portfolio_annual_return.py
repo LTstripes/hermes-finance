@@ -13,12 +13,11 @@ from sqlalchemy import select
 
 from hermes_finance.domain.xirr import XirrCashFlow, calculate_xirr
 from hermes_finance.persistence import Account
-from hermes_finance.services import returns_view, source_investment_proofs
-from hermes_finance.services.source_account_history import extend_history
+from hermes_finance.services import returns_view
+from hermes_finance.services.portfolio_annual_evidence import read_native_history
 from hermes_finance.services.source_money_classifications import is_broker_transfer
 from hermes_finance.services.source_monthly_returns import (
     _source_read_inputs,
-    read_monthly_for_card_history,
 )
 
 
@@ -39,15 +38,16 @@ class History:
     closing: int | None
     flows: tuple[Flow, ...] = ()
     reasons: tuple[str, ...] = ()
+    estimates: tuple[str, ...] = ()
 
 
-def _metric(value=None, reasons=(), *, rate=False):
+def _metric(value=None, reasons=(), *, rate=False, estimate=False):
     return returns_view.metric(
         value,
         reasons=reasons,
         method="portfolio_inception_xirr" if rate else "portfolio_net_contributions",
         unit="fraction" if rate else "kopecks",
-        estimate=False,
+        estimate=estimate,
     )
 
 
@@ -75,8 +75,8 @@ def _weighted_days(flows, end):
                 lots[0][1] -= used
                 if not lots[0][1]:
                     lots.popleft()
-            if remaining:
-                return None  # Withdrawn income cannot invent additional invested capital.
+            # A withdrawal beyond remaining principal takes out earned income; it
+            # neither consumes nor invents invested capital, so it adds no weight.
     weighted += sum(balance * (end - opened).days for opened, balance in lots)
     return Decimal(weighted) / Decimal(capital) if capital else None
 
@@ -139,9 +139,12 @@ def calculate(histories):
             )
             rate = result.annualized_rate
             reasons.update(result.reason_codes)
+    estimates = sorted({r for h in histories for r in h.estimates})
     return {
-        "pnl": _metric(pnl, pnl_reasons),
-        "rate": _metric(rate, sorted(reasons), rate=True),
+        "pnl": _metric(pnl, sorted(set(pnl_reasons) | set(estimates)), estimate=bool(estimates)),
+        "rate": _metric(
+            rate, sorted(reasons | set(estimates)), rate=True, estimate=bool(estimates)
+        ),
         "first_operation_date": first,
         "valuation_date": end,
         "weighted_holding_days": None if days is None else str(days),
@@ -157,86 +160,30 @@ def _history(session, account, source):
         )
     scope = source["scope"]
     native = scope.removeprefix("source:")
-    reports = source_investment_proofs.read_account_summaries(session, source_account=native)
-    inception = [p for p in reports if p["history_from_zero"]]
-    proof = max(inception, key=lambda p: (p["covered_to"], p["proof_id"]), default=None)
-    selected, _ = _source_read_inputs(session, native)
-    activity = []
-    for _, view, error in selected:
-        if error:
-            reasons.add("overall_external_flows_incomplete")
-            continue
-        document = view["document"]
-        activity.extend(date.fromisoformat(r["date"]) for r in document.get("money", []))
-        activity.extend(
-            date.fromisoformat(t["core"]["trade_time"][:10])
-            for t in document.get("trades", [])
-            if t["core"].get("trade_time")
-        )
-        if any(
-            r["classification"] == "internal_transfer"
-            or is_broker_transfer(r["operation"], r["narrative"])
-            for r in view["money_classifications"]
-        ):
-            # Source schedules have no explicit cross-account pair identity.
-            # Never remove a leg by matching only date and amount.
-            reasons.add("overall_internal_transfer_unproven")
-    first = min(activity, default=None)
-    end = source["valuation_date"]
-    end = date.fromisoformat(end) if isinstance(end, str) else end
-    if proof is None:
-        reasons.add("overall_inception_unproven")
-    elif proof["status"] != "current":
-        reasons.add("overall_source_proof_stale")
-    if first is None or (proof and first < date.fromisoformat(proof["covered_from"])):
-        reasons.add("overall_inception_unproven")
-    if reasons:
-        return History(account.id, scope, first, end, None, reasons=tuple(sorted(reasons)))
-
-    # The compact index deliberately omits dated flows; use its exact full proof.
-    complete = source_investment_proofs.read_reports(
-        session, source_account=native, include_xirr=False
+    selected, native_scope = _source_read_inputs(session, native)
+    # Pair identity is still required even when a default transfer was resolved
+    # as an account boundary by the shared source-money reader.
+    if any(
+        c["classification"] == "internal_transfer"
+        or is_broker_transfer(c["operation"], c["narrative"])
+        for _, view, error in selected
+        if view and not error
+        for c in view["money_classifications"]
+    ):
+        reasons.add("overall_internal_transfer_unproven")
+    first, end, closing, schedule, native_reasons, estimates = read_native_history(
+        session, native, selected, native_scope
     )
-    proof = next(p for p in complete if p["proof_id"] == proof["proof_id"])
-    monthly = read_monthly_for_card_history(session, source_account=native)
-    extended = extend_history(proof, monthly)
-    interval = extended["interval"] if extended["status"] == "current" else None
-    closing = None
-    flows = ()
-    if interval is None or interval.get("pnl", {}).get("value") is None:
-        reasons.add("overall_external_flows_incomplete")
-    else:
-        closing = interval["closing_kopecks"]
-        if interval["opening_kopecks"] not in (0, "0"):
-            reasons.add("overall_inception_unproven")
-        if end is None or extended["covered_to"] != str(end):
-            reasons.add("overall_valuation_unavailable")
-        schedule = interval.get("external_flows")
-        if schedule is None or any(f["status"] not in {"confirmed", "assumed"} for f in schedule):
-            reasons.add("overall_external_flows_incomplete")
-        else:
-            flows = tuple(
-                Flow(date.fromisoformat(f["date"]), int(f["amount_kopecks"]), account.id)
-                for f in schedule
-            )
-            incoming = sum(f.amount for f in flows if f.amount > 0)
-            outgoing = -sum(f.amount for f in flows if f.amount < 0)
-            if (incoming, outgoing) != (
-                interval["contributions_kopecks"],
-                interval["withdrawals_kopecks"],
-            ) and (str(incoming), str(outgoing)) != (
-                interval["contributions_kopecks"],
-                interval["withdrawals_kopecks"],
-            ):
-                reasons.add("overall_external_flows_incomplete")
+    reasons.update(native_reasons)
     return History(
         account.id,
         scope,
         first,
         end,
-        None if closing is None else int(closing),
-        flows,
+        closing,
+        tuple(Flow(day, amount, account.id) for day, amount in schedule),
         tuple(sorted(reasons)),
+        tuple(sorted(estimates)),
     )
 
 
