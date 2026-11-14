@@ -6745,10 +6745,94 @@ is introduced by a Returns GET.
 <a id="c7-returns-overall"></a>
 ### All-history overview and mixed known result
 
+#### B9: inception annual return for brokerage and IIS (Owner, 14.11.2026)
+
+Among Returns endpoints, only `GET /api/returns/overall` adds `annual_return={portfolio,accounts}` and
+replaces `overall.rate/pnl` with this specifically bounded brokerage/IIS scope.
+Other fields, endpoint meanings, mixed known result, deposits and gold retain
+their existing contracts. Current `Account.include_in_returns=true` selects the
+entire history of each brokerage/IIS account; legacy dated PERF membership is
+not an alternative B9 selector. A missing/ambiguous source mapping blocks the
+whole selected scope. Source receipts remain source authority, independently of Close.
+
+Read current retained native statements independently of legacy investment-proof
+economics, like the clean Returns reader (Owner refinement, 14.11.2026).
+Require the sealed Owner from-zero declaration bound to its exact retained
+source, explicit zero opening cash and security quantities, continuous dated
+source coverage, complete occurrence-deduplicated external flows and a complete
+closing securities-plus-cash value from the existing native-EOD reader. Missing
+historical prices on explicitly zero opening quantities do not invent value.
+All selected accounts use one valuation date. Unsupported inception, incomplete
+flows, unknown valuation or unproved transfer pairs yield NULL with specific
+`overall_*` reasons. Legacy stale proofs remain stale; they supply no operands
+or new financial authority to this independent calculation. Only the saved
+inception declaration is checked separately against its sealed evidence digest,
+exact source identity/period, zero cash/quantities and earliest observed activity;
+a zero balance alone cannot prove that the account has no earlier history.
+Source/receipt guards and
+semantics v23 remain unchanged; update the semantic-module digest only.
+
+Reuse the clean full-redemption event only when its current exact issue,
+negative cancellation quantity and dated cash leg agree with every overlapping
+Money occurrence. This is internal portfolio cash, never a contribution.
+Unresolved custody cancellations still block the rate. Reuse persisted source
+cash directions and source-operation rules for default UNKNOWNs, preserving
+explicit Owner UNKNOWN. An otherwise valid UNKNOWN Money occurrence with
+absolute amount below 100 RUB may be assumed internal only for B9, with
+`estimate=true`, `overall_small_unknown_assumed_internal` and a visible plain
+language explanation. An unknown amount at or above 100 RUB still blocks the
+whole scope. No Money value, classification or proof is written.
+
+External deposits are negative investor cash flows, withdrawals positive; add
+closing value once. Retained coupons/dividends/cash interest are never additional
+external flows; a bank withdrawal of income is a withdrawal. A paired transfer
+inside the selected scope contributes neither leg. A single-account boundary
+includes money transferred into/out of that account. Pairing needs explicit
+source identity, opposite amounts, distinct accounts and the same date; equal
+amounts alone never prove pairing. Existing source schedules omit cross-account
+pair identities: any recognized broker transfer currently blocks B9 rather than
+being silently excluded or called an external portfolio flow.
+
+Use `domain/xirr.calculate_xirr` with integer kopecks and Decimal. Weighted days
+are `sum(contributed_principal * days_until_FIFO_withdrawal_or_valuation) /
+sum(contributed_principal)`, including fully withdrawn lots. Same-day incoming
+capital is admitted before FIFO outgoing capital; no intraday times are inferred.
+Withdrawal beyond contributed principal withdraws earned income and adds no
+capital weight. Owner decision 14.11.2026 (B9 only): compare unrounded days;
+below 90, annual rate is UNKNOWN with `overall_short_holding`; at 90 to less
+than 365, publish the rate with `estimate=true` and
+`overall_short_holding_provisional`; at 365 or more, retain ordinary eligibility.
+Unknown duration blocks only annual rate, independently of complete P&L.
+Individual instrument XIRR still requires at least 365 capital-weighted days.
+P&L is closing value minus net external contributions, never the sum of known
+position subtotals.
+
+The new field carries per-scope `pnl/rate`, `first_operation_date`,
+`valuation_date`, nullable Decimal-string `weighted_holding_days`, and
+`eligibility_basis=capital_weighted_holding_days`; account rows also carry `scope`.
+Money/rate units remain kopeck/fraction strings. Existing `overall.partial` and
+legacy aggregation reasons retain their mixed-category scope; they do not assert
+that the separate B9 brokerage/IIS metric is complete.
+
+AI financial review v3.2 optionally exports the same B9 projection under
+`sections.clean_returns.data.annual_return`: portfolio and each account carry
+nullable fraction-string `rate`, integer-kopeck-string `pnl`, `estimate`,
+`reason_codes`, `first_operation_date`, `valuation_date` and Decimal-string
+`weighted_holding_days`. Account identity uses file-local `account_ref` and
+ordinary account name, never native scope or internal position/event identity.
+The reading guide explains external flows and internal retained payouts, and
+the provisional 90–<365 day rule. Optional clean instrument decomposition fields
+copy the existing FIFO reader; gold decomposition, short names and redeemed-bond
+XIRR remain available. Saved v3.0/v3.1/v3.2 reports remain valid; the application
+name and semantics revision are unchanged.
+
+#### Existing mixed-result composition
+
 `GET /api/returns/overall` is a no-store, read-only coherent composition over
 existing producers. It does not read the AI export, calculate hidden calendar
 months, change PerformanceScope, import operations, write receipts or invoke
-providers. Money remains exact integer-kopeck strings. Selecting a subset may
+providers. B9 adds only the explicitly scoped annual calculation above. Money
+remains exact integer-kopeck strings. Selecting a subset may
 sum those already eligible nonoverlapping producer components with BigInt for
 presentation; the browser does not calculate returns, infer authority, or add
 account totals to their breakdowns. Detail and account/month reads are lazy.

@@ -104,6 +104,9 @@ def test_empty_overall_is_get_only_no_store_and_not_zero(db):
     assert response.headers["cache-control"] == "no-store"
     value = Overall.model_validate(response.json())
     assert value.overall.pnl.value is value.overall.rate.value is None
+    assert value.annual_return is not None
+    assert value.annual_return.portfolio.rate.value is None
+    assert "overall_accounts_missing" in value.overall.rate.reason_codes
     assert value.deposits.interest.value is None
     assert value.source_accounts == value.instruments == value.gold.snapshots == []
     assert snapshot(db) == before
@@ -510,12 +513,18 @@ def test_explicit_http_summary_matches_existing_producer_without_cards_or_xirr(d
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     value = Overall.model_validate(response.json())
-    # HTTP adds the presentation short name; every other field equals the producer.
+    # HTTP adds the presentation short name and the isolated B9 projection.
+    # Every pre-existing field outside the two authorized metrics stays equal.
     assert all(row.short_name for row in value.instruments)
-    assert {
-        **value.model_dump(),
-        "instruments": [{**row, "short_name": None} for row in value.model_dump()["instruments"]],
-    } == expected.model_dump()
+    assert value.annual_return is not None
+    assert value.overall.pnl == value.annual_return.portfolio.pnl
+    assert value.overall.rate == value.annual_return.portfolio.rate
+    projected = value.model_dump()
+    projected["annual_return"] = None
+    projected["overall"]["pnl"] = expected.overall.pnl.model_dump()
+    projected["overall"]["rate"] = expected.overall.rate.model_dump()
+    projected["instruments"] = [{**row, "short_name": None} for row in projected["instruments"]]
+    assert projected == expected.model_dump()
     assert value.instruments
     assert all(pair.details_loaded for row in value.instruments for pair in row.accounts)
     assert any(pair.pnl.value is not None for row in value.instruments for pair in row.accounts)

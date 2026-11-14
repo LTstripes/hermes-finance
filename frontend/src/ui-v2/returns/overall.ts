@@ -117,7 +117,20 @@ export type GoldHistorySummary = {
   reason_codes: string[];
 };
 export type GoldTarget = { account_id: number; instrument_id: number; label: string };
+export type AnnualReturn = {
+  pnl: Metric;
+  rate: Metric;
+  first_operation_date: string | null;
+  valuation_date: string | null;
+  weighted_holding_days: string | null;
+  eligibility_basis: "capital_weighted_holding_days";
+};
+
 export type Overall = {
+  annual_return?: {
+    portfolio: AnnualReturn;
+    accounts: (AnnualReturn & { scope: string })[];
+  } | null;
   contract_version: "returns_overall_v2";
   mixed_result: MixedResult;
   coupon_income: CouponIncome;

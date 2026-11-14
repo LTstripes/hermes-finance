@@ -554,6 +554,26 @@ separate amount and period percentage labelled **Без нераспределё
 unknown valuations or movements into zero to obtain this estimate.
 
 The ordinary `/v2/returns` entry opens **Обзор** for all available history.
+Owner rule B9 (14.11.2026): beside the main result show one annual XIRR for
+brokerage and IIS accounts with `include_in_returns=true`, or the selected
+account's own XIRR. Use dated external deposits/withdrawals from each account's
+first operation and the complete securities-plus-cash valuation on one date.
+Transfers within the selected portfolio cancel only with proved paired identity;
+coupons, dividends and cash interest retained inside it are income, not deposits.
+Their withdrawal to a bank is a withdrawal. Owner decision 14.11.2026 for B9:
+from 90 to less than 365 capital-weighted days show a preliminary annual rate,
+e.g. «≈15,2% годовых», with one line «деньги вложены в среднем 8 мес. — процент
+пока предварительный» (months = floor(days / 30.4)). At 365 days or more show
+the ordinary rate without this prefix or line; below 90 days explain that the
+average invested duration must reach 90 days, with no percentage. This also
+applies when filtering one account. Never use the age of a token first
+contribution. Individual instrument XIRR retains its 365-day threshold.
+Caption: «годовых, с <дата первой операции>». One sentence explains XIRR on hover.
+Incomplete history, valuation or transfer evidence shows one plain-language
+reason, with no percentage or technical code. For otherwise complete history,
+unknown operations below 100 RUB may be assumed internal only for this metric;
+show an explicitly labelled estimate explaining that assumption. Retained bond
+redemptions and amortizations are internal portfolio events, not contributions.
 The main journey follows the compact account layout: result cards, a graph of
 supported observations, searchable instruments and leaders. Both available broker
 accounts are selected initially; a selector chooses one or both, each with its own

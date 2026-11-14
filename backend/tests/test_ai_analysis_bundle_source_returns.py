@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from sqlalchemy import select
@@ -84,6 +85,9 @@ def test_current_clean_returns_match_ordinary_overview_and_card(database, monkey
             read_clean_overview(session, include_purchases=True), include_purchases=True
         )
         overview = returns_overall.read_clean_overall(session, include_instrument_details=True)
+        from hermes_finance.services.portfolio_annual_return import read_annual_return
+
+        overview["annual_return"] = read_annual_return(session, overview["source_accounts"])
         isin = clean["accounts"][0]["instruments"][0]["isin"]
         card = returns_overall.read_clean_instrument_card(session, isin)
     assert report["schema_version"] == "3.2.0"
@@ -93,6 +97,28 @@ def test_current_clean_returns_match_ordinary_overview_and_card(database, monkey
     actual = exported["accounts"][0]["instruments"][0]
     for key in ("pnl", "known_result", "buys", "sells", "coupons", "dividends", "payouts"):
         assert actual[key] == clean["accounts"][0]["instruments"][0][key]
+    for key in (
+        "realized_result",
+        "unrealized_result",
+        "current_value",
+        "is_open",
+        "position_reason_codes",
+        "xirr",
+    ):
+        assert actual[key] == jsonable_encoder(card["accounts"][0]["clean"][key])
+    assert "short_name" in actual
+    annual = exported["annual_return"]
+    for key, metric in (("rate", "rate"), ("pnl", "pnl")):
+        assert annual["portfolio"][key] == overview["annual_return"]["portfolio"][metric]["value"]
+    for row, source in zip(annual["accounts"], overview["annual_return"]["accounts"], strict=True):
+        assert row["rate"] == source["rate"]["value"]
+        assert row["pnl"] == source["pnl"]["value"]
+        for key in ("estimate", "reason_codes"):
+            assert row[key] == source["rate"][key]
+        for key in ("first_operation_date", "valuation_date", "weighted_holding_days"):
+            assert row[key] == (str(source[key]) if source[key] is not None else None)
+        assert row["account_ref"] == exported["accounts"][0]["account_ref"]
+    assert "90" in exported["reading_guide"]["annual_return"]
     assert actual["name"] == card["name"]
     assert "modified_dietz" not in actual
     assert exported["accounts"][0]["account_name"] == "Брокерский"
@@ -115,6 +141,8 @@ def test_current_clean_returns_match_ordinary_overview_and_card(database, monkey
         assert summary[key] == card["summary"][source]
     assert json.loads(canonical_json(report))["sections"]["clean_returns"]["data"] == exported
     assert ACCOUNT not in canonical_json(report)
+    for internal in ("position:", "source:", "_position_inputs", "money:", "private-purchase-id"):
+        assert internal not in canonical_json(report)
     with TestClient(create_app(database)) as client:
         card_response = client.get("/api/returns/instrument-card", params={"isin": isin})
         assert card_response.status_code == 200, card_response.text
@@ -144,6 +172,107 @@ def test_v32_export_does_not_read_individual_instrument_cards(database, monkeypa
     with database.session_factory() as session:
         report = assemble_ai_financial_review(session, evaluated_on=date(2030, 2, 1))
     assert report["sections"]["clean_returns"]["data"]["isin_summary"]
+
+
+@pytest.mark.parametrize("days", [89, 90, 364, 365])
+def test_b9_export_thresholds_keep_values_and_replace_native_identity(days):
+    from datetime import timedelta
+
+    from hermes_finance.services.ai_review_clean_returns import _annual_returns
+    from hermes_finance.services.portfolio_annual_return import Flow, History, calculate
+
+    first = date(2030, 1, 1)
+    h = History(
+        1,
+        "source:private-native",
+        first,
+        first + timedelta(days=days),
+        11000,
+        (Flow(first, 10000, 1),),
+    )
+    metric = calculate([h])
+    data = _annual_returns(
+        {"portfolio": metric, "accounts": [{"scope": h.scope, **metric}]},
+        {h.scope: {"account_link": {"account_type": "iis"}}},
+        {h.scope: "source-account-1"},
+    )
+    for row in (data["portfolio"], data["accounts"][0]):
+        assert row["rate"] == metric["rate"]["value"]
+        assert row["pnl"] == "1000"
+        assert row["estimate"] == (90 <= days < 365)
+        assert row["reason_codes"] == metric["rate"]["reason_codes"]
+    assert "private-native" not in json.dumps(jsonable_encoder(data))
+
+
+@pytest.mark.parametrize("days", [89, 90, 364, 365, 400])
+def test_redeemed_bond_export_copies_fifo_and_retains_instrument_year_rule(
+    monkeypatch, tmp_path, days
+):
+    from test_clean_instrument_return import ISIN, redeemed_analysis
+
+    from hermes_finance.database import create_database
+    from hermes_finance.services import ai_review_clean_returns as review
+    from hermes_finance.services import returns_view, source_instrument_returns
+    from hermes_finance.services.clean_instrument_return import read_clean_account
+
+    analysis = redeemed_analysis(days)
+    source = SimpleNamespace(
+        instruments=[
+            SimpleNamespace(
+                analysis=analysis, isin=ISIN, instrument_type="bond", source_name="Synthetic bond"
+            )
+        ],
+        native_source_account="private-native",
+        gaps=[],
+    )
+    monkeypatch.setattr(
+        source_instrument_returns, "read_instrument_returns", lambda *a, **k: source
+    )
+    monkeypatch.setattr(review, "read_instrument_returns", lambda *a, **k: source)
+    monkeypatch.setattr(returns_view, "_catalogue_names", lambda *a: {})
+    db = create_database(tmp_path / "redeemed-export.db")
+    try:
+        with db.session_factory() as session:
+            clean = read_clean_account(
+                session,
+                "private-native",
+                analysis.opening_date,
+                analysis.closing_date,
+                include_position_rates=True,
+                include_position_results=True,
+            )
+            item = clean["instruments"][0]
+            # Exercise privacy before encoding solver operands, not after it.
+            item["_position_inputs"]["private"] = "position:private-identity"
+            raw = dict(
+                scope="source:private-native",
+                period=dict(start=analysis.opening_date, end=analysis.closing_date),
+                result=clean,
+            )
+            overall = dict(
+                source_accounts=[dict(scope=raw["scope"], account_link={})],
+                mixed_result=dict(components=[]),
+                gold=dict(histories=[], snapshots=[]),
+            )
+            data = review.review_clean_returns(
+                session,
+                dict(contract_version="clean_returns_overview_v1", accounts=[raw]),
+                overall,
+                account_names={},
+                instrument_names={},
+            )
+    finally:
+        db.engine.dispose()
+    exported = data["accounts"][0]["instruments"][0]
+    for key in ("realized_result", "unrealized_result", "xirr"):
+        assert exported[key] == jsonable_encoder(item[key])
+    assert exported["realized_result"]["value"] is not None
+    assert exported["unrealized_result"]["value"] == "0"
+    assert (exported["xirr"]["value"] is not None) == (days >= 365)
+    if days < 365:
+        assert "short_holding" in exported["xirr"]["reason_codes"]
+    assert "position:" not in json.dumps(data)
+    assert "private-native" not in json.dumps(data)
 
 
 @pytest.mark.parametrize("error", [ValueError, LookupError])
@@ -1597,7 +1726,7 @@ def test_v32_names_receipts_closed_split_and_unknown_cross_account_totals(
     ).validate(data)
 
 
-@pytest.mark.parametrize("version", ["3.0.0", "3.1.0"])
+@pytest.mark.parametrize("version", ["3.0.0", "3.1.0", "3.2.0"])
 def test_v32_preserves_saved_v3_validation(database, monkeypatch, version):
     from hermes_finance.services.ai_financial_review import validate_ai_financial_review
     from hermes_finance.services.clean_instrument_return import (
@@ -1613,6 +1742,19 @@ def test_v32_preserves_saved_v3_validation(database, monkeypatch, version):
             read_clean_overview(session, include_purchases=version == "3.1.0"),
             include_purchases=version == "3.1.0",
         )
+    if version == "3.2.0":
+        from hermes_finance.services.ai_review_clean_returns import review_clean_returns
+
+        with database.session_factory() as session:
+            legacy = review_clean_returns(
+                session,
+                read_clean_overview(session, include_purchases=True, include_position_rates=True),
+                returns_overall.read_clean_overall(session),
+                account_names={},
+                instrument_names={},
+            )
+        legacy.pop("annual_return", None)
+        legacy["reading_guide"].pop("annual_return", None)
     report["schema_version"] = version
     report["$schema"] = (
         f"https://hermes-finance.local/schema/ai-financial-review/{version}/schema.json"

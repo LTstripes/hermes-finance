@@ -67,6 +67,75 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
+test.each(["ordinary", "small-unknown", "short-holding"])(
+  "shows the backend annual portfolio rate (%s) and switches to the account's own rate",
+  async (mode) => {
+    const estimate = mode !== "ordinary";
+    const data = overallFixture();
+    const annual = {
+      pnl: data.overall.pnl,
+      rate: {
+        ...data.overall.rate,
+        value: "0.125",
+        estimate,
+        reason_codes:
+          mode === "short-holding"
+            ? ["overall_short_holding_provisional"]
+            : estimate
+              ? ["overall_small_unknown_assumed_internal"]
+              : [],
+        method: "portfolio_inception_xirr",
+      },
+      first_operation_date: "2028-01-01",
+      valuation_date: "2030-12-31",
+      weighted_holding_days: mode === "short-holding" ? "253" : "500",
+      eligibility_basis: "capital_weighted_holding_days" as const,
+    };
+    data.annual_return = {
+      portfolio: annual,
+      accounts: [
+        {
+          ...annual,
+          scope: data.source_accounts[0].scope,
+          rate:
+            mode === "short-holding"
+              ? { ...annual.rate, value: "0.1558" }
+              : { ...annual.rate, value: null, reason_codes: ["overall_source_proof_stale"] },
+        },
+      ],
+    };
+    install(data);
+    setup();
+    const rate = await screen.findByRole("region", { name: "Годовая доходность" });
+    expect(rate).toHaveTextContent("12,5");
+    expect(rate).toHaveTextContent("годовых, с");
+    expect(rate).toHaveTextContent("2028");
+    expect(rate.textContent?.includes("Оценка: нераспознанные операции менее 100 ₽")).toBe(
+      mode === "small-unknown",
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: data.source_accounts[0].account_link?.label ?? data.source_accounts[0].label,
+      }),
+    );
+    if (mode === "short-holding") {
+      expect(await screen.findByRole("region", { name: "Годовая доходность" })).toHaveTextContent(
+        "≈15,6%",
+      );
+      expect(screen.getByText(/деньги вложены в среднем 8 мес./)).toBeVisible();
+      expect(screen.queryByText("overall_short_holding_provisional")).toBeNull();
+      return;
+    }
+    expect(
+      await screen.findByText(
+        "Годовая доходность пока неизвестна: подтверждение истории счёта требует проверки.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Годовая доходность" })).toBeNull();
+    expect(screen.queryByText("overall_source_proof_stale")).toBeNull();
+  },
+);
+
 test("uses the server short name and keeps a missing name separate from ISIN", async () => {
   const data = overallFixture();
   data.instruments[0].name = "Long source label (SYN)";
