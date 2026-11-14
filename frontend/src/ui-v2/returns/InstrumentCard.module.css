@@ -100,6 +100,26 @@
   display: none;
 }
 
+.resultSplit {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: var(--t-sm);
+}
+.resultSplit > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+.resultSplit dt {
+  color: var(--muted);
+}
+.resultSplit dd {
+  margin: 0;
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+}
+
 .estimate {
   padding: 2px 8px;
   border-radius: 999px;

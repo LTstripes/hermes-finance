@@ -11,7 +11,20 @@ import {
 import { validDetailPeriod, validIsin } from "./navigation";
 import type { CouponIncome } from "./overall";
 
-export type CleanInstrument = {
+export type PositionResults = {
+  realized_result: InstrumentMetric<string>;
+  unrealized_result: InstrumentMetric<string>;
+  current_value: InstrumentMetric<string>;
+  is_open: boolean | null;
+  position_reason_codes: string[];
+};
+export type InstrumentAggregate = PositionResults & {
+  pnl: InstrumentMetric<string>;
+  simple_return: PositionRate;
+  xirr: PositionRate;
+};
+
+export type CleanInstrument = Partial<PositionResults> & {
   isin: string;
   opening_date: string;
   closing_date: string;
@@ -70,6 +83,7 @@ export function cleanMetric(value: InstrumentMetric<string>, rate = false): Metr
 }
 
 export type InstrumentCard = {
+  aggregate?: InstrumentAggregate;
   contract_version: "returns_instrument_card_v2";
   isin: string;
   name: string;
@@ -160,6 +174,23 @@ export function selectCardScope(
   return {
     card: {
       ...card,
+      aggregate:
+        clean?.realized_result &&
+        clean.unrealized_result &&
+        clean.current_value &&
+        clean.simple_return &&
+        clean.xirr
+          ? {
+              ...clean,
+              realized_result: clean.realized_result,
+              unrealized_result: clean.unrealized_result,
+              current_value: clean.current_value,
+              is_open: clean.is_open ?? null,
+              position_reason_codes: clean.position_reason_codes ?? [],
+              simple_return: clean.simple_return,
+              xirr: clean.xirr,
+            }
+          : undefined,
       accounts: [account],
       summary: {
         ...card.summary,

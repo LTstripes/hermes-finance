@@ -1,5 +1,5 @@
 import { apiRequest } from "../../api/client";
-import type { PositionRate } from "./cards";
+import type { InstrumentAggregate, PositionRate } from "./cards";
 import type { AccountLink, Metric, Period, Result } from "./model";
 
 export type OverallAccount = {
@@ -27,6 +27,11 @@ export type OverallInstrumentAccount = Pick<
   canonical_account_id?: number | null;
   details_loaded: boolean;
   simple_return?: PositionRate;
+  realized_result?: Metric;
+  unrealized_result?: Metric;
+  current_value?: Metric;
+  is_open?: boolean | null;
+  position_reason_codes?: string[];
   xirr?: PositionRate;
   native_period?: boolean;
   period: Period | null;
@@ -34,6 +39,7 @@ export type OverallInstrumentAccount = Pick<
   label: string;
 };
 export type OverallInstrument = {
+  aggregate?: InstrumentAggregate;
   isin: string;
   name: string;
   kind: string | null;

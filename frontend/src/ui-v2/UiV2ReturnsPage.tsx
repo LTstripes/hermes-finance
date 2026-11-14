@@ -6,7 +6,7 @@ import { ConfirmDialog } from "../components/ui";
 import { reasonCopy } from "../lib/reasonCopy";
 import { shortInstrumentName } from "./instrumentName";
 import sheet from "./ReportSheet.module.css";
-import { positionRateMetric, positionRatePeriod } from "./returns/cards";
+import { cleanMetric, positionRateMetric, positionRatePeriod } from "./returns/cards";
 import layout from "./returns/Dashboard.module.css";
 import {
   brokerageResult,
@@ -107,6 +107,8 @@ export default function UiV2ReturnsPage() {
   const search = params.get("q") ?? "";
   const sort = params.get("sort") ?? "pnl-absolute";
   const kind = params.get("kind") ?? "all";
+  const position = params.get("position") ?? "open";
+  const showSplit = params.get("split") === "1";
   const catalogueName = useAccountName(data?.source_accounts.map((a) => a.account_link) ?? []);
   const label = (scope: string, fallback: string) => {
     const account = data?.source_accounts.find((account) => account.scope === scope);
@@ -148,7 +150,12 @@ export default function UiV2ReturnsPage() {
     : "";
   const rows = data
     ? data.instruments
-        .map((r) => instrumentSummary(data, r, scope))
+        .map((r) => {
+          const row = instrumentSummary(data, r, scope);
+          return scope === "all" && r.aggregate
+            ? { ...row, pnl: cleanMetric(r.aggregate.pnl) }
+            : row;
+        })
         .filter(
           (r) =>
             r.accounts.length &&
@@ -170,34 +177,54 @@ export default function UiV2ReturnsPage() {
             a.name.localeCompare(b.name, "ru")
           : compareDecimal(a.pnl.value, b.pnl.value) * (sort === "pnl-asc" ? 1 : -1),
   );
-  const tableRows = rows.map((row) => {
-    const accountRows = row.accounts.map((account) => ({
-      ...row,
-      name: shortInstrumentName({ name: row.name, isin: row.isin, ticker: null }),
-      account,
-      pnl: account.resultAvailable ? account.pnl : unavailable,
-      simple:
-        account.resultAvailable && account.simple_return
-          ? positionRateMetric(account.simple_return)
-          : { ...unavailable, unit: "fraction" as const },
-      annual:
-        account.resultAvailable && account.xirr
-          ? positionRateMetric(account.xirr)
-          : { ...unavailable, unit: "fraction" as const },
-    }));
-    const representative = [...accountRows].sort((a, b) => {
-      const x = a.pnl.value;
-      const y = b.pnl.value;
-      if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
-      return -compareDecimal(x.replace(/^-/, ""), y.replace(/^-/, ""));
-    })[0];
-    return {
-      ...representative,
-      ...row,
-      name: shortInstrumentName({ name: row.name, isin: row.isin, ticker: null }),
-      accountRows,
-    };
-  });
+  const tableRows = rows
+    .map((row) => {
+      const accountRows = row.accounts.map((account) => ({
+        ...row,
+        name: shortInstrumentName({ name: row.name, isin: row.isin, ticker: null }),
+        account,
+        pnl: account.resultAvailable ? account.pnl : unavailable,
+        simple:
+          account.resultAvailable && account.simple_return
+            ? positionRateMetric(account.simple_return)
+            : { ...unavailable, unit: "fraction" as const },
+        annual:
+          account.resultAvailable && account.xirr
+            ? positionRateMetric(account.xirr)
+            : { ...unavailable, unit: "fraction" as const },
+        currentValue: account.current_value ?? unavailable,
+        realized: account.realized_result ?? unavailable,
+        unrealized: account.unrealized_result ?? unavailable,
+        isOpen: account.is_open,
+      }));
+      const representative = [...accountRows].sort((a, b) => {
+        const x = a.pnl.value;
+        const y = b.pnl.value;
+        if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+        return -compareDecimal(x.replace(/^-/, ""), y.replace(/^-/, ""));
+      })[0];
+      const aggregate = scope === "all" ? row.aggregate : undefined;
+      return {
+        ...representative,
+        ...row,
+        name: shortInstrumentName({ name: row.name, isin: row.isin, ticker: null }),
+        accountRows,
+        ...(aggregate
+          ? {
+              simple: positionRateMetric(aggregate.simple_return),
+              annual: positionRateMetric(aggregate.xirr),
+              currentValue: cleanMetric(aggregate.current_value),
+              realized: cleanMetric(aggregate.realized_result),
+              unrealized: cleanMetric(aggregate.unrealized_result),
+              isOpen: aggregate.is_open,
+            }
+          : {}),
+      };
+    })
+    .filter(
+      (row) =>
+        position === "all" || (position === "sold" ? row.isOpen === false : row.isOpen !== false),
+    );
   tableRows.sort((a, b) => {
     if (sort === "name" || sort === "name-asc" || sort === "name-desc")
       return a.name.localeCompare(b.name, "ru") * (sort === "name-desc" ? -1 : 1);
@@ -615,6 +642,17 @@ export default function UiV2ReturnsPage() {
                       />
                     </label>
                     <label>
+                      Позиции
+                      <select
+                        value={position}
+                        onChange={(e) => change({ position: e.target.value })}
+                      >
+                        <option value="open">В портфеле</option>
+                        <option value="sold">Проданные</option>
+                        <option value="all">Все</option>
+                      </select>
+                    </label>
+                    <label>
                       Тип
                       <select
                         value={kind}
@@ -627,11 +665,20 @@ export default function UiV2ReturnsPage() {
                         <option value="bond">Облигации</option>
                       </select>
                     </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={showSplit}
+                        onChange={(e) => change({ split: e.target.checked ? "1" : null })}
+                      />
+                      Разложение результата
+                    </label>
                   </div>
                   {tableRows.length > 0 ? (
-                    <div className={styles.tableScroll}>
+                    <div className={`${styles.tableScroll} ${layout.instrumentTable}`}>
                       <table className={layout.list} aria-label="Все бумаги">
                         <colgroup>
+                          <col />
                           <col />
                           <col />
                           <col />
@@ -661,7 +708,7 @@ export default function UiV2ReturnsPage() {
                                   type="button"
                                   title={
                                     field === "rate" || field === "xirr"
-                                      ? "По значению счёта с наибольшим по модулю результатом бумаги; без значения — в конце"
+                                      ? "По доходности бумаги на выбранных счетах; без значения — в конце"
                                       : undefined
                                   }
                                   onClick={() => sortHeader(field)}
@@ -670,6 +717,7 @@ export default function UiV2ReturnsPage() {
                                 </button>
                               </th>
                             ))}
+                            <th scope="col">Стоимость, ₽</th>
                             <th scope="col">Купоны и дивиденды, ₽</th>
                           </tr>
                         </thead>
@@ -742,16 +790,38 @@ export default function UiV2ReturnsPage() {
                                 </th>
                                 <td
                                   data-label="Результат"
-                                  title={displayMetric(row.pnl, true)}
+                                  title={[
+                                    displayMetric(row.pnl, true),
+                                    ...row.pnl.reason_codes.map(
+                                      (code) => reasonCopy(code, { surface: "returns" }).message,
+                                    ),
+                                  ].join(". ")}
                                   data-tone={tone(row.pnl)}
                                 >
                                   {displayWhole(row.pnl, true)}
+                                  {showSplit && (
+                                    <small className={layout.resultSplit}>
+                                      <span
+                                        title={`Зафиксировано: ${displayMetric(row.realized, true)}. ${row.realized.reason_codes.map((code) => reasonCopy(code, { surface: "returns" }).message).join(" ")}`}
+                                      >
+                                        Зафикс. {displayWhole(row.realized, true)}
+                                      </span>
+                                      <span
+                                        title={`В цене: ${displayMetric(row.unrealized, true)}. ${row.unrealized.reason_codes.map((code) => reasonCopy(code, { surface: "returns" }).message).join(" ")}`}
+                                      >
+                                        В цене {displayWhole(row.unrealized, true)}
+                                      </span>
+                                    </small>
+                                  )}
                                 </td>
                                 <td
                                   data-label="На вложенное"
-                                  data-tone={row.grouped ? undefined : tone(row.simple)}
+                                  data-tone={tone(row.simple)}
+                                  title={row.simple.reason_codes
+                                    .map((code) => reasonCopy(code, { surface: "returns" }).message)
+                                    .join(". ")}
                                 >
-                                  {row.grouped ? (
+                                  {row.grouped && !row.aggregate ? (
                                     <span className={layout.muted}>по счетам</span>
                                   ) : (
                                     displayCompactRate(row.simple)
@@ -759,16 +829,39 @@ export default function UiV2ReturnsPage() {
                                 </td>
                                 <td
                                   data-label="Годовых"
-                                  title={
-                                    row.grouped ? undefined : positionRatePeriod(row.account.xirr)
-                                  }
-                                  data-tone={row.grouped ? undefined : tone(row.annual)}
+                                  title={[
+                                    positionRatePeriod(
+                                      row.grouped ? row.aggregate?.xirr : row.account.xirr,
+                                    ),
+                                    ...row.annual.reason_codes.map(
+                                      (code) => reasonCopy(code, { surface: "returns" }).message,
+                                    ),
+                                  ]
+                                    .filter(Boolean)
+                                    .join(". ")}
+                                  data-tone={tone(row.annual)}
                                 >
-                                  {row.grouped ? (
+                                  {row.grouped && !row.aggregate ? (
                                     <span className={layout.muted}>по счетам</span>
                                   ) : (
                                     displayCompactRate(row.annual)
                                   )}
+                                </td>
+                                <td
+                                  data-label="Стоимость"
+                                  title={[
+                                    row.isOpen === true
+                                      ? "Позиция открыта"
+                                      : row.isOpen === false
+                                        ? "Позиция закрыта"
+                                        : "Количество на дату оценки неизвестно",
+                                    displayMetric(row.currentValue),
+                                    ...row.currentValue.reason_codes.map(
+                                      (code) => reasonCopy(code, { surface: "returns" }).message,
+                                    ),
+                                  ].join(". ")}
+                                >
+                                  {displayWhole(row.currentValue)}
                                 </td>
                                 <td data-label="Купоны и дивиденды">
                                   <InstrumentIncome

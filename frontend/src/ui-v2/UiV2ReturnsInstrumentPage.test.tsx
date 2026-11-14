@@ -40,6 +40,51 @@ function setup(
 }
 afterEach(() => vi.unstubAllGlobals());
 
+test("combined instrument result and split use server totals with explained unknowns", async () => {
+  const card = instrumentCardFixture();
+  const metric = (value: string | null) => ({
+    value,
+    status: "supported" as const,
+    reason_codes: [],
+    assumptions: [],
+  });
+  const rate = (method: "simple_return" | "xirr") => ({
+    ...metric("0.125"),
+    method,
+    annualized: method === "xirr",
+    invested_kopecks: "100000",
+    start_date: "2028-01-01",
+    end_date: "2030-01-01",
+    holding_days: 731,
+    weighted_holding_days: "731.00",
+  });
+  card.aggregate = {
+    pnl: metric("12500"),
+    realized_result: metric("10000"),
+    unrealized_result: metric("2500"),
+    current_value: metric("102500"),
+    is_open: true,
+    position_reason_codes: [],
+    simple_return: rate("simple_return"),
+    xirr: rate("xirr"),
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => response(card)),
+  );
+  setup("/v2/returns/instrument/RU000A000002");
+  const region = await screen.findByRole("region", { name: "Разложение результата" });
+  const total = within(region)
+    .getByRole("heading", { name: "Результат за всю историю" })
+    .closest("section");
+  expect(total).toHaveTextContent("+125 ₽");
+  expect(total).toHaveTextContent("Зафиксировано");
+  expect(total).toHaveTextContent("+100 ₽");
+  expect(total).toHaveTextContent("В цене");
+  expect(total).toHaveTextContent("+25 ₽");
+  expect(total).toHaveTextContent("+12,5%");
+});
+
 test("a linked account keeps its catalogue name in the visible calculation-gap explanation", async () => {
   const card = instrumentCardFixture();
   const account = card.accounts[0];

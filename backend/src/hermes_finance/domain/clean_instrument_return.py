@@ -555,6 +555,7 @@ def calculate_clean_return(
     weighted_holding_days: Decimal | None = None,
     holding_period_resolver: Callable[[CleanInstrumentReturn], Decimal | None] | None = None,
     annual_holding_period_resolver: Callable[[CleanInstrumentReturn], Decimal | None] | None = None,
+    rate_inputs: dict | None = None,
 ) -> CleanInstrumentReturn:
     """Calculate from attributable current observations, preserving partial facts.
 
@@ -825,4 +826,12 @@ def calculate_clean_return(
         weighted_holding_days=weighted_holding_days,
         annual_weighted_holding_days=annual_days,
     )
+    if rate_inputs is not None:
+        rate_inputs.update(
+            dated_flows=tuple(dated_flows),
+            purchases=tuple(purchases),
+            disposals=tuple(disposals),
+            weighted_holding_days=annual_days,
+            position_closed=position_closed,
+        )
     return replace(clean, simple_return=simple, xirr=annual)

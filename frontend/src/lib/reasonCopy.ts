@@ -41,6 +41,11 @@ const COPY: Record<
   string,
   string | ({ default: string } & Partial<Record<ReasonSurface, string>>)
 > = {
+  instrument_accounts_incomplete:
+    "По одному из счетов бумаги не хватает данных для полного расчёта.",
+  purchase_allocation_unproven:
+    "Недостаточно данных, чтобы распределить стоимость покупок между проданными и открытыми лотами.",
+  closing_quantity_unknown: "Количество бумаги на дату оценки не подтверждено.",
   broker_gift_external_flow:
     "Подарок учтён как внешнее поступление для доходности, отдельно от личных пополнений.",
   known_instrument_accounts_only:

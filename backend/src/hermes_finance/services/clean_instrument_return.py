@@ -210,7 +210,9 @@ def clean_gold_metric(observed, *, current=True):
     return metric(value, reasons=reasons, method="clean_gold_history", estimate=bool(reasons))
 
 
-def project_clean_analysis(analysis, isin, *, instrument_type=None, include_position_rates=True):
+def project_clean_analysis(
+    analysis, isin, *, instrument_type=None, include_position_rates=True, rate_inputs=None
+):
     """Do not change or attest the events, the account bridge, or source receipts."""
     ignored_cost_reasons = {"unallocated_instrument_cost", "native_commission_unavailable"}
     if getattr(analysis.coverage, "unresolved_cost_only", False):
@@ -314,6 +316,7 @@ def project_clean_analysis(analysis, isin, *, instrument_type=None, include_posi
         and not _has_unattributed_amortization(analysis, isin, instrument_type),
         valuation_complete=opening is not None and closing is not None,
         include_position_rates=include_position_rates,
+        rate_inputs=rate_inputs,
         holding_period_resolver=lambda operands: clean_weighted_holding_days(
             analysis, operands, isin, instrument_type=instrument_type
         ),
@@ -441,6 +444,7 @@ def read_clean_account(
     isin=None,
     include_purchases=False,
     include_position_rates=False,
+    include_position_results=False,
 ):
     """Return one exact source scope and period without saving an attestation."""
     from hermes_finance.services.returns_view import _catalogue_names, _display_name
@@ -493,11 +497,13 @@ def read_clean_account(
             analysis, purchase_analysis = clean_and_purchase_repo_projections(
                 analysis, views, row.isin, allow_pair=allow_pair, identity_reader=identity_reader
             )
+        rate_inputs = {} if include_position_results else None
         clean = project_clean_analysis(
             analysis,
             row.isin,
             instrument_type=row.instrument_type,
             include_position_rates=include_position_rates,
+            rate_inputs=rate_inputs,
         )
         metrics = asdict(clean)
         if not include_position_rates:
@@ -535,6 +541,11 @@ def read_clean_account(
             "closing_date": row.analysis.closing_date,
             **metrics,
         }
+        if include_position_results:
+            from hermes_finance.services.position_results import position_results
+
+            item.update(position_results(purchase_analysis, clean, row.isin, row.instrument_type))
+            item["_position_inputs"] = rate_inputs
         if include_purchases:
             from hermes_finance.services.clean_purchase_returns import (
                 clean_purchase_price_contributions,
@@ -562,6 +573,7 @@ def read_clean_overview(
     isin=None,
     include_purchases=False,
     include_position_rates=False,
+    include_position_results=False,
 ):
     """Read each source account's outer saved period in one source snapshot."""
     from hermes_finance.services.returns_view import _accounts, _source_scopes
@@ -594,6 +606,7 @@ def read_clean_overview(
                         isin=isin,
                         include_purchases=include_purchases,
                         include_position_rates=include_position_rates,
+                        include_position_results=include_position_results,
                     ),
                 }
             )

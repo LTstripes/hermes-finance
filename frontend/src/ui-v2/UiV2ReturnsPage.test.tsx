@@ -67,6 +67,66 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
+test("server instrument aggregate supplies rates, value, split and open/sold filtering", async () => {
+  const data = overallFixture();
+  const metric = (value: string | null) => ({
+    value,
+    status: "supported" as const,
+    reason_codes: [],
+    assumptions: [],
+  });
+  const rate = (method: "simple_return" | "xirr", value: string) => ({
+    ...metric(value),
+    method,
+    annualized: method === "xirr",
+    invested_kopecks: "10000",
+    start_date: "2028-01-01",
+    end_date: "2030-01-01",
+    holding_days: 731,
+    weighted_holding_days: "731.00",
+  });
+  const aggregate = {
+    pnl: metric("2500"),
+    realized_result: metric("1000"),
+    unrealized_result: metric("1500"),
+    current_value: metric("11500"),
+    is_open: true,
+    position_reason_codes: [],
+    simple_return: rate("simple_return", "0.25"),
+    xirr: rate("xirr", "0.118"),
+  };
+  data.instruments = [
+    { ...data.instruments[0], name: "Открытая бумага", aggregate },
+    {
+      ...data.instruments[1],
+      name: "Проданная бумага",
+      aggregate: {
+        ...aggregate,
+        is_open: false,
+        current_value: metric("0"),
+        unrealized_result: metric("0"),
+        realized_result: metric("2500"),
+      },
+    },
+  ];
+  install(data);
+  setup();
+  const table = await screen.findByRole("table", { name: "Все бумаги" });
+  const row = within(table).getByRole("row", { name: /Открытая бумага/ });
+  expect(row).toHaveTextContent("+25,0%");
+  expect(row).toHaveTextContent("+11,8%");
+  expect(row).toHaveTextContent("115 ₽");
+  expect(within(table).queryByText("Проданная бумага")).toBeNull();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Разложение результата" }));
+  expect(row).toHaveTextContent("Зафикс. +10 ₽");
+  expect(row).toHaveTextContent("В цене +15 ₽");
+  fireEvent.change(screen.getByLabelText("Позиции"), { target: { value: "sold" } });
+  expect(within(table).queryByText("Открытая бумага")).toBeNull();
+  expect(within(table).getByText("Проданная бумага")).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Позиции"), { target: { value: "all" } });
+  expect(within(table).getByText("Открытая бумага")).toBeVisible();
+});
+
 test("one instrument total matches the chart and counts once, with both account rows always visible", async () => {
   const data = overallFixture();
   data.instruments = [data.instruments[0]];
