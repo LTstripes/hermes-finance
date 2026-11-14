@@ -1,9 +1,10 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ReportingMonth } from "../api/types";
+import type { PositionSnapshot, ReportingMonth } from "../api/types";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import { UiV2MonthPositionsSection } from "./UiV2MonthPositionsSection";
 
@@ -116,6 +117,17 @@ function setup(
   };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const key = `${(init?.method ?? "GET").toUpperCase()} ${String(input)}`;
+    if (key.startsWith("GET /api/positions/all-time-results?") && !routes[key]) {
+      const response = await routes[key.replace("/all-time-results", "")]?.(init);
+      const rows = response ? await response.json() : [];
+      return json(
+        Object.fromEntries(
+          rows
+            .filter((row: PositionSnapshot) => row.all_time_result)
+            .map((row: PositionSnapshot) => [row.id, row.all_time_result]),
+        ),
+      );
+    }
     return (
       routes[key]?.(init) ?? json({ error: { code: "not_found", message: key, details: [] } }, 404)
     );
@@ -129,9 +141,12 @@ function setup(
     setDirty,
     returnToClose: null,
   };
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(<UiV2MonthPositionsSection context={context} />, {
     wrapper: ({ children }) => (
-      <MemoryRouter initialEntries={[options.url ?? "/"]}>{children}</MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[options.url ?? "/"]}>{children}</MemoryRouter>
+      </QueryClientProvider>
     ),
   });
   return { fetchMock, setDirty, context, ...view };
@@ -140,6 +155,50 @@ function setup(
 afterEach(() => vi.unstubAllGlobals());
 
 describe("native month positions leaf", () => {
+  it("shows the backend dated all-time result with instrument navigation, preserving unknown rows", async () => {
+    setup(
+      {
+        "GET /api/instruments?active=true": () => json([{ ...instrument, isin: "RU000SYN0001" }]),
+      },
+      [
+        {
+          ...position,
+          price_source: "broker_statement_native",
+          unrealized_result: null,
+          all_time_result: {
+            amount: { amount: "0.01", currency: "RUB" },
+            as_of: "2031-01-31",
+            period_start: "2030-01-01",
+            status: "provisional",
+            reason_codes: [],
+          },
+        },
+        {
+          ...position,
+          id: 32,
+          price_source: "broker_statement_native",
+          unrealized_result: null,
+          all_time_result: {
+            amount: null,
+            as_of: "2031-01-31",
+            period_start: "2030-01-01",
+            status: "unavailable",
+            reason_codes: ["source_history_unavailable"],
+          },
+        },
+      ],
+      { readOnly: true, closed: true },
+    );
+    await screen.findByRole("columnheader", { name: "Результат за всё время, ₽" });
+    const result = await screen.findByRole("link", { name: /0,01/ });
+    expect(result).toHaveAttribute(
+      "href",
+      expect.stringContaining("/v2/returns/instrument/RU000SYN0001?capital_account=11"),
+    );
+    expect(result).toHaveAttribute("title", expect.stringContaining("31.01.2031"));
+    const cells = document.querySelectorAll('[data-label="Результат за всё время"]');
+    expect(cells[1]).toHaveTextContent("—");
+  });
   it("hides empty native price/result columns, unknown totals and source actions, explaining once", async () => {
     setup({}, [
       {
@@ -153,6 +212,7 @@ describe("native month positions leaf", () => {
     ]);
     await screen.findByText("Synthetic Fund");
     const table = screen.getByRole("table");
+    await waitFor(() => expect(within(table).queryByText("…")).toBeNull());
     expect(table).toHaveTextContent("550");
     expect(within(table).queryByText("—")).toBeNull();
     expect(
@@ -212,6 +272,7 @@ describe("native month positions leaf", () => {
       ],
     );
     const tables = await screen.findAllByRole("table");
+    await waitFor(() => expect(screen.queryAllByText("…")).toHaveLength(0));
     expect(tables).toHaveLength(2);
     expect(tables[0].querySelector("caption")).toHaveTextContent("Synthetic IIS 1 поз.");
     expect(tables[0].querySelector("caption")).toHaveTextContent("60,0%");
@@ -257,6 +318,7 @@ describe("native month positions leaf", () => {
       },
     ]);
     const table = await screen.findByRole("table");
+    await waitFor(() => expect(within(table).queryByText("…")).toBeNull());
     expect(
       within(table).getByRole("columnheader", { name: "Цена покупки, ₽" }),
     ).toBeInTheDocument();
@@ -276,6 +338,7 @@ describe("native month positions leaf", () => {
     async (options) => {
       setup({}, [position], options);
       const table = await screen.findByRole("table");
+      await waitFor(() => expect(within(table).queryByText("…")).toBeNull());
       expect(within(table).queryByRole("columnheader", { name: "Действия" })).toBeNull();
       expect(within(table).queryByRole("button")).toBeNull();
       expect(screen.getByText(/Себестоимость:/)).toHaveTextContent("500");
@@ -305,6 +368,7 @@ describe("native month positions leaf", () => {
   it("shows valuation exceptions once under value and accrued interest under price", async () => {
     setup({}, [{ ...position, accrued_interest: { amount: "3.00", currency: "RUB" } }]);
     const table = await screen.findByRole("table");
+    await waitFor(() => expect(within(table).queryByText("…")).toBeNull());
     expect(within(table).queryAllByText(/Вручную · 31\.01\.2031/)).toHaveLength(0);
     const nkd = within(table).getByText(/НКД 3/);
     expect(within(nkd.closest("td") as HTMLElement).getByRole("textbox")).toHaveValue("1 100");
@@ -340,6 +404,7 @@ describe("native month positions leaf", () => {
       ],
     );
     const tables = await screen.findAllByRole("table");
+    await waitFor(() => expect(screen.queryAllByText("…")).toHaveLength(0));
     expect(tables).toHaveLength(2);
     expect(
       tables.filter((table) => within(table).queryByRole("columnheader", { name: "Цена, ₽" })),
@@ -383,6 +448,7 @@ describe("native month positions leaf", () => {
       },
     ]);
     const table = await screen.findByRole("table");
+    await waitFor(() => expect(within(table).queryByText("…")).toBeNull());
     const rows = within(table).getAllByRole("row");
     expect(within(rows[1]).getAllByRole("cell")[1]).toHaveTextContent("2");
   });
@@ -397,6 +463,7 @@ describe("native month positions leaf", () => {
       },
     ]);
     const table = await screen.findByRole("table");
+    await waitFor(() => expect(within(table).queryByText("…")).toBeNull());
     const cells = within(within(table).getAllByRole("row")[1]).getAllByRole("cell");
     expect(cells.map((cell) => cell.textContent).join("")).not.toMatch(/%/);
     expect(screen.getByText(/Себестоимость:/)).toHaveTextContent("0 ₽");
@@ -1134,4 +1201,30 @@ describe("native month positions leaf", () => {
     expect(setDirty).toHaveBeenCalledWith("positions", true);
     expect(screen.getByLabelText("Количество")).toHaveValue("1");
   });
+});
+
+it("renders positions while results are pending and explains a failed lazy read", async () => {
+  const pending = deferred();
+  const { fetchMock } = setup(
+    {
+      "GET /api/positions/all-time-results?month_id=7": async () => {
+        await pending.promise;
+        return json({ error: { code: "unavailable", message: "Unavailable", details: [] } }, 503);
+      },
+    },
+    [{ ...position, price_source: "broker_statement_native" }],
+  );
+  expect(await screen.findByRole("table")).toBeVisible();
+  expect(await screen.findByText("…")).toBeVisible();
+  pending.release();
+  expect(await screen.findByTitle("Не удалось загрузить результат")).toHaveTextContent("—");
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes("all-time-results"))).toBe(true);
+});
+
+it("does not request all-time results for a manual-only month", async () => {
+  const { fetchMock } = setup();
+  expect(await screen.findByRole("table")).toBeVisible();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes("all-time-results"))).toBe(
+    false,
+  );
 });

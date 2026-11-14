@@ -44,6 +44,10 @@
   border-left: 1px solid var(--line);
 }
 
+.kpis[data-securities="true"] {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .kpi:first-child {
   padding-left: 0;
   border-left: 0;
@@ -183,7 +187,8 @@
 }
 
 .row[data-state="empty"] .rowFigure,
-.row[data-state="optional"] .rowFigure {
+.row[data-state="optional"] .rowFigure,
+.rowFigure[data-unconfirmed="true"] {
   color: var(--faint);
 }
 
@@ -540,12 +545,14 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .kpis {
+  .kpis,
+  .kpis[data-securities="true"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     row-gap: 18px;
   }
 
-  .kpi:nth-child(3) {
+  .kpi:nth-child(3),
+  .kpi:nth-child(5) {
     padding-left: 0;
     border-left: 0;
   }

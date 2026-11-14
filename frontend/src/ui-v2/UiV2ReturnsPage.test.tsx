@@ -413,13 +413,13 @@ test("closing income disclosure aborts obsolete request", async () => {
   await act(async () => finish(response(incomeFixture("coupon"))));
   expect(within(coupon).queryByRole("table")).toBeNull();
 });
-test("catalogue account labels replace browser aliases and gold quantities stay compact", async () => {
+test("backend account labels replace browser aliases and gold quantities stay compact", async () => {
   const data = overallFixture();
   data.source_accounts[0].account_link = {
     source_account_id: "SYNTH-CONTRACT",
     financial_account_id: 1,
     account_type: "brokerage",
-    label: "Брокерский SYNTH-CONTRACT",
+    label: "Личный брокерский",
     status: "linked",
     reason_codes: [],
   };

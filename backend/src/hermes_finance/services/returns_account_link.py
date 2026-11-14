@@ -43,11 +43,12 @@ def account_link(session, source_account, canonical=None):
         reason = "source_account_type_unsupported"
     linked = reason is None
     kind = account.account_type if linked else None
+    fallback = ("ИИС" if kind == "iis" else "Брокерский") + " " + native if linked else native
     return {
         "source_account_id": native,
         "financial_account_id": account.id if linked else None,
         "account_type": kind,
-        "label": ("ИИС" if kind == "iis" else "Брокерский") + " " + native if linked else native,
+        "label": account.name if linked and account.name and account.name.strip() else fallback,
         "status": "linked" if linked else "unlinked",
         "reason_codes": [] if linked else [reason],
     }

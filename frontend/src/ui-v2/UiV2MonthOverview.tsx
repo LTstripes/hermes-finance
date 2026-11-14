@@ -1,3 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
+import { getMonthSecuritiesResult } from "../api/monthCloseWorkflow";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 
@@ -97,12 +99,17 @@ function hintText(
   closed: boolean,
 ): string {
   const base = MONTH_STEP_COPY[id].hint;
-  if (!step || closed) return base;
-  if (step.state === "attention") {
-    const count = step.attention_count;
-    return `${countText(count, ["замечание", "замечания", "замечаний"])} ${count === 1 ? "требует" : "требуют"} решения`;
+  if (!step) return base;
+  if (closed) {
+    return step.remark_count
+      ? countText(step.remark_count, ["замечание", "замечания", "замечаний"])
+      : base;
   }
   if (step.has_templates) return "Перенесено из другого месяца — подтвердите или измените";
+  if (step.state === "attention") {
+    const count = step.remark_count ?? step.attention_count;
+    return `${countText(count, ["замечание", "замечания", "замечаний"])} ${count === 1 ? "требует" : "требуют"} решения`;
+  }
   if (step.state === "empty") return "Не заполнено";
   if (step.state === "optional") return "Необязательно";
   const secondary = step.secondary_count;
@@ -203,6 +210,9 @@ export function MonthStepStrip({
           >
             {id === "close" ? null : <StateMark state={step?.state} closed={closed} />}
             {id === "close" && closed ? "Итоги" : MONTH_STEP_COPY[id].label}
+            {closed && step?.remark_count ? (
+              <span>{countText(step.remark_count, ["замечание", "замечания", "замечаний"])}</span>
+            ) : null}
             {!closed && step && id !== "close" ? (
               <span className={styles.visuallyHidden}>, {stateText(step.state, closed)}</span>
             ) : null}
@@ -253,6 +263,36 @@ function deltaNote(value: MoneyValue | null | undefined, suffix: string, whole =
   };
 }
 
+function LazySecuritiesKpi({ monthId }: { monthId: number }) {
+  const query = useQuery({
+    queryKey: ["month-close-workflow", monthId, "securities-result"],
+    queryFn: ({ signal }) => getMonthSecuritiesResult(monthId, signal),
+    retry: false,
+  });
+  const result = query.isError ? undefined : query.data;
+  return (
+    <Kpi
+      label="Результат бумаг за месяц"
+      value={query.isPending ? "…" : result?.amount ? moneyWholeDeltaText(result.amount) : "—"}
+      title={result?.amount ? moneyText(result.amount) : undefined}
+      tone={result?.amount ? moneyTone(result.amount) : "neutral"}
+      note={
+        query.isError
+          ? "Не удалось загрузить результат"
+          : query.isPending
+            ? undefined
+            : !result?.amount
+              ? "недостаточно данных за месяц"
+              : result.status === "partial"
+                ? "известная часть"
+                : result.status === "provisional"
+                  ? "оценка по выпискам"
+                  : undefined
+      }
+    />
+  );
+}
+
 export function MonthKpis({
   workflow,
   variant = "overview",
@@ -276,6 +316,7 @@ export function MonthKpis({
   const passive = deltaNote(kpis.passive_income_delta, "к прошлому месяцу", whole);
   const budget = workflow.checklist?.steps.find((step) => step.id === "budget");
   const noExpenseRows = workflow.checklist?.expenses.mandatory_items.length === 0;
+  const securities = workflow.checklist?.securities_result;
   const articles =
     budget?.secondary_count != null
       ? countText(budget.secondary_count, ["статья", "статьи", "статей"])
@@ -284,6 +325,11 @@ export function MonthKpis({
     <dl
       aria-label={variant === "close" ? "Итоги месяца" : "Итог месяца"}
       className={styles.kpis}
+      data-securities={
+        variant === "overview" && (securities || workflow.checklist?.has_statement_positions)
+          ? "true"
+          : undefined
+      }
       data-incomplete-close={variant === "close" && incomplete ? "true" : undefined}
     >
       <Kpi
@@ -311,6 +357,26 @@ export function MonthKpis({
       />
       {variant === "close" ? (
         <Kpi label="Инвестиции" value={moneyText(review.investments.market_value)} />
+      ) : null}
+      {variant === "overview" && workflow.checklist?.has_statement_positions ? (
+        <LazySecuritiesKpi monthId={workflow.month.id} />
+      ) : null}
+      {variant === "overview" && securities ? (
+        <Kpi
+          label="Результат бумаг за месяц"
+          title={securities.amount ? moneyText(securities.amount) : undefined}
+          value={securities.amount ? moneyWholeDeltaText(securities.amount) : "—"}
+          tone={securities.amount ? moneyTone(securities.amount) : "neutral"}
+          note={
+            securities.amount
+              ? securities.status === "partial"
+                ? "известная часть"
+                : securities.status === "provisional"
+                  ? "оценка по выпискам"
+                  : undefined
+              : "недостаточно данных за месяц"
+          }
+        />
       ) : null}
       {variant === "overview" || (kpis.mandatory_expenses != null && !noExpenseRows) ? (
         <Kpi
@@ -383,11 +449,13 @@ function CloseBanner({
   const checklist = workflow.checklist;
   const closed = workflow.month.status === "closed";
   if (closed) {
-    const count = workflow.final_review.available
-      ? closeOwnerActionFindings(workflow.final_review.close_readiness.items).filter(
-          (item) => item.severity === "hard_blocker" || item.severity === "warning",
-        ).length
-      : workflow.readiness.hard_blocker_count + workflow.readiness.warning_count;
+    const count =
+      checklist?.remark_count ??
+      (workflow.final_review.available
+        ? closeOwnerActionFindings(workflow.final_review.close_readiness.items).filter(
+            (item) => item.severity === "hard_blocker" || item.severity === "warning",
+          ).length
+        : workflow.readiness.hard_blocker_count + workflow.readiness.warning_count);
     return (
       <div className={styles.banner} data-state="closed">
         <StateMark state="done" />
@@ -403,12 +471,13 @@ function CloseBanner({
   }
   const readiness = workflow.readiness;
   const incomplete = isIncompleteMonthDraft(workflow);
+  const remarkCount = checklist?.remark_count ?? checklist?.attention_count;
   const reason = incomplete
     ? INCOMPLETE_MONTH_COPY
     : !readiness.can_close
       ? `Закрытие заблокировано: ${countText(readiness.hard_blocker_count, ["замечание", "замечания", "замечаний"])}`
-      : checklist?.attention_count
-        ? `Требуют решения: ${countText(checklist.attention_count, ["замечание", "замечания", "замечаний"])}. Закрыть можно, замечания сохранятся.`
+      : remarkCount
+        ? `Требуют решения: ${countText(remarkCount, ["замечание", "замечания", "замечаний"])}. Закрыть можно, замечания сохранятся.`
         : "Закрытие не подтверждает полноту данных.";
   return (
     <div className={styles.banner} data-state="open">
@@ -512,6 +581,7 @@ export function MonthOverview({
                         {step ? (
                           <span
                             className={styles.rowFigure}
+                            data-unconfirmed={!closed && step.has_templates ? "true" : undefined}
                             title={
                               step.figure?.kind === "money"
                                 ? moneyText(step.figure.amount)

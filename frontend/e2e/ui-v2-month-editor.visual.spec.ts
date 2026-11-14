@@ -14,6 +14,56 @@ const closed = {
   source: "manual",
 };
 
+test("backend month remarks, securities result and dated position result fit desktop @viewport-owned", async ({ page }, info) => {
+  test.setTimeout(120_000);
+  const workflow = makeUiV2Workflow();
+  workflow.checklist = makeUiV2Checklist({ closed: true });
+  workflow.checklist.remark_count = 3;
+  const positions = workflow.checklist.steps.find((step) => step.id === "positions");
+  if (!positions) throw new Error("Missing fixture");
+  positions.remark_count = 3;
+  workflow.checklist.securities_result = {
+    amount: { amount: "12345.67", currency: "RUB" }, period_start: "2030-03-31", as_of: "2030-04-30",
+    status: "partial", reason_codes: [], included_count: 2, total_count: 3,
+  };
+  await installApi(page, { workflow, accounts: [uxAccount] });
+  await page.route("**/api/instruments?*", (route) => route.fulfill({ json: [{ ...uxInstrument, isin: ISIN }] }));
+  await page.route("**/api/positions?*", (route) => route.fulfill({ json: [{
+    id: 31, reporting_month_id: 7, account_id: 11, instrument_id: 21,
+    quantity: "123.456789", market_value: uxMoney("1661330.85"),
+    average_cost_per_unit: null, market_price_per_unit: null, cost_basis: null, unrealized_result: null,
+    price_source: "broker_statement_native", price_date: "2030-04-30",
+    all_time_result: { amount: uxMoney("137174.07"), as_of: "2030-04-30", period_start: "2029-01-01", status: "provisional", reason_codes: [] },
+  }] }));
+  workflow.checklist.has_statement_positions = true;
+  const securitiesResult = workflow.checklist.securities_result;
+  delete workflow.checklist.securities_result;
+  await page.route("**/api/months/7/securities-result", (route) => route.fulfill({ json: securitiesResult }));
+  await page.route("**/api/positions/all-time-results?*", (route) => route.fulfill({ json: {
+    "31": { amount: uxMoney("137174.07"), as_of: "2030-04-30", period_start: "2029-01-01", status: "provisional", reason_codes: [] },
+  } }));
+  for (const width of [1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const zoom of [1, 1.25]) {
+      await page.goto("/v2/close?month=7");
+      await page.evaluate((scale) => { document.documentElement.style.zoom = String(scale); }, zoom);
+      await expect(page.getByText("Закрыт с замечаниями: 3")).toBeVisible();
+      await expect(page.getByText("Результат бумаг за месяц")).toBeVisible();
+      await expect(page.getByText("известная часть", { exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      if (width === 1440 && zoom === 1) await page.screenshot({ path: info.outputPath("backend-month-overview.png"), fullPage: true });
+      await page.goto("/v2/close?month=7&panel=positions");
+      await page.evaluate((scale) => { document.documentElement.style.zoom = String(scale); }, zoom);
+      const area = page.locator("#month-work-area");
+      await area.evaluate((node) => { node.style.width = "720px"; node.style.maxWidth = "100%"; });
+      await expect(area.getByRole("columnheader", { name: "Результат за всё время, ₽" })).toBeVisible();
+      await expect(area.getByRole("link", { name: /137/ })).toHaveAttribute("href", /returns\/instrument\//);
+      expect(await area.getByRole("table").evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+      if (width === 1440 && zoom === 1) await page.screenshot({ path: info.outputPath("backend-month-positions.png"), fullPage: true });
+    }
+  }
+});
+
 test("incomplete month draft keeps honest KPIs, next steps and panel findings at desktop zoom @viewport-owned", async ({
   page,
 }, info) => {
@@ -388,6 +438,10 @@ async function installApi(
   const expenses: object[] = [];
   const money = { amount: "0.00", currency: "RUB" };
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/positions/all-time-results") {
+      await route.fulfill({ json: {} });
+      return;
+    }
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (!path.startsWith("/api/")) {

@@ -1608,6 +1608,29 @@ An intact original, S1 source acceptance, journal capture, financial DRAFT, inde
 <a id="c3-user-close-warnings"></a>
 ### User-decided Close and completeness warnings (#1010)
 
+Month checklist presentation additionally exposes `remarks`, `remark_count` and
+each step's `remark_count`. They use one read-only projection of the current
+close-readiness snapshot: warnings and hard blockers only, one visible statement
+review action per account and one row per identical message, strongest severity
+first. A global finding belongs to the Close step. The total equals the sum of
+the step counts and the number of remarks. These fields do not alter the existing
+`attention_count`, raw readiness items, saved month or Close guards. Closed-month
+counts describe the same current read as its final review, not a new persisted
+historical receipt.
+
+`GET /api/months/{month_id}/securities-result` is a separate same-calendar-month clean securities
+subtotal in RUB, with exact start/end, status, reasons and observed operand counts.
+It reuses the clean instrument reader for uniquely linked source accounts and
+requires exact month-end snapshot and instrument endpoints. Account totals,
+deposits, gold and percentages are not operands. Only full supported/provisional
+instrument P&L is included; source gaps or excluded operands mark the known sum
+partial, and no included values means NULL. An included zero remains zero.
+Counts describe observed operands, not proven complete portfolio membership.
+The checklist exposes only `has_statement_positions`; this cheap presence flag
+enables a separate React Query read without delaying the month overview.
+Repeated context and clean-account reads reuse results only within the owned
+read snapshot; no global result cache is introduced.
+
 [Owner decision #1010](https://github.com/LTstripes/hermes-finance/issues/1010):
 ordinary Close may be requested at any time for the selected DRAFT. Missing
 snapshot dates, empty/manual or incomplete source data, unresolved controls,
@@ -6580,6 +6603,18 @@ totals; its monthly chain remains unavailable.
 <a id="c7-returns-presentation"></a>
 ### Returns presentation adapter
 
+`GET /api/positions/all-time-results?month_id=…[&account_id=…]` exposes
+results keyed by snapshot ID, with the former `all_time_result` shape for native
+statement positions. The main positions read leaves that field null and never
+computes clean returns. It joins only a unique verified source/account link and
+the same ISIN, reads the existing clean P&L from the from-zero history start to
+the month's snapshot date, and requires that exact closing date and the saved
+position's price date. The amount is nullable RUB money; `as_of`, `period_start`,
+status and reasons retain scope and availability. Partial/unknown P&L never
+becomes zero or an unrealized-price result. Missing identity/history/date remains
+unavailable. This read does not update position values, historical months or
+proofs; the existing `unrealized_result` and other fields keep their semantics.
+
 Returns account attribution uses only the verified native source account id and
 existing effective MyBroker account mappings. Filename aliases must first pass
 the existing single-native-account proof; labels, balances, P&L, equal amounts,
@@ -6587,6 +6622,11 @@ dates and current holdings never establish identity. `account_link` carries
 `source_account_id`, nullable `financial_account_id` and `account_type`, a display
 `label`, `status=linked|unlinked` and `reason_codes`. A unique one-to-one mapping
 to a catalogue brokerage/IIS account supplies its explicit subtype and label.
+The label is the mapped catalogue account's nonblank `name`; when absent, the
+previous type-plus-native-id label remains. Unlinked results retain their native
+label. This is display metadata only: changing a catalogue name cannot establish
+identity, alter amounts or change source-proof currentness. Frontend consumers
+use `account_link.label` without a second catalogue lookup.
 Missing mapping (`source_account_mapping_missing`), conflicting forward/reverse
 mapping (`source_account_mapping_ambiguous`), unproved source identity
 (`source_account_identity_unproven`) or unsupported mapped account type
@@ -6790,6 +6830,14 @@ result sums only included nonoverlapping operands. It is not full portfolio P&L
 or a profit floor; excluded unknown results may be negative. A true included zero
 survives, while no included operands means NULL. The overall portfolio result
 and mixed rate stay NULL; different horizons do not establish a common rate.
+
+The clean monthly portfolio overview additionally exposes
+`portfolio_return_unavailable_reason=portfolio_monthly_return_not_supported`.
+Its existing accepted capital bridge and income fields remain unchanged and are
+not reclassified as portfolio investment profit. The ordinary monthly page shows
+one explanation; individual source-account results retain their own readers.
+No mixed-horizon sum, account-plus-instrument addition or synthetic transfer flow
+is introduced to fill a portfolio result or percentage.
 
 For each proven native source account, only the latest from-zero original-bound
 proof (existing covered-to/proof-id tie-break), current and with a supported

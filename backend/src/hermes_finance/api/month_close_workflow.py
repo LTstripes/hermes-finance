@@ -15,6 +15,7 @@ from hermes_finance.api.cash_flow_ladder import (
     cash_flow_ladder_to_out,
 )
 from hermes_finance.api.close_readiness import (
+    CloseReadinessItemOut,
     CloseReadinessOut,
     _latest_backup,
 )
@@ -293,6 +294,7 @@ class ChecklistStepOut(BaseModel):
     has_templates: bool = False
     state: Literal["done", "attention", "empty", "optional"]
     attention_count: int
+    remark_count: int
     figure: ChecklistFigureOut | None
     secondary_count: int | None
 
@@ -312,6 +314,16 @@ class ChecklistExpensesOut(BaseModel):
     mandatory_items: list[ChecklistExpenseItemOut]
 
 
+class MonthSecuritiesResultOut(BaseModel):
+    amount: MoneyValue | None
+    period_start: date
+    as_of: date
+    status: Literal["supported", "provisional", "partial", "unavailable"]
+    reason_codes: list[str]
+    included_count: int
+    total_count: int
+
+
 class MonthChecklistOut(BaseModel):
     """Presentation of the month sections; not a close decision (#1079)."""
 
@@ -320,6 +332,9 @@ class MonthChecklistOut(BaseModel):
     completed_count: int
     total_count: int
     attention_count: int
+    remark_count: int
+    remarks: list[CloseReadinessItemOut]
+    has_statement_positions: bool
     steps: list[ChecklistStepOut]
     expenses: ChecklistExpensesOut
 
@@ -682,9 +697,20 @@ def _rub(amount: RubleAmount) -> MoneyValue:
 
 def _checklist_out(checklist: MonthChecklist) -> MonthChecklistOut:
     return MonthChecklistOut(
+        has_statement_positions=checklist.has_statement_positions,
         completed_count=checklist.completed_count,
         total_count=checklist.total_count,
         attention_count=checklist.attention_count,
+        remark_count=len(checklist.remarks),
+        remarks=[
+            CloseReadinessItemOut(
+                severity=item.severity.value,
+                code=item.code,
+                message=item.message,
+                context=item.context,
+            )
+            for item in checklist.remarks
+        ],
         steps=[
             ChecklistStepOut(
                 id=step.id,
@@ -694,6 +720,7 @@ def _checklist_out(checklist: MonthChecklist) -> MonthChecklistOut:
                 has_templates=step.has_templates,
                 state=step.state,
                 attention_count=step.attention_count,
+                remark_count=step.remark_count,
                 figure=(
                     ChecklistFigureOut(
                         kind=step.figure.kind,
@@ -822,3 +849,19 @@ def get_month_close_workflow(
                 freshness=f"/api/months/{month.id}/freshness-provenance",
             ),
         )
+
+
+@router.get("/{month_id}/securities-result", response_model=MonthSecuritiesResultOut)
+def get_month_securities_result(
+    month_id: int,
+    session: Session = Depends(session_for_request),
+) -> MonthSecuritiesResultOut:
+    from hermes_finance.services.month_securities_result import month_securities_result
+    from hermes_finance.services.reporting_months import get_reporting_month
+
+    with coherent_read_snapshot(session):
+        month = get_reporting_month(session, month_id)
+        result = dict(month_securities_result(session, month))
+        amount = result.pop("amount_kopecks")
+        result["amount"] = _rub(RubleAmount(amount)) if amount is not None else None
+        return MonthSecuritiesResultOut(**result)

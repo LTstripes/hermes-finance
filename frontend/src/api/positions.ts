@@ -44,3 +44,10 @@ export function updatePosition(
 export function deletePosition(snapshotId: number, signal?: AbortSignal): Promise<void> {
   return apiRequest<void>(`/api/positions/${snapshotId}`, { method: "DELETE", signal });
 }
+
+export function getPositionResults(monthId: number, signal?: AbortSignal) {
+  return apiRequest<Record<number, NonNullable<PositionSnapshot["all_time_result"]>>>(
+    `/api/positions/all-time-results?month_id=${monthId}`,
+    { method: "GET", signal },
+  );
+}

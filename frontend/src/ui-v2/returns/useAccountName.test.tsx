@@ -1,64 +1,53 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { AccountLink } from "./model";
 import { useAccountName } from "./useAccountName";
 
 afterEach(() => vi.unstubAllGlobals());
 
-test.each([false, true])(
-  "catalogue loading and failure never expose contract labels (failure=%s)",
-  async (failure) => {
-    let finish: (response: Response) => void = () => {};
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            finish = resolve;
-          }),
-      ),
-    );
-    const links: AccountLink[] = ["iis", "brokerage", null].map((type, index) => ({
-      source_account_id: `SYNTH-CONTRACT-${index}`,
-      financial_account_id: index + 1,
-      account_type: type as AccountLink["account_type"],
-      label: `Confidential SYNTH-CONTRACT-${index}`,
+test("uses authoritative labels without a catalogue request or local identity inference", () => {
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  const links: AccountLink[] = [
+    {
+      source_account_id: "SYNTH-A",
+      financial_account_id: 1,
+      account_type: "iis",
+      label: "Учебный ИИС",
       status: "linked",
       reason_codes: [],
-    }));
-    function Labels() {
-      const name = useAccountName(links);
-      return (
-        <>
-          {links.map((link) => (
-            <span key={link.financial_account_id} title={link.source_account_id}>
-              {name(link, link.label)}
-            </span>
-          ))}
-        </>
-      );
-    }
-    render(
-      <QueryClientProvider
-        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-      >
-        <Labels />
-      </QueryClientProvider>,
+    },
+    {
+      source_account_id: "SYNTH-B",
+      financial_account_id: null,
+      account_type: null,
+      label: "SYNTH-B",
+      status: "unlinked",
+      reason_codes: ["source_account_mapping_missing"],
+    },
+    {
+      source_account_id: "SYNTH-C",
+      financial_account_id: 2,
+      account_type: "brokerage",
+      label: "Брокерский SYNTH-C",
+      status: "linked",
+      reason_codes: [],
+    },
+  ];
+  function Labels() {
+    const name = useAccountName(links);
+    return (
+      <>
+        {links.map((link) => (
+          <span key={link.source_account_id}>{name(link, "fallback")}</span>
+        ))}
+        <span>{name(null, "fallback")}</span>
+      </>
     );
-    expect(screen.getByText("ИИС")).toHaveAttribute("title", "SYNTH-CONTRACT-0");
-    expect(screen.getByText("Брокерский")).toBeVisible();
-    expect(screen.getByText("Счёт")).toBeVisible();
-    expect(screen.queryByText(/Confidential/)).toBeNull();
-    await act(async () =>
-      finish(
-        new Response(JSON.stringify([{ id: 1, name: "Учебный ИИС" }]), {
-          status: failure ? 503 : 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    );
-    expect(await screen.findByText(failure ? "ИИС" : "Учебный ИИС")).toBeVisible();
-    expect(screen.queryByText(/Confidential/)).toBeNull();
-  },
-);
+  }
+  render(<Labels />);
+  for (const label of ["Учебный ИИС", "SYNTH-B", "Брокерский SYNTH-C", "fallback"]) {
+    expect(screen.getByText(label)).toBeVisible();
+  }
+  expect(fetch).not.toHaveBeenCalled();
+});

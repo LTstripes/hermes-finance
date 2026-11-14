@@ -519,6 +519,111 @@ def test_closed_month_completes_the_close_step(client: TestClient) -> None:
     assert _checklist_steps(body)["close"]["state"] == "done"
     assert body["checklist"]["completed_count"] == 3
     assert readiness_before["can_close"] is True
+    checklist = body["checklist"]
+    assert checklist["remark_count"] == len(checklist["remarks"])
+    assert checklist["remark_count"] == sum(step["remark_count"] for step in checklist["steps"])
+    assert _checklist_workflow(client, month_id)["checklist"] == checklist
+
+
+def test_month_remarks_group_actions_keep_strongest_severity_and_raw_evidence():
+    from types import SimpleNamespace
+
+    from hermes_finance.services.month_checklist import month_remarks
+
+    items = (
+        CloseReadinessItem(CloseReadinessSeverity.WARNING, "one", "Same issue", {}),
+        CloseReadinessItem(CloseReadinessSeverity.HARD_BLOCKER, "two", "Same issue", {}),
+        CloseReadinessItem(CloseReadinessSeverity.INFO, "info", "Information", {}),
+        CloseReadinessItem(
+            CloseReadinessSeverity.WARNING,
+            "source_one",
+            "Synthetic: first. Проверь подробности в разделе «Месяц → Брокерские выписки».",
+            {},
+        ),
+        CloseReadinessItem(
+            CloseReadinessSeverity.WARNING,
+            "source_two",
+            "Synthetic: second. Проверь подробности в разделе «Месяц → Брокерские выписки».",
+            {},
+        ),
+    )
+    readiness = SimpleNamespace(items=items)
+    result = month_remarks(readiness)
+    assert [item.code for item in result] == ["two", "source_one"]
+    assert result[0].severity == CloseReadinessSeverity.HARD_BLOCKER
+    assert result[1].message.startswith("Synthetic: сверка выписки")
+    assert readiness.items == items
+    assert month_remarks(SimpleNamespace(items=())) == ()
+
+
+@pytest.mark.parametrize(
+    "values,expected,status",
+    [
+        (["0"], 0, "supported"),
+        (["101", "-100"], 1, "supported"),
+        ([None], None, "unavailable"),
+        (["101", None], 101, "partial"),
+    ],
+)
+def test_month_securities_subtotal_keeps_cents_null_and_same_period(
+    monkeypatch, values, expected, status
+):
+    from types import SimpleNamespace
+
+    from hermes_finance.services import month_securities_result as service
+
+    month = SimpleNamespace(year=2031, month=1, snapshot_date=date(2031, 1, 31), status="closed")
+    context = {
+        "accounts": [
+            {
+                "id": "source:SYNTH",
+                "basis": "statements",
+                "account_link": {"status": "linked", "financial_account_id": 7},
+            }
+        ]
+    }
+    monkeypatch.setattr(service, "read_context", lambda _: context)
+    rows = [
+        {
+            "opening_date": date(2030, 12, 31),
+            "closing_date": date(2031, 1, 31),
+            "pnl": {
+                "value": value,
+                "status": "supported" if value is not None else "unavailable",
+                "reason_codes": [],
+                "assumptions": [],
+            },
+        }
+        for value in values
+    ]
+    calls = []
+
+    def reader(session, source, start, end):
+        calls.append((source, start, end))
+        return {"instruments": rows, "gaps": []}
+
+    monkeypatch.setattr(service, "read_clean_account", reader)
+    result = service._month_securities_result(None, month)
+    assert result["amount_kopecks"] == expected
+    assert result["status"] == status
+    assert result["total_count"] == len(values)
+    assert result["included_count"] == sum(value is not None for value in values)
+    assert calls == [("SYNTH", date(2030, 12, 31), date(2031, 1, 31))]
+    # Duplicate canonical accounts cannot be counted twice, even under two scopes.
+    context["accounts"].append({**context["accounts"][0], "id": "source:ALIAS"})
+    calls.clear()
+    assert service._month_securities_result(None, month)["amount_kopecks"] is None
+    assert calls == []
+    assert month.status == "closed"
+    assert service._month_securities_result(None, month)["total_count"] == 0
+    context["accounts"].pop()
+
+    def unavailable_reader(*args):
+        raise ValueError("synthetic source selection unavailable")
+
+    monkeypatch.setattr(service, "read_clean_account", unavailable_reader)
+    missing = service._month_securities_result(None, month)
+    assert missing["amount_kopecks"] is None and missing["total_count"] == 0
 
 
 def _readiness_item(code: str, severity: str = "warning", **context: object) -> CloseReadinessItem:
@@ -677,3 +782,32 @@ def test_cloned_templates_require_explicit_unchanged_amount_confirmation(
     assert confirmed.json()["actual_fact_origin"] == "saved_actual_v1"
     assert budget()["has_templates"] is False
     assert budget()["has_saved_facts"] is True
+
+
+def test_month_read_does_not_compute_lazy_securities(client, monkeypatch):
+    from hermes_finance.services import month_securities_result as service
+
+    month = _create(client, 2031, 1, "2031-01-31")
+    calls = []
+
+    def result(session, month):
+        calls.append(month.id)
+        return {
+            "amount_kopecks": 0,
+            "period_start": date(2030, 12, 31),
+            "as_of": date(2031, 1, 31),
+            "status": "supported",
+            "reason_codes": [],
+            "included_count": 1,
+            "total_count": 1,
+        }
+
+    monkeypatch.setattr(service, "month_securities_result", result)
+    response = client.get(f"/api/months/{month['id']}/close-workflow?include_checklist=true")
+    assert response.status_code == 200
+    assert calls == []
+    assert response.json()["checklist"]["has_statement_positions"] is False
+    response = client.get(f"/api/months/{month['id']}/securities-result")
+    assert response.status_code == 200
+    assert response.json()["amount"]["amount"] == "0.00"
+    assert calls == [month["id"]]

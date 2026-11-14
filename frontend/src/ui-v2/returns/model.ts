@@ -68,6 +68,7 @@ export type AcceptedIncome = AcceptedIncomeAmounts & {
   })[];
 };
 export type Overview = {
+  portfolio_return_unavailable_reason?: "portfolio_monthly_return_not_supported" | null;
   contract_version?: "returns_source_v2" | "returns_capital_v1";
   account_link?: AccountLink | null;
   scope: string;

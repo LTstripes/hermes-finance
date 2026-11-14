@@ -375,7 +375,16 @@ export default function UiV2ReturnsAccountPage() {
             {!context.data?.default_period && " Закрытых месяцев пока нет."}
           </p>
         ) : null}
-        {empty && (
+        {data?.portfolio_return_unavailable_reason ? (
+          <section className={styles.panel} aria-label="Результат общего портфеля">
+            <h2>Результат общего портфеля за месяц пока недоступен</h2>
+            <p>
+              Данные разных счетов пока не сведены в единый результат за месяц. Результаты отдельных
+              счетов доступны при выборе счёта.
+            </p>
+          </section>
+        ) : null}
+        {empty && !data?.portfolio_return_unavailable_reason && (
           <section className={styles.panel} aria-label="Нет данных о доходности">
             <h2>За выбранный период пока нет данных о доходности</h2>
             <p>

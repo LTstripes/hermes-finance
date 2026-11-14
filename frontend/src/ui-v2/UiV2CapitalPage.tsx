@@ -3,6 +3,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 
 import { listAccounts } from "../api/accounts";
+import { monthReturnsPath } from "./returns/monthLink";
 import { getCapitalComposition, getClosedReportComparison } from "../api/analytics";
 import { listCashBalances } from "../api/cash";
 import { getDashboard } from "../api/dashboard";
@@ -1061,6 +1062,9 @@ export default function UiV2CapitalPage() {
       header={
         <>
           <ClosedReportTitle month={latestClosed} title="Капитал" />
+          {latestClosed ? (
+            <Link to={monthReturnsPath(latestClosed)}>Доходность за месяц →</Link>
+          ) : null}
           <UiV2Tabs
             label="Капитал"
             tabs={[

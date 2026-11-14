@@ -9,7 +9,8 @@ subtotals of the same monthly summary.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Literal
 
@@ -105,6 +106,7 @@ class ChecklistStep:
     has_templates: bool
     state: ChecklistState
     attention_count: int
+    remark_count: int
     figure: ChecklistFigure | None
     secondary_count: int | None
 
@@ -120,10 +122,35 @@ class MonthChecklist:
     completed_count: int
     total_count: int
     attention_count: int
+    remarks: tuple[CloseReadinessItem, ...]
+    has_statement_positions: bool
     steps: tuple[ChecklistStep, ...]
     mandatory_expenses_total: RubleAmount
     other_expenses_total: RubleAmount
     mandatory_expense_items: tuple[ChecklistExpenseItem, ...]
+
+
+def month_remarks(readiness: CloseReadiness) -> tuple[CloseReadinessItem, ...]:
+    """One visible action per issue; original readiness evidence stays unchanged."""
+    selected = []
+    seen = set()
+    for item in sorted(readiness.items, key=lambda item: item.severity.value != "hard_blocker"):
+        if item.severity.value not in _ATTENTION_SEVERITIES:
+            continue
+        message = item.message
+        account = re.fullmatch(
+            r"(.*): .*\. Проверь подробности в разделе «Месяц → Брокерские выписки»\.", message
+        )
+        if account:
+            message = (
+                f"{account[1]}: сверка выписки с данными месяца не завершена. "
+                "Открой «Месяц → Брокерские выписки» и проверь замечания."
+            )
+        key = message.strip()
+        if key not in seen:
+            seen.add(key)
+            selected.append(replace(item, message=message))
+    return tuple(selected)
 
 
 def attention_step(item: CloseReadinessItem) -> ChecklistStepId | None:
@@ -271,6 +298,12 @@ def build_month_checklist(
         if step_id is not None:
             attention[step_id] = attention.get(step_id, 0) + 1
     figures = _figures(session, month, summary)
+    remarks = month_remarks(readiness)
+    remark_counts: dict[str, int] = {}
+    for item in remarks:
+        # A global gap still needs a home so totals equal the sum of steps.
+        destination = attention_step(item) or "close"
+        remark_counts[destination] = remark_counts.get(destination, 0) + 1
     steps: list[ChecklistStep] = []
     for step_id, group in STEP_GROUPS:
         has_facts = facts[step_id]
@@ -305,6 +338,7 @@ def build_month_checklist(
                 ),
                 state=state,
                 attention_count=count,
+                remark_count=remark_counts.get(step_id, 0),
                 # A figure of an empty section would read as a zero fact.
                 figure=figure if has_facts else None,
                 secondary_count=secondary if has_facts else None,
@@ -314,6 +348,16 @@ def build_month_checklist(
         completed_count=sum(facts.values()),
         total_count=len(facts),
         attention_count=sum(attention.values()),
+        remarks=remarks,
+        has_statement_positions=session.scalar(
+            select(PositionSnapshot.id)
+            .where(
+                PositionSnapshot.reporting_month_id == month.id,
+                PositionSnapshot.price_source == "broker_statement_native",
+            )
+            .limit(1)
+        )
+        is not None,
         steps=tuple(steps),
         mandatory_expenses_total=summary.cash_balance.breakdown.mandatory_expenses,
         other_expenses_total=summary.cash_balance.breakdown.other_expenses,

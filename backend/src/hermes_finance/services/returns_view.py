@@ -132,6 +132,13 @@ def _accounts(session, canonical=None):
 
 
 def read_context(session):
+    from hermes_finance.database import snapshot_read_result
+
+    with source_read_snapshot(session):
+        return snapshot_read_result(session, "returns_context", (), lambda: _read_context(session))
+
+
+def _read_context(session):
     with source_read_snapshot(session):
         closed = [m for m in _months(session) if m.status == "closed"]
         canonical = _source_scopes(session)
@@ -753,7 +760,17 @@ def read_clean_source_overview(session, *, scope, start, end):
     with source_read_snapshot(session):
         view = read_overview(session, scope=scope, start=start, end=end)
         if not scope.startswith("source:"):
-            return {**view, "contract_version": "returns_capital_v1"}
+            return {
+                **view,
+                "contract_version": "returns_capital_v1",
+                **(
+                    {
+                        "portfolio_return_unavailable_reason": "portfolio_monthly_return_not_supported"
+                    }
+                    if scope == "portfolio"
+                    else {}
+                ),
+            }
         resolved = _validate_scope(session, scope).removeprefix("source:")
         link = view["account_link"]
         cache = {}

@@ -5,6 +5,7 @@ import { apiRequest } from "./client";
 import type {
   CashFlowLadderEvent,
   CloseReadiness,
+  CloseReadinessItem,
   DashboardKpis,
   InstrumentClassResultPoint,
   MoneyValue,
@@ -242,6 +243,7 @@ export type MonthChecklistStep = {
   has_templates?: boolean;
   state: "done" | "attention" | "empty" | "optional";
   attention_count: number;
+  remark_count?: number;
   figure: {
     kind: "money" | "date" | "count";
     amount: MoneyValue | null;
@@ -256,6 +258,18 @@ export type MonthChecklist = {
   completed_count: number;
   total_count: number;
   attention_count: number;
+  remark_count?: number;
+  remarks?: CloseReadinessItem[];
+  has_statement_positions?: boolean;
+  securities_result?: {
+    amount: MoneyValue | null;
+    period_start: string;
+    as_of: string;
+    status: "supported" | "provisional" | "partial" | "unavailable";
+    reason_codes: string[];
+    included_count: number;
+    total_count: number;
+  };
   steps: MonthChecklistStep[];
   expenses: {
     mandatory_total: MoneyValue;
@@ -325,4 +339,11 @@ export function useMonthCloseWorkflow(
       : queryKeys.monthCloseWorkflow(monthId),
     queryFn: ({ signal }) => getMonthCloseWorkflow(monthId as number, signal, { includeChecklist }),
   });
+}
+
+export function getMonthSecuritiesResult(monthId: number, signal?: AbortSignal) {
+  return apiRequest<NonNullable<MonthChecklist["securities_result"]>>(
+    `/api/months/${monthId}/securities-result`,
+    { method: "GET", signal },
+  );
 }
