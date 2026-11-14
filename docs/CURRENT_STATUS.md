@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-13**. This is the current status; product and numerical rules
+Updated **2026-11-14**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -43,21 +43,36 @@ faster returns reads:
 - Formats, wide screens, accessibility and mobile: [#1174](https://github.com/LTstripes/hermes-finance/pull/1174), [#1182](https://github.com/LTstripes/hermes-finance/pull/1182), [#1183](https://github.com/LTstripes/hermes-finance/pull/1183).
 - Test stability: [#1180](https://github.com/LTstripes/hermes-finance/pull/1180), [#1184](https://github.com/LTstripes/hermes-finance/pull/1184); status record [#1166](https://github.com/LTstripes/hermes-finance/pull/1166).
 
-There are no new database migrations since 1.15.0. The legacy month editor
-(`/v2/data/months/:id`) stays reachable: the month panels have no equivalent of its
-confirmed re-read with form reload. Green CI and copy checks do not establish Owner UAT.
+There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
+checks do not establish Owner UAT.
+
+Merged to `main` after 1.16.0 and not yet released:
+
+- Month: [#1187](https://github.com/LTstripes/hermes-finance/pull/1187) confirms
+  rows copied into a draft month in one step, adds a confirmed re-read to the month
+  panels and redirects the legacy month editor (`/v2/data/months/:id`) to them.
+- Returns: [#1189](https://github.com/LTstripes/hermes-finance/pull/1189) third read-reuse
+  layer (instrument details about twice as fast, responses byte-identical);
+  [#1191](https://github.com/LTstripes/hermes-finance/pull/1191) annual XIRR for fully
+  redeemed bonds over the FIFO-weighted holding period, source-proof semantics v21.
+- Tests and CI: [#1188](https://github.com/LTstripes/hermes-finance/pull/1188) and
+  [#1190](https://github.com/LTstripes/hermes-finance/pull/1190).
+
+No new database migrations. The installed 1.16.0 does not contain these changes.
 
 <a id="s3"></a>
 ## 3. Next actions
 
-Local uncommitted candidate `codex/month-draft-reread-20261113` adds explicit clone-template confirmation, confirmed form reread in manual Month panels, and legacy editor redirects. It is not integrated or Owner-accepted; its checks and remaining limits are reported separately. The installed 1.16.0 limitations below remain unchanged.
-
-1. Owner UAT of installed 1.16.0 of the redesigned screens together with the pending UAT of
-   1.13.0–1.15.0.
-2. Remaining leftovers: a confirmed re-read action in the month panels before the
-   legacy editor can redirect; backend item B11 for task 26.D; the cloned draft month
-   marks income and expenses «Не заполнено» while rows exist.
-3. Apply the Owner's proportional verification rule and never infer UAT from green
+1. Owner UAT of installed 1.16.0 together with the pending UAT of 1.13.0–1.15.0;
+   the remaining acceptance scope is tracked in
+   [#711](https://github.com/LTstripes/hermes-finance/issues/711).
+2. Release 1.17.0 with #1187–#1191 on the Owner's decision.
+3. Development: realized and unrealized result per instrument; backend item B11
+   for audit task 26.D.
+4. Deferred by the Owner: annual tax and IIS reconciliation
+   ([#1130](https://github.com/LTstripes/hermes-finance/issues/1130), documents first);
+   a market-data supplement for amortizing bonds (until one is held).
+5. Apply the Owner's proportional verification rule and never infer UAT from green
    CI. No financial Apply/Close or data repair is implied by release.
 
 <a id="s4"></a>
