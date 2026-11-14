@@ -292,8 +292,13 @@ def overall(
         raise HTTPException(422, "returns_selection_invalid", headers={"Cache-Control": "no-store"})
     # An explicit visible summary table may request the existing guarded
     # instrument projection. This still defers XIRR and never reads cards.
+    from hermes_finance.services.instrument_names import with_short_names
+
     reader = read_clean_overall if basis == "clean" else read_overall
-    return reader(session, include_instrument_details=include_instrument_summaries == "true")
+    return with_short_names(
+        session,
+        reader(session, include_instrument_details=include_instrument_summaries == "true"),
+    )
 
 
 class IncomeInstrumentAccount(DTO):
