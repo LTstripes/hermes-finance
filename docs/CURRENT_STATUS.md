@@ -9,6 +9,14 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.18.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.18.0)
+  (`099e443641d350c822459c77b46f13c91072c358`, exact-main CI
+  [43635231842](https://github.com/LTstripes/hermes-finance/actions/runs/43635231842),
+  guarded publication
+  [43636335678](https://github.com/LTstripes/hermes-finance/actions/runs/43636335678),
+  [release notes](release-notes-1.18.0.md)) is installed on the Owner computer on
+  2026-11-14 by backup-first OPS02, then Prepare and Start; health reads 1.18.0 and
+  the overall annual rate reads back as provisional for the portfolio and both accounts.
 - [v1.17.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.17.1)
   (hotfix, `41260fe677518c1233972ae70ebb1abaa49e27c1`, exact-main CI
   [43620042362](https://github.com/LTstripes/hermes-finance/actions/runs/43620042362),
@@ -63,7 +71,7 @@ faster returns reads:
 There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
 checks do not establish Owner UAT.
 
-Prepared for 1.18.0 ([release notes](release-notes-1.18.0.md)):
+Shipped in 1.18.0 ([release notes](release-notes-1.18.0.md)):
 [#1205](https://github.com/LTstripes/hermes-finance/pull/1205) overall annual portfolio
 rate (B9): annual XIRR over brokerage and IIS accounts from the first operation;
 provisional between 90 and 365 capital-weighted days, hidden below 90; annual return
@@ -97,18 +105,17 @@ establish Owner UAT.
 <a id="s3"></a>
 ## 3. Next actions
 
-1. Publish 1.18.0 and install it on the Owner computer by backup-first OPS02.
-2. The Owner monitors numbers in everyday use and reports problems as new issues
+1. The Owner monitors numbers in everyday use and reports problems as new issues
    (formal UAT card #711 closed on 14.11.2026). At month close the Owner compares
    deposit balances with the bank on the snapshot date.
-3. Candidate development, Owner to choose: goals and contribution to a target
+2. Candidate development, Owner to choose: goals and contribution to a target
    ([#1129](https://github.com/LTstripes/hermes-finance/issues/1129)), actual monthly
    saving, payout reconciliation exceptions
    ([#1033](https://github.com/LTstripes/hermes-finance/issues/1033)).
-4. Deferred by the Owner: annual tax and IIS reconciliation
+3. Deferred by the Owner: annual tax and IIS reconciliation
    ([#1130](https://github.com/LTstripes/hermes-finance/issues/1130), documents first);
    a market-data supplement for amortizing bonds (until one is held).
-5. Never infer UAT from green CI. No financial Apply/Close or data repair is
+4. Never infer UAT from green CI. No financial Apply/Close or data repair is
    implied by release.
 
 <a id="s4"></a>
