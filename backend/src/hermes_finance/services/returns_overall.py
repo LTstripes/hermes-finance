@@ -732,12 +732,15 @@ def read_overall(session, *, include_instrument_details=False, native_instrument
 def read_clean_overall(session, *, include_instrument_details=False):
     """Use clean source results in the existing overview without changing legacy readers."""
     from hermes_finance.services.clean_instrument_return import read_clean_overview
+    from hermes_finance.services.position_results import aggregate_positions
 
     with source_read_snapshot(session):
         # Only account evidence and non-security components survive this overlay.
         # The independently guarded clean read below owns every instrument row.
         legacy = read_overall(session, include_instrument_details=False, native_instruments=False)
-        clean = read_clean_overview(session, include_position_rates=True)
+        clean = read_clean_overview(
+            session, include_position_rates=True, include_position_results=True
+        )
         indexed = {row["scope"]: row for row in legacy["source_accounts"]}
         instruments = {}
         conflicts = {
@@ -822,8 +825,10 @@ def read_clean_overall(session, *, include_instrument_details=False):
                         "kind": item["instrument_type"],
                         "accounts": [],
                         "reason_codes": [],
+                        "_positions": [],
                     },
                 )
+                row["_positions"].append(item)
                 row["accounts"].append(
                     {
                         "scope": scope,
@@ -849,6 +854,11 @@ def read_clean_overall(session, *, include_instrument_details=False):
                         },
                         "coupons": metric(item["coupons"]),
                         "dividends": metric(item["dividends"]),
+                        "realized_result": metric(item["realized_result"]),
+                        "unrealized_result": metric(item["unrealized_result"]),
+                        "current_value": metric(item["current_value"]),
+                        "is_open": item["is_open"],
+                        "position_reason_codes": item["position_reason_codes"],
                     }
                 )
             for component in legacy["mixed_result"]["components"]:
@@ -916,6 +926,17 @@ def read_clean_overall(session, *, include_instrument_details=False):
             income["included_accounts"] = sum(row["included"] for row in source_rows)
             income["known_total"] = _unknown("clean_account_totals_not_aggregated")
         legacy["contract_version"] = "returns_overall_v2"
+        for row in instruments.values():
+            identities = [
+                a["canonical_account_id"]
+                for a in row["accounts"]
+                if a["canonical_account_id"] is not None
+            ]
+            row["aggregate"] = aggregate_positions(
+                row.pop("_positions"),
+                identity_conflict=any(a["scope"] in conflicts for a in row["accounts"])
+                or len(identities) != len(set(identities)),
+            )
         legacy["instruments"] = [instruments[key] for key in sorted(instruments)]
         return legacy
 
@@ -1095,11 +1116,16 @@ def read_instrument_card(session, isin, *, overview=None):
 def read_clean_instrument_card(session, isin):
     """Keep original operations while using the overview's clean account periods."""
     from hermes_finance.services.clean_instrument_return import read_clean_overview
+    from hermes_finance.services.position_results import aggregate_positions
 
     with source_read_snapshot(session):
         card = read_instrument_card(session, isin)
         clean = read_clean_overview(
-            session, isin=isin, include_purchases=True, include_position_rates=True
+            session,
+            isin=isin,
+            include_purchases=True,
+            include_position_rates=True,
+            include_position_results=True,
         )
         ai_refs = {
             account["scope"]: f"source-account-{index}"
@@ -1116,6 +1142,24 @@ def read_clean_instrument_card(session, isin):
             for account in card["accounts"]
             if account.get("exclusion_reason") == "source_account_identity_mapping_conflict"
         }
+        positions = [pair[1] for pair in by_scope.values()]
+        identities = [
+            a["canonical_account_id"]
+            for a in card["accounts"]
+            if a["canonical_account_id"] is not None
+        ]
+        card["aggregate"] = (
+            aggregate_positions(
+                positions,
+                identity_conflict=bool(identity_conflicts)
+                or len(identities) != len(set(identities))
+                or any(a["scope"] not in by_scope for a in card["accounts"]),
+            )
+            if positions
+            else None
+        )
+        for item in positions:
+            item.pop("_position_inputs", None)
         for account in card["accounts"]:
             account["ai_account_ref"] = ai_refs.get(account["scope"])
             pair = by_scope.get(account["scope"])
@@ -1138,7 +1182,21 @@ def read_clean_instrument_card(session, isin):
                 except (ValueError, LookupError):
                     detail = None
                 if detail:
-                    account["detail"] = returns_view.apply_clean_detail(detail, pair[1])
+                    account["detail"] = returns_view.apply_clean_detail(
+                        detail,
+                        {
+                            key: value
+                            for key, value in pair[1].items()
+                            if key
+                            not in {
+                                "realized_result",
+                                "unrealized_result",
+                                "current_value",
+                                "is_open",
+                                "position_reason_codes",
+                            }
+                        },
+                    )
                 else:
                     account["detail"] = None
                 account.update(

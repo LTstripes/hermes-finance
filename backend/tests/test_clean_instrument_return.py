@@ -19,6 +19,182 @@ from hermes_finance.services.clean_purchase_returns import clean_purchase_price_
 START, END, DAY = date(2030, 1, 1), date(2030, 1, 31), date(2030, 1, 16)
 
 
+def position_case(analysis, kind="stock"):
+    from dataclasses import fields
+
+    from hermes_finance.services.position_results import metric_dto, position_results
+
+    inputs = {}
+    clean = project_clean_analysis(analysis, ISIN, instrument_type=kind, rate_inputs=inputs)
+    item = {field.name: metric_dto(getattr(clean, field.name)) for field in fields(clean)}
+    item.update(position_results(analysis, clean, ISIN, kind))
+    item.update(closing_date=analysis.closing_date, _position_inputs=inputs)
+    return item
+
+
+@pytest.mark.parametrize(
+    "remaining, valuation, realized, unrealized",
+    [
+        ("2", 80000, 10000, 20000),
+        ("0", 0, 20000, 0),
+        ("2", None, 10000, None),
+    ],
+)
+def test_position_split_partial_full_and_missing_valuation(
+    remaining, valuation, realized, unrealized
+):
+    first = date(2028, 1, 2)
+    sold = 4 - int(remaining)
+    analysis = holding_analysis(
+        [
+            buy("lot", 120000, "4", first),
+            replace(
+                buy("sale", sold * 35000, str(-sold), first + timedelta(days=400)), kind="SELL"
+            ),
+        ],
+        quantity=remaining,
+        closing=valuation,
+    )
+    item = position_case(analysis)
+    assert item["realized_result"]["value"] == str(realized)
+    assert item["unrealized_result"]["value"] == (
+        str(unrealized) if unrealized is not None else None
+    )
+    assert item["is_open"] is (remaining != "0")
+    if unrealized is not None:
+        assert int(item["pnl"]["value"]) == realized + unrealized
+    else:
+        assert item["pnl"]["value"] is None
+        assert "clean_valuation_incomplete" in item["unrealized_result"]["reason_codes"]
+
+
+def test_position_split_redemption_includes_coupons_and_nkd():
+    item = position_case(redeemed_analysis(), "bond")
+    assert item["realized_result"]["value"] == item["pnl"]["value"] == "13000"
+    assert item["unrealized_result"]["value"] == "0"
+    assert item["current_value"]["value"] == "0"
+    assert item["is_open"] is False
+
+
+def test_position_split_rounding_conserves_purchase_kopeck():
+    first = date(2028, 1, 2)
+    item = position_case(
+        holding_analysis(
+            [
+                buy("lot", 101, "2", first),
+                replace(buy("sale", 60, "-1", first + timedelta(days=400)), kind="SELL"),
+            ],
+            quantity="1",
+            closing=60,
+        )
+    )
+    assert item["realized_result"]["value"] == "10"
+    assert item["unrealized_result"]["value"] == "9"
+    assert item["pnl"]["value"] == "19"
+
+
+def test_position_split_unproved_amortization_is_not_zero():
+    analysis = redeemed_analysis()
+    analysis.events = (
+        analysis.events[0],
+        replace(
+            analysis.events[1],
+            counted=False,
+            quantity_delta=None,
+            attribution_basis=None,
+            reason_codes=("redemption_amortization_unsupported",),
+        ),
+        analysis.events[2],
+    )
+    analysis.coverage["quantity"] = Coverage(False, ("redemption_amortization_unsupported",))
+    item = position_case(analysis, "bond")
+    assert item["realized_result"]["value"] is None
+    assert "redemption_incomplete" in item["realized_result"]["reason_codes"]
+    assert item["unrealized_result"]["value"] == "0"
+
+
+@pytest.mark.parametrize("days", [364, 365, 730])
+def test_instrument_aggregate_solves_combined_cash_flows(days):
+    from hermes_finance.services.position_results import aggregate_positions
+
+    first = date(2028, 1, 2)
+    items = [
+        position_case(holding_analysis([buy("lot", amount, "1", first)], days=days, closing=value))
+        for amount, value in [(100000, 120000), (300000, 330000)]
+    ]
+    total = aggregate_positions(items)
+    assert total["pnl"]["value"] == "50000"
+    assert total["simple_return"]["value"] == "0.125"
+    assert total["realized_result"]["value"] == "0"
+    assert total["unrealized_result"]["value"] == "50000"
+    if days < 365:
+        assert total["xirr"]["value"] is None
+        assert "short_holding" in total["xirr"]["reason_codes"]
+    else:
+        with localcontext() as ctx:
+            ctx.prec = 60
+            value = Decimal(total["xirr"]["value"])
+            assert abs(Decimal(450000) / (1 + value) ** (Decimal(days) / 365) - 400000) < Decimal(
+                "1e-20"
+            )
+
+
+def test_instrument_aggregate_missing_valuation_preserves_realized_only():
+    from hermes_finance.services.position_results import aggregate_positions
+
+    first = date(2028, 1, 2)
+    items = [
+        position_case(holding_analysis([buy("lot", 100000, "1", first)], closing=value))
+        for value in (120000, None)
+    ]
+    total = aggregate_positions(items)
+    for field in ("pnl", "unrealized_result", "current_value", "simple_return", "xirr"):
+        assert total[field]["value"] is None
+        assert total[field]["reason_codes"]
+    assert total["realized_result"]["value"] == "0"
+    assert aggregate_positions(items, identity_conflict=True)["realized_result"]["value"] is None
+
+
+@pytest.mark.parametrize("late_cost, eligible", [(100000, True), (900000, False)])
+def test_instrument_aggregate_uses_unrounded_capital_weights_and_different_account_dates(
+    late_cost, eligible
+):
+    from hermes_finance.services.position_results import aggregate_positions
+
+    first = date(2028, 1, 2)
+    early = position_case(holding_analysis([buy("early", 100000, "1", first)], days=730))
+    # Make the second account only 100 days old, while retaining different EODs.
+    late = position_case(
+        holding_analysis(
+            [buy("late", late_cost, "1", first + timedelta(days=700))],
+            days=800,
+            closing=late_cost + 1000,
+        )
+    )
+    assert late["xirr"]["reason_codes"] == ("short_holding",)
+    total = aggregate_positions([early, late])
+    assert (total["xirr"]["value"] is not None) is eligible
+    assert total["xirr"]["weighted_holding_days"] == ("415.00" if eligible else "163.00")
+    if eligible:
+        with localcontext() as context:
+            context.prec = 60
+            rate = Decimal(total["xirr"]["value"])
+            npv = -Decimal(100000) - Decimal(late_cost) / (1 + rate) ** (Decimal(700) / 365)
+            npv += Decimal(120000) / (1 + rate) ** 2
+            npv += Decimal(late_cost + 1000) / (1 + rate) ** (Decimal(800) / 365)
+            assert abs(npv) < Decimal("1e-20")
+
+
+def test_position_unrealized_survives_missing_payout_coverage():
+    first = date(2028, 1, 2)
+    analysis = holding_analysis([buy("lot", 100000, "1", first)])
+    analysis.coverage["payouts"] = Coverage(False, ("paid_income_incomplete",))
+    item = position_case(analysis)
+    assert item["pnl"]["value"] is None
+    assert item["realized_result"]["value"] is None
+    assert item["unrealized_result"]["value"] == "20000"
+
+
 def trade(kind, amount, nkd, *, basis="includes_paid_nkd"):
     return InstrumentEvent(
         event_key=kind,
