@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from hermes_finance.api.read_cache import cached_read_endpoint
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import InstrumentType, PriceSource, RubleAmount
 from hermes_finance.services.month_position_returns import month_position_returns
@@ -160,6 +161,7 @@ def list_positions_endpoint(
 
 
 @router.get("/all-time-results", response_model=dict[int, PositionAllTimeResult])
+@cached_read_endpoint
 def position_all_time_results(
     month_id: int = Query(...),
     account_id: int | None = Query(default=None),

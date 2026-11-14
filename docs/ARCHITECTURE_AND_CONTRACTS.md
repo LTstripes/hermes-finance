@@ -15233,3 +15233,32 @@ workflow skips the bridge because it never serializes or displays it.
 Summary and dashboard also accept `include_capital_change=false`, preserving all
 other response fields and using distinct frontend cache keys. The default remains
 true. Capital loads the compact comparison first and its explanation separately.
+
+### Returns and Month projection reuse
+
+Selected pure GET projections (Returns, month summary/dashboard, securities
+explanation and position results) may reuse a bounded process-memory result.
+Every request first pins a new coherent SQLite read transaction. Its key hashes
+the complete serialized database snapshot, including WAL-visible committed
+pages, and binds the physical file incarnation, running code/semantics version,
+legacy proof implementation bytes, local/Moscow date, source form epoch, display
+configuration and the configured valuation file's path, identity, metadata and
+SHA-256. This does not use `PRAGMA data_version` as a revision. ORM, bulk/direct
+SQL, inserts, updates and deletes are covered without writer-hook assumptions.
+Unverifiable external inputs or databases above 128 MiB bypass reuse. The cache
+holds at most 128 entries / 32 MiB of serialized results, returns independent
+values, stores no exceptions and disappears on process restart. Existing raw
+source/evidence memoization spans the selected GET's coherent snapshot, sharing
+verification across its nested readers, and is discarded when that GET exits.
+Close/readiness, backup state, command/form responses and generation timestamps
+are not cached by this mechanism. Workflow, readiness and broker-source GETs
+share source evidence only within their current read snapshot; backup and Close
+state are reread on every request. Writers retain their own validation.
+
+`GET /api/returns/home-summary` returns the existing Home known subtotal,
+positive/negative/zero/unknown counts and at most three leaders on each side.
+It uses the same clean amounts, account conflict and equal-period rules, but
+does not request position percentages, FIFO decomposition or purchase details.
+Unequal periods suppress ranking; partial and unknown results do not become
+complete results. Existing GET response contracts remain unchanged. Frontend
+write invalidation covers the summary and cancels inactive neighbour prefetches.

@@ -1541,3 +1541,79 @@ def test_snapshot_check_source_unchanged_and_comparison(db, tmp_path, monkeypatc
     assert len(list((tmp_path / "second").glob("*.sqlite"))) == 1
     assert checker.differences(result, result) == []
     assert "True -> False" in checker.differences(result, previous)[0]
+
+
+def test_home_summary_matches_full_projection_without_rates_or_position_decomposition(
+    db, monkeypatch
+):
+    from test_returns_view_service import basket_source
+
+    from hermes_finance.services import position_results
+    from hermes_finance.services.returns_home import read_home_summary, summarize_home
+
+    basket_source(db)
+    component_rows(db)
+    with db.session_factory() as session:
+        full = overall.read_clean_overall(session, include_instrument_details=True)
+    expected = summarize_home(full)
+
+    def unnecessary(*args, **kwargs):
+        raise AssertionError("Home must not build position decomposition or aggregate rates")
+
+    monkeypatch.setattr(position_results, "position_results", unnecessary)
+    monkeypatch.setattr(position_results, "aggregate_positions", unnecessary)
+    with db.session_factory() as session:
+        assert read_home_summary(session) == expected
+
+
+def test_home_summary_counts_unknown_zero_and_ranks_only_common_periods():
+    from hermes_finance.services.returns_home import summarize_home
+
+    def metric(value, reasons=()):
+        return {
+            "value": value,
+            "reason_codes": list(reasons),
+            "estimate": False,
+            "unit": "kopecks",
+            "method": "clean_instrument_return_v1",
+        }
+
+    data = {"mixed_result": {"components": []}, "instruments": []}
+    values = ["9007199254740993", "20", "15", "10", "-1", "-2", "-3", "-4", "0", None, "99"]
+    for i, value in enumerate(values):
+        data["instruments"].append(
+            {
+                "isin": str(i),
+                "name": "Synthetic instrument",
+                "accounts": [
+                    {
+                        "scope": "source:SYNTH",
+                        "label": "Synthetic",
+                        "account_link": None,
+                        "native_period": True,
+                        "details_loaded": True,
+                        "period": {"start": START, "end": END},
+                        "pnl": metric(value, ["clean_partial_result"] if i == 10 else []),
+                    }
+                ],
+            }
+        )
+    result = summarize_home(data)
+    assert (result["positive"], result["negative"], result["unknown"], result["unchanged"]) == (
+        4,
+        4,
+        2,
+        1,
+    )
+    assert [row["pnl"]["value"] for row in result["ranked"]] == [
+        "9007199254740993",
+        "20",
+        "15",
+        "-4",
+        "-3",
+        "-2",
+    ]
+    assert result["result"]["amount"]["value"] is None
+    data["instruments"][0]["accounts"][0]["period"] = {"start": END, "end": date(2030, 5, 31)}
+    result = summarize_home(data)
+    assert result["mixed_periods"] and result["ranked"] == []

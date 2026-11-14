@@ -17,7 +17,7 @@ import {
 import { UiV2ErrorBoundary, UiV2LoadingFallback } from "./UiV2Entry";
 import UiV2Page from "./UiV2Page";
 import { shortWholeRub } from "./UiV2HomeCharts";
-import { overallFixture } from "./returns/overallFixtures";
+import { homeSummaryFixture, overallFixture } from "./returns/overallFixtures";
 import { m } from "./returns/fixtures";
 import { brokerageResult } from "./returns/dashboard";
 import { displayWhole } from "./returns/model";
@@ -60,10 +60,10 @@ function setup(path = "/v2") {
       if (url.pathname === "/api/months") {
         data = state.months;
         failed = state.monthsError;
-      } else if (url.pathname === "/api/returns/overall") {
-        expect(url.searchParams.get("include_instrument_summaries")).toBe("true");
+      } else if (url.pathname === "/api/returns/home-summary") {
+        expect(url.search).toBe("");
         await state.returnsWait;
-        data = state.overall;
+        data = homeSummaryFixture(state.overall);
         failed = state.returnsError;
       } else if (url.pathname === "/api/accounts") {
         data = uiV2Accounts;
@@ -135,10 +135,12 @@ it("defers Returns until main widgets settle and keeps capital visible during th
   });
   mount();
   await screen.findByTestId("v2-passive-actual");
-  expect(reads.some((read) => read.includes("/returns/overall"))).toBe(false);
+  expect(reads.some((read) => read.includes("/returns/home-summary"))).toBe(false);
   await act(async () => finishMain());
   expect(await screen.findByTestId("v2-capital")).toBeVisible();
-  await waitFor(() => expect(reads.some((read) => read.includes("/returns/overall"))).toBe(true));
+  await waitFor(() =>
+    expect(reads.some((read) => read.includes("/returns/home-summary"))).toBe(true),
+  );
   expect(screen.getByText("Загружаем доходность бумаг")).toBeInTheDocument();
   await act(async () => finishReturns());
   expect(await screen.findByTestId("v2-home-returns-total")).toHaveTextContent(
@@ -147,7 +149,7 @@ it("defers Returns until main widgets settle and keeps capital visible during th
   expect(reads.some((read) => /forecast|payout-calendar/.test(read))).toBe(false);
 });
 
-it("ranks three results on each side by instrument, preserves zero/unknown/partial and shares the Returns cache", async () => {
+it("ranks three results on each side by instrument, preserves zero/unknown/partial and reuses the Home summary cache", async () => {
   const { mount, client, state, reads } = setup();
   const template = state.overall.instruments[1];
   state.overall.instruments = [
@@ -183,7 +185,7 @@ it("ranks three results on each side by instrument, preserves zero/unknown/parti
   }));
   state.overall.source_accounts[0].account_link =
     state.overall.instruments[0].accounts[0].account_link;
-  client.setQueryData(["returns", "overall", "summaries"], state.overall);
+  client.setQueryData(["returns", "home-summary"], homeSummaryFixture(state.overall));
   mount();
   const panel = await screen.findByRole("region", { name: "Доходность бумаг" });
   expect(
@@ -203,7 +205,7 @@ it("ranks three results on each side by instrument, preserves zero/unknown/parti
     "href",
     "/v2/returns",
   );
-  expect(reads.some((read) => read.includes("/returns/overall"))).toBe(false);
+  expect(reads.some((read) => read.includes("/returns/home-summary"))).toBe(false);
 });
 
 it("keeps Returns failure local, retries and hides cached success after invalidation or failure", async () => {
@@ -219,7 +221,7 @@ it("keeps Returns failure local, retries and hides cached success after invalida
   await screen.findByTestId("v2-home-returns-total");
   state.returnsWait = new Promise<void>(() => {});
   act(() => {
-    void client.invalidateQueries({ queryKey: ["returns", "overall"] });
+    void client.invalidateQueries({ queryKey: ["returns", "home-summary"] });
   });
   await waitFor(() => expect(screen.queryByTestId("v2-home-returns-total")).toBeNull());
   expect(screen.getByTestId("v2-capital")).toBeVisible();

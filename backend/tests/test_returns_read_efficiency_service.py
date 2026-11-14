@@ -2099,3 +2099,244 @@ def test_inventory_projection_still_checks_each_fingerprint(db, monkeypatch):
         monkeypatch.setattr(source_intake, "digest", corrupted)
         with pytest.raises(MyBrokerError, match="source_intake_inventory_invalid"):
             source_intake.read_intake(session, intake_id)
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "append-source",
+        "UPDATE position_snapshots SET quantity = quantity + 1",
+        "UPDATE reporting_months SET status = 'draft'",
+        "UPDATE accounts SET name = 'Changed synthetic account'",
+        "UPDATE accounts SET include_in_capital = 0",
+        "UPDATE accounts SET include_in_returns = 0",
+        "UPDATE position_snapshots SET market_value_kopecks = market_value_kopecks + 1",
+        "UPDATE position_snapshots SET cost_basis_kopecks = cost_basis_kopecks + 1",
+        "UPDATE deposit_snapshots SET actual_interest_received_kopecks = 17",
+        "DELETE FROM deposit_snapshots",
+    ],
+)
+def test_content_cache_sees_committed_sql_writes_in_every_input_family(db, statement):
+    # Direct SQL deliberately bypasses ORM hooks: the cache proves all committed
+    # pages, including source facts, gold/position valuation and inclusion flags.
+    from test_returns_overall_service import component_rows
+
+    from hermes_finance.api.read_cache import cached_read_endpoint
+    from hermes_finance.persistence import Base
+
+    component_rows(db)
+    basket_source(db)
+    calls = []
+
+    @cached_read_endpoint
+    def read_all(session):
+        calls.append(1)
+        return {
+            table.name: [
+                tuple(row)
+                for row in session.connection().exec_driver_sql(
+                    f'SELECT * FROM "{table.name}" ORDER BY rowid'
+                )
+            ]
+            for table in Base.metadata.sorted_tables
+        }
+
+    with db.session_factory() as session:
+        before = read_all(session)
+        assert read_all(session) == before
+        assert len(calls) == 1
+    if statement == "append-source":
+        basket_source(db, marker="new-source")
+    else:
+        with db.engine.begin() as connection:
+            assert connection.exec_driver_sql(statement).rowcount > 0
+    with db.session_factory() as session:
+        after = read_all(session)
+        assert after != before
+        assert len(calls) == 2
+        assert read_all(session) == after
+        assert len(calls) == 2
+        after.clear()
+        assert read_all(session)
+
+
+def test_content_cache_wal_commit_rollback_and_external_file(db, tmp_path):
+    from hermes_finance.api.read_cache import cached_read_endpoint
+    from hermes_finance.database import ReadSnapshotMutationError
+    from hermes_finance.persistence import Account
+
+    with db.engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+    with db.session_factory() as writer:
+        writer.add(Account(name="Synthetic", account_type="other"))
+        writer.commit()
+    valuation = tmp_path / "valuation.json"
+    valuation.write_text("one")
+    calls = []
+
+    @cached_read_endpoint
+    def read_account(session):
+        calls.append(1)
+        return session.scalar(select(Account.name)), valuation.read_text()
+
+    with db.session_factory() as session:
+        session.info["reviewed_bond_valuation_path"] = valuation
+        assert read_account(session) == ("Synthetic", "one")
+        assert read_account(session) == ("Synthetic", "one")
+        assert len(calls) == 1
+        with db.session_factory() as writer:
+            writer.get(Account, 1).name = "Rolled back"
+            writer.flush()
+            writer.rollback()
+        assert read_account(session) == ("Synthetic", "one")
+        with db.session_factory() as writer:
+            writer.get(Account, 1).name = "Committed"
+            writer.commit()
+        assert read_account(session) == ("Committed", "one")
+        # Same length/mtime is insufficient; the content hash must change.
+        import os
+
+        previous = valuation.stat()
+        valuation.write_text("two")
+        os.utime(valuation, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+        assert read_account(session) == ("Committed", "two")
+        valuation.unlink()
+        with pytest.raises(FileNotFoundError):
+            read_account(session)
+        session.add(Account(name="Pending", account_type="other"))
+        with pytest.raises(ReadSnapshotMutationError):
+            read_account(session)
+
+
+def test_content_cache_is_bounded_and_never_caches_errors(db, monkeypatch):
+    from hermes_finance.api import read_cache
+
+    monkeypatch.setattr(read_cache, "MAX_ENTRIES", 2)
+    monkeypatch.setattr(read_cache, "_entries", __import__("collections").OrderedDict())
+    monkeypatch.setattr(read_cache, "_size", 0)
+    calls = []
+
+    @read_cache.cached_read_endpoint
+    def read_value(session, number):
+        calls.append(number)
+        if number < 0:
+            raise ValueError("unavailable")
+        return {"value": number, "unknown": None, "zero": 0}
+
+    with db.session_factory() as session:
+        for number in (1, 2, 3):
+            assert read_value(session, number)["value"] == number
+        assert len(read_cache._entries) == 2
+        assert read_cache._size <= read_cache.MAX_CACHE_BYTES
+        read_value(session, 1)
+        assert calls == [1, 2, 3, 1]
+        for _ in range(2):
+            with pytest.raises(ValueError, match="unavailable"):
+                read_value(session, -1)
+        assert calls[-2:] == [-1, -1]
+
+
+def test_content_cache_pins_wal_snapshot_during_concurrent_commit(db):
+    from hermes_finance.api.read_cache import cached_read_endpoint
+    from hermes_finance.persistence import Account
+
+    with db.engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+    with db.session_factory() as writer:
+        writer.add(Account(name="Before", account_type="other"))
+        writer.commit()
+    calls = []
+
+    @cached_read_endpoint
+    def read_account(session):
+        calls.append(1)
+        before = session.scalar(select(Account.name))
+        if len(calls) == 1:
+            with db.engine.begin() as writer:
+                writer.exec_driver_sql("UPDATE accounts SET name = 'After'")
+        return before, session.scalar(select(Account.name))
+
+    with db.session_factory() as session:
+        assert read_account(session) == ("Before", "Before")
+        assert read_account(session) == ("After", "After")
+        assert read_account(session) == ("After", "After")
+        assert len(calls) == 2
+
+
+def test_content_cache_replaced_identical_database_cannot_reuse_old_entry(db, tmp_path):
+    import os
+    import shutil
+
+    from hermes_finance.api.read_cache import cached_read_endpoint
+
+    calls = []
+
+    @cached_read_endpoint
+    def read_value(session):
+        calls.append(1)
+        return session.connection().exec_driver_sql("SELECT count(*) FROM accounts").scalar()
+
+    with db.session_factory() as session:
+        assert read_value(session) == 0
+        assert read_value(session) == 0
+    db.engine.dispose()
+    replacement = tmp_path / "replacement.db"
+    shutil.copyfile(db.database_path, replacement)
+    os.replace(replacement, db.database_path)
+    with db.session_factory() as session:
+        assert read_value(session) == 0
+        assert len(calls) == 2
+
+
+def test_content_cache_never_publishes_a_read_rejected_by_snapshot_cleanup(db):
+    from hermes_finance.api.read_cache import cached_read_endpoint
+    from hermes_finance.database import ReadSnapshotMutationError
+    from hermes_finance.persistence import Account
+
+    calls = []
+
+    @cached_read_endpoint
+    def read_value(session):
+        calls.append(1)
+        if len(calls) == 1:
+            session.add(Account(name="Rejected write", account_type="other"))
+            return "must not be cached"
+        return "fresh read"
+
+    with db.session_factory() as session:
+        with pytest.raises(ReadSnapshotMutationError):
+            read_value(session)
+        assert read_value(session) == "fresh read"
+        assert read_value(session) == "fresh read"
+        assert len(calls) == 2
+
+
+def test_endpoint_scope_verifies_sources_once_across_separate_nested_readers(db, monkeypatch):
+    from hermes_finance.api.read_cache import cached_read_endpoint
+
+    basket_source(db)
+    original = source_intake.read_intake
+    calls = []
+
+    def verified(session, original_id):
+        calls.append(original_id)
+        return original(session, original_id)
+
+    monkeypatch.setattr(source_intake, "read_intake", verified)
+
+    @cached_read_endpoint
+    def composed(session, selection):
+        with source_read_snapshot(session):
+            first = returns_view._source_scopes(session)
+        with source_read_snapshot(session):
+            second = returns_view._source_scopes(session)
+        assert first == second
+        return first
+
+    with db.session_factory() as session:
+        first = composed(session, 1)
+        assert calls and all(count == 1 for count in Counter(calls).values())
+        assert "returns_source_scope_reads" not in session.info
+        calls.clear()
+        assert composed(session, 2) == first
+        assert calls and all(count == 1 for count in Counter(calls).values())

@@ -672,6 +672,12 @@ def test_optional_capital_explanation_failure_preserves_month_reads(
         raise error_type("SYNTHETIC_SOURCE_DETAIL_NOT_FOR_LOGS")
 
     monkeypatch.setattr(capital_change_service, "_investment_result", broken_source_result)
+    # Replacing running code models a fresh process, whose projection cache is
+    # empty. Keep the same database so fallback recovery cannot rely on a write.
+    from hermes_finance.api import read_cache
+
+    read_cache._entries.clear()
+    read_cache._size = 0
     after = client.get(path)
     assert after.status_code == 200, after.text
     expected, actual = before.json(), after.json()
@@ -689,6 +695,9 @@ def test_optional_capital_explanation_failure_preserves_month_reads(
         assert actual == expected
         assert explanation_calls
         assert "Capital-change explanation unavailable" in caplog.text
+        calls_before_retry = len(explanation_calls)
+        assert client.get(path).json() == actual
+        assert len(explanation_calls) > calls_before_retry
     assert "SYNTHETIC_SOURCE_DETAIL_NOT_FOR_LOGS" not in caplog.text
 
     # Recovery uses fresh reads; the failure does not poison the Session/cache.

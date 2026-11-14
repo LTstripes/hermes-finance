@@ -1,3 +1,5 @@
+import { brokerageResult, instrumentSummary } from "./dashboard";
+import { compareDecimal, isPartialResult } from "./model";
 /** Fabricated overall DTOs only; no runtime account data. */
 
 import type { Income, IncomeKind, InstrumentCard } from "./cards";
@@ -325,5 +327,42 @@ export function incomeFixture(kind: IncomeKind = "coupon"): Income {
       },
     ],
     reason_codes: [],
+  };
+}
+
+/** Reference projection from the previous Home; synthetic fixtures only. */
+export function homeSummaryFixture(data = overallFixture()): import("./homeSummary").HomeSummary {
+  const rows = data.instruments.map((row) => instrumentSummary(data, row, "all"));
+  const known = rows.filter((row) => row.pnl.value !== null && !isPartialResult(row.pnl));
+  const positive = known.filter((row) => compareDecimal(row.pnl.value ?? "0", "0") > 0);
+  const negative = known.filter((row) => compareDecimal(row.pnl.value ?? "0", "0") < 0);
+  const periods = new Set(
+    rows
+      .filter((row) => row.pnl.value !== null)
+      .flatMap((row) =>
+        row.accounts
+          .filter((a) => a.resultAvailable && a.period)
+          .map((a) => `${a.period?.start}/${a.period?.end}`),
+      ),
+  );
+  return {
+    contract_version: "returns_home_summary_v1",
+    result: brokerageResult(data, "all"),
+    positive: positive.length,
+    negative: negative.length,
+    unknown: rows.length - known.length,
+    unchanged: known.length - positive.length - negative.length,
+    mixed_periods: periods.size > 1,
+    ranked:
+      periods.size === 1
+        ? [
+            ...positive
+              .sort((a, b) => compareDecimal(b.pnl.value ?? "0", a.pnl.value ?? "0"))
+              .slice(0, 3),
+            ...negative
+              .sort((a, b) => compareDecimal(a.pnl.value ?? "0", b.pnl.value ?? "0"))
+              .slice(0, 3),
+          ]
+        : [],
   };
 }

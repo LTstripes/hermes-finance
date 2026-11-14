@@ -9,6 +9,7 @@ from hermes_finance.api.mybroker_import import _bytes
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.api.uploads import BoundedUploadRoute
 from hermes_finance.services import broker_sources, source_intake_pdf
+from hermes_finance.services.source_monthly_returns import source_read_snapshot
 from hermes_finance.statement_import.mybroker import MyBrokerError, digest
 
 router = APIRouter(route_class=BoundedUploadRoute, prefix="/api/months", tags=["broker-sources"])
@@ -17,7 +18,8 @@ router = APIRouter(route_class=BoundedUploadRoute, prefix="/api/months", tags=["
 @router.get("/{month_id}/broker-sources")
 def read(month_id: int, session: Session = Depends(session_for_request)):
     try:
-        return broker_sources.read_sources(session, month_id)
+        with source_read_snapshot(session):
+            return broker_sources.read_sources(session, month_id)
     except MyBrokerError as error:
         raise HTTPException(409, str(error)) from None
 

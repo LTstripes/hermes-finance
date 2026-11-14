@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, field_serializer
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.clean_return_types import CleanInstrument
+from hermes_finance.api.read_cache import cached_read_endpoint
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.domain.instrument_return import InstrumentAnalysis
 from hermes_finance.services import returns_basket, returns_view
@@ -241,12 +242,14 @@ def read(reader, session, **kwargs):
 
 
 @router.get("/context", response_model=Context)
+@cached_read_endpoint
 def context(response: Response, session: Session = Depends(session_for_request)):
     no_store(response)
     return returns_view.read_context(session)
 
 
 @router.get("/overview", response_model=Overview, response_model_exclude_unset=True)
+@cached_read_endpoint
 def overview(
     basis: Literal["clean", "legacy"] = "clean",
     selected: dict = Depends(selection),
@@ -259,6 +262,7 @@ def overview(
 
 
 @router.get("/instrument", response_model=Detail, response_model_exclude_unset=True)
+@cached_read_endpoint
 def instrument(
     isin: Annotated[str, Query(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")],
     basis: Literal["clean", "legacy"] = "clean",
@@ -310,6 +314,7 @@ class Basket(DTO):
 
 
 @router.get("/basket", response_model=Basket)
+@cached_read_endpoint
 def basket(
     request: Request,
     response: Response,
