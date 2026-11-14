@@ -310,7 +310,7 @@ describe("StatementImportPanel explicit row decisions", () => {
 
     expect(
       await screen.findByText(
-        "Hermes не смог распознать структуру отчёта Alfa. Данные не были импортированы.",
+        "Приложение не смогло распознать структуру отчёта Alfa. Данные не были импортированы.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("missing_required_schema")).toBeNull();
@@ -429,10 +429,12 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(await screen.findByText("Требуется сопоставление")).toBeInTheDocument();
     expect(
       screen.getByText(
-        /выбери существующий инструмент Hermes в списке «Выбрать инструмент Hermes…»/i,
+        /выбери существующий инструмент в приложении в списке «Выбрать инструмент в приложении…»/i,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Выбрать инструмент Hermes…" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Выбрать инструмент в приложении…" }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/требуется сопоставить — 1/)).toBeInTheDocument();
 
     const mappingSelect = screen.getByLabelText("Инструмент для RU000NEW01");
@@ -444,7 +446,7 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(screen.getByText("сопоставлено вручную")).toBeInTheDocument();
   });
 
-  it("saves a blank Hermes ISIN only through the explicit action", async () => {
+  it("saves a blank local ISIN only through the explicit action", async () => {
     const blank = { ...instrument, id: 11, name: "Без ISIN", isin: null };
     vi.mocked(updateInstrument).mockResolvedValue({ ...blank, isin: "RU000SYNTH01" });
     const user = userEvent.setup();
@@ -462,7 +464,7 @@ describe("StatementImportPanel explicit row decisions", () => {
     expect(screen.getByText("ISIN уже сохранён в инструменте")).toBeInTheDocument();
   });
 
-  it("does not overwrite a conflicting Hermes ISIN", async () => {
+  it("does not overwrite a conflicting local ISIN", async () => {
     const conflicted = { ...instrument, id: 12, name: "Чужой ISIN", isin: "RU000OTHER01" };
     const user = userEvent.setup();
     render(<StatementImportPanel accounts={[account]} instruments={[conflicted]} />);

@@ -1,6 +1,6 @@
-# Hermes Finance 1.5.0
+# Finance 1.5.0
 
-Hermes Finance **1.5.0** packages the accepted #957/#958/#959 source-return
+Finance **1.5.0** packages the accepted #957/#958/#959 source-return
 improvements and schema **0065**. It preserves the existing financial history,
 source-intake journal and explicit financial acceptance boundaries.
 

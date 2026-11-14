@@ -86,7 +86,7 @@ function reportMessage(status: string, reason: string | null): string | null {
     return "Этот тип отчёта пока не поддерживается. Выберите «Отчет о произведенных выплатах доходов по ценным бумагам».";
   }
   if (reason === "missing_required_schema") {
-    return "Hermes не смог распознать структуру отчёта Alfa. Данные не были импортированы.";
+    return "Приложение не смогло распознать структуру отчёта Alfa. Данные не были импортированы.";
   }
   if (status === "malformed") {
     return "Файл отчёта Alfa не удалось безопасно прочитать. Данные не были импортированы.";
@@ -461,7 +461,7 @@ export function StatementImportPanel({
       return;
     }
     if (!mappingReady) {
-      setMessage("Сопоставь каждый найденный Alfa-счёт с существующим Hermes-счётом.");
+      setMessage("Сопоставь каждый найденный Alfa-счёт с существующим счётом в приложении.");
       return;
     }
     clearReview();
@@ -709,7 +709,7 @@ export function StatementImportPanel({
   return (
     <Panel className="statement-import" label="Alfa PDF" title="Импорт отчёта Alfa">
       <p className="muted">
-        PDF читается только в памяти. При применении Hermes повторно проверит тот же файл и
+        PDF читается только в памяти. При применении приложение повторно проверит тот же файл и
         убедится, что он не изменился.
       </p>
       {readOnly ? (
@@ -801,9 +801,9 @@ export function StatementImportPanel({
                 className="inline-alert inline-alert--warn statement-import__mapping-help"
                 role="note"
               >
-                Для ISIN со статусом «Требуется сопоставление» выбери существующий инструмент Hermes
-                в списке «Выбрать инструмент Hermes…» ниже. Это временное сопоставление только для
-                этой проверки; новый инструмент автоматически не создаётся.
+                Для ISIN со статусом «Требуется сопоставление» выбери существующий инструмент в
+                приложении в списке «Выбрать инструмент в приложении…» ниже. Это временное
+                сопоставление только для этой проверки; новый инструмент автоматически не создаётся.
               </div>
             ) : null}
             <div className="statement-import__mapping-grid">
@@ -879,7 +879,9 @@ export function StatementImportPanel({
                           }}
                         >
                           <option value="">
-                            {auto ? `Автоматически: ${auto.name}` : "Выбрать инструмент Hermes…"}
+                            {auto
+                              ? `Автоматически: ${auto.name}`
+                              : "Выбрать инструмент в приложении…"}
                           </option>
                           {localInstruments.map((instrument) => (
                             <option key={instrument.id} value={instrument.id}>

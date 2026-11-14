@@ -1,4 +1,4 @@
-# Hermes Finance 1.9.1
+# Finance 1.9.1
 
 Browser tabs and bookmarks use the approved mint Finance icon with three
 ascending dark-green bars. Local PNG 16/32 and ICO 16/32/48 assets preserve the

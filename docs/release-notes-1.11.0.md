@@ -1,4 +1,4 @@
-# Hermes Finance 1.11.0
+# Finance 1.11.0
 
 ## Доходность бумаг
 

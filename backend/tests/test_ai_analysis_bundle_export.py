@@ -1380,7 +1380,7 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
         "hermes-ai-analysis-bundle-2026-04-30-v1.4.0.md" in response.headers["content-disposition"]
     )
     body = response.content.decode("utf-8")
-    assert body.startswith("# Hermes Finance AI Analysis Bundle 1.4.0")
+    assert body.startswith("# Finance AI Analysis Bundle 1.4.0")
     assert "generation_mode: read_only" in body
     assert "Canonical machine-readable artifact" in body
     assert _table_counts(database) == before

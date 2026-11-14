@@ -1,4 +1,4 @@
-# Hermes Finance 1.10.2
+# Finance 1.10.2
 
 ## Скорость чтения
 

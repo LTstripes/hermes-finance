@@ -5,6 +5,7 @@ from hermes_finance.main import app
 
 
 def test_health_returns_status_and_version() -> None:
+    assert app.title == "Finance API"
     with TestClient(app) as client:
         response = client.get("/api/health")
 

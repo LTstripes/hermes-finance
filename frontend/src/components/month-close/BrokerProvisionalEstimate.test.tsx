@@ -354,7 +354,7 @@ it("renders a typed blocked unbound context without a false mismatch", async () 
   ).toBeDisabled();
 });
 
-it("calculates the source-native scope without any Hermes account binding", async () => {
+it("calculates the source-native scope without any local account binding", async () => {
   const unboundIntake: SourceIntake = {
     ...structuredClone(intake),
     state: { ...intake.state, account_id: null },

@@ -271,7 +271,7 @@ External projects supply concepts, interface observations and independently
 authored synthetic cases only. Copying code, even MIT code, needs a later
 exact-file/SHA/license and notice review. Package/root licenses do not
 automatically cover documentation, bundled assets or dependencies. Public issue
-reports and project marketing are not proof of a Hermes defect or of correct
+reports and project marketing are not proof of a Finance defect or of correct
 financial calculation. The dated
 [2026-10-24 comparison](history/REFERENCE_PROJECTS_REVIEW_2026-10-24.md) holds the
 observations; it is not feature acceptance or a task queue.
@@ -440,7 +440,7 @@ Preflight reviewer должен прочитать Git/source. Ошибка ср
 <a id="d4-test_suite_guide-1"></a>
 ### Semantic lanes, commands and shard coverage
 
-This guide is the Phase 2A ownership and lane map for Hermes Finance. It is
+This guide is the Phase 2A ownership and lane map for Finance. It is
 additive: the existing regression tests remain in place, and the full test
 commands still collect every existing test. The guide does not authorize
 renaming, moving, merging, or deleting test files.
@@ -661,7 +661,7 @@ No issue is queued for the items below. Reopen one only when a product/risk need
 <a id="d4-ci_test_optimization_playbook-1"></a>
 ### Verification optimization without coverage loss
 
-The 2026-09-16 speed pass is closed. Treat this as guidance for a new, concrete bottleneck, not a standing queue. The full method and measurements remain in the [archived playbook](archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md) and [closeout](archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md); copy the method, not Hermes-specific numbers or selections.
+The 2026-09-16 speed pass is closed. Treat this as guidance for a new, concrete bottleneck, not a standing queue. The full method and measurements remain in the [archived playbook](archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_PLAYBOOK.md) and [closeout](archive/2026-10-18/docs/CI_TEST_OPTIMIZATION_CLOSEOUT_2026-09-16.md); copy the method, not Finance-specific numbers or selections.
 
 <a id="d4-ci_test_optimization_playbook-1-purpose"></a>
 <a id="d4-ci_test_optimization_playbook-1-core-principle"></a>
@@ -710,7 +710,7 @@ The 2026-09-16 speed pass is closed. Treat this as guidance for a new, concrete 
 Keep durable rules in this book; do not copy the project constitution into every task prompt.
 
 <a id="d4-ci_test_optimization_playbook-1-applying-this-to-another-project"></a>
-**Other repositories.** Start from that repository's main and CI history; inventory its lanes and contracts independently; establish its own baseline; do not assume Hermes bottlenecks; change one small thing per PR; preserve its health/data/privacy semantics; write a project-specific closeout when the stop condition is reached.
+**Other repositories.** Start from that repository's main and CI history; inventory its lanes and contracts independently; establish its own baseline; do not assume Finance bottlenecks; change one small thing per PR; preserve its health/data/privacy semantics; write a project-specific closeout when the stop condition is reached.
 
 
 <a id="d4-ui_v2_aggregate_verification-19"></a>

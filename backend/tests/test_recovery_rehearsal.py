@@ -1152,7 +1152,7 @@ function Test-HermesRecoveryHeaders {
 }
 function Invoke-WebRequest {
     param([string]$Uri, [switch]$UseBasicParsing, [int]$TimeoutSec)
-    $content = if ($Uri -eq "http://127.0.0.1:8000/api/months") { "[]" } else { "Hermes Finance" }
+    $content = if ($Uri -eq "http://127.0.0.1:8000/api/months") { "[]" } else { "<title>Finance</title>" }
     return [pscustomobject]@{ StatusCode = 200; Content = $content }
 }
 function Assert-ProcessRunning { param($Process, $Name) }

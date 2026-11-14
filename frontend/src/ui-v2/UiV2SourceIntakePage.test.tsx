@@ -81,7 +81,9 @@ it("selects an existing unbound intake and reattaches the exact original without
   );
   expect(await screen.findByRole("heading", { name: "Разбор источника" })).toBeVisible();
   await user.selectOptions(await screen.findByLabelText("Сохранённый разбор"), "1");
-  expect(await screen.findByText(/без привязки к Hermes-счёту или отчётному месяцу/)).toBeVisible();
+  expect(
+    await screen.findByText(/без привязки к счёту в приложении или отчётному месяцу/),
+  ).toBeVisible();
   await user.upload(
     screen.getByLabelText("Точный оригинал XML"),
     new File(["<synthetic/>"], "synthetic.xml", { type: "application/xml" }),

@@ -62,7 +62,9 @@ test("synthetic zero-metadata desktop: unbound intake → 211 RUB / 2.01%", asyn
   await expect(page.getByText(/Страница выбирает уже сохранённый журнал/)).toBeVisible();
   const picker = page.getByLabel("Сохранённый разбор");
   await picker.selectOption(String(intake.id));
-  await expect(page.getByText(/без привязки к Hermes-счёту или отчётному месяцу/)).toBeVisible();
+  await expect(
+    page.getByText(/без привязки к счёту в приложении или отчётному месяцу/),
+  ).toBeVisible();
   await expect(page.getByText(/финансовая власть: нет/)).toBeVisible();
 
   const panel = page.getByRole("region", {

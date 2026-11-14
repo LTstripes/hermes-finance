@@ -1,6 +1,6 @@
-# Hermes Finance 1.4.0
+# Finance 1.4.0
 
-Hermes Finance **1.4.0** includes the accepted Month workflow and intentional-empty
+Finance **1.4.0** includes the accepted Month workflow and intentional-empty
 Close safeguards from #953/#954, source-account and instrument return views,
 and schema **0064**. Backend/frontend manifests, locks and health identity use 1.4.0.
 

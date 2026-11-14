@@ -1,4 +1,4 @@
-# Hermes Finance 1.9.4
+# Finance 1.9.4
 
 The month interface could fail while displaying saved native bond statement
 proofs: it expected legacy signed-cash fields that this proof variant does not

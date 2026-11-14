@@ -20,7 +20,7 @@ Direct operations are normal; the Launcher shell/config/shortcuts and repository
 <a id="o1-owner_runtime_operations-5-1-architecture-in-one-sentence"></a>
 #### 1. Architecture in one sentence
 
-Hermes uses separate explicit Prepare/Validate, deterministic Start, exact-SHA Test preparation, backup-first Stable release transition and guarded publication; no Launcher is required.
+Finance uses separate explicit Prepare/Validate, deterministic Start, exact-SHA Test preparation, backup-first Stable release transition and guarded publication; no Launcher is required.
 
 - Prepare/Validate: `scripts/prepare-runtime.ps1`.
 - Start: `scripts/start-local.ps1`.
@@ -406,7 +406,7 @@ Fail closed at the first failed step. Do not start `start-local.ps1`. Do not ope
 | Alembic revision ahead of this checkout | Fail | Database was migrated by newer code |
 | SQLite integrity_check fails | Fail | Database file is not a usable SQLite database |
 | Host would not be `127.0.0.1` | Fail | Loopback-only invariant |
-| Port `8000` already listening | Fail | Another Hermes instance is running; v1 is single-instance |
+| Port `8000` already listening | Fail | Another Finance instance is running; v1 is single-instance |
 | `scripts/start-local.ps1` missing in checkout | Fail | Guarded startup is unavailable |
 | Health/version/HTML probe fails | Fail / stop | Existing launcher failure path; do not pretend ready |
 | Start requested as “checkout this branch in Stable” | Reject | Launcher is not a Git branch switcher |
@@ -814,7 +814,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable.
 
 `-ControlCheckout` remains an optional parameter pointing to a separately verified trusted Control/Main. The updater's optional-path code defaults to its **Process environment selector or `Stable/data/finance.db`**, not to the contents of `Stable/.env`. Therefore, for the installed HONOR layout, **explicit `-DatabasePath` matching the accepted existing physical production database is mandatory in the actual operation**; choose a separate verified `-BackupDirectory` as shown. The updater proves current Stable and target annotated publication, makes and verifies a SQLite backup before Git/ref mutation, fetches only the tag, pins the exact peeled commit, runs target Prepare/Validate and stops. Do not run a new OPS02 against already installed Stable solely to confirm this documentation.
 
-It never selects latest, follows main, updates Test, starts Hermes, runs DB migration, publishes a tag/release or automatically rolls back/downgrades. Publication, local update and Start remain separate Owner actions.
+It never selects latest, follows main, updates Test, starts Finance, runs DB migration, publishes a tag/release or automatically rolls back/downgrades. Publication, local update and Start remain separate Owner actions.
 Owner convenience entry point, from clean trusted canonical Main on branch `main`:
 
 ```powershell
@@ -1063,7 +1063,7 @@ The separate `hermes_finance.forward_recovery_cli` module implements one offline
 Windows path under #940. This is checkpoint recovery at the **new** code head;
 it is not old-code rollback. Integration, independent operational acceptance,
 publication and explicit local operational authority remain prerequisites. The
-module never publishes, switches code, starts Hermes or invokes OPS02. Existing
+module never publishes, switches code, starts Finance or invokes OPS02. Existing
 API exact-schema restore, OPS02 older-version refusal and O4 isolated-rehearsal
 exclusions remain unchanged.
 
@@ -1167,7 +1167,7 @@ checks do not attest the real Stable runtime or constitute Owner UAT.
 <a id="o4-owner_runtime_operations-155-modes-and-owner-preconditions"></a>
 #### Modes and Owner preconditions
 
-`protection_state=protected`, `protection_mode=external_encrypted_destination_v1`, `format_version=1` requires an already opened/mounted readable/writable Owner-managed encrypted container/volume and independently available recovery material. Hermes does not validate/authenticate the key. A plain synced directory is not encrypted merely because it synchronizes.
+`protection_state=protected`, `protection_mode=external_encrypted_destination_v1`, `format_version=1` requires an already opened/mounted readable/writable Owner-managed encrypted container/volume and independently available recovery material. Finance does not validate/authenticate the key. A plain synced directory is not encrypted merely because it synchronizes.
 
 The separately Owner-accepted pair is `owner_accepted_plaintext` / `synced_filesystem_destination_v1`. It supports an ordinary synced filesystem destination without claiming protected-at-rest encryption. Do not reclassify existing encrypted attestations. Any other pair fails closed. Aliases remain `protected-destination` and `synced-filesystem-destination`.
 
@@ -1253,12 +1253,12 @@ No new backup backend semantics were introduced.
 <a id="o4-0017-protected-offsite-backup-and-recovery-9-1-decision-summary"></a>
 #### 1. Decision summary
 
-Hermes supports two explicit provider-neutral filesystem destination modes.
+Finance supports two explicit provider-neutral filesystem destination modes.
 
 `external_encrypted_destination_v1` remains the protected mode. Its configured
 destination must be the writable view of an already existing Owner-managed
 encrypted container or volume whose encrypted backing storage is synchronized
-off-device. Hermes does not encrypt an archive, derive or store keys, call a
+off-device. Finance does not encrypt an archive, derive or store keys, call a
 cloud API, or upload in the background. An ordinary synced folder is not
 protected.
 
@@ -1266,7 +1266,7 @@ protected.
 filesystem mode, recorded as `protection_state=owner_accepted_plaintext`. It
 describes an ordinary synced folder, including the Owner's initial Google
 Drive for desktop folder, and must not be labeled or attested as encrypted or
-protected-at-rest. Hermes proves only local publication and destination
+protected-at-rest. Finance proves only local publication and destination
 read-back for either mode. It does not claim Google or any other cloud
 delivery. The Owner confirms off-device visibility separately. No Google API,
 OAuth, SDK, cloud account, telemetry, or background upload service is added.
@@ -1306,7 +1306,7 @@ The protected state is valid only after the Owner has attested outside Git
 that the existing encrypted container/volume has already been successfully
 opened or mounted and is readable and writable by the supported workflow.
 Independent availability of recovery material remains an Owner-controlled UAT
-gate for that mode. Hermes does not validate or authenticate that material.
+gate for that mode. Finance does not validate or authenticate that material.
 
 The plaintext state is valid only when the Owner explicitly selects that exact
 pair, accepting that the destination is an ordinary readable and writable
@@ -1314,7 +1314,7 @@ synced filesystem folder and is not encrypted. Its privacy-safe destination
 alias is `synced-filesystem-destination`. The protected alias remains
 `protected-destination`.
 
-Hermes records or returns only the selected protection mode, format version,
+Finance records or returns only the selected protection mode, format version,
 and the matching privacy-safe destination alias.
 
 The following are mandatory fail-closed rules:
@@ -1331,13 +1331,13 @@ The following are mandatory fail-closed rules:
   retention, and disaster-recovery rehearsal;
 - no key, credential, full private path, financial value, or reconstructive
   payload is persisted or logged;
-- Hermes does not validate or authenticate a key or recovery material;
+- Finance does not validate or authenticate a key or recovery material;
 - independently available recovery material for the encrypted mode remains an
   Owner-controlled UAT gate and is not stored inside the recovery artifact or
   only on the laptop being backed up;
 - plaintext publication does not claim cloud delivery.
 
-Portable Hermes archive encryption would require a separate accepted design
+Portable Finance archive encryption would require a separate accepted design
 for a vetted format/library, authenticated encryption, key derivation and
 storage, rotation, packaging, and recovery. This ADR does not authorize it.
 
@@ -1513,7 +1513,7 @@ Current code accepts Scan/Retire and refuses legacy Apply. Merged code does not 
 
 #679/#666 migration and the named legacy cleanup are **CLOSED COMPLETE**. The [final report](https://github.com/LTstripes/hermes-finance/issues/679#issuecomment-5973182455) records all 54 Access Denied remnants removed and no remaining failures. Do not rerun the historical inventory/config/plan batches. The one-time Owner permission to discard those named technical histories is not future blanket deletion authority.
 
-The accepted recurring retirement consumer is **`scripts/cleanup-workspaces.ps1` plus its native helper**, described below. Installed/scheduler identity is independently evidenced in S, not inferred from code. Its active Ops installation is protected even though it is outside the main Hermes folder. This page describes the separate conservative Python frozen-plan tool, not the scheduler.
+The accepted recurring retirement consumer is **`scripts/cleanup-workspaces.ps1` plus its native helper**, described below. Installed/scheduler identity is independently evidenced in S, not inferred from code. Its active Ops installation is protected even though it is outside the main Finance folder. This page describes the separate conservative Python frozen-plan tool, not the scheduler.
 
 Only the Owner or the one local Worker under an explicitly accepted operational assignment runs this on real paths. Ordinary agents use synthetic fixtures. Keep populated configuration, plans and journals outside Git, runtime trees and task workspaces. They contain local paths and must not be uploaded. The [inventory tool](#o1) remains read-only. This Python command implements no scheduler or automatic runtime migration.
 

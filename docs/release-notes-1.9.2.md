@@ -1,4 +1,4 @@
-# Hermes Finance 1.9.2
+# Finance 1.9.2
 
 Saved broker statements can receive reviewed bookkeeping and trade confirmations
 without importing their positions, cash or paid income again. Exact native bond

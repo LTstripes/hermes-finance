@@ -1,4 +1,4 @@
-# Hermes Finance 1.14.0
+# Finance 1.14.0
 
 ## Капитал
 

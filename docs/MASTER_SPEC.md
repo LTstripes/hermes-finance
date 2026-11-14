@@ -7,7 +7,7 @@ Current normative handbook. Historical evidence and section-by-section provenanc
 <a id="p1"></a>
 ## 1. Purpose and product boundaries
 
-Hermes Finance is a local single-user Windows application for monthly personal finance, portfolio evidence, actual income, planning and review. The normal endpoint is `127.0.0.1:8000`; the owner-facing UI is Russian. It supports desktop/laptop browser use, keyboard navigation and browser zoom. Public hosting, multi-user authentication, telemetry, trading and autonomous investment actions require a separate product decision.
+Finance is a local single-user Windows application for monthly personal finance, portfolio evidence, actual income, planning and review. The normal endpoint is `127.0.0.1:8000`; the owner-facing UI is Russian. It supports desktop/laptop browser use, keyboard navigation and browser zoom. Public hosting, multi-user authentication, telemetry, trading and autonomous investment actions require a separate product decision.
 
 The five books are the complete current handbook: product here; [financial/data contracts](ARCHITECTURE_AND_CONTRACTS.md); [development and integration](DEVELOPMENT.md); [runtime, releases and recovery](OWNER_RUNTIME_OPERATIONS.md); and [current evidence, limitations and next actions](CURRENT_STATUS.md). ADRs explain decisions, release notes describe their version, and the archive preserves provenance. Their historical next-task lists are not standing instructions.
 
@@ -357,7 +357,7 @@ backend-результат на дату снимка и ведёт к инст�
 дата, купленное и оставшееся количество, сумма покупки с НКД без комиссии,
 выручка от продажи, стоимость остатка и результат в рублях и процентах.
 Продажи распределяются на самые ранние покупки (FIFO); процент относится к
-первоначальной стоимости без годового пересчёта. Это аналитика Hermes, не
+первоначальной стоимости без годового пересчёта. Это аналитика приложения, не
 налоговый учёт брокера. Выплаты остаются отдельно по инструменту, если право
 для конкретной покупки не подтверждено. Без доказанных остатка, порядка или
 движений отдельный результат не выдумывается; исходные операции доступны.
@@ -1037,7 +1037,7 @@ cost basis stays unknown, while an explicit zero stays zero.
 [C7](ARCHITECTURE_AND_CONTRACTS.md#c7) owns the source-return meaning and
 [C10](ARCHITECTURE_AND_CONTRACTS.md#c10-ai_financial_review-1) owns the export contract.
 
-By the Owner decision of 2026-11-08, Hermes UI is the sole API consumer; external
+By the Owner decision of 2026-11-08, Finance UI is the sole API consumer; external
 clients and scripts do not use these AI exports. Older financial-review generation
 and its unsuffixed GET are retired. The technical AI Analysis Bundle retains only
 its JSON and Markdown `1.4.0` buttons, using `POST /api/export/ai-analysis-bundle`

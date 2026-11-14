@@ -1,3 +1,3 @@
-"""Hermes Finance backend package."""
+"""Finance backend package."""
 
 __version__ = "1.16.0"

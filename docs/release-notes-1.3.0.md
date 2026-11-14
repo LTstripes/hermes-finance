@@ -1,4 +1,4 @@
-# Hermes Finance 1.3.0
+# Finance 1.3.0
 
 ## Owner-accepted limited release scope (2026-10-16)
 
@@ -101,7 +101,7 @@ Owner Stable, migrate any database or authorize OPS02/Start by itself.
 PRs #744/#829/#841, #814 broker-proof-dependent finance authority, and #769
 financial Apply/Close are excluded. Alfa PRO protocol compatibility #646 remains
 unresolved.
-Hermes remains local, single-user, Windows-first, loopback by default; no cloud, trading,
+Finance remains local, single-user, Windows-first, loopback by default; no cloud, trading,
 telemetry or background provider refresh.
 
 Evidence and post-move gates: [release preparation record](archive/2026-10-18/docs/release-preparation-1.3.0.md).
