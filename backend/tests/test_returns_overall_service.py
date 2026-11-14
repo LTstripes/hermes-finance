@@ -289,6 +289,21 @@ def test_exact_catalogue_name_is_presentation_metadata_without_identity_or_money
     assert len(value.instruments[0].accounts) == 2
     assert value.instruments[0].accounts[0].pnl.value == "100"
 
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with db.session_factory() as current:
+            yield current
+
+    app.dependency_overrides[session_for_request] = session
+    with TestClient(app) as client:
+        response = client.get("/api/returns/overall?basis=legacy")
+    assert response.status_code == 200
+    # The HTTP overview must carry the server short name, not a null that the
+    # UI renders as an unnamed security.
+    assert response.json()["instruments"][0]["short_name"] == "Synthetic exact title"
+
 
 def identity_mappings(db, *, shared=False, cover_deposit=False):
     with db.session_factory() as session:
@@ -495,7 +510,12 @@ def test_explicit_http_summary_matches_existing_producer_without_cards_or_xirr(d
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     value = Overall.model_validate(response.json())
-    assert value == expected
+    # HTTP adds the presentation short name; every other field equals the producer.
+    assert all(row.short_name for row in value.instruments)
+    assert {
+        **value.model_dump(),
+        "instruments": [{**row, "short_name": None} for row in value.model_dump()["instruments"]],
+    } == expected.model_dump()
     assert value.instruments
     assert all(pair.details_loaded for row in value.instruments for pair in row.accounts)
     assert any(pair.pnl.value is not None for row in value.instruments for pair in row.accounts)
