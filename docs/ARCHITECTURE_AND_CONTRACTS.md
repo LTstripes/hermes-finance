@@ -6747,7 +6747,7 @@ is introduced by a Returns GET.
 
 #### B9: inception annual return for brokerage and IIS (Owner, 14.11.2026)
 
-Only `GET /api/returns/overall` adds `annual_return={portfolio,accounts}` and
+Among Returns endpoints, only `GET /api/returns/overall` adds `annual_return={portfolio,accounts}` and
 replaces `overall.rate/pnl` with this specifically bounded brokerage/IIS scope.
 Other fields, endpoint meanings, mixed known result, deposits and gold retain
 their existing contracts. Current `Account.include_in_returns=true` selects the
@@ -6797,10 +6797,15 @@ Use `domain/xirr.calculate_xirr` with integer kopecks and Decimal. Weighted days
 are `sum(contributed_principal * days_until_FIFO_withdrawal_or_valuation) /
 sum(contributed_principal)`, including fully withdrawn lots. Same-day incoming
 capital is admitted before FIFO outgoing capital; no intraday times are inferred.
-Withdrawal beyond evidenced contributed principal makes duration unknown.
-Compare unrounded days with 365; a shorter/unknown duration blocks only annual
-rate, independently of complete P&L. P&L is closing value minus net external
-contributions, never the sum of known position subtotals.
+Withdrawal beyond contributed principal withdraws earned income and adds no
+capital weight. Owner decision 14.11.2026 (B9 only): compare unrounded days;
+below 90, annual rate is UNKNOWN with `overall_short_holding`; at 90 to less
+than 365, publish the rate with `estimate=true` and
+`overall_short_holding_provisional`; at 365 or more, retain ordinary eligibility.
+Unknown duration blocks only annual rate, independently of complete P&L.
+Individual instrument XIRR still requires at least 365 capital-weighted days.
+P&L is closing value minus net external contributions, never the sum of known
+position subtotals.
 
 The new field carries per-scope `pnl/rate`, `first_operation_date`,
 `valuation_date`, nullable Decimal-string `weighted_holding_days`, and
@@ -6808,6 +6813,18 @@ The new field carries per-scope `pnl/rate`, `first_operation_date`,
 Money/rate units remain kopeck/fraction strings. Existing `overall.partial` and
 legacy aggregation reasons retain their mixed-category scope; they do not assert
 that the separate B9 brokerage/IIS metric is complete.
+
+AI financial review v3.2 optionally exports the same B9 projection under
+`sections.clean_returns.data.annual_return`: portfolio and each account carry
+nullable fraction-string `rate`, integer-kopeck-string `pnl`, `estimate`,
+`reason_codes`, `first_operation_date`, `valuation_date` and Decimal-string
+`weighted_holding_days`. Account identity uses file-local `account_ref` and
+ordinary account name, never native scope or internal position/event identity.
+The reading guide explains external flows and internal retained payouts, and
+the provisional 90–<365 day rule. Optional clean instrument decomposition fields
+copy the existing FIFO reader; gold decomposition, short names and redeemed-bond
+XIRR remain available. Saved v3.0/v3.1/v3.2 reports remain valid; the application
+name and semantics revision are unchanged.
 
 #### Existing mixed-result composition
 

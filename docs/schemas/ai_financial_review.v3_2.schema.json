@@ -7350,6 +7350,27 @@
             "string",
             "null"
           ]
+        },
+        "realized_result": {
+          "$ref": "#/$defs/CleanMetric"
+        },
+        "unrealized_result": {
+          "$ref": "#/$defs/CleanMetric"
+        },
+        "current_value": {
+          "$ref": "#/$defs/CleanMetric"
+        },
+        "is_open": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "position_reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
@@ -7509,6 +7530,9 @@
             },
             "gold_decomposition": {
               "type": "string"
+            },
+            "annual_return": {
+              "type": "string"
             }
           }
         },
@@ -7522,6 +7546,21 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/ReviewGoldSnapshot"
+          }
+        },
+        "annual_return": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "portfolio": {
+              "$ref": "#/$defs/ReviewAnnualScope"
+            },
+            "accounts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ReviewAccountAnnualScope"
+              }
+            }
           }
         }
       },
@@ -8281,6 +8320,113 @@
       ],
       "title": "CleanPositionRate",
       "type": "object"
+    },
+    "ReviewAnnualScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"
+        },
+        "pnl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^-?[0-9]+$"
+        },
+        "estimate": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "first_operation_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "valuation_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "weighted_holding_days": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+        }
+      }
+    },
+    "ReviewAccountAnnualScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"
+        },
+        "pnl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^-?[0-9]+$"
+        },
+        "estimate": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "first_operation_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "valuation_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "weighted_holding_days": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+        },
+        "account_ref": {
+          "type": "string",
+          "pattern": "^source-account-[1-9][0-9]*$"
+        },
+        "account_name": {
+          "type": "string"
+        }
+      }
     }
   }
 }

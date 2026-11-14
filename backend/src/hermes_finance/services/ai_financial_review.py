@@ -1928,12 +1928,21 @@ def assemble_ai_financial_review(
     with source_read_snapshot(session):
         from hermes_finance.services.ai_review_clean_returns import review_clean_returns
         from hermes_finance.services.clean_instrument_return import read_clean_overview
+        from hermes_finance.services.portfolio_annual_return import read_annual_return
         from hermes_finance.services.returns_overall import read_clean_overall
 
         clean_overall = read_clean_overall(session)
+        clean_overall["annual_return"] = read_annual_return(
+            session, clean_overall["source_accounts"]
+        )
         clean_data = review_clean_returns(
             session,
-            read_clean_overview(session, include_purchases=True, include_position_rates=True),
+            read_clean_overview(
+                session,
+                include_purchases=True,
+                include_position_rates=True,
+                include_position_results=True,
+            ),
             clean_overall,
             account_names={row.id: row.name for row in list_accounts(session)},
             instrument_names={row.id: row.name for row in list_instruments(session)},

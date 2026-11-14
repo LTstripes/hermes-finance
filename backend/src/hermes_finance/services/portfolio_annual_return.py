@@ -130,7 +130,7 @@ def calculate(histories):
             days = _weighted_days(flows, end)
         if days is None:
             reasons.add("overall_holding_period_unknown")
-        elif days < 365:
+        elif days < 90:
             reasons.add("overall_short_holding")
         else:
             result = calculate_xirr(
@@ -139,11 +139,16 @@ def calculate(histories):
             )
             rate = result.annualized_rate
             reasons.update(result.reason_codes)
+            if rate is not None and days < 365:
+                reasons.add("overall_short_holding_provisional")
     estimates = sorted({r for h in histories for r in h.estimates})
     return {
         "pnl": _metric(pnl, sorted(set(pnl_reasons) | set(estimates)), estimate=bool(estimates)),
         "rate": _metric(
-            rate, sorted(reasons | set(estimates)), rate=True, estimate=bool(estimates)
+            rate,
+            sorted(reasons | set(estimates)),
+            rate=True,
+            estimate=bool(estimates) or "overall_short_holding_provisional" in reasons,
         ),
         "first_operation_date": first,
         "valuation_date": end,

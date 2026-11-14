@@ -28,6 +28,16 @@ def _split(item, detail, *, conflicted):
     # A proved empty endpoint makes the entire supported result realized.
     quantity = detail.get("closing_quantity") if detail else None
     closed = quantity is not None and Decimal(quantity) == 0
+    if not conflicted and all(key in item for key in ("realized_result", "unrealized_result")):
+        return {
+            "position_state": "closed" if closed else "open" if quantity is not None else "unknown",
+            "status": "known"
+            if all(
+                item[key]["value"] is not None for key in ("realized_result", "unrealized_result")
+            )
+            else "unknown",
+            **{key: deepcopy(item[key]) for key in ("realized_result", "unrealized_result")},
+        }
     known = (
         closed
         and not conflicted
@@ -44,6 +54,37 @@ def _split(item, detail, *, conflicted):
         }
         if known
         else _unknown("split_not_provided"),
+    }
+
+
+def _annual_returns(annual, sources, account_refs):
+    """Copy B9 metrics, replacing native scope identities with file-local refs."""
+
+    def scope(value):
+        return {
+            "rate": value["rate"]["value"],
+            "pnl": value["pnl"]["value"],
+            "estimate": value["rate"]["estimate"],
+            "reason_codes": list(value["rate"]["reason_codes"]),
+            **{
+                key: value[key]
+                for key in ("first_operation_date", "valuation_date", "weighted_holding_days")
+            },
+        }
+
+    return {
+        "portfolio": scope(annual["portfolio"]),
+        "accounts": [
+            {
+                **scope(row),
+                "account_ref": account_refs[row["scope"]],
+                "account_name": {"iis": "ИИС", "brokerage": "Брокерский"}.get(
+                    (sources.get(row["scope"], {}).get("account_link") or {}).get("account_type"),
+                    "Счёт не сопоставлен",
+                ),
+            }
+            for row in annual["accounts"]
+        ],
     }
 
 
@@ -168,8 +209,25 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
         for row in overall["mixed_result"]["components"]
         if row.get("exclusion_reason") == "source_account_identity_mapping_conflict"
     }
+    # Solver operands contain internal event identities and are never export data.
+    public_overview = {
+        **overview,
+        "accounts": [
+            {
+                **a,
+                "result": {
+                    **a["result"],
+                    "instruments": [
+                        {k: v for k, v in item.items() if k != "_position_inputs"}
+                        for item in a["result"]["instruments"]
+                    ],
+                },
+            }
+            for a in overview["accounts"]
+        ],
+    }
     data = clean_export_data(
-        overview, gold=overall["gold"], include_purchases=True, purchase_conflicts=conflicts
+        public_overview, gold=overall["gold"], include_purchases=True, purchase_conflicts=conflicts
     )
     data["schema_version"] = "1.2.0"
     data["units"].pop("modified_dietz")
@@ -177,11 +235,22 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
         "scope": "Current available history; every account keeps its own dates. Invested means observed-period purchases with NKD, excluding fees; it is not acquisition cost of opening holdings.",
         "counting": "ISIN summaries, account rows, purchases and payments explain the same result; do not add them together. Redemption is principal, not coupon/dividend income.",
         "rates": "Purchase return_fraction is simple price result on purchase cost, excludes payouts and is not annualized. Fractions use 1 = 100%, 0.1 = 10%. Position Modified Dietz is omitted; only account calendar-month totals may use it. Position simple_return is the whole position result on invested purchases, not annualized; position xirr is annualized and published only when the capital-weighted holding period is at least 365 days, otherwise null with a reason.",
-        "split": "Realized/unrealized split is unknown unless the backend proves a closed position with a known result. Do not infer a split from sales or FIFO lots.",
+        "split": "Realized/unrealized values copy the backend FIFO decomposition, including received payouts; retain each unknown component and never infer missing cost or valuation.",
         "gold": "Gold histories and saved snapshots can overlap; snapshots are not extra profit. Clean gold split remains unknown.",
         "gold_decomposition": "The legacy gold guide and split_status describe the retained legacy split. Each gold history now adds clean_decomposition with backend FIFO realized_result and unrealized_result, in kopecks. When both are known they sum to clean total. Missing valuation withholds only unrealized_result; unknown separate fees remain an estimate. Do not add snapshots to this result.",
     }
     sources = {row["scope"]: row for row in overall["source_accounts"]}
+    if annual := overall.get("annual_return"):
+        refs = {
+            row["scope"]: f"source-account-{i}" for i, row in enumerate(overview["accounts"], 1)
+        }
+        for row in annual["accounts"]:
+            if row["scope"] not in refs:
+                refs[row["scope"]] = f"source-account-{len(refs) + 1}"
+        data["annual_return"] = _annual_returns(annual, sources, refs)
+        data["reading_guide"]["annual_return"] = (
+            "Portfolio/account annual XIRR uses dated external flows (retained redemptions and coupons are internal), rate fractions and P&L in integer kopecks; it is provisional at 90–<365 capital-weighted days, unknown below 90 days, and ordinary from 365 days."
+        )
     raw_accounts = {row["scope"]: row for row in overview["accounts"]}
     legacy_index = None
     legacy_sources = {}
@@ -235,7 +304,20 @@ def review_clean_returns(session, overview, overall, *, account_names, instrumen
             # This metric is not a position comparison measure.
             item.pop("modified_dietz")
             detail = account_details.get(isin)
-            item["result_split"] = _split(item, detail, conflicted=raw["scope"] in conflicts)
+            conflicted = raw["scope"] in conflicts
+            if conflicted:
+                for key in ("realized_result", "unrealized_result", "current_value"):
+                    if key in item:
+                        item[key] = {
+                            **item[key],
+                            "value": None,
+                            "status": "unavailable",
+                            "reason_codes": ["source_account_identity_mapping_conflict"],
+                        }
+                if "is_open" in item:
+                    item["is_open"] = None
+                    item["position_reason_codes"] = ["source_account_identity_mapping_conflict"]
+            item["result_split"] = _split(item, detail, conflicted=conflicted)
             item["actual_payments"] = _payments(
                 detail,
                 isin=isin,

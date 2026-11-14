@@ -46,7 +46,42 @@ def test_old_token_contribution_does_not_make_new_capital_a_year_old():
 
 def test_eligibility_compares_unrounded_duration():
     value = history(flows=[Flow(START, 999999, 1), Flow(START + timedelta(days=1), 1, 1)])
-    assert calculate([value])["rate"]["value"] is None
+    result = calculate([value])
+    assert result["rate"]["value"] is not None
+    assert result["rate"]["estimate"]
+    assert result["rate"]["reason_codes"] == ["overall_short_holding_provisional"]
+
+
+@pytest.mark.parametrize("days", [89, 90, 364, 365])
+@pytest.mark.parametrize("count", [1, 2])
+def test_provisional_thresholds_for_portfolio_and_account(days, count):
+    result = calculate(
+        [
+            replace(history(account_id=i), valuation_date=START + timedelta(days=days))
+            for i in range(1, count + 1)
+        ]
+    )
+    assert Decimal(result["weighted_holding_days"]) == days
+    assert result["pnl"]["value"] == str(count * 1000)
+    assert not result["pnl"]["estimate"]
+    assert (result["rate"]["value"] is not None) == (days >= 90)
+    assert result["rate"]["estimate"] == (90 <= days < 365)
+    assert result["rate"]["reason_codes"] == (
+        ["overall_short_holding"]
+        if days < 90
+        else ["overall_short_holding_provisional"]
+        if days < 365
+        else []
+    )
+
+
+def test_90_day_threshold_uses_unrounded_capital_duration():
+    h = replace(history(), valuation_date=START + timedelta(days=90))
+    h = replace(h, flows=(Flow(START, 999999, 1), Flow(START + timedelta(days=1), 1, 1)))
+    result = calculate([h])
+    assert Decimal(result["weighted_holding_days"]) < 90
+    assert result["rate"]["value"] is None
+    assert result["rate"]["reason_codes"] == ["overall_short_holding"]
 
 
 def test_withdrawn_coupon_is_a_receipt_and_not_a_second_contribution():
@@ -65,7 +100,7 @@ def test_fifo_withdrawals_keep_completed_capital_in_duration():
     )
     result = calculate([value])
     assert Decimal(result["weighted_holding_days"]) == 312
-    assert result["rate"]["reason_codes"] == ["overall_short_holding"]
+    assert result["rate"]["reason_codes"] == ["overall_short_holding_provisional"]
     assert result["pnl"]["value"] == "1000"
 
 
@@ -81,7 +116,7 @@ def test_explicit_internal_pair_is_excluded_from_portfolio_and_kept_for_account(
     assert Decimal(result["rate"]["value"]) == pytest.approx(Decimal("0.1"))
     assert Decimal(result["weighted_holding_days"]) == 365
     assert result["pnl"]["value"] == "1000"
-    assert calculate([b])["rate"]["reason_codes"] == ["overall_short_holding"]
+    assert calculate([b])["rate"]["reason_codes"] == ["overall_short_holding_provisional"]
 
 
 @pytest.mark.parametrize("change", ["missing", "date", "amount", "account"])

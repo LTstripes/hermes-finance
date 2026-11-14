@@ -560,8 +560,14 @@ account's own XIRR. Use dated external deposits/withdrawals from each account's
 first operation and the complete securities-plus-cash valuation on one date.
 Transfers within the selected portfolio cancel only with proved paired identity;
 coupons, dividends and cash interest retained inside it are income, not deposits.
-Their withdrawal to a bank is a withdrawal. Annual eligibility requires at least
-365 capital-weighted days; never use the age of a token first contribution.
+Their withdrawal to a bank is a withdrawal. Owner decision 14.11.2026 for B9:
+from 90 to less than 365 capital-weighted days show a preliminary annual rate,
+e.g. «≈15,2% годовых», with one line «деньги вложены в среднем 8 мес. — процент
+пока предварительный» (months = floor(days / 30.4)). At 365 days or more show
+the ordinary rate without this prefix or line; below 90 days explain that the
+average invested duration must reach 90 days, with no percentage. This also
+applies when filtering one account. Never use the age of a token first
+contribution. Individual instrument XIRR retains its 365-day threshold.
 Caption: «годовых, с <дата первой операции>». One sentence explains XIRR on hover.
 Incomplete history, valuation or transfer evidence shows one plain-language
 reason, with no percentage or technical code. For otherwise complete history,
