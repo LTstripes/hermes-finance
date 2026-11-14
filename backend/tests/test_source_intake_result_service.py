@@ -175,7 +175,7 @@ def test_source_intake_stock_exact_result_separate_axes_and_no_dml(database):
             assert sqlite_blob(database) == before
         response = api(client, view)
         assert response.status_code == 200, response.text
-        assert _original_fields(response.json()) == result
+        assert _original_fields(response.json()) == _original_fields(result, strict=False)
         assert response.headers["cache-control"] == "no-store"
         assert writes == []
     finally:
@@ -229,7 +229,7 @@ def test_renamed_long_and_partial_intake_periods_with_coupon_are_withheld(
     assert_null(result)
     response = api(client, view)
     assert response.status_code == 200, response.text
-    assert _original_fields(response.json()) == result
+    assert _original_fields(response.json()) == _original_fields(result, strict=False)
     assert sqlite_blob(database) == before
 
 
@@ -255,7 +255,7 @@ def test_inferred_period_blocks_otherwise_available_intake_return(database, monk
     assert_null(result)
     response = api(client, view)
     assert response.status_code == 200, response.text
-    assert _original_fields(response.json()) == result
+    assert _original_fields(response.json()) == _original_fields(result, strict=False)
     assert sqlite_blob(database) == before
 
 
@@ -290,7 +290,7 @@ def test_valid_filename_intake_period_retains_observed_change_with_coupon(databa
     assert "source_period_inferred" not in result["hard_blockers"]
     response = api(client, view)
     assert response.status_code == 200, response.text
-    assert _original_fields(response.json()) == result
+    assert _original_fields(response.json()) == _original_fields(result, strict=False)
     assert sqlite_blob(database) == before
 
 
@@ -764,14 +764,16 @@ def test_unbound_identical_same_account_re_report_corroborates_once(database):
         assert result["known"]["net_distributions"] == "150.00"
 
 
-def _original_fields(value):
+def _original_fields(value, strict=True):
     """All pre-existing response fields must still equal the authoritative reader."""
     if isinstance(value, list):
-        return [_original_fields(item) for item in value]
+        return [_original_fields(item, strict) for item in value]
     if not isinstance(value, dict):
         return value
-    result = {key: _original_fields(item) for key, item in value.items()}
+    result = {key: _original_fields(item, strict) for key, item in value.items()}
     if isinstance(result.get("instrument"), dict) and "name" in result["instrument"]:
+        if not strict and "short_name" not in result["instrument"]:
+            return result
         name = result["instrument"].pop("short_name")
         assert name is None or isinstance(name, str) and bool(name.strip())
     return result
