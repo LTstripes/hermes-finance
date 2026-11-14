@@ -55,7 +55,7 @@ faster returns reads:
 There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
 checks do not establish Owner UAT.
 
-Shipped in 1.17.0 ([release notes](release-notes-1.17.0.md)):
+Shipped in 1.17.0 ([release notes](release-notes-1.17.0.md)); 1.17.1 ([release notes](release-notes-1.17.1.md)) fixes missing short names in the returns overview ([#1202](https://github.com/LTstripes/hermes-finance/pull/1202)):
 
 - Speed: [#1199](https://github.com/LTstripes/hermes-finance/pull/1199) bounded
   read cache keyed by the whole committed SQLite snapshot (repeat reads of Returns
