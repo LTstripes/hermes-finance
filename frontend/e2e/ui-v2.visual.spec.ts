@@ -5,7 +5,7 @@ import type { BrokerMonthReadback } from "../src/api/brokerMonths";
 import type { MonthCloseWorkflow } from "../src/api/monthCloseWorkflow";
 import { makeCapitalDraft } from "../src/test/capitalDraftFixtures";
 import { returnsDiagnosticsFixture } from "../src/test/returnsDiagnosticsFixture";
-import { overallFixture } from "../src/ui-v2/returns/overallFixtures";
+import { homeSummaryFixture, overallFixture } from "../src/ui-v2/returns/overallFixtures";
 
 import {
   makeUiV2ArchiveHistory,
@@ -101,8 +101,12 @@ async function installApi(page: Page, scene: Scene = "normal") {
       status = state.passiveError ? 503 : 200;
     } else if (url.pathname === "/api/goals/summary") {
       json = state.goals;
+    } else if (url.pathname === "/api/returns/home-summary") {
+      json = homeSummaryFixture(state.overall);
     } else if (url.pathname === "/api/returns/overall") {
       json = state.overall;
+    } else if (returnsDiagnosticsFixture(url)) {
+      json = returnsDiagnosticsFixture(url);
     } else if (url.pathname === "/api/accounts") {
       json = uiV2Accounts;
     } else if (url.pathname === "/api/months/12/close-workflow") {
@@ -658,8 +662,8 @@ async function installCloseApi(page: Page) {
       json = { status: "ok", version: "0.9.0-synthetic" };
     } else if (url.pathname === "/api/analytics/closed-report-comparison") {
       json = makeUiV2Comparison();
-    } else if (url.pathname === "/api/returns/overall") {
-      json = overallFixture();
+    } else if (url.pathname === "/api/returns/home-summary") {
+      json = homeSummaryFixture();
     } else if (url.pathname === "/api/analytics/capital-composition") {
       json = makeUiV2CapitalHistory();
     } else if (url.pathname === "/api/analytics/passive-income") {
@@ -957,9 +961,11 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
     let json: unknown;
     let status = 200;
     const returnsHost =
-      url.pathname === "/api/returns/overall"
-        ? overallFixture()
-        : returnsDiagnosticsFixture(url, state.accounts);
+      url.pathname === "/api/returns/home-summary"
+        ? homeSummaryFixture()
+        : url.pathname === "/api/returns/overall"
+          ? overallFixture()
+          : returnsDiagnosticsFixture(url, state.accounts);
     if (returnsHost) {
       json = returnsHost;
     } else if (url.pathname === "/api/months") {

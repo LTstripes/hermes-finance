@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 import {
   april,
   basketFixture,
@@ -14,6 +14,26 @@ import {
 } from "../src/ui-v2/returns/fixtures";
 import { instrumentCardFixture, overallFixture } from "../src/ui-v2/returns/overallFixtures";
 import { fulfillMonthPlate } from "./visual-fixtures";
+
+async function fulfillReturnsNeighbour(route: Route) {
+  const url = new URL(route.request().url());
+  if (url.pathname === "/api/returns/context") {
+    expect(route.request().method()).toBe("GET");
+    await route.fulfill({ json: contextFixture });
+    return true;
+  }
+  if (url.pathname === "/api/returns/overview") {
+    expect(route.request().method()).toBe("GET");
+    await route.fulfill({
+      json: overviewFixture(url.searchParams.get("scope") ?? undefined, {
+        start: url.searchParams.get("start") ?? may.start,
+        end: url.searchParams.get("end") ?? may.end,
+      }),
+    });
+    return true;
+  }
+  return false;
+}
 
 test("paper aggregate, open filter and result split fit 720px at desktop zoom @viewport-owned", async ({
   page,
@@ -171,7 +191,10 @@ async function install(page: Page, extendedHistory = false) {
         await route.fulfill({
           json: detailFixture(scope, period, url.searchParams.get("isin") ?? undefined),
         });
-      else await route.fulfill({ status: 404, json: {} });
+      else if (url.pathname === "/api/returns/overall")
+        await route.fulfill({ json: overallFixture() });
+      else if (!(await fulfillReturnsNeighbour(route)))
+        await route.fulfill({ status: 404, json: {} });
     },
   );
   return { calls, state };
@@ -505,6 +528,7 @@ test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport
       const request = route.request();
       calls.push(`${request.method()} ${new URL(request.url()).pathname}`);
       expect(request.method()).toBe("GET");
+      if (await fulfillReturnsNeighbour(route)) return;
       expect(new URL(request.url()).pathname).toBe("/api/returns/overall");
       await route.fulfill({ json: body });
     },
@@ -566,7 +590,15 @@ test("ui-v2 returns leaders: long names and exact amounts stay aligned @viewport
   expect(widths.list).toBeGreaterThan(widths.panel * 0.9);
   await single.screenshot({ path: testInfo.outputPath("returns-leaders-single-1440.png") });
   expect(calls.length).toBeGreaterThanOrEqual(3);
-  expect(calls.every((call) => call === "GET /api/returns/overall")).toBe(true);
+  expect(
+    calls.every((call) =>
+      [
+        "GET /api/returns/overall",
+        "GET /api/returns/context",
+        "GET /api/returns/overview",
+      ].includes(call),
+    ),
+  ).toBe(true);
 });
 
 for (const retired of ["performance", "monthly-returns", "monthly-result", "statement-return"]) {
@@ -576,6 +608,7 @@ for (const retired of ["performance", "monthly-returns", "monthly-result", "stat
       async (route) => {
         if (await fulfillMonthPlate(route)) return;
         expect(route.request().method()).toBe("GET");
+        if (await fulfillReturnsNeighbour(route)) return;
         expect(new URL(route.request().url()).pathname).toBe("/api/returns/overall");
         await route.fulfill({ json: overallFixture() });
       },
@@ -607,7 +640,8 @@ test("ui-v2 instrument return restores table scroll and screen titles @viewport-
         await route.fulfill({
           json: instrumentCardFixture(url.searchParams.get("isin") ?? undefined),
         });
-      else await route.fulfill({ status: 404, json: {} });
+      else if (!(await fulfillReturnsNeighbour(route)))
+        await route.fulfill({ status: 404, json: {} });
     },
   );
   await page.goto("/v2/returns");

@@ -32,6 +32,7 @@ import styles from "./returns/Returns.module.css";
 import { ReturnsCouponIncome } from "./returns/ReturnsCouponIncome";
 import { useAccountName } from "./returns/useAccountName";
 import { useReturnsInvalidated } from "./returns/useReturnsInvalidated";
+import { useReturnsPrefetch } from "./returns/useReturnsPrefetch";
 import { UiV2Shell } from "./UiV2Shell";
 import { UiV2Skeleton } from "./UiV2StateBlocks";
 import { UiV2Tabs } from "./UiV2Tabs";
@@ -102,6 +103,7 @@ export default function UiV2ReturnsPage() {
   });
   const invalidated = useReturnsInvalidated(["returns", "overall", "summaries"]);
   const data = !invalidated && !query.isError ? query.data : undefined;
+  useReturnsPrefetch("overall", Boolean(data) && !query.isFetching);
   const scope =
     params.getAll("accounts").length > 1 ? "invalid" : (params.get("accounts") ?? "all");
   const search = params.get("q") ?? "";

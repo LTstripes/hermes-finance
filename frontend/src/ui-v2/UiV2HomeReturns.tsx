@@ -2,15 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { brokerageResult, instrumentSummary } from "./returns/dashboard";
-import {
-  compareDecimal,
-  displayMetric,
-  displayWhole,
-  isPartialResult,
-  tone,
-} from "./returns/model";
-import { getOverall } from "./returns/overall";
+import { getHomeSummary } from "./returns/homeSummary";
+import { displayMetric, displayWhole, tone } from "./returns/model";
 import { useAccountName } from "./returns/useAccountName";
 import { useReturnsInvalidated } from "./returns/useReturnsInvalidated";
 import styles from "./UiV2Home.module.css";
@@ -35,40 +28,19 @@ export function UiV2HomeReturns({ mainSettled }: { mainSettled: boolean }) {
     };
   }, [mainSettled]);
   const query = useQuery({
-    queryKey: ["returns", "overall", "summaries"],
-    queryFn: ({ signal }) => getOverall(signal, true),
+    queryKey: ["returns", "home-summary"],
+    queryFn: ({ signal }) => getHomeSummary(signal),
     staleTime: 5 * 60 * 1000,
     enabled,
   });
-  const invalidated = useReturnsInvalidated(["returns", "overall", "summaries"]);
+  const invalidated = useReturnsInvalidated(["returns", "home-summary"]);
   const data =
     !invalidated && !query.isError && query.fetchStatus !== "paused" ? query.data : undefined;
-  const accountName = useAccountName(data?.source_accounts.map((a) => a.account_link) ?? []);
-  const result = data ? brokerageResult(data, "all") : null;
-  const rows = data ? data.instruments.map((row) => instrumentSummary(data, row, "all")) : [];
-  const known = rows.filter((row) => row.pnl.value !== null && !isPartialResult(row.pnl));
-  const positive = known.filter((row) => compareDecimal(row.pnl.value ?? "0", "0") > 0);
-  const negative = known.filter((row) => compareDecimal(row.pnl.value ?? "0", "0") < 0);
-  const periods = new Set(
-    rows
-      .filter((row) => row.pnl.value !== null)
-      .flatMap((row) =>
-        row.accounts
-          .filter((a) => a.resultAvailable && a.period)
-          .map((a) => `${a.period?.start}/${a.period?.end}`),
-      ),
+  const accountName = useAccountName(
+    data?.ranked.flatMap((row) => row.accounts.map((a) => a.account_link)) ?? [],
   );
-  const ranked =
-    periods.size === 1
-      ? [
-          ...positive
-            .sort((a, b) => compareDecimal(b.pnl.value ?? "0", a.pnl.value ?? "0"))
-            .slice(0, 3),
-          ...negative
-            .sort((a, b) => compareDecimal(a.pnl.value ?? "0", b.pnl.value ?? "0"))
-            .slice(0, 3),
-        ]
-      : [];
+  const result = data?.result;
+  const ranked = data?.ranked ?? [];
   const maximum = ranked.reduce((max, row) => {
     const value = BigInt(row.pnl.value ?? "0");
     const absolute = value < 0n ? -value : value;
@@ -106,11 +78,9 @@ export function UiV2HomeReturns({ mainSettled }: { mainSettled: boolean }) {
             {result ? displayWhole(result.amount, true) : "—"}
           </strong>
           <p className={styles.note}>
-            в плюсе {positive.length} · в минусе {negative.length}
-            {known.length < rows.length ? ` · без итога ${rows.length - known.length}` : ""}
-            {known.length > positive.length + negative.length
-              ? ` · без изменения ${known.length - positive.length - negative.length}`
-              : ""}
+            в плюсе {data.positive} · в минусе {data.negative}
+            {data.unknown ? ` · без итога ${data.unknown}` : ""}
+            {data.unchanged ? ` · без изменения ${data.unchanged}` : ""}
           </p>
           {ranked.length > 0 ? (
             <ol
@@ -119,13 +89,7 @@ export function UiV2HomeReturns({ mainSettled }: { mainSettled: boolean }) {
             >
               {ranked.map((row) => {
                 const value = BigInt(row.pnl.value ?? "0");
-                const names = row.accounts.map((a) =>
-                  accountName(
-                    a.account_link ??
-                      data.source_accounts.find((source) => source.scope === a.scope)?.account_link,
-                    a.label,
-                  ),
-                );
+                const names = row.accounts.map((a) => accountName(a.account_link, a.label));
                 return (
                   <li key={row.isin}>
                     <Link
@@ -161,7 +125,7 @@ export function UiV2HomeReturns({ mainSettled }: { mainSettled: boolean }) {
             </ol>
           ) : (
             <p className={styles.note}>
-              {periods.size > 1
+              {data.mixed_periods
                 ? "Результаты бумаг относятся к разным периодам — сравнение доступно в подробностях."
                 : "Пока нет результатов бумаг для сравнения."}
             </p>

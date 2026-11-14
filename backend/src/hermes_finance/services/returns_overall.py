@@ -729,7 +729,7 @@ def read_overall(session, *, include_instrument_details=False, native_instrument
         }
 
 
-def read_clean_overall(session, *, include_instrument_details=False):
+def read_clean_overall(session, *, include_instrument_details=False, home_summary=False):
     """Use clean source results in the existing overview without changing legacy readers."""
     from hermes_finance.services.clean_instrument_return import read_clean_overview
     from hermes_finance.services.position_results import aggregate_positions
@@ -739,7 +739,9 @@ def read_clean_overall(session, *, include_instrument_details=False):
         # The independently guarded clean read below owns every instrument row.
         legacy = read_overall(session, include_instrument_details=False, native_instruments=False)
         clean = read_clean_overview(
-            session, include_position_rates=True, include_position_results=True
+            session,
+            include_position_rates=not home_summary,
+            include_position_results=not home_summary,
         )
         indexed = {row["scope"]: row for row in legacy["source_accounts"]}
         instruments = {}
@@ -854,11 +856,17 @@ def read_clean_overall(session, *, include_instrument_details=False):
                         },
                         "coupons": metric(item["coupons"]),
                         "dividends": metric(item["dividends"]),
-                        "realized_result": metric(item["realized_result"]),
-                        "unrealized_result": metric(item["unrealized_result"]),
-                        "current_value": metric(item["current_value"]),
-                        "is_open": item["is_open"],
-                        "position_reason_codes": item["position_reason_codes"],
+                        **(
+                            {
+                                "realized_result": metric(item["realized_result"]),
+                                "unrealized_result": metric(item["unrealized_result"]),
+                                "current_value": metric(item["current_value"]),
+                                "is_open": item["is_open"],
+                                "position_reason_codes": item["position_reason_codes"],
+                            }
+                            if not home_summary
+                            else {}
+                        ),
                     }
                 )
             for component in legacy["mixed_result"]["components"]:
@@ -926,6 +934,9 @@ def read_clean_overall(session, *, include_instrument_details=False):
             income["known_total"] = _unknown("clean_account_totals_not_aggregated")
         legacy["contract_version"] = "returns_overall_v2"
         for row in instruments.values():
+            if home_summary:
+                row.pop("_positions")
+                continue
             identities = [
                 a["canonical_account_id"]
                 for a in row["accounts"]

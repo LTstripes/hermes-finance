@@ -1088,16 +1088,30 @@ def test_ci_request_timing_keeps_overlapping_requests_and_server_appends_separat
 
 def test_ci_request_timing_resolves_both_source_reader_templates(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
 
+    from hermes_finance.api.settings import session_for_request
     from hermes_finance.services import broker_sources, source_intake
 
     log_path = tmp_path / "requests.jsonl"
     monkeypatch.setenv("HERMES_CI_REQUEST_TIMING_LOG", str(log_path))
     monkeypatch.setattr(source_intake, "list_intakes", lambda *_: [])
     monkeypatch.setattr(broker_sources, "read_sources", lambda *_: {"items": []})
-    with TestClient(_app(tmp_path)) as client:
-        assert client.get("/api/broker-months/intakes?include_unbound=true").json() == []
-        assert client.get("/api/months/16/broker-sources").json() == {"items": []}
+    # The source endpoint pins a real read transaction even when its reader is mocked.
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    try:
+        with Session(engine) as session:
+            app = _app(tmp_path)
+            app.dependency_overrides[session_for_request] = lambda: session
+            with TestClient(app) as client:
+                assert client.get("/api/broker-months/intakes?include_unbound=true").json() == []
+                assert client.get("/api/months/16/broker-sources").json() == {"items": []}
+    finally:
+        engine.dispose()
     records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     assert [r["path"] for r in records if r["event"] == "start"] == [
         "/api/broker-months/intakes",

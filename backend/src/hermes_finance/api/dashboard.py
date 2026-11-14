@@ -19,6 +19,7 @@ from hermes_finance.api.cash_flow_ladder import (
     cash_flow_ladder_to_out,
     with_event_short_names,
 )
+from hermes_finance.api.read_cache import cached_read_endpoint
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.database import coherent_read_snapshot
 from hermes_finance.domain.liquid_capital import LinkedPairReadModel
@@ -537,6 +538,7 @@ def _summary_out(month: object, summary: MonthlySummaryResult) -> MonthlySummary
 
 
 @router.get("/{month_id}/summary", response_model=MonthlySummaryOut)
+@cached_read_endpoint
 def get_month_summary(
     month_id: int,
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),
@@ -745,6 +747,7 @@ def dashboard_to_out(dashboard: DashboardResult) -> DashboardOut:
 
 
 @router.get("/{month_id}/dashboard", response_model=DashboardOut)
+@cached_read_endpoint
 def get_month_dashboard(
     month_id: int,
     forecast_version: str = Query(default=DEFAULT_FORECAST_VERSION, min_length=1, max_length=32),

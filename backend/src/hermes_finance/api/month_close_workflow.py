@@ -31,6 +31,7 @@ from hermes_finance.api.dashboard import (
     dashboard_to_out,
 )
 from hermes_finance.api.market_data import moscow_today
+from hermes_finance.api.read_cache import cached_read_endpoint
 from hermes_finance.api.settings import MoneyValue, _database_for_request, session_for_request
 from hermes_finance.database import Database, coherent_read_snapshot
 from hermes_finance.domain.month_close_workflow import (
@@ -57,6 +58,7 @@ from hermes_finance.services.properties import (
     total_mortgage_balance,
     total_property_value,
 )
+from hermes_finance.services.source_monthly_returns import source_read_snapshot
 
 router = APIRouter(prefix="/api/months", tags=["month-close-workflow"])
 
@@ -801,7 +803,7 @@ def get_month_close_workflow(
     clock = getattr(request.app.state, "freshness_generated_at", None)
     generated_at = clock() if callable(clock) else datetime.now(UTC)
     today = moscow_today(request)
-    with coherent_read_snapshot(session):
+    with source_read_snapshot(session):
         month, readiness, freshness, steps, recommended, generated = build_month_close_workflow(
             session,
             month_id,
@@ -856,6 +858,7 @@ def get_month_close_workflow(
 
 
 @router.get("/{month_id}/securities-result", response_model=MonthSecuritiesResultOut)
+@cached_read_endpoint
 def get_month_securities_result(
     month_id: int,
     session: Session = Depends(session_for_request),
