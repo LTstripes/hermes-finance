@@ -1,6 +1,6 @@
-# Hermes Finance 1.7.0
+# Finance 1.7.0
 
-Hermes Finance **1.7.0** packages the integrated Month, DRAFT payout and Returns
+Finance **1.7.0** packages the integrated Month, DRAFT payout and Returns
 work through [#981](https://github.com/LTstripes/hermes-finance/pull/981).
 The accepted code baseline is `a1027347b253ed2e53647143726c11f76d09c0da`;
 [exact-main CI40653035431](https://github.com/LTstripes/hermes-finance/actions/runs/40653035431)

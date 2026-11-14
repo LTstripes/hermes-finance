@@ -18,7 +18,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Hermes Finance API"
+    app_name: str = "Finance API"
     app_version: str = __version__
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)

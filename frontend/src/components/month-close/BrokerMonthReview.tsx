@@ -169,7 +169,7 @@ function AccountAliases({ preview }: { preview: BrokerMonthPreview }) {
         <tr>
           <Th>Точный alias</Th>
           <Th>Происхождение</Th>
-          <Th>Счёт Hermes</Th>
+          <Th>Счёт в приложении</Th>
           <Th>Привязка</Th>
         </tr>
       </thead>
@@ -571,8 +571,8 @@ export function BrokerMonthReview({
                     disabled={busy || !preview.can_apply}
                     onChange={(e) => setBindingsReviewed(e.target.checked)}
                   />{" "}
-                  Я подтверждаю, что все новые aliases в таблице относятся к указанному счёту
-                  Hermes.
+                  Я подтверждаю, что все новые aliases в таблице относятся к указанному счёту в
+                  приложении.
                 </label>
               </>
             ) : null}

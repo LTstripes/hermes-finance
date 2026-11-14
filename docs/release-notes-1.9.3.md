@@ -1,4 +1,4 @@
-# Hermes Finance 1.9.3
+# Finance 1.9.3
 
 Opening a month or its payments could repeat the same source-proof checks many
 times, occupy database connections and make unrelated requests time out. This

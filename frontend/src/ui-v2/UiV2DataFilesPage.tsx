@@ -601,7 +601,7 @@ export default function UiV2DataFilesPage() {
                 долгами, недвижимостью, будущими выплатами, сигналами качества и комментариями.
               </p>
               <div className={styles.warning} role="note">
-                <strong>Внимание:</strong> файл содержит финансовые данные. Hermes создаёт его
+                <strong>Внимание:</strong> файл содержит финансовые данные. Приложение создаёт его
                 только локально — ничего не загружается и не отправляется автоматически.
               </div>
               <div className={styles.buttonRow}>

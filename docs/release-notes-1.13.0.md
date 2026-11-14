@@ -1,4 +1,4 @@
-# Hermes Finance 1.13.0
+# Finance 1.13.0
 
 ## Доходность
 

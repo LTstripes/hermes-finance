@@ -85,7 +85,7 @@ export default function UiV2SourceIntakePage() {
               #{selected.id} · {formatDate(selected.covered_from)} —{" "}
               {formatDate(selected.covered_to)} ·{" "}
               {selected.state.reporting_month_id === null
-                ? "без привязки к Hermes-счёту или отчётному месяцу"
+                ? "без привязки к счёту в приложении или отчётному месяцу"
                 : `привязан к отчётному месяцу #${selected.state.reporting_month_id}`}{" "}
               · наблюдений: {selected.observations.length} · исключений:{" "}
               {selected.exceptions.length} · финансовая власть:{" "}

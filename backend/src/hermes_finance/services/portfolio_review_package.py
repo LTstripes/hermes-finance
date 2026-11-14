@@ -309,7 +309,7 @@ def render_portfolio_review_markdown(package: dict[str, object]) -> str:
     sections = _mapping(package["sections"], label="package sections")
     profile = str(package["profile"])
     lines = [
-        f"# Hermes Finance — пакет для анализа ({profile})",
+        f"# Finance — пакет для анализа ({profile})",
         "",
         f"- Отчётный период: {_markdown_period(scope['reporting_period'])}",
         f"- Статус периода: {scope['reporting_status']}",

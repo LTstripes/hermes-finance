@@ -645,20 +645,20 @@ test("ui-v2 instrument return restores table scroll and screen titles @viewport-
     },
   );
   await page.goto("/v2/returns");
-  await expect(page).toHaveTitle("Доходность — Hermes Finance");
+  await expect(page).toHaveTitle("Доходность — Finance");
   const table = page.getByRole("table", { name: "Все бумаги" });
   const link = table.getByRole("link").first();
   await link.scrollIntoViewIfNeeded();
   const position = await page.evaluate(() => window.scrollY);
   expect(position).toBeGreaterThan(100);
   await link.click();
-  await expect(page).toHaveTitle("Инструмент — Hermes Finance");
+  await expect(page).toHaveTitle("Инструмент — Finance");
   await expect(page.getByRole("table", { name: "Инструмент по счетам" })).toBeVisible();
   await expect(page.locator("table:not([aria-label]):not(:has(caption))")).toHaveCount(0);
   await expect(page.locator("thead th:not([scope=col])")).toHaveCount(0);
   await page.getByRole("button", { name: /К доходности/ }).click();
   await expect(table).toBeVisible();
-  await expect(page).toHaveTitle("Доходность — Hermes Finance");
+  await expect(page).toHaveTitle("Доходность — Finance");
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeCloseTo(position, 0);
 });
 

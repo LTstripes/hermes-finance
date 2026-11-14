@@ -1879,7 +1879,7 @@ def render_bundle_markdown(bundle: dict[str, object]) -> str:
     metadata = bundle["metadata"]
     coverage = bundle["coverage"]
     lines = [
-        f"# Hermes Finance AI Analysis Bundle {bundle['schema_version']}",
+        f"# Finance AI Analysis Bundle {bundle['schema_version']}",
         "",
         f"- generated_at: {metadata['generated_at']}",
         f"- as_of_date: {metadata['as_of_date']}",

@@ -389,7 +389,7 @@ describe("QuotePreviewPanel", () => {
       ),
     );
     expect(screen.getByText(/Внешний источник котировок временно недоступен/)).toBeInTheDocument();
-    expect(screen.queryByText(/Hermes Finance не запущен/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/приложение не запущено/)).not.toBeInTheDocument();
     expect(screen.getByText("Kept Stock")).toBeInTheDocument();
   });
 
@@ -427,9 +427,7 @@ describe("QuotePreviewPanel", () => {
     expect(screen.getByRole("button", { name: "Применить выбранные" })).toBeEnabled();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Подробности статуса для Failed Stock" }));
-    expect(screen.getByRole("tooltip")).toHaveTextContent(
-      /Локальное приложение Hermes Finance работает/,
-    );
+    expect(screen.getByRole("tooltip")).toHaveTextContent(/Локальное приложение работает/);
     expect(screen.queryByText(/timeout/i)).not.toBeInTheDocument();
   });
 
@@ -608,8 +606,7 @@ describe("QuotePreviewPanel", () => {
 
   it("shows a total request failure through the existing alert", () => {
     renderPanel(null, {
-      error:
-        "Не удалось подключиться к локальному приложению. Проверь, что Hermes Finance запущен.",
+      error: "Не удалось подключиться к локальному приложению. Проверь, что приложение запущено.",
     });
     expect(screen.getByRole("alert")).toHaveTextContent("Не удалось подключиться");
   });
