@@ -97,7 +97,8 @@
 
 .goal-card__progress-row strong {
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--f-num);
+  font-weight: var(--w-semibold);
   font-size: var(--text-base);
   font-variant-numeric: tabular-nums;
 }
@@ -147,6 +148,9 @@
 
 .goal-card__values .data-value__value {
   overflow-wrap: anywhere;
+  font-family: var(--f-num);
+  font-weight: var(--w-semibold);
+  letter-spacing: 0;
 }
 
 .goal-card__forecast {
@@ -161,7 +165,8 @@
 
 .goal-card__forecast strong {
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--f-num);
+  font-weight: var(--w-semibold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -228,7 +233,8 @@
 
 .goal-card__compact-value strong {
   color: var(--ink);
-  font-family: var(--mono);
+  font-family: var(--f-num);
+  font-weight: var(--w-semibold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -335,4 +341,139 @@
     padding-left: var(--space-4);
     padding-right: var(--space-4);
   }
+}
+
+.goal-plan-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-block: 12px;
+}
+
+.goal-plan-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.goal-plan-table th,
+.goal-plan-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.goal-plan-table th:last-child,
+.goal-plan-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-plan > summary {
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.goal-plan-note {
+  margin-block: 10px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.goal-plan-results {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  margin-block: 16px;
+}
+
+.goal-plan-surplus {
+  color: var(--pos);
+}
+
+.goal-plan-shortfall {
+  color: var(--neg);
+}
+
+.goal-plan-state {
+  margin-block: 16px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.goal-plan-chart {
+  min-width: 0;
+  margin: 18px 0 10px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.goal-plan-chart-values {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.goal-plan-chart-values > span:last-child {
+  text-align: right;
+}
+
+.goal-plan-chart-values strong,
+.goal-plan-tooltip strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-plan-tooltip {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--text-xs);
+}
+
+.goal-plan-more {
+  margin-top: 12px;
+}
+
+.goal-plan-explanation {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.goal-plan-explanation p {
+  margin: 0;
+}
+
+.goal-plan-table-scroll {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.goal-plan-table caption {
+  text-align: left;
+}
+
+.goal-plan-fields > .field {
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  .goal-plan-fields,
+  .goal-plan-results {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Plan inputs fill their grid column like the tiles below them. */
+.goal-plan-fields span:has(> input) {
+  display: block;
+  width: 100%;
 }

@@ -235,3 +235,39 @@ def delete_goal_endpoint(
     session: Session = Depends(session_for_request),
 ) -> None:
     delete_goal(session, goal_id)
+
+
+@router.get("/{goal_id}/plan")
+def goal_plan_endpoint(
+    goal_id: int,
+    reporting_month_id: int = Query(..., ge=1),
+    monthly_contribution: str | None = Query(default=None, max_length=32),
+    first_contribution_date: date | None = None,
+    annual_rate_pct: str = Query(default="0", max_length=16),
+    session: Session = Depends(session_for_request),
+) -> dict:
+    from decimal import Decimal, InvalidOperation
+
+    from fastapi import HTTPException
+
+    from hermes_finance.services.goal_plan import build_goal_plan
+
+    try:
+        amount = None
+        if monthly_contribution is not None:
+            value = Decimal(monthly_contribution)
+            if not value.is_finite() or value < 0 or value > Decimal("1000000000000000"):
+                raise ValueError("Некорректный ежемесячный взнос")
+            if value != value.quantize(Decimal("0.01")):
+                raise ValueError("Взнос задаётся с точностью до копейки")
+            amount = int(value * 100)
+        return build_goal_plan(
+            session,
+            goal_id,
+            reporting_month_id,
+            contribution=amount,
+            first=first_contribution_date,
+            annual_rate=Decimal(annual_rate_pct),
+        )
+    except (ValueError, InvalidOperation) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

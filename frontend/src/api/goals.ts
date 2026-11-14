@@ -104,3 +104,34 @@ export function updateGoal(
 export function deleteGoal(goalId: number, signal?: AbortSignal): Promise<void> {
   return apiRequest<void>(`/api/goals/${goalId}`, { method: "DELETE", signal });
 }
+
+export type GoalPlan = {
+  method_version: "goal_plan_v1";
+  status: string;
+  as_of_date: string;
+  base_capital: string | null;
+  coverage: string;
+  components: { liquid_assets: string; included_debts: string };
+  first_contribution_date?: string;
+  achievement_date?: string | null;
+  deadline_status?: string;
+  remaining_contributions?: number | null;
+  required_contribution?: string | null;
+  last_required_contribution?: string | null;
+  contribution_difference?: string | null;
+  required_capital?: string | null;
+  income_months_count?: number;
+  income_months_used?: string[];
+  income_months_complete?: boolean;
+  trajectory?: { date: string; capital: string }[];
+};
+
+export function getGoalPlan(
+  goalId: number,
+  monthId: number,
+  parameters: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<GoalPlan> {
+  const query = new URLSearchParams({ reporting_month_id: String(monthId), ...parameters });
+  return apiRequest<GoalPlan>(`/api/goals/${goalId}/plan?${query}`, { method: "GET", signal });
+}

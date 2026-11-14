@@ -12781,6 +12781,42 @@ Future capital trajectory отсутствует.
 - он участвует в semantic fingerprint;
 - selector НЕ переоценивается позднее против изменившейся database.
 
+### C8 — goal_plan_v1 (#1129)
+
+Read-only GET `/api/goals/{id}/plan?reporting_month_id=…` uses canonical liquid
+capital and portfolio source coverage. `monthly_contribution` is a nonnegative
+ruble decimal string, at most two decimals; absent differs from zero. Explicit
+`annual_rate_pct` defaults to 0 (range 0–100%). No historical rate substitution.
+First contribution follows snapshot, default first day of next month. Subsequent
+dates retain the original day, clamped to month end without subsequent drift.
+Each date is one whole model period, including the first; no daily proration.
+
+`K_next = ROUND_HALF_UP(K * (1+r/100)^(1/12), kopeck) + contribution`.
+Decimal precision 60; balances/payments integer kopecks. Growth applies to the
+whole net base, including negative capital. Stop at attainment or 100 calendar years after the snapshot (at most 1200 periods).
+`not_reached` means no attainment in 100 years; absent input is
+`contribution_missing`; already reached base is `achieved`. Inactive/unsupported
+modes are unsupported. Missing base gives no scenario; partial coverage remains
+visible. Response identifies snapshot, selected month, components, coverage and method.
+
+Deadline count includes scheduled dates <= deadline. Required payment is the
+smallest nonnegative integer kopeck payment reaching target after that count.
+Annuity inverse (or `(target-base)/n` at zero rate) seeds monotone search using
+identical monthly rounding. Corrected last payment = max(0, target minus rounded
+grown balance after n-1 payments); no larger than regular payment. Difference is
+entered minus required. Missing/past deadline, no scheduled dates and deadline
+outside 1200 periods have distinct states and no invented required payment.
+No financial records, CLOSED or `goal_achievement_v1` changes; deterministic read.
+
+Passive estimate uses actual C03 average (same as goal progress) and canonical
+selected-month liquid capital: yield = average × 12 / capital; required capital =
+target monthly income × capital / average, HALF_UP to kopecks. Nonpositive income
+or capital and missing history yield no estimate. History months/dates, incomplete
+12-month coverage and partial capital are exposed. This is approximate under
+unchanged yield, not forecast. No new income-producing-capital definition or link.
+Optional historical capital-growth/XIRR hints are omitted; a comparable complete
+capital series has not been validated here.
+
 <a id="c9"></a>
 
 Selective quote Apply reuses its immutable reviewed Preview, exact target snapshot/date, explicit mapping and selected fields; refetch/changed-source guards are atomic and no network refetch occurs under a financial commit. Existing manual/immutable quote provenance is not overwritten by unrelated provider snapshots. Historical broker observations retain their accepted meaning under [C4](#c4-0016-owner-approved-alfa-baseline-and-broker-mappings-19). The earlier release-wide ban on all persistent broker mappings is superseded by that accepted registry, not by arbitrary provider payload persistence.

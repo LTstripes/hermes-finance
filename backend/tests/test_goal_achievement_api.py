@@ -87,3 +87,96 @@ def test_goals_summary_requires_reporting_month_without_dynamic_goal_id_validati
             assert "goal_id" not in response.text
     finally:
         database.engine.dispose()
+
+
+def test_plan_read_only_states_and_estimate(tmp_path):
+    from decimal import Decimal
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from sqlalchemy import event
+
+    database = create_database(tmp_path / "plan.db")
+    Base.metadata.create_all(database.engine)
+    with TestClient(create_app(database)) as client:
+        month = client.post(
+            "/api/months", json={"year": 2032, "month": 1, "snapshot_date": "2032-01-15"}
+        ).json()
+        goal = client.post(
+            "/api/goals",
+            json={
+                "name": "Synthetic capital",
+                "goal_type": "capital",
+                "calculation_mode": "liquid_capital_net",
+                "target_value": {"amount": "1000.01", "currency": "RUB"},
+                "target_date": "2032-04-01",
+            },
+        ).json()
+        statements = []
+
+        @event.listens_for(database.engine, "before_cursor_execute")
+        def record(connection, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+
+        url = f"/api/goals/{goal['id']}/plan?reporting_month_id={month['id']}"
+        assert client.get(url).json()["status"] == "base_unavailable"
+        from hermes_finance.domain import RubleAmount
+        from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
+
+        with patch(
+            "hermes_finance.services.goal_plan.portfolio_source_coverage_for_month",
+            return_value=PortfolioSourceCoverage("partial"),
+        ):
+            result = client.get(url + "&monthly_contribution=100&annual_rate_pct=15")
+            assert result.status_code == 200, result.text
+            assert result.json()["coverage"] == "partial"
+            assert result.json()["required_contribution"] is not None
+            assert client.get(url).json()["status"] == "contribution_missing"
+            for value in ("-1", "NaN", "Infinity", "0.001"):
+                assert client.get(url + "&monthly_contribution=" + value).status_code == 422
+            for value in ("-1", "NaN", "101"):
+                assert client.get(url + "&annual_rate_pct=" + value).status_code == 422
+        assert not any(
+            s.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "REPLACE"))
+            for s in statements
+        )
+        event.remove(database.engine, "before_cursor_execute", record)
+        passive = client.post(
+            "/api/goals",
+            json={
+                "name": "Synthetic income",
+                "goal_type": "passive_income",
+                "calculation_mode": "monthly_net_passive_income",
+                "target_value": {"amount": "200", "currency": "RUB"},
+            },
+        ).json()
+        with (
+            patch(
+                "hermes_finance.services.goal_plan.portfolio_source_coverage_for_month",
+                return_value=PortfolioSourceCoverage("complete"),
+            ),
+            patch(
+                "hermes_finance.services.goal_plan.liquid_capital_for_month",
+                return_value=SimpleNamespace(
+                    liquid_capital_net=RubleAmount(100000),
+                    total_assets=RubleAmount(100000),
+                    total_debts_included=RubleAmount(0),
+                ),
+            ),
+            patch(
+                "hermes_finance.services.goal_plan.passive_income_average",
+                return_value=SimpleNamespace(
+                    average=RubleAmount(1000),
+                    count_months=3,
+                    months_used=("2031-10", "2031-11", "2031-12"),
+                    is_complete_12m=False,
+                ),
+            ),
+        ):
+            result = client.get(
+                f"/api/goals/{passive['id']}/plan?reporting_month_id={month['id']}"
+            ).json()
+            assert Decimal(result["required_capital"]) == Decimal("20000")
+            assert result["income_months_count"] == 3
+            assert result["income_months_complete"] is False
+    database.engine.dispose()
