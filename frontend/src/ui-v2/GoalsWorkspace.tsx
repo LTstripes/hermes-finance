@@ -1,14 +1,12 @@
-import { IncomeTabs } from "./IncomeTabs";
 import {
+  type MouseEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
-  type ReactNode,
 } from "react";
-
 import { formatApiError } from "../api/client";
 import {
   createGoal,
@@ -39,19 +37,21 @@ import {
   Panel,
   Select,
 } from "../components/ui";
-import { moneyWholeText } from "./valueFormat";
-import { rub } from "../lib/money";
 import { formatDate, formatMoney, formatMonth, formatPercent } from "../lib/format";
-import { UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
-import { UiV2Panel } from "./UiV2Panel";
-import { UiV2Shell } from "./UiV2Shell";
-import v2Styles from "./UiV2Goals.module.css";
 import {
   GOAL_STATUS_LABELS,
   GOAL_TYPE_LABELS,
   goalCalculationModeLabel,
   goalReasonLabel,
 } from "../lib/goals";
+import { rub } from "../lib/money";
+import { GoalPlanBlock } from "./GoalPlanBlock";
+import { IncomeTabs } from "./IncomeTabs";
+import v2Styles from "./UiV2Goals.module.css";
+import { UiV2Panel } from "./UiV2Panel";
+import { UiV2Shell } from "./UiV2Shell";
+import { UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
+import { moneyWholeText } from "./valueFormat";
 
 function newestMonth(rows: ReportingMonth[]): ReportingMonth | null {
   return (
@@ -571,6 +571,14 @@ function GoalCard({
 }: GoalCardProps) {
   const forecast = summary?.achievement_forecast;
   const hasOverflowActions = !goal.is_main;
+  const showPlan =
+    !compact &&
+    !summaryLoading &&
+    forecast &&
+    goal.is_active &&
+    ((goal.goal_type === "capital" && goal.calculation_mode === "liquid_capital_net") ||
+      (goal.goal_type === "passive_income" &&
+        goal.calculation_mode === "monthly_net_passive_income"));
 
   return (
     <li
@@ -637,9 +645,20 @@ function GoalCard({
         />
       )}
 
-      {!compact ? <GoalForecast forecast={forecast} goal={goal} loading={summaryLoading} /> : null}
+      {!compact && !showPlan ? (
+        <GoalForecast forecast={forecast} goal={goal} loading={summaryLoading} />
+      ) : null}
 
-      <GoalDetails forecast={forecast} goal={goal} />
+      {showPlan ? (
+        <GoalPlanBlock
+          key={`${goal.id}-${forecast.reporting_month_id}-${goal.target_value.amount}-${goal.target_date}`}
+          goal={goal}
+          monthId={forecast.reporting_month_id}
+          currentIncome={forecast.current_value?.amount}
+          details={<GoalDetails forecast={forecast} goal={goal} embedded />}
+        />
+      ) : null}
+      {!showPlan ? <GoalDetails forecast={forecast} goal={goal} /> : null}
     </li>
   );
 }
@@ -734,33 +753,46 @@ function GoalForecast({
 }
 
 function GoalDetails({
+  embedded = false,
   forecast,
   goal,
 }: {
   forecast: GoalSummary["achievement_forecast"] | undefined;
   goal: Goal;
+  embedded?: boolean;
 }) {
-  return (
+  const body = (
+    <div className="goal-card__details-body">
+      <div>
+        <span>Способ расчёта</span>
+        <strong>{goalCalculationModeLabel(goal.calculation_mode)}</strong>
+      </div>
+      {forecast ? (
+        <div>
+          <span>Статус расчёта</span>
+          <strong>{GOAL_STATUS_LABELS[forecast.status] ?? "Статус недоступен"}</strong>
+        </div>
+      ) : null}
+      {forecast ? (
+        <div>
+          <span>Подробности оценки</span>
+          <strong>{forecastHelp(forecast)}</strong>
+        </div>
+      ) : null}
+      {goal.notes ? (
+        <div>
+          <span>Заметка</span>
+          <strong>{goal.notes}</strong>
+        </div>
+      ) : null}
+    </div>
+  );
+  return embedded ? (
+    body
+  ) : (
     <details className="goal-card__details">
       <summary>Подробнее</summary>
-      <div className="goal-card__details-body">
-        <div>
-          <span>Способ расчёта</span>
-          <strong>{goalCalculationModeLabel(goal.calculation_mode)}</strong>
-        </div>
-        {forecast ? (
-          <div>
-            <span>Статус расчёта</span>
-            <strong>{GOAL_STATUS_LABELS[forecast.status] ?? "Статус недоступен"}</strong>
-          </div>
-        ) : null}
-        {goal.notes ? (
-          <div>
-            <span>Заметка</span>
-            <strong>{goal.notes}</strong>
-          </div>
-        ) : null}
-      </div>
+      {body}
     </details>
   );
 }

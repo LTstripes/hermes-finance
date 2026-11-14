@@ -10,6 +10,7 @@ from hermes_finance.domain.goal_achievement import (
     GOAL_ACHIEVEMENT_METHOD_VERSION,
     calculate_goal_achievement_forecast,
 )
+from hermes_finance.domain.goal_plan import calculate_goal_plan, contribution_date
 from hermes_finance.persistence import Base
 from hermes_finance.services.goal_achievement import build_goal_achievement_summary
 from hermes_finance.services.goals import create_goal
@@ -314,3 +315,68 @@ def test_unsupported_goal_types_are_reported_without_calculator(
     finally:
         session.close()
         database.engine.dispose()
+
+
+def plan(**kwargs):
+    return calculate_goal_plan(
+        capital=kwargs.pop("capital", 10000),
+        target=kwargs.pop("target", 40000),
+        snapshot=date(2032, 1, 15),
+        contribution=kwargs.pop("contribution", 10000),
+        **kwargs,
+    )
+
+
+def test_manual_and_determinism():
+    result = plan()
+    assert result == plan()
+    assert result["achievement_date"] == "2032-04-01"
+    assert [p["capital"] for p in result["trajectory"]] == ["200.00", "300.00", "400.00"]
+    result = plan(annual_rate=Decimal("12.6825030131969720661201"), target=30201)
+    assert result["achievement_date"] == "2032-03-01"
+    assert [p["capital"] for p in result["trajectory"]] == ["201.00", "303.01"]
+
+
+@pytest.mark.parametrize("rate", [Decimal(0), Decimal(15)])
+def test_inverse_and_corrected_last(rate):
+    result = plan(target=100001, annual_rate=rate, deadline=date(2032, 4, 1))
+    payment = int(Decimal(result["required_contribution"]) * 100)
+    last = int(Decimal(result["last_required_contribution"]) * 100)
+    assert last <= payment
+    assert (
+        plan(target=100001, contribution=payment, annual_rate=rate)["achievement_date"]
+        <= "2032-04-01"
+    )
+    assert (
+        plan(target=100001, contribution=payment - 1, annual_rate=rate)["achievement_date"]
+        > "2032-04-01"
+    )
+    if rate == 0:
+        assert payment == 30001
+        assert last == 29999
+
+
+def test_calendar():
+    assert contribution_date(date(2032, 1, 31), 1) == date(2032, 2, 29)
+    assert contribution_date(date(2032, 1, 31), 2) == date(2032, 3, 31)
+    assert contribution_date(date(2031, 1, 30), 1) == date(2031, 2, 28)
+    assert contribution_date(date(2031, 1, 29), 2) == date(2031, 3, 29)
+
+
+def test_states():
+    assert plan(capital=40000)["status"] == "achieved"
+    assert plan(contribution=None)["status"] == "contribution_missing"
+    assert plan(contribution=0)["status"] == "not_reached"
+    assert len(plan(contribution=0)["trajectory"]) == 1200
+    assert plan(capital=-10000)["achievement_date"] == "2032-06-01"
+    assert plan()["deadline_status"] == "absent"
+    assert plan(deadline=date(2030, 1, 1))["deadline_status"] == "passed"
+    assert plan(deadline=date(2032, 1, 20))["deadline_status"] == "no_contributions"
+    with pytest.raises(ValueError):
+        plan(first=date(2032, 1, 15))
+
+
+def test_plan_horizon_counts_from_snapshot():
+    result = plan(first=date(2133, 1, 1), contribution=10000)
+    assert result["status"] == "not_reached"
+    assert result["trajectory"] == []

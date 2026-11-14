@@ -1017,6 +1017,16 @@ Alfa PDF supports bounded historical realised payout events. It is not a generic
 
 Keep actual, forecast and hypothetical values visibly separate. Passive-income goal progress uses actual C03 eligible CLOSED-month rolling average; forecast shocks do not rewrite it. Goal target dates are deadlines, not evidence of a future trajectory; unchanged current value cannot justify an invented future achievement date. C8 owns formulas, eligibility, support states and scenario matrices.
 
+Capital goal cards (#1129) disclose «План достижения»: selected-month base and
+snapshot, monthly payment (blank differs from zero), first date and explicit
+annual return assumption default 0%. Show conditional attainment, small trajectory
+chart, deadline payment count, required regular/corrected last payment and difference.
+Monthly table and base components are in details. Explain whole-base growth once;
+partial base remains partial. Missing base, attained goal, past/absent deadline
+and no attainment in 100 years have distinct displays. Actual progress stays separate.
+Passive goals show approximate required capital under unchanged actual yield,
+with history coverage and dates. C8 owns independent read-only `goal_plan_v1`.
+
 Goals, tax/IIS and scenarios use the Income and plans heading and its shared
 month-preserving tabs. Goals show whole rubles and one decimal place for progress;
 unsupported goals do not promise an achievement-date forecast. Tax/IIS leads with

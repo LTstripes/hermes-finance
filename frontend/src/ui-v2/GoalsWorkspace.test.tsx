@@ -19,6 +19,7 @@ import UiV2GoalsPage from "./UiV2GoalsPage";
 import { GoalsWorkspace } from "./GoalsWorkspace";
 
 vi.mock("../api/goals", () => ({
+  getGoalPlan: vi.fn().mockResolvedValue({ status: "base_unavailable", coverage: "unavailable" }),
   createGoal: vi.fn(),
   deleteGoal: vi.fn(),
   listGoals: vi.fn(),
@@ -181,19 +182,17 @@ describe("GoalsWorkspace R03-09 cards", () => {
     expect(within(mainCard).getByText(/80\s*000\s*₽/)).toBeInTheDocument();
     expect(within(mainCard).getByText(/100\s*000\s*₽/)).toBeInTheDocument();
     expect(within(mainCard).getByText(/20\s*000\s*₽/)).toBeInTheDocument();
-    expect(within(mainCard).getByText("Прогноз даты пока недоступен")).toBeInTheDocument();
+    expect(within(mainCard).queryByText("Прогноз даты пока недоступен")).not.toBeInTheDocument();
 
     expect(within(mainCard).queryByRole("button", { name: /Действия для цели/ })).toBeNull();
     expect(within(mainCard).getByRole("button", { name: "Изменить" })).toBeInTheDocument();
 
-    await user.click(
-      within(mainCard).getByRole("button", { name: /Почему нет прогноза даты для цели/ }),
-    );
+    await user.click(await within(mainCard).findByText("Подробнее", { exact: true }));
     expect(
-      screen.getByText(/Недостаточно данных, чтобы надёжно спрогнозировать будущую дату/),
+      within(mainCard).getByText(/Недостаточно данных, чтобы надёжно спрогнозировать будущую дату/),
     ).toBeInTheDocument();
     expect(screen.queryByText("no_trajectory_model")).toBeNull();
-    expect(screen.getByText(/2031-01/)).toBeInTheDocument();
+    expect(within(mainCard).getByText(/2031-01/)).toBeVisible();
 
     const summary = archiveSummary();
     const archive = summary.closest("details");
