@@ -180,9 +180,9 @@ export function BrokerProvisionalEstimate({
       </p>
       {intake.state.account_id === null && (
         <p role="status">
-          Разбор не привязан к Hermes-счёту. Расчёт идёт в source-native гипотетической области
-          одного выбранного оригинала: без финансового Apply, принятия счёта или утверждения полноты
-          портфеля. Сопоставление с Hermes-счётом не выполняется.
+          Разбор не привязан к счёту в приложении. Расчёт идёт в source-native гипотетической
+          области одного выбранного оригинала: без финансового Apply, принятия счёта или утверждения
+          полноты портфеля. Сопоставление со счётом в приложении не выполняется.
         </p>
       )}
       {!file && (
@@ -228,8 +228,8 @@ export function BrokerProvisionalEstimate({
             <p className={styles.note}>
               Область сценария:{" "}
               {context.scope === "native_source"
-                ? `нативный счёт строк ${context.native_source_account ?? "—"}; Hermes-счёт не задан`
-                : `Hermes-счёт #${context.account_id ?? "—"}`}
+                ? `нативный счёт строк ${context.native_source_account ?? "—"}; счёт в приложении не задан`
+                : `Счёт в приложении #${context.account_id ?? "—"}`}
             </p>
           </div>
           <details>

@@ -259,7 +259,7 @@ def test_markdown_download_is_rendered_from_the_same_dto_and_keeps_privacy_bound
         'attachment; filename="hermes-portfolio-review-2026-04-30-concise.md"'
     )
     report = response.text
-    assert "# Hermes Finance — пакет для анализа (concise)" in report
+    assert "# Finance — пакет для анализа (concise)" in report
     assert "Чистый ликвидный капитал: 1386001.00 ₽" in report, report
     assert "Распределение и концентрация**: опущен профилем" in report
     assert "Совокупный капитал: недоступно" in report

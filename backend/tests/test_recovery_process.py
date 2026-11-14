@@ -90,7 +90,7 @@ if not Path(start_marker).exists():
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b"[]" if self.path.startswith("/api/") else b"Hermes Finance"
+        body = b"[]" if self.path.startswith("/api/") else b"<title>Finance</title>"
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -121,7 +121,7 @@ token, database, checkout, marker = sys.argv[1:]
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b'[{"id":1}]' if self.path == '/api/months' else b'Hermes Finance' if self.path == '/' else b'{}'
+        body = b'[{"id":1}]' if self.path == '/api/months' else b'<title>Finance</title>' if self.path == '/' else b'{}'
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8' if self.path == '/' else 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))

@@ -1,4 +1,4 @@
-# Hermes Finance 1.8.0
+# Finance 1.8.0
 
 This release combines the dated instrument detail, native bond cash and issue
 attribution fixes from #987-#991 with the persistent XML and Alfa investment-PDF

@@ -1,6 +1,6 @@
-# Hermes Finance 1.7.1
+# Finance 1.7.1
 
-Hermes Finance **1.7.1** combines the source-bound bond endpoint reader from
+Finance **1.7.1** combines the source-bound bond endpoint reader from
 [#984](https://github.com/LTstripes/hermes-finance/pull/984) with the Returns read
 efficiency and Month workflow changes from
 [#986](https://github.com/LTstripes/hermes-finance/pull/986). The packaging change

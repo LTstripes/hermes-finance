@@ -423,7 +423,7 @@ export function MonthInstrumentPayouts({
             <summary>Происхождение preview</summary>
             <p>
               Provider: {result.provider} · UID:{" "}
-              {result.instrument_uid ?? "нет принятого сопоставления"} · Hermes-счёт:{" "}
+              {result.instrument_uid ?? "нет принятого сопоставления"} · Счёт в приложении:{" "}
               {result.account_id ?? "без привязки"} · инструмент:{" "}
               {result.instrument_id ?? "не принят"}
             </p>

@@ -1,4 +1,4 @@
-# Hermes Finance
+# Finance
 
 Local single-user Windows personal-finance application: monthly snapshots, actual income, portfolios, source review, planning and exports. Normal runtime is loopback-only; money uses exact backend arithmetic.
 

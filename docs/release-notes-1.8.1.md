@@ -1,4 +1,4 @@
-# Hermes Finance 1.8.1
+# Finance 1.8.1
 
 This bounded return-calculation correction retains the existing XML/PDF import,
 source-proof host, ledger and schema `0067_investment_report_proofs`.

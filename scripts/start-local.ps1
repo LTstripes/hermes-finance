@@ -339,7 +339,7 @@ function Wait-ForPreviewStack {
                 -not (Test-HermesRecoveryHeaders -Response $response -ExpectedToken $Binding.Token -ExpectedDatabaseIdentity $Binding.DatabaseIdentity -ExpectedCheckoutSha $Binding.CheckoutSha)) {
                 throw "Preview readiness identity mismatch."
             }
-            if ($response.StatusCode -ne 200 -or ($path -eq "/" -and $response.Content -notmatch "Hermes Finance")) { throw "Preview readiness surface is unavailable." }
+            if ($response.StatusCode -ne 200 -or ($path -eq "/" -and $response.Content -notmatch "<title>Finance</title>")) { throw "Preview readiness surface is unavailable." }
         }
         if ($ready) { return }
         Start-Sleep -Milliseconds 250
@@ -411,7 +411,7 @@ function Wait-ForProductionStack {
                 $health.StatusCode -eq 200 -and
                 $months.StatusCode -eq 200 -and
                 $frontend.StatusCode -eq 200 -and
-                $frontend.Content -match "Hermes Finance"
+                $frontend.Content -match "<title>Finance</title>"
             )
             if (
                 $RequireRecoverySurfaces -and
@@ -419,7 +419,7 @@ function Wait-ForProductionStack {
             ) {
                 Throw-HermesRecoveryReadinessFailure -Classification "api_http_status"
             }
-            if ($RequireRecoverySurfaces -and $frontend.Content -notmatch "Hermes Finance") {
+            if ($RequireRecoverySurfaces -and $frontend.Content -notmatch "<title>Finance</title>") {
                 Throw-HermesRecoveryReadinessFailure -Classification "readiness_probe_defect"
             }
             if ($baseReady -and -not $RequireRecoverySurfaces) {

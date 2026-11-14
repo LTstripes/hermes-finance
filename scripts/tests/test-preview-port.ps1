@@ -115,7 +115,7 @@ function Invoke-WebRequest {
     $script:requests += $Uri
     $headers = @{ "X-Hermes-Recovery-Token"=$binding.Token; "X-Hermes-Recovery-Database-Identity"=$binding.DatabaseIdentity; "X-Hermes-Recovery-Checkout-SHA"=$binding.CheckoutSha }
     if ($script:forged) { $headers[$script:forged] = "forged" }
-    return [pscustomobject]@{ StatusCode=200; Content="Hermes Finance"; Headers=$headers }
+    return [pscustomobject]@{ StatusCode=200; Content="<title>Finance</title>"; Headers=$headers }
 }
 Wait-ForPreviewStack -Backend $process -Identity $identity -Binding $binding -Port 18869
 Check (($script:requests -join ',') -ceq "http://127.0.0.1:18869/api/health,http://127.0.0.1:18869/api/months,http://127.0.0.1:18869/") "selected port / three ordinary surfaces only"
