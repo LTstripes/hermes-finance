@@ -1097,6 +1097,15 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     const mortgage = screen.getByDisplayValue("3000000.00");
     await user.clear(mortgage);
     await user.type(mortgage, "2900000.00");
+    // On a loaded runner the typed value can land after the click; wait until the
+    // field holds it, otherwise validation sees an empty mortgage and never saves.
+    await waitFor(
+      () =>
+        expect((mortgage as HTMLInputElement).value.replace(/\s/g, "")).toMatch(
+          /^2900000([.,]00)?$/,
+        ),
+      { timeout: 5000 },
+    );
     // «Готово» is disabled while any earlier operation is busy; a click on a
     // disabled button is silently lost on a loaded runner, so wait for it.
     const done = within(propertyTable).getByRole("button", { name: "Готово" });

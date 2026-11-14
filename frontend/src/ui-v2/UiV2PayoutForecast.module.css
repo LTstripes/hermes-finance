@@ -214,6 +214,15 @@
 .payments td:last-child {
   text-align: right;
 }
+.payments td a {
+  color: var(--ink);
+  text-decoration: none;
+}
+.payments td a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .payments small {
   display: block;
   color: var(--muted);
