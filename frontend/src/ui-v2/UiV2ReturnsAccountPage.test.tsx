@@ -14,6 +14,29 @@ import {
 } from "./returns/fixtures";
 import { ReturnsLegacyRedirect } from "./returns/ReturnsLegacyRedirect";
 import UiV2ReturnsAccountPage from "./UiV2ReturnsAccountPage";
+import { monthReturnsPath } from "./returns/monthLink";
+
+test("portfolio month navigation uses calendar boundaries across years and leap days", () => {
+  expect(monthReturnsPath({ year: 2031, month: 1 })).toContain("start=2030-12-31&end=2031-01-31");
+  expect(monthReturnsPath({ year: 2032, month: 2 })).toContain("start=2032-01-31&end=2032-02-29");
+});
+
+test("shows one portfolio result absence explanation from the backend", async () => {
+  install((url) =>
+    url.pathname.endsWith("overview")
+      ? Promise.resolve(
+          response({
+            ...overviewFixture("portfolio", may),
+            portfolio_return_unavailable_reason: "portfolio_monthly_return_not_supported",
+          }),
+        )
+      : undefined,
+  );
+  setup(`/v2/returns/account?scope=portfolio&start=${may.start}&end=${may.end}`);
+  const notice = await screen.findByRole("region", { name: "Результат общего портфеля" });
+  expect(within(notice).getByText(/Данные разных счетов/)).toBeVisible();
+  expect(screen.queryByRole("region", { name: "Нет данных о доходности" })).toBeNull();
+});
 
 function choosePeriod(start: string, end: string) {
   fireEvent.click(screen.getByText("Свой интервал", { exact: true }));

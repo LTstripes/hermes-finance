@@ -125,6 +125,9 @@ class AcceptedIncome(AcceptedIncomeAmounts):
 
 
 class Overview(DTO):
+    portfolio_return_unavailable_reason: (
+        Literal["portfolio_monthly_return_not_supported"] | None
+    ) = None
     contract_version: Literal["returns_source_v2", "returns_capital_v1"] | None = None
     account_link: AccountLink | None = None
     scope: str

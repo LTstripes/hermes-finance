@@ -446,6 +446,46 @@ def read_clean_account(
     include_position_rates=False,
     include_position_results=False,
 ):
+    from hermes_finance.database import snapshot_read_result
+    from hermes_finance.services.source_monthly_returns import source_read_snapshot
+
+    with source_read_snapshot(session):
+        return snapshot_read_result(
+            session,
+            "clean_account",
+            (
+                source_account,
+                start,
+                end,
+                isin,
+                include_purchases,
+                include_position_rates,
+                include_position_results,
+            ),
+            lambda: _read_clean_account(
+                session,
+                source_account,
+                start,
+                end,
+                isin=isin,
+                include_purchases=include_purchases,
+                include_position_rates=include_position_rates,
+                include_position_results=include_position_results,
+            ),
+        )
+
+
+def _read_clean_account(
+    session,
+    source_account,
+    start,
+    end,
+    *,
+    isin=None,
+    include_purchases=False,
+    include_position_rates=False,
+    include_position_results=False,
+):
     """Return one exact source scope and period without saving an attestation."""
     from hermes_finance.services.returns_view import _catalogue_names, _display_name
     from hermes_finance.services.source_instrument_returns import read_instrument_returns

@@ -175,7 +175,7 @@ it("ranks three results on each side by instrument, preserves zero/unknown/parti
           financial_account_id: 3,
           account_type: "brokerage",
           source_account_id: "SYNTHETIC-PRIVATE-ID",
-          label: "Учебный счёт",
+          label: "Синтетический брокерский счёт",
           reason_codes: [],
         },
       },

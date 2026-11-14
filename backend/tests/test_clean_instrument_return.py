@@ -1386,7 +1386,9 @@ def test_partial_sale_then_full_redemption_weights_each_lot_without_aging_closed
     assert result.xirr.reason_codes == ("short_holding",)
 
 
-def test_redeemed_bond_account_dto_keeps_existing_fields_and_formats_new_duration(monkeypatch):
+def test_redeemed_bond_account_dto_keeps_existing_fields_and_formats_new_duration(
+    monkeypatch, tmp_path
+):
     from hermes_finance.api.clean_return_types import CleanInstrument
     from hermes_finance.services import returns_view, source_instrument_returns
     from hermes_finance.services.clean_instrument_return import read_clean_account
@@ -1400,9 +1402,20 @@ def test_redeemed_bond_account_dto_keeps_existing_fields_and_formats_new_duratio
         source_instrument_returns, "read_instrument_returns", lambda *a, **k: source
     )
     monkeypatch.setattr(returns_view, "_catalogue_names", lambda *a: {})
-    response = read_clean_account(
-        None, "synthetic", analysis.opening_date, analysis.closing_date, include_position_rates=True
-    )
+    from hermes_finance.database import create_database
+
+    database = create_database(tmp_path / "clean-dto.db")
+    try:
+        with database.session_factory() as session:
+            response = read_clean_account(
+                session,
+                "synthetic",
+                analysis.opening_date,
+                analysis.closing_date,
+                include_position_rates=True,
+            )
+    finally:
+        database.engine.dispose()
     dto = CleanInstrument.model_validate(response["instruments"][0]).model_dump(mode="json")
     assert dto["xirr"]["weighted_holding_days"] == "400.00"
     assert dto["xirr"]["holding_days"] == 400

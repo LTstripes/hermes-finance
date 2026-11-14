@@ -338,20 +338,24 @@ export default function UiV2ClosePage() {
       </UiV2Notice>
     );
   else {
-    const findings = workflow.final_review.available
-      ? closeOwnerActionFindings(workflow.final_review.close_readiness.items).filter(
-          (item) => item.severity === "hard_blocker" || item.severity === "warning",
-        )
-      : [];
+    const findings =
+      workflow.checklist?.remarks ??
+      (workflow.final_review.available
+        ? closeOwnerActionFindings(workflow.final_review.close_readiness.items).filter(
+            (item) => item.severity === "hard_blocker" || item.severity === "warning",
+          )
+        : []);
     const blocked = !closed && !workflow.readiness.can_close;
     const incomplete = isIncompleteMonthDraft(workflow);
     const blockers = blocked ? findings.filter((item) => item.severity === "hard_blocker") : [];
     const remaining = blocked
       ? findings.filter((item) => item.severity !== "hard_blocker")
       : findings;
-    const findingCount = workflow.final_review.available
-      ? findings.length
-      : workflow.readiness.hard_blocker_count + workflow.readiness.warning_count;
+    const findingCount =
+      workflow.checklist?.remark_count ??
+      (workflow.final_review.available
+        ? findings.length
+        : workflow.readiness.hard_blocker_count + workflow.readiness.warning_count);
     const panelLabel =
       panel && panel in MONTH_STEP_COPY
         ? panel === "close" && closed

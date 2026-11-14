@@ -1124,6 +1124,13 @@ export type PositionSnapshot = {
   market_value: MoneyValue;
   cost_basis: MoneyValue | null;
   unrealized_result: MoneyValue | null;
+  all_time_result?: {
+    amount: MoneyValue | null;
+    as_of: string | null;
+    period_start: string | null;
+    status: "supported" | "provisional" | "partial" | "unavailable";
+    reason_codes: string[];
+  } | null;
   accrued_interest: MoneyValue | null;
   price_source: string;
   price_date: string;

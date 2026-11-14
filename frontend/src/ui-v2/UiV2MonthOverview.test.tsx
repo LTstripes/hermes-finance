@@ -1,6 +1,7 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MonthCloseWorkflow } from "../api/monthCloseWorkflow";
 import { makeUiV2Checklist, makeUiV2Workflow } from "../test/uiV2Fixtures";
@@ -25,6 +26,76 @@ function renderOverview(workflow: MonthCloseWorkflow) {
 afterEach(cleanup);
 
 describe("Month overview (#1079 stage 2)", () => {
+  it.each([null, "0.00", "0.01"])(
+    "shows backend monthly securities result %s without replacing unknown with zero",
+    (amount) => {
+      const workflow = makeUiV2Workflow();
+      workflow.checklist = makeUiV2Checklist();
+      workflow.checklist.securities_result = {
+        amount: amount === null ? null : { amount, currency: "RUB" },
+        period_start: "2031-07-31",
+        as_of: "2031-08-31",
+        status: amount === null ? "unavailable" : "partial",
+        reason_codes: [],
+        included_count: amount === null ? 0 : 1,
+        total_count: 2,
+      };
+      render(<MonthKpis workflow={workflow} />);
+      const tile = screen.getByText("Результат бумаг за месяц").closest("div") as HTMLElement;
+      expect(tile).toHaveTextContent(
+        amount === null ? "недостаточно данных за месяц" : "известная часть",
+      );
+      expect(tile).toHaveTextContent(amount === null ? "—" : amount === "0.00" ? "0" : "0,01");
+    },
+  );
+  it("uses the backend remark counts in closed steps and total instead of raw diagnostics", () => {
+    const workflow = makeUiV2Workflow();
+    workflow.month.status = "closed";
+    workflow.checklist = makeUiV2Checklist({ closed: true, attention: true });
+    workflow.checklist.remark_count = 3;
+    const positions = workflow.checklist.steps.find((step) => step.id === "positions");
+    if (!positions) throw new Error("Fixture missing");
+    positions.remark_count = 3;
+    positions.attention_count = 99;
+    renderOverview(workflow);
+    expect(screen.getByText("Закрыт с замечаниями: 3")).toBeVisible();
+    expect(screen.getByRole("link", { name: /Счета и позиции.*3\sзамечания/ })).toBeVisible();
+    expect(screen.queryByText(/99/)).toBeNull();
+  });
+  it.each(["done", "attention", "empty"] as const)(
+    "marks copied amounts independently of the %s checklist state, only in drafts",
+    (state) => {
+      const workflow = makeUiV2Workflow();
+      workflow.checklist = makeUiV2Checklist();
+      const income = workflow.checklist.steps.find((step) => step.id === "income");
+      if (!income) throw new Error("Fixture missing");
+      income.state = state;
+      income.has_templates = true;
+      income.figure = {
+        kind: "money",
+        amount: { amount: "0.01", currency: "RUB" },
+        day: null,
+        count: null,
+      };
+      const view = renderOverview(workflow);
+      const row = within(screen.getByRole("navigation", { name: "Разделы месяца" })).getByRole(
+        "link",
+        { name: /Зарплата и другие доходы.*Перенесено/ },
+      );
+      expect(row.querySelector('[data-unconfirmed="true"]')).toHaveAttribute(
+        "title",
+        "0,01\u00a0₽",
+      );
+      workflow.month.status = "closed";
+      view.rerender(
+        <MemoryRouter>
+          <MonthOverview pathFor={pathFor} workflow={workflow} />
+        </MemoryRouter>,
+      );
+      expect(view.container.querySelector('[data-unconfirmed="true"]')).toBeNull();
+      expect(screen.queryByText(/Перенесено из другого месяца/)).toBeNull();
+    },
+  );
   it.each(["overview", "close"] as const)(
     "hides incomplete draft comparisons in %s KPIs",
     (variant) => {
@@ -274,4 +345,36 @@ describe("Month overview (#1079 stage 2)", () => {
     view.rerender(<MonthKpis workflow={workflow} variant="close" />);
     expect(within(kpis).queryByText("Обязательные расходы")).toBeNull();
   });
+});
+
+it("keeps overview figures visible while monthly securities load and explains errors", async () => {
+  let release: (() => void) | undefined;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const fetchMock = vi.fn(async () => {
+    await pending;
+    return new Response(
+      JSON.stringify({ error: { code: "unavailable", message: "Unavailable", details: [] } }),
+      { status: 503 },
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const workflow = makeUiV2Workflow();
+    workflow.checklist = makeUiV2Checklist();
+    workflow.checklist.has_statement_positions = true;
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MonthKpis workflow={workflow} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Ликвидный капитал")).toBeVisible();
+    expect(screen.getByText("…")).toBeVisible();
+    release?.();
+    expect(await screen.findByText("Не удалось загрузить результат")).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

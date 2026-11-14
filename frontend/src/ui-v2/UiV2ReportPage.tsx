@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 
 import { listAccounts } from "../api/accounts";
+import { monthReturnsPath } from "./returns/monthLink";
 import { getCapitalComposition } from "../api/analytics";
 import { listCashBalances } from "../api/cash";
 import { listDeposits } from "../api/deposits";
@@ -638,6 +639,12 @@ export default function UiV2ReportPage() {
           </h1>
           <p className={reportStyles.backLink}>
             <Link to={REPORTS_PATH}>← Все отчёты</Link>
+            {targetMonth?.status === "closed" ? (
+              <>
+                {" "}
+                · <Link to={monthReturnsPath(targetMonth)}>Доходность за месяц →</Link>
+              </>
+            ) : null}
           </p>
         </>
       }

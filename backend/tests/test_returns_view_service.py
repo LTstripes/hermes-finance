@@ -168,9 +168,9 @@ def test_basket_accepted_duplicate_and_current_type_edit_never_change_historical
     updated = basket_api(db, "brokerage,iis")
     expected = result.model_copy(deep=True)
     expected.components[0].category = "iis"
-    expected.components[0].label = f"ИИС {ACCOUNT}"
+    expected.components[0].label = "Synthetic"
     expected.components[0].account_link.account_type = "iis"
-    expected.components[0].account_link.label = f"ИИС {ACCOUNT}"
+    expected.components[0].account_link.label = "Synthetic"
     assert updated == expected
     assert updated.known_partial_subtotal_kopecks == result.known_partial_subtotal_kopecks
     assert updated.components[0].cells == result.components[0].cells
@@ -178,6 +178,42 @@ def test_basket_accepted_duplicate_and_current_type_edit_never_change_historical
     assert updated.components[0].account_link.financial_account_id == identity
     assert basket_api(db, "iis").known_partial_subtotal_kopecks == "10000"
     assert basket_api(db, "brokerage").known_partial_subtotal_kopecks is None
+
+
+@pytest.mark.parametrize("name", ["Synthetic named account", "", "   "])
+def test_account_catalogue_label_preserves_source_identity_and_all_financial_fields(db, name):
+    from hermes_finance.persistence import Account
+    from hermes_finance.statement_import.mybroker import PROVIDER
+
+    basket_source(db)
+    with db.session_factory() as session:
+        account = Account(name="Synthetic original", account_type="iis")
+        session.add(account)
+        session.flush()
+        identity = account.id
+        session.add(
+            BrokerIdentityMapping(
+                provider=PROVIDER,
+                subject_kind="account",
+                provider_identity=ACCOUNT,
+                hermes_account_id=identity,
+                status="effective",
+                confirmed_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    original = basket_api(db, "brokerage,iis")
+    with db.session_factory() as session:
+        session.get(Account, identity).name = name
+        session.commit()
+    before = snapshot(db)
+    updated = basket_api(db, "brokerage,iis")
+    expected = original.model_copy(deep=True)
+    label = name if name.strip() else f"ИИС {ACCOUNT}"
+    expected.components[0].label = label
+    expected.components[0].account_link.label = label
+    assert updated == expected
+    assert snapshot(db) == before
 
 
 def deposit_cell(db, *, month=4, interest=300, balance=100000, account_id=None, closed=True):
@@ -948,7 +984,7 @@ def test_source_context_groups_only_proved_aliases_keeps_ranges_and_accepted_com
         compatible = view.read_overview(session, scope=deposit_scope, start=START, end=END)
     sources = [a for a in context.accounts if a.basis == "statements"]
     assert len(sources) == 1 and sources[0].id == SCOPE
-    assert sources[0].label == f"Брокерский {ACCOUNT}"
+    assert sources[0].label == "Synthetic brokerage"
     assert sources[0].account_link.status == "linked"
     assert context.scope_aliases == {"source:1234567": SCOPE}
     assert {p.end.month for p in context.source_periods[SCOPE]} == {4, 6}
@@ -1447,6 +1483,19 @@ def test_detail_bond_decomposition_is_once_and_conditional_result_is_separate(db
     assert snapshot(db) == before
 
 
+def test_portfolio_monthly_absence_is_explicit_without_changing_existing_fields(db):
+    with db.session_factory() as session:
+        selection = dict(scope="portfolio", start=date(2031, 1, 31), end=date(2031, 2, 28))
+        original = view.read_overview(session, **selection)
+        updated = view.read_clean_source_overview(session, **selection)
+        assert (
+            updated.pop("portfolio_return_unavailable_reason")
+            == "portfolio_monthly_return_not_supported"
+        )
+        assert updated.pop("contract_version") == "returns_capital_v1"
+        assert updated == original
+
+
 def test_invalid_scope_never_falls_back_and_accepted_reader_keeps_null(db):
     with pytest.raises(ValueError, match="returns_scope_unknown"):
         overview(db, scope="source:missing")
@@ -1549,8 +1598,8 @@ def test_explicit_account_ids_keep_equal_values_and_individual_dates(db):
     with db.session_factory() as session:
         context = Context.model_validate(view.read_context(session))
         for native, start, end, label in [
-            ("109", date(2030, 3, 31), date(2030, 4, 30), "ИИС 109"),
-            ("662", date(2030, 4, 30), date(2030, 5, 31), "Брокерский 662"),
+            ("109", date(2030, 3, 31), date(2030, 4, 30), "Synthetic equal label"),
+            ("662", date(2030, 4, 30), date(2030, 5, 31), "Synthetic equal label"),
         ]:
             account = next(a for a in context.accounts if a.id == f"source:{native}")
             assert account.account_link.financial_account_id == ids[native]

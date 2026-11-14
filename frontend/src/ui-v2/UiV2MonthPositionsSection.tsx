@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
@@ -13,7 +14,13 @@ import {
 } from "../api/instrumentMappings";
 import { createInstrument, listInstruments } from "../api/instruments";
 import { getMonth } from "../api/months";
-import { createPosition, deletePosition, listPositions, updatePosition } from "../api/positions";
+import {
+  createPosition,
+  deletePosition,
+  getPositionResults,
+  listPositions,
+  updatePosition,
+} from "../api/positions";
 import { applyMonthQuotes, previewMonthQuotes } from "../api/quotePreview";
 import type {
   Account,
@@ -403,20 +410,39 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
     return map;
   }, [accounts]);
 
+  const resultsQuery = useQuery({
+    queryKey: ["positions", monthId, "all-time-results", positions],
+    queryFn: ({ signal }) => getPositionResults(monthId, signal),
+    enabled:
+      !loading && positions.some((row) => row.reporting_month_id === monthId && fromStatement(row)),
+    retry: false,
+  });
   const filteredPositions = useMemo(() => {
-    return positions.filter((row) => {
-      if (filterAccountId && String(row.account_id) !== filterAccountId) {
-        return false;
-      }
-      if (filterType) {
-        const instrument = instrumentById.get(row.instrument_id);
-        if (!instrument || instrument.instrument_type !== filterType) {
+    return positions
+      .map((row) => ({
+        ...row,
+        all_time_result: resultsQuery.isError ? null : resultsQuery.data?.[row.id],
+      }))
+      .filter((row) => {
+        if (filterAccountId && String(row.account_id) !== filterAccountId) {
           return false;
         }
-      }
-      return true;
-    });
-  }, [filterAccountId, filterType, instrumentById, positions]);
+        if (filterType) {
+          const instrument = instrumentById.get(row.instrument_id);
+          if (!instrument || instrument.instrument_type !== filterType) {
+            return false;
+          }
+        }
+        return true;
+      });
+  }, [
+    filterAccountId,
+    filterType,
+    instrumentById,
+    positions,
+    resultsQuery.data,
+    resultsQuery.isError,
+  ]);
 
   const totals = useMemo(() => {
     return {
@@ -927,12 +953,20 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
               const showAverage = group.rows.some((row) => row.average_cost_per_unit != null);
               const showPrice = group.rows.some((row) => row.market_price_per_unit != null);
               const showResult = group.rows.some((row) => row.unrealized_result != null);
-              const compact = !showAverage && !showPrice && !showResult;
+              const showAllTimeResult = group.rows.some(
+                (row) =>
+                  fromStatement(row) &&
+                  (resultsQuery.isPending ||
+                    resultsQuery.isError ||
+                    row.all_time_result?.amount != null),
+              );
+              const compact = !showAverage && !showPrice && !showResult && !showAllTimeResult;
               const columnCount =
                 3 +
                 Number(showAverage) +
                 Number(showPrice) +
                 Number(showResult) +
+                Number(showAllTimeResult) +
                 Number(showActions) +
                 Number(compact);
               const source = [
@@ -977,6 +1011,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                     {showPrice ? <col className={styles.priceColumn} /> : null}
                     <col className={styles.valueColumn} />
                     {showResult ? <col className={styles.valueColumn} /> : null}
+                    {showAllTimeResult ? <col className={styles.valueColumn} /> : null}
                     {compact ? <col className={styles.shareColumn} /> : null}
                     {showActions ? <col className={styles.actionsColumn} /> : null}
                   </colgroup>
@@ -1004,6 +1039,11 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                       {showResult ? (
                         <Th scope="col" numeric>
                           Результат, ₽
+                        </Th>
+                      ) : null}
+                      {showAllTimeResult ? (
+                        <Th scope="col" numeric>
+                          Результат за всё время, ₽
                         </Th>
                       ) : null}
                       {compact ? (
@@ -1310,6 +1350,33 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               </span>
                             </Td>
                           ) : null}
+                          {showAllTimeResult ? (
+                            <Td numeric data-label="Результат за всё время">
+                              {row.all_time_result?.amount && validIsin(instrument?.isin) ? (
+                                <Link
+                                  className={styles.result}
+                                  data-tone={moneyTone(row.all_time_result.amount)}
+                                  title={`${formatMoney(row.all_time_result.amount.amount)} · на ${formatDate(row.all_time_result.as_of)}`}
+                                  to={`/v2/returns/instrument/${instrument?.isin}?${new URLSearchParams({ capital_account: String(row.account_id), back })}`}
+                                >
+                                  {moneyWholeDeltaText({
+                                    ...row.all_time_result.amount,
+                                    currency: "",
+                                  })}
+                                </Link>
+                              ) : (
+                                <span
+                                  title={
+                                    resultsQuery.isError
+                                      ? "Не удалось загрузить результат"
+                                      : "Недостаточно данных для результата"
+                                  }
+                                >
+                                  {!fromStatement(row) ? "" : resultsQuery.isPending ? "…" : "—"}
+                                </span>
+                              )}
+                            </Td>
+                          ) : null}
                           {showActions ? (
                             <Td className="month-positions-table__actions">
                               {row.price_source !== "broker_statement_native" ? (
@@ -1361,6 +1428,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
           <p className={styles.explanation}>
             Брокерская выписка даёт количество и стоимость. Цена покупки и доходность по бумаге — на
             странице инструмента в <Link to="/v2/returns">«Доходности»</Link>.
+            {filteredPositions.some((row) => row.all_time_result?.status === "provisional")
+              ? " Результат за всё время — оценка по выпискам на дату снимка."
+              : null}
           </p>
         ) : null}
         {filteredPositions.length > 0 && (totals.cost !== null || totals.result !== null) ? (

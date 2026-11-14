@@ -31,6 +31,7 @@ POSITION_KEYS = {
     "market_value",
     "cost_basis",
     "unrealized_result",
+    "all_time_result",
     "accrued_interest",
     "price_source",
     "price_date",
@@ -55,6 +56,75 @@ DEPOSIT_KEYS = {
     "updated_at",
 }
 STALE_IF_MATCH = "2000-01-01T00:00:00"
+
+
+@pytest.mark.parametrize(
+    "value,status,expected",
+    [
+        ("0", "supported", 0),
+        ("101", "provisional", 101),
+        (None, "unavailable", None),
+        ("101", "partial", None),
+    ],
+)
+def test_month_position_result_keeps_minor_units_unknown_and_source_scope(
+    monkeypatch, value, status, expected
+):
+    from datetime import date
+    from types import SimpleNamespace
+
+    from hermes_finance.persistence import Instrument
+    from hermes_finance.services import month_position_returns as service
+
+    end = date(2031, 1, 31)
+    start = date(2030, 1, 1)
+    instrument = SimpleNamespace(isin="RU000SYN0001")
+    month = SimpleNamespace(snapshot_date=end, status="closed")
+    session = SimpleNamespace(
+        get=lambda model, identity: instrument if model is Instrument else month
+    )
+    position = SimpleNamespace(
+        id=1, price_source="broker_statement_native", account_id=7, instrument_id=9, price_date=end
+    )
+    context = {
+        "accounts": [
+            {"id": "source:SYNTH", "account_link": {"status": "linked", "financial_account_id": 7}}
+        ],
+        "source_history_periods": {"source:SYNTH": {"start": start, "end": date(2032, 1, 31)}},
+    }
+    monkeypatch.setattr(service, "read_context", lambda _: context)
+    calls = []
+    item = {
+        "isin": instrument.isin,
+        "closing_date": end,
+        "pnl": {"value": value, "status": status, "reason_codes": [], "assumptions": []},
+    }
+
+    def reader(session, source, opening, closing):
+        calls.append((source, opening, closing))
+        return {"instruments": [item]}
+
+    monkeypatch.setattr(service, "read_clean_account", reader)
+    result = service.month_position_returns(session, 3, [position])[1]
+    assert result["amount_kopecks"] == expected
+    assert result["as_of"] == end
+    assert calls == [("SYNTH", start, end)]
+    # A newer source endpoint cannot silently replace the historical month.
+    item["closing_date"] = date(2031, 2, 28)
+    assert service.month_position_returns(session, 3, [position])[1]["amount_kopecks"] is None
+    item["closing_date"] = end
+    context["accounts"][0]["account_link"]["status"] = "unlinked"
+    calls.clear()
+    assert service.month_position_returns(session, 3, [position])[1]["amount_kopecks"] is None
+    assert calls == []
+    assert month.status == "closed" and position.price_date == end
+    context["accounts"][0]["account_link"]["status"] = "linked"
+
+    def unavailable_reader(*args):
+        raise ValueError("synthetic source selection unavailable")
+
+    monkeypatch.setattr(service, "read_clean_account", unavailable_reader)
+    assert service.month_position_returns(session, 3, [position])[1]["amount_kopecks"] is None
 
 
 @pytest.fixture
@@ -820,3 +890,21 @@ def test_position_api_rejects_client_fabricated_t_invest(client: TestClient) -> 
     )
     assert patched.status_code == 422
     _assert_error_body(patched.json(), "unprocessable")
+
+
+def test_positions_read_does_not_compute_lazy_results(client, monkeypatch):
+    from hermes_finance.api import positions
+
+    calls = []
+
+    def result(session, month_id, snapshots):
+        calls.append((month_id, [row.id for row in snapshots]))
+        return {}
+
+    monkeypatch.setattr(positions, "month_position_returns", result)
+    assert client.get("/api/positions?month_id=999").status_code == 200
+    assert calls == []
+    response = client.get("/api/positions/all-time-results?month_id=999&account_id=123")
+    assert response.status_code == 200
+    assert response.json() == {}
+    assert calls == [(999, [])]

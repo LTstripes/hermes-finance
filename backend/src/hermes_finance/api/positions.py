@@ -8,6 +8,7 @@ stays in the service layer (B09); this module only maps the HTTP boundary.
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import InstrumentType, PriceSource, RubleAmount
+from hermes_finance.services.month_position_returns import month_position_returns
 from hermes_finance.services.positions import (
     UNCHANGED_IDENTITY,
     create_position_snapshot,
@@ -23,6 +25,7 @@ from hermes_finance.services.positions import (
     list_position_snapshots,
     update_position_snapshot,
 )
+from hermes_finance.services.source_monthly_returns import source_read_snapshot
 
 router = APIRouter(prefix="/api/positions", tags=["positions"])
 
@@ -55,6 +58,14 @@ class PositionUpdate(BaseModel):
     historical_instrument_type: InstrumentType | None = None
 
 
+class PositionAllTimeResult(BaseModel):
+    amount: MoneyValue | None
+    as_of: date | None
+    period_start: date | None
+    status: Literal["supported", "provisional", "partial", "unavailable"]
+    reason_codes: list[str]
+
+
 class PositionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,6 +80,7 @@ class PositionResponse(BaseModel):
     market_value: MoneyValue
     cost_basis: MoneyValue | None
     unrealized_result: MoneyValue | None
+    all_time_result: PositionAllTimeResult | None = None
     accrued_interest: MoneyValue | None
     price_source: str
     price_date: date
@@ -140,10 +152,33 @@ def list_positions_endpoint(
     session: Session = Depends(session_for_request),
 ) -> list[PositionResponse]:
     snapshots = list_position_snapshots(session)
-    snapshots = [s for s in snapshots if s.reporting_month_id == month_id]
-    if account_id is not None:
-        snapshots = [s for s in snapshots if s.account_id == account_id]
-    return [_response_from_snapshot(s) for s in snapshots]
+    return [
+        _response_from_snapshot(s)
+        for s in snapshots
+        if s.reporting_month_id == month_id and (account_id is None or s.account_id == account_id)
+    ]
+
+
+@router.get("/all-time-results", response_model=dict[int, PositionAllTimeResult])
+def position_all_time_results(
+    month_id: int = Query(...),
+    account_id: int | None = Query(default=None),
+    session: Session = Depends(session_for_request),
+) -> dict[int, PositionAllTimeResult]:
+    with source_read_snapshot(session):
+        snapshots = [
+            s
+            for s in list_position_snapshots(session)
+            if s.reporting_month_id == month_id
+            and (account_id is None or s.account_id == account_id)
+        ]
+        results = month_position_returns(session, month_id, snapshots)
+        responses = {}
+        for snapshot_id, value in results.items():
+            result = dict(value)
+            result["amount"] = _money_from_kopecks(result.pop("amount_kopecks"))
+            responses[snapshot_id] = PositionAllTimeResult(**result)
+        return responses
 
 
 @router.post(

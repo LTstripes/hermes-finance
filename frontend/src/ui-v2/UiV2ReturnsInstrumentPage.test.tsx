@@ -93,7 +93,7 @@ test("a linked account keeps its catalogue name in the visible calculation-gap e
     source_account_id: "SYNTH-CONTRACT-99",
     financial_account_id: 11,
     account_type: "brokerage",
-    label: "Брокерский SYNTH-CONTRACT-99",
+    label: "Учебный счёт Л",
     status: "linked",
     reason_codes: [],
   };
