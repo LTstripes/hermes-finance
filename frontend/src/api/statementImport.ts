@@ -27,6 +27,7 @@ export type StatementRow = {
   provider_account_ref?: string | null;
   expected_hermes_account_id: number | null;
   expected_hermes_instrument_id: number | null;
+  short_name?: string | null;
   natural_identity: string | null;
   material_fingerprint: string | null;
   expected_candidate_ids: number[];

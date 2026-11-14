@@ -897,8 +897,7 @@ def read_clean_overall(session, *, include_instrument_details=False):
             history["total_result"] = clean_gold_metric(
                 row["result"], current=row["currentness"] == "current"
             )
-            history["realized_result"] = _unknown("clean_gold_decomposition_unavailable")
-            history["unrealized_result"] = _unknown("clean_gold_decomposition_unavailable")
+            history.update(row["clean_decomposition"])
         for snapshot in legacy["gold"]["snapshots"]:
             snapshot["unrealized_result"] = _unknown("clean_gold_cost_unavailable")
             snapshot["cost_return"] = _unknown("clean_gold_cost_unavailable", rate=True)

@@ -35,21 +35,6 @@ import type {
   QuotePreview,
   QuotePreviewRow,
 } from "../api/types";
-import { formatDate, formatMoney, formatPercent, formatQuantity } from "../lib/format";
-import {
-  ACCOUNT_TYPE_LABELS,
-  INSTRUMENT_TYPE_LABELS,
-  labelOf,
-  PRICE_SOURCE_LABELS,
-} from "../lib/labels";
-import {
-  moneyAmount,
-  moneySharePercent,
-  normalizeMoneyInput,
-  rub,
-  sumMoneyAmounts,
-  toKopecks,
-} from "../lib/money";
 import {
   InstrumentMappingDialog,
   type InstrumentMappingSubject,
@@ -70,14 +55,28 @@ import {
   Td,
   Th,
 } from "../components/ui";
+import { formatDate, formatMoney, formatPercent, formatQuantity } from "../lib/format";
+import {
+  ACCOUNT_TYPE_LABELS,
+  INSTRUMENT_TYPE_LABELS,
+  labelOf,
+  PRICE_SOURCE_LABELS,
+} from "../lib/labels";
+import {
+  moneyAmount,
+  moneySharePercent,
+  normalizeMoneyInput,
+  rub,
+  sumMoneyAmounts,
+  toKopecks,
+} from "../lib/money";
+import { MonthMoneyInput } from "./MonthMoneyInput";
+import { MonthPanelTotal } from "./MonthPanelTotal";
+import { MonthSaveBar } from "./MonthSaveBar";
+import { validIsin } from "./returns/navigation";
 import type { MonthEditorContext } from "./UiV2MonthEditorPage";
 import styles from "./UiV2MonthPositionsSection.module.css";
-import { shortInstrumentName } from "./instrumentName";
-import { MonthMoneyInput } from "./MonthMoneyInput";
-import { MonthSaveBar } from "./MonthSaveBar";
-import { MonthPanelTotal } from "./MonthPanelTotal";
-import { moneyWholeText, moneyWholeDeltaText, moneyTone } from "./valueFormat";
-import { validIsin } from "./returns/navigation";
+import { moneyTone, moneyWholeDeltaText, moneyWholeText } from "./valueFormat";
 
 export function UiV2MonthPositionsSection({ context }: { context: MonthEditorContext }) {
   return <PositionsLeaf key={context.month.id} context={context} />;
@@ -127,7 +126,7 @@ function quantityError(instrumentType?: string): string {
 
 function instrumentLabel(instrument: Instrument): string {
   const ticker = instrument.ticker ? ` (${instrument.ticker})` : "";
-  return `${instrument.name}${ticker} · ${labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)} · ${instrument.currency}`;
+  return `${instrument.short_name === undefined ? instrument.name : (instrument.short_name ?? "Без названия")}${ticker} · ${labelOf(INSTRUMENT_TYPE_LABELS, instrument.instrument_type)} · ${instrument.currency}`;
 }
 
 function safeTotal(
@@ -676,6 +675,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
       setMappingInstrument({
         id: row.instrument_id,
         name: row.instrument_name,
+        short_name: row.short_name,
         instrument_type: row.instrument_type,
       });
       setMappingView(view);
@@ -1067,9 +1067,14 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                       const editing = editingId === row.id && editDraft;
                       const instrument = instrumentById.get(row.instrument_id);
                       const account = accountById.get(row.account_id);
-                      const instrumentTitle = instrument
-                        ? shortInstrumentName(instrument)
-                        : `#${row.instrument_id}`;
+                      const instrumentTitle =
+                        row.short_name !== undefined
+                          ? (row.short_name ?? "Без названия")
+                          : instrument
+                            ? instrument.short_name === undefined
+                              ? instrument.name
+                              : (instrument.short_name ?? "Без названия")
+                            : "Без названия";
                       if (editing && !priceOnly) {
                         return (
                           <tr className="month-positions-table__edit-row" key={row.id}>
@@ -1247,6 +1252,9 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               }
                             >
                               {labelOf(INSTRUMENT_TYPE_LABELS, instrument?.instrument_type ?? "—")}
+                              {instrumentTitle === "Без названия" && instrument?.isin
+                                ? ` · ${instrument.isin}`
+                                : ""}
                               {showCurrency || !instrument?.currency
                                 ? ` · ${instrument?.currency ?? "валюта неизвестна"}`
                                 : ""}
@@ -1382,7 +1390,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
                               {row.price_source !== "broker_statement_native" ? (
                                 <div className="row-actions">
                                   <OverflowMenu
-                                    label={`Действия для позиции ${instrument?.name ?? `#${row.instrument_id}`}`}
+                                    label={`Действия для позиции ${instrument?.short_name === undefined ? (instrument?.name ?? "Без названия") : (instrument.short_name ?? "Без названия")}`}
                                   >
                                     <OverflowMenuItem
                                       disabled={
@@ -1719,7 +1727,7 @@ function PositionsLeaf({ context }: { context: MonthEditorContext }) {
         danger
         description={
           pendingDelete
-            ? `Удалить позицию #${pendingDelete.id} (${instrumentById.get(pendingDelete.instrument_id)?.name ?? pendingDelete.instrument_id})?`
+            ? `Удалить позицию #${pendingDelete.id} (${instrumentById.get(pendingDelete.instrument_id)?.short_name ?? "Без названия"})?`
             : ""
         }
         onCancel={() => setPendingDelete(null)}

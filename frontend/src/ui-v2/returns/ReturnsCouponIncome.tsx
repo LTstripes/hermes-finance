@@ -75,10 +75,10 @@ function Breakdown({
                       className={layout.linkButton}
                       onClick={() => openInstrument?.(row.isin)}
                     >
-                      {row.name}
+                      {row.short_name === undefined ? row.name : (row.short_name ?? "Без названия")}
                     </button>
                     <small>
-                      {accountLabel(row.account.scope, row.account.label)}
+                      {row.isin} · {accountLabel(row.account.scope, row.account.label)}
                       {row.account.period &&
                         ` · ${dateLabel(row.account.period.start)} — ${dateLabel(row.account.period.end)}`}
                     </small>

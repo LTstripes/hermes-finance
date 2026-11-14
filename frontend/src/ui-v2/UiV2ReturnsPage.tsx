@@ -1,10 +1,10 @@
-import { rememberInstrumentScroll } from "./instrumentScroll";
+import { GoldResultSplit } from "./returns/GoldResultSplit";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, type MouseEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { ConfirmDialog } from "../components/ui";
 import { reasonCopy } from "../lib/reasonCopy";
-import { shortInstrumentName } from "./instrumentName";
+import { rememberInstrumentScroll } from "./instrumentScroll";
 import sheet from "./ReportSheet.module.css";
 import { cleanMetric, positionRateMetric, positionRatePeriod } from "./returns/cards";
 import layout from "./returns/Dashboard.module.css";
@@ -18,8 +18,8 @@ import {
 import {
   compareDecimal,
   dateLabel,
-  displayMetric,
   displayCompactRate,
+  displayMetric,
   displayWhole,
   isPartialResult,
   periodLabel,
@@ -151,7 +151,10 @@ export default function UiV2ReturnsPage() {
   const rows = data
     ? data.instruments
         .map((r) => {
-          const row = instrumentSummary(data, r, scope);
+          const row = {
+            ...instrumentSummary(data, r, scope),
+            name: r.short_name === undefined ? r.name : (r.short_name ?? "Без названия"),
+          };
           return scope === "all" && r.aggregate
             ? { ...row, pnl: cleanMetric(r.aggregate.pnl) }
             : row;
@@ -181,7 +184,7 @@ export default function UiV2ReturnsPage() {
     .map((row) => {
       const accountRows = row.accounts.map((account) => ({
         ...row,
-        name: shortInstrumentName({ name: row.name, isin: row.isin, ticker: null }),
+        name: row.short_name === undefined ? row.name : (row.short_name ?? "Без названия"),
         account,
         pnl: account.resultAvailable ? account.pnl : unavailable,
         simple:
@@ -207,7 +210,7 @@ export default function UiV2ReturnsPage() {
       return {
         ...representative,
         ...row,
-        name: shortInstrumentName({ name: row.name, isin: row.isin, ticker: null }),
+        name: row.short_name === undefined ? row.name : (row.short_name ?? "Без названия"),
         accountRows,
         ...(aggregate
           ? {
@@ -588,11 +591,9 @@ export default function UiV2ReturnsPage() {
                                 state={{ instrumentName: row.name }}
                                 onClick={(e) => guardLink(e, instrumentHref(row.isin))}
                               >
-                                {shortInstrumentName({
-                                  name: row.name,
-                                  isin: row.isin,
-                                  ticker: null,
-                                })}
+                                {row.short_name === undefined
+                                  ? row.name
+                                  : (row.short_name ?? "Без названия")}
                                 {row.accounts.length > 1 && (
                                   <small className={layout.muted}>
                                     {" "}
@@ -775,6 +776,7 @@ export default function UiV2ReturnsPage() {
                                         )}
                                       </div>
                                       <small title={row.account.account_link?.source_account_id}>
+                                        {row.isin} ·
                                         {row.kind === "bond"
                                           ? "Облигация"
                                           : row.kind === "stock"
@@ -951,19 +953,7 @@ export default function UiV2ReturnsPage() {
                             </div>
                           )
                         )}
-                        {history?.realized_result.value != null && (
-                          <div>
-                            <dt>Результат продаж</dt>
-                            <dd>{displayMetric(history.realized_result, true)}</dd>
-                          </div>
-                        )}
-                        {history?.total_result.value != null &&
-                          history.unrealized_result.value != null && (
-                            <div>
-                              <dt>Рост стоимости остатка</dt>
-                              <dd>{displayMetric(history.unrealized_result, true)}</dd>
-                            </div>
-                          )}
+                        {history && <GoldResultSplit value={history} />}
                         {!history && snapshot?.cost_return.value != null && (
                           <div>
                             <dt>К затратам по снимку</dt>

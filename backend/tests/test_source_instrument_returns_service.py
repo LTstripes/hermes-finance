@@ -594,12 +594,14 @@ def test_clean_api_uses_saved_original_without_account_confirmation(db, fee):
     card_row = card.json()["accounts"][0]
     assert card.json()["contract_version"] == "returns_instrument_card_v2"
     assert set(card_row["clean"]) == set(row) | {
+        "short_name",
         "realized_result",
         "unrealized_result",
         "current_value",
         "is_open",
         "position_reason_codes",
     }
+    assert card_row["clean"]["short_name"] == card.json()["short_name"]
     assert {key: card_row["clean"][key] for key in row} == row
     assert card_row["clean"]["realized_result"]["value"] == "0"
     assert card_row["clean"]["unrealized_result"]["value"] == "10000"

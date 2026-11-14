@@ -46,6 +46,7 @@ const inspectResult = {
 };
 
 const moneyRow = {
+  short_name: "Синтетическая облигация",
   event_kind: "coupon",
   gross_amount: "12450.00",
   gross_currency: "RUB",

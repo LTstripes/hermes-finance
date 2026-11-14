@@ -20,6 +20,7 @@ from hermes_finance.api.market_data import (
 )
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import RubleAmount
+from hermes_finance.services.instrument_names import instrument_names
 from hermes_finance.services.quote_preview import QuotePreviewResult, preview_market_quotes
 from hermes_finance.services.quote_preview_evidence import capture_context
 
@@ -64,6 +65,7 @@ class QuotePreviewRowResponse(BaseModel):
     account_id: int
     instrument_id: int
     instrument_name: str
+    short_name: str | None = None
     instrument_type: str
     mapping_state: Literal["unmapped", "mapped", "excluded"]
     identity: MarketIdentityRead | None
@@ -112,13 +114,16 @@ def _identity(identity: object | None) -> MarketIdentityRead | None:
     )
 
 
-def _response(result: QuotePreviewResult) -> QuotePreviewResponse:
+def _response(result: QuotePreviewResult, *, names=None) -> QuotePreviewResponse:
     rows = [
         QuotePreviewRowResponse(
             position_snapshot_id=row.position_snapshot_id,
             account_id=row.account_id,
             instrument_id=row.instrument_id,
             instrument_name=row.instrument_name,
+            short_name=names.name(instrument_id=row.instrument_id, name=row.instrument_name)
+            if names
+            else None,
             instrument_type=row.instrument_type,
             mapping_state=row.mapping_state.value,
             identity=_identity(row.identity),
@@ -171,6 +176,6 @@ def preview_month_quotes_endpoint(
         )
     finally:
         close_owned_provider(provider, owned)
-    response = _response(result)
+    response = _response(result, names=instrument_names(session))
     response.preview_id = store.publish(start, context, result, moscow_today(request))
     return response

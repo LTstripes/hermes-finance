@@ -271,7 +271,11 @@ export function Concentration({
               {metric.items.map((item) => (
                 <tr key={item.key}>
                   <Td data-label={event ? "Событие / инструмент" : "Позиция"}>
-                    {renderLabel ? renderLabel(item) : item.label}
+                    {renderLabel
+                      ? renderLabel(item)
+                      : item.instrument_id !== null && item.short_name !== undefined
+                        ? `${item.account_name ? `${item.account_name} / ` : ""}${item.short_name ?? "Без названия"}`
+                        : item.label}
                     {item.is_approximate ? " · приблизительно" : ""}
                   </Td>
                   <Td data-label="Сумма" numeric>

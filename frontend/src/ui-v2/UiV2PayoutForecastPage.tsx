@@ -44,8 +44,6 @@ import {
   TInvestBatchSummary,
   TInvestPayoutApplySummary,
 } from "../components/month-close/TInvestStepSummary";
-import { shortInstrumentName } from "./instrumentName";
-import { wholeMoneyText } from "./wholeMoney";
 import { PayoutPreviewPanel } from "../components/PayoutPreviewPanel";
 import {
   Badge,
@@ -72,6 +70,7 @@ import { DataMonthContext, UiV2DataFrame } from "./UiV2DataShell";
 import styles from "./UiV2PayoutForecast.module.css";
 import { isQueryReady, UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
 import { UiV2StatementImportSection } from "./UiV2StatementImportSection";
+import { wholeMoneyText } from "./wholeMoney";
 
 const PAYOUT_OUTCOME_LABELS: Record<PayoutExecutionResult["outcome"], string> = {
   CONFIRMED: "Сохранение подтверждено",
@@ -382,7 +381,7 @@ function PayoutForecastTool({
     const account = accountById.get(selectedPosition.account_id);
     const instrument = instrumentById.get(selectedPosition.instrument_id);
     const instrumentText = instrument
-      ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
+      ? `${instrument.short_name === undefined ? instrument.name : (instrument.short_name ?? "Без названия")}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
       : "Неизвестный инструмент";
     return `${account?.name ?? "Неизвестный счёт"} · ${instrumentText}`;
   }, [accountById, instrumentById, selectedPosition]);
@@ -391,7 +390,7 @@ function PayoutForecastTool({
     const account = accountById.get(accountId);
     const instrument = instrumentById.get(instrumentId);
     const instrumentText = instrument
-      ? `${instrument.name}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
+      ? `${instrument.short_name === undefined ? instrument.name : (instrument.short_name ?? "Без названия")}${instrument.ticker ? ` (${instrument.ticker})` : ""}`
       : "Неизвестный инструмент";
     return `${instrumentText} · ${account?.name ?? "Неизвестный счёт"}`;
   }
@@ -1051,7 +1050,11 @@ function PayoutForecastTool({
   }
   for (const mapping of mappings) {
     if (mapping.state === "mapped" && mapping.identity?.provider === "t_invest") continue;
-    const name = instrumentById.get(mapping.instrument_id)?.name ?? "Бумага";
+    const instrument = instrumentById.get(mapping.instrument_id);
+    const name =
+      instrument?.short_name === undefined
+        ? (instrument?.name ?? "Без названия")
+        : (instrument.short_name ?? "Без названия");
     const problem =
       mapping.state === "unmapped"
         ? "нет сопоставления с T-Invest"
@@ -1248,8 +1251,10 @@ function PayoutForecastTool({
                           .map((item) => {
                             const instrument = instrumentById.get(item.instrument_id);
                             const name = instrument
-                              ? shortInstrumentName(instrument)
-                              : (item.instrument_name ?? "Бумага не определена");
+                              ? instrument.short_name === undefined
+                                ? instrument.name
+                                : (instrument.short_name ?? "Без названия")
+                              : (item.short_name ?? "Без названия");
                             return (
                               <tr key={`${item.source_kind}-${item.source_id}`}>
                                 <td>{formatDate(item.expected_date)}</td>
@@ -1605,7 +1610,9 @@ function PayoutForecastTool({
                     return (
                       <option key={position.id} value={position.id}>
                         {account?.name ?? "Неизвестный счёт"} ·{" "}
-                        {instrument?.name ?? "Неизвестный инструмент"}
+                        {instrument?.short_name === undefined
+                          ? (instrument?.name ?? "Без названия")
+                          : (instrument.short_name ?? "Без названия")}
                         {instrument?.ticker ? ` (${instrument.ticker})` : ""} · {type} ·{" "}
                         {formatQuantity(position.quantity)} шт.
                       </option>

@@ -20,6 +20,8 @@ SEMANTIC_MODULES = (
     "services/broker_trade_money.py",
     "services/clean_closed_position.py",
     "services/clean_instrument_return.py",
+    "services/clean_gold_returns.py",
+    "services/owner_manual_gold_history.py",
     "services/clean_purchase_returns.py",
     "services/position_results.py",
     "services/clean_repo_pairs.py",
@@ -52,14 +54,14 @@ SEMANTIC_MODULES = (
 )
 
 # Pin the revision alongside the digest so bumping either alone fails the guard.
-# V22 adds position decomposition and combined instrument rates. Proof operands
-# and dependencies stay unchanged; V21 receipts retain exact-dependency checks.
+# V23 adds clean gold FIFO decomposition. Source operands and receipt
+# dependencies stay unchanged; V22 retains exact-dependency compatibility.
 # V5 carries dated redemption quantity and scopes structure-only confirmations;
 # compatibility with older proofs
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
-    "source_investment_semantics_v22",
-    "e0d2d7c1c8d4dc282d9f2510bf1255659e93f6318e2c084c1e22eed1f3ca67b1",
+    "source_investment_semantics_v23",
+    "b1fb9ef8bc76028f9d3bf80057e7901b6700e2eb8d065b568ec8f2de4ffc92b0",
 )
 
 

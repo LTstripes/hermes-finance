@@ -931,3 +931,71 @@ test("ui-v2 instrument tables fit 720px and keep long purchase histories collaps
       });
     }
 });
+
+test("canonical security name and gold FIFO parts remain visible with exact tooltips", async ({
+  page,
+}, info) => {
+  const body = overallFixture();
+  body.instruments[0].name = "Long source label (SYN)";
+  body.instruments[0].short_name = "Короткая бумага";
+  const metric = (value: string | null) => ({
+    ...body.gold.snapshots[0].market_value,
+    value,
+    method: "clean_gold_fifo",
+    estimate: true,
+  });
+  body.gold.snapshots[0].market_value = metric("80000");
+  body.gold.snapshots[0].cost_basis = metric("60000");
+  body.gold.histories = [
+    {
+      account_id: 10,
+      instrument_id: 20,
+      label: "Учебное золото",
+      revision: 1,
+      amount_basis: "actual",
+      tax_treatment: "not_provided",
+      source_kind: "owner_manual_gold_history",
+      authority: "owner_attestation",
+      currentness: "current",
+      period: may,
+      valuation_date: may.end,
+      valuation_status: "closed",
+      total_result: metric("30000"),
+      realized_result: metric("10000"),
+      unrealized_result: metric("20000"),
+      buy_amount: metric("100000"),
+      sale_amount: metric("50000"),
+      separate_fees: metric(null),
+      reason_codes: [],
+    },
+  ];
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    async (route) => {
+      if (await fulfillMonthPlate(route)) return;
+      expect(route.request().method()).toBe("GET");
+      await route.fulfill({ json: body });
+    },
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/v2/returns");
+  await page.getByRole("searchbox", { name: "Поиск" }).fill("Короткая");
+  await expect(page.getByRole("link", { name: "Короткая бумага", exact: true })).toBeVisible();
+  await expect(page.getByText("Long source label (SYN)", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "Все бумаги", exact: true })).toContainText(
+    body.instruments[0].isin,
+  );
+  const gold = page.getByRole("region", { name: "Золото", exact: true });
+  await expect(gold.locator("dt").filter({ hasText: "Зафиксировано" })).toBeVisible();
+  await expect(gold.locator("dt").filter({ hasText: "В цене" })).toBeVisible();
+  await expect(gold.locator("dd[title]").nth(0)).toHaveText(/\+100\s*₽/);
+  await expect(gold.locator("dd[title]").nth(1)).toHaveText(/\+200\s*₽/);
+  await gold.screenshot({ path: info.outputPath("gold-fifo-parts.png") });
+  await gold.getByLabel("Подробнее: Зафиксировано", { exact: true }).click();
+  await expect(
+    page.getByText(
+      "Выручка продаж минус FIFO-стоимость проданных граммов. Комиссии и налоги исключены.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+});

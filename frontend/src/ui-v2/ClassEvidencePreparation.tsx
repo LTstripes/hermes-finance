@@ -468,7 +468,7 @@ function Preparation({
               <IdentityForm
                 key={`${p.id}:${query.dataUpdatedAt}`}
                 row={p}
-                description={`${data.accounts.find((a) => a.id === p.account_id)?.name ?? `Счёт ${p.account_id}`} · ${data.instruments.find((i) => i.id === p.instrument_id)?.name ?? `Инструмент ${p.instrument_id}`} · ${data.months.find((m) => m.id === p.reporting_month_id)?.snapshot_date ?? "дата неизвестна"}`}
+                description={`${data.accounts.find((a) => a.id === p.account_id)?.name ?? `Счёт ${p.account_id}`} · ${data.instruments.find((i) => i.id === p.instrument_id)?.short_name ?? "Без названия"} · ${data.months.find((m) => m.id === p.reporting_month_id)?.snapshot_date ?? "дата неизвестна"}`}
                 closed={data.months.find((m) => m.id === p.reporting_month_id)?.status !== "draft"}
                 locked={locked}
                 save={save}

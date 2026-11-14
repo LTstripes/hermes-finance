@@ -77,6 +77,7 @@ class Instrument(DTO):
     valuation_date: date | None
     isin: str
     name: str
+    short_name: str | None = None
     kind: str | None
     period: Period
     pnl: Metric
@@ -115,6 +116,7 @@ class AcceptedInstrumentIncome(AcceptedIncomeAmounts):
     id: str
     account: str
     name: str
+    short_name: str | None = None
     isin: str | None
 
 
@@ -233,7 +235,9 @@ def selection(
 
 def read(reader, session, **kwargs):
     try:
-        return reader(session, **kwargs)
+        from hermes_finance.services.instrument_names import with_short_names
+
+        return with_short_names(session, reader(session, **kwargs))
     except (ValueError, LookupError):
         raise HTTPException(
             422, "returns_selection_unavailable", headers={"Cache-Control": "no-store"}

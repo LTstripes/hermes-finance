@@ -118,7 +118,12 @@ export function buildHoldingRows({
   positions: PositionSnapshot[];
 }): HoldingRow[] {
   const accountInfo = accountMaps(accounts);
-  const instrumentNames = new Map(instruments.map((item) => [item.id, item.name]));
+  const instrumentNames = new Map(
+    instruments.map((item) => [
+      item.id,
+      item.short_name === undefined ? item.name : (item.short_name ?? "Без названия"),
+    ]),
+  );
   const instrumentTypes = new Map(instruments.map((item) => [item.id, item.instrument_type]));
   const uniqueInstruments = new Map<number, Instrument | null>();
   for (const instrument of instruments)
@@ -164,7 +169,10 @@ export function buildHoldingRows({
       return {
         key: `position-${row.id}`,
         kind: "position",
-        name: instrumentNames.get(row.instrument_id) ?? "Инструмент без названия в справочнике",
+        name:
+          row.short_name === undefined
+            ? (instrumentNames.get(row.instrument_id) ?? "Инструмент без названия в справочнике")
+            : (row.short_name ?? "Без названия"),
         contextLabel: instrument?.instrument_type ?? null,
         instrumentId: row.instrument_id,
         isin: instrument?.isin ?? null,

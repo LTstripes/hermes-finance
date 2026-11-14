@@ -6869,6 +6869,26 @@ an explicitly nonannualized cost-based fraction; missing/contradictory operands
 remain unavailable. Realised or period gold return requires dated trade evidence;
 no cash flow without quantities is promoted to a gold transaction journal.
 
+#### Shared instrument short name
+
+Presentation responses add nullable `short_name` without changing `name`,
+`source_name`, identity, source receipts or financial operands. Exact catalogue
+ISIN/ID metadata takes precedence when it supplies one unambiguous name;
+otherwise the existing source label is used. Only trailing parenthesized exact
+ISIN/ticker suffixes are removed, repeatedly; meaningful parentheses remain.
+An absent name is NULL, never an ISIN or a fabricated type/number label. UI
+consumers show "Без названия" with the ISIN separately. The same projection
+serves Returns overall/card/account/income/monthly, month positions and lazy
+results, statement preparation, payouts, Capital catalogue and concentration rows, and
+named AI review rows. Existing anonymized export schemas retain their contract.
+Statement preview/apply/readback envelopes expose `instrument_labels` with ISIN
+and `short_name`; normalized `document` and `accepted` objects remain byte-for-byte
+equivalent as data, so receipt comparison and confirmation digests are unchanged.
+No identity match, financial currentness or read/cache policy depends on this name.
+Source labels may reuse the issuer text accepted by the existing exact
+registration-identity guard. This supplies a display label only; it does not
+create a payout link, change source attribution or authorize a financial value.
+
 #### Bounded manual gold history
 
 `owner_manual_gold_history_v1` is a separate Owner-attested source record for an
@@ -7155,8 +7175,20 @@ The existing account-specific `/api/returns/overview` and
 events remain available for inspection; the separate capital view describes
 actual account capital. Manual gold-history previews add `clean_result` from
 the existing valuation and dated trade evidence; recorded fees and historical
-receipts remain intact. The AI report includes the same available clean gold
-result. Incomplete gold history, unproved opening quantity, and mismatched
+receipts remain intact. Clean gold decomposition uses dated FIFO purchase lots:
+sale proceeds minus the disposed purchase amount, and saved residual valuation
+minus remaining purchase amount. Allocation uses Decimal and ROUND_HALF_UP to
+integer kopecks; the remaining lot retains the rounding remainder. Thus the two
+parts sum exactly to clean total when all are known. Missing valuation withholds
+only the unrealized part; affirmative zero quantity supplies zero residual value.
+Same-day ambiguous lot order withholds the split without changing total.
+Separate fees/taxes remain excluded from clean metrics; unknown fees retain an
+estimate flag and reason, never a zero fee. Source fee-inclusive results and
+receipts remain unchanged. Investment semantics v23 adds this clean projection
+with v22 exact-dependency receipt compatibility.
+The AI report includes the same available clean gold
+result. Additive `clean_decomposition` and `reading_guide.gold_decomposition`
+explain the new split while legacy export split fields and guide remain unchanged. Incomplete gold history, unproved opening quantity, and mismatched
 quantities cannot produce a total from valuation and partial trades; known
 purchase and sale components remain visible. Explicit `basis=legacy` preserves the prior Returns projections for
 consumers that still need their original semantics.

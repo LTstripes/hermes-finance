@@ -60,6 +60,7 @@ class InstrumentResponse(BaseModel):
 
     id: int
     name: str
+    short_name: str | None = None
     instrument_type: str
     isin: str | None
     ticker: str | None
@@ -109,6 +110,8 @@ def _nominal_amount(model: object | None) -> RubleAmount | None:
 
 
 def _response_from_instrument(instrument: object) -> InstrumentResponse:
+    from hermes_finance.services.instrument_names import short_instrument_name
+
     nominal = None
     if instrument.nominal_value_kopecks is not None:
         nominal = MoneyValue(
@@ -118,6 +121,9 @@ def _response_from_instrument(instrument: object) -> InstrumentResponse:
     return InstrumentResponse(
         id=instrument.id,
         name=instrument.name,
+        short_name=short_instrument_name(
+            instrument.name, isin=instrument.isin, ticker=instrument.ticker
+        ),
         instrument_type=instrument.instrument_type,
         isin=instrument.isin,
         ticker=instrument.ticker,

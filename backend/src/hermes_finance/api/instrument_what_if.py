@@ -7,10 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from hermes_finance.api.instrument_cash_income import KnownPayouts, Ref
+from hermes_finance.api.instrument_cash_income import InstrumentRef, KnownPayouts, Ref
 from hermes_finance.api.instrument_eod_observations import EodObservation
 from hermes_finance.api.instrument_trades import KnownTrades
 from hermes_finance.api.settings import session_for_request
+from hermes_finance.services.instrument_names import with_reference_short_names
 from hermes_finance.services.instrument_what_if import instrument_what_if
 
 router = APIRouter(prefix="/api/instruments", tags=["instruments"])
@@ -58,7 +59,7 @@ class InstrumentWhatIf(StrictModel):
     authority: Literal["hypothetical"]
     request_nonce: str
     account: Ref
-    instrument: Ref
+    instrument: InstrumentRef
     t0: date
     t1: date
     interval: Literal["(t0,t1]"]
@@ -90,18 +91,21 @@ def evaluate(
 ):
     response.headers["Cache-Control"] = "no-store"
     try:
-        return instrument_what_if(
+        return with_reference_short_names(
             session,
-            account_id,
-            instrument_id,
-            t0,
-            t1,
-            {
-                "no_unobserved_movements": no_unobserved_movements,
-                "no_unobserved_payouts": no_unobserved_payouts,
-                "no_other_costs_or_taxes": no_other_costs_or_taxes,
-            },
-            request_nonce,
+            instrument_what_if(
+                session,
+                account_id,
+                instrument_id,
+                t0,
+                t1,
+                {
+                    "no_unobserved_movements": no_unobserved_movements,
+                    "no_unobserved_payouts": no_unobserved_payouts,
+                    "no_other_costs_or_taxes": no_other_costs_or_taxes,
+                },
+                request_nonce,
+            ),
         )
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error

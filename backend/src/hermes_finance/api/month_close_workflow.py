@@ -13,6 +13,7 @@ from hermes_finance.api.cash_flow_ladder import (
     CashFlowLadderEventOut,
     UpcomingEventsWindowOut,
     cash_flow_ladder_to_out,
+    with_event_short_names,
 )
 from hermes_finance.api.close_readiness import (
     CloseReadinessItemOut,
@@ -827,26 +828,29 @@ def get_month_close_workflow(
             if step.applicability.value != "not_applicable"
         )
         total_applicable = sum(step.applicability.value != "not_applicable" for step in steps)
-        return GuidedCloseWorkflowOut(
-            contract_version=WORKFLOW_CONTRACT_VERSION,
-            generated_at=generated,
-            month=_workflow_month_out(month),
-            recommended_step_id=(
-                recommended.value if isinstance(recommended, GuidedCloseStepId) else None
-            ),
-            progress=WorkflowProgressOut(
-                completed_or_skipped=completed_or_skipped, total_applicable=total_applicable
-            ),
-            steps=[_step_out(step) for step in steps],
-            readiness=_readiness_out(readiness),
-            freshness=_freshness_out(freshness),
-            final_review=_final_review_out(session, final_review, month),
-            outlook=_outlook_out(outlook) if outlook is not None else None,
-            checklist=_checklist_out(checklist) if checklist is not None else None,
-            links=WorkflowLinksOut(
-                month=f"/months/{month.id}",
-                close_readiness=f"/api/months/{month.id}/close-readiness",
-                freshness=f"/api/months/{month.id}/freshness-provenance",
+        return with_event_short_names(
+            session,
+            GuidedCloseWorkflowOut(
+                contract_version=WORKFLOW_CONTRACT_VERSION,
+                generated_at=generated,
+                month=_workflow_month_out(month),
+                recommended_step_id=(
+                    recommended.value if isinstance(recommended, GuidedCloseStepId) else None
+                ),
+                progress=WorkflowProgressOut(
+                    completed_or_skipped=completed_or_skipped, total_applicable=total_applicable
+                ),
+                steps=[_step_out(step) for step in steps],
+                readiness=_readiness_out(readiness),
+                freshness=_freshness_out(freshness),
+                final_review=_final_review_out(session, final_review, month),
+                outlook=_outlook_out(outlook) if outlook is not None else None,
+                checklist=_checklist_out(checklist) if checklist is not None else None,
+                links=WorkflowLinksOut(
+                    month=f"/months/{month.id}",
+                    close_readiness=f"/api/months/{month.id}/close-readiness",
+                    freshness=f"/api/months/{month.id}/freshness-provenance",
+                ),
             ),
         )
 

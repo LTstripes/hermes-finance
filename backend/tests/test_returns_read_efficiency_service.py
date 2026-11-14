@@ -353,6 +353,7 @@ def test_backup_copy_stale_proof_preserves_observed_clean_components(db, monkeyp
         "source_investment_semantics_v19",
         "source_investment_semantics_v20",
         "source_investment_semantics_v21",
+        "source_investment_semantics_v22",
     ],
 )
 def test_previous_proof_remains_current_only_with_exact_unchanged_dependencies(

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.services.instrument_cash_income import known_instrument_cash_income
+from hermes_finance.services.instrument_names import with_reference_short_names
 
 router = APIRouter(prefix="/api/instruments", tags=["instruments"])
 
@@ -17,6 +18,10 @@ class Ref(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: int
     name: str
+
+
+class InstrumentRef(Ref):
+    short_name: str | None = None
 
 
 class PayoutEvent(BaseModel):
@@ -50,7 +55,7 @@ class KnownPayouts(BaseModel):
     method: Literal["known-booked-net-payouts"]
     version: Literal[1]
     account: Ref
-    instrument: Ref
+    instrument: InstrumentRef
     t0: date
     t1: date
     currency: Literal["RUB"]
@@ -73,7 +78,9 @@ def read_known_payouts(
     session: Session = Depends(session_for_request),
 ):
     try:
-        return known_instrument_cash_income(session, account_id, instrument_id, t0, t1)
+        return with_reference_short_names(
+            session, known_instrument_cash_income(session, account_id, instrument_id, t0, t1)
+        )
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:

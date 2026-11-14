@@ -42,6 +42,7 @@ from hermes_finance.services.broker_months import (
     preview_broker_month,
     read_broker_month,
 )
+from hermes_finance.services.instrument_names import with_document_short_names
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
 router = APIRouter(
@@ -273,12 +274,15 @@ async def preview(
         if len(supporting) > 3:
             raise MyBrokerError("optional_document_limit")
         hashes = sorted([hashlib.sha256(await _bytes(f)).hexdigest() for f in supporting])
-        return preview_broker_month(
+        return with_document_short_names(
             session,
-            document=await _bytes(file),
-            filename=file.filename or "",
-            optional_hashes=hashes,
-            **requested.model_dump(),
+            preview_broker_month(
+                session,
+                document=await _bytes(file),
+                filename=file.filename or "",
+                optional_hashes=hashes,
+                **requested.model_dump(),
+            ),
         )
     except (ValidationError, MyBrokerError, ValueError, AttributeError) as error:
         raise HTTPException(
@@ -341,7 +345,7 @@ async def apply(
             **requested.model_dump(),
         )
         schedule_draft_payout_refresh(request, background_tasks, accepted)
-        return accepted
+        return with_document_short_names(session, accepted)
     except MyBrokerError as error:
         raise HTTPException(409, str(error)) from None
     except (ValidationError, ValueError, AttributeError):
@@ -359,7 +363,7 @@ def batches(reporting_month_id: int, session: Session = Depends(session_for_requ
             )
         )
         return [
-            read_broker_month(session, request_id)
+            with_document_short_names(session, read_broker_month(session, request_id))
             for request_id in ids
             if journal.kind(session.get(BrokerMonthApply, request_id))
             in {journal.SOURCE, "invalid"}
@@ -369,6 +373,6 @@ def batches(reporting_month_id: int, session: Session = Depends(session_for_requ
 @router.get("/{request_id}")
 def readback(request_id: str, session: Session = Depends(session_for_request)):
     try:
-        return read_broker_month(session, request_id)
+        return with_document_short_names(session, read_broker_month(session, request_id))
     except MyBrokerError as error:
         raise HTTPException(404, str(error)) from None

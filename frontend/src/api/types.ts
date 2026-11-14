@@ -541,6 +541,7 @@ export type DashboardLiquidCapital = {
 };
 
 export type CashFlowLadderEvent = {
+  short_name?: string | null;
   source_kind: "manual" | "provider" | "deposit_forecast" | string;
   source_id: number;
   expected_date: string;
@@ -935,6 +936,7 @@ export type CashTotal = {
 };
 
 export type Instrument = {
+  short_name?: string | null;
   id: number;
   name: string;
   instrument_type: string;
@@ -1054,6 +1056,7 @@ export type QuoteFailureReason =
   | "ambiguous";
 
 export type QuotePreviewRow = {
+  short_name?: string | null;
   position_snapshot_id: number;
   account_id: number;
   instrument_id: number;
@@ -1113,6 +1116,7 @@ export type QuoteApplyResult = {
 };
 
 export type PositionSnapshot = {
+  short_name?: string | null;
   id: number;
   reporting_month_id: number;
   account_id: number;
@@ -1175,6 +1179,7 @@ export type StatementLink = {
 };
 
 export type InvestmentFlow = {
+  short_name?: string | null;
   id: number;
   reporting_month_id: number;
   account_id: number;
@@ -1223,6 +1228,7 @@ export type InvestmentFlowUpdate = {
 };
 
 export type ExpectedFlow = {
+  short_name?: string | null;
   id: number;
   reporting_month_id: number;
   account_id: number;
@@ -1243,6 +1249,7 @@ export type ExpectedFlow = {
 
 /** One expected payout inside a calendar month (E16). */
 export type ExpectedCalendarItem = {
+  short_name?: string | null;
   id: number;
   expected_date: string;
   flow_type: string;

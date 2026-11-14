@@ -19,6 +19,7 @@ from hermes_finance.services.expected_cash_flows import (
     list_expected_cash_flows,
     update_expected_cash_flow,
 )
+from hermes_finance.services.instrument_names import instrument_names
 
 router = APIRouter(prefix="/api/expected-flows", tags=["expected-flows"])
 
@@ -57,6 +58,8 @@ class ExpectedFlowUpdate(BaseModel):
 
 
 class ExpectedFlowResponse(BaseModel):
+    short_name: str | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -78,6 +81,7 @@ class ExpectedFlowResponse(BaseModel):
 
 
 class CalendarItemOut(BaseModel):
+    short_name: str | None = None
     model_config = ConfigDict(extra="forbid")
 
     id: int
@@ -129,8 +133,9 @@ def _money_amount(amount: RubleAmount) -> MoneyValue:
     return MoneyValue(amount=amount.to_api(), currency="RUB")
 
 
-def _response(flow: object) -> ExpectedFlowResponse:
+def _response(flow: object, *, names=None) -> ExpectedFlowResponse:
     return ExpectedFlowResponse(
+        short_name=names.name(instrument_id=flow.instrument_id) if names else None,
         id=flow.id,
         reporting_month_id=flow.reporting_month_id,
         account_id=flow.account_id,
@@ -164,6 +169,7 @@ def calendar_flows(
         forecast_version=forecast_version,
         from_date=from_date,
     )
+    names = instrument_names(session)
     return [
         CalendarMonthOut(
             year=month.year,
@@ -183,6 +189,7 @@ def calendar_flows(
                     flow_type=item.flow_type,
                     account_name=item.account_name,
                     instrument_name=item.instrument_name,
+                    short_name=names.name(name=item.instrument_name),
                     expected_net_amount=_money_amount(item.expected_net_amount),
                     is_confirmed=item.is_confirmed,
                     is_approximate=item.is_approximate,
@@ -208,7 +215,15 @@ def list_flows(
         forecast_version=forecast_version,
         from_date=from_date,
     )
-    return [_response(flow) for flow in flows]
+    from hermes_finance.services.instrument_names import instrument_names
+
+    names = instrument_names(session)
+    return [
+        _response(flow).model_copy(
+            update={"short_name": names.name(instrument_id=flow.instrument_id)}
+        )
+        for flow in flows
+    ]
 
 
 @router.post("", response_model=ExpectedFlowResponse, status_code=status.HTTP_201_CREATED)
@@ -238,7 +253,7 @@ def create_flow(
         is_confirmed=payload.is_confirmed,
         notes=payload.notes,
     )
-    return _response(flow)
+    return _response(flow, names=instrument_names(session))
 
 
 @router.get("/{flow_id}", response_model=ExpectedFlowResponse)
@@ -246,7 +261,7 @@ def get_flow(
     flow_id: int,
     session: Session = Depends(session_for_request),
 ) -> ExpectedFlowResponse:
-    return _response(get_expected_cash_flow(session, flow_id))
+    return _response(get_expected_cash_flow(session, flow_id), names=instrument_names(session))
 
 
 @router.patch("/{flow_id}", response_model=ExpectedFlowResponse)
@@ -274,7 +289,7 @@ def update_flow(
         is_confirmed=payload.is_confirmed,
         notes=payload.notes,
     )
-    return _response(flow)
+    return _response(flow, names=instrument_names(session))
 
 
 @router.delete("/{flow_id}", status_code=status.HTTP_204_NO_CONTENT)

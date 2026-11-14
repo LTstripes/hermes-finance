@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import InstrumentType, PriceSource, RubleAmount
+from hermes_finance.services.instrument_names import instrument_names
 from hermes_finance.services.month_position_returns import month_position_returns
 from hermes_finance.services.positions import (
     UNCHANGED_IDENTITY,
@@ -59,6 +60,7 @@ class PositionUpdate(BaseModel):
 
 
 class PositionAllTimeResult(BaseModel):
+    short_name: str | None = None
     amount: MoneyValue | None
     as_of: date | None
     period_start: date | None
@@ -73,6 +75,7 @@ class PositionResponse(BaseModel):
     reporting_month_id: int
     account_id: int
     instrument_id: int
+    short_name: str | None = None
     historical_instrument_type: InstrumentType | None
     quantity: str
     average_cost_per_unit: MoneyValue | None
@@ -111,8 +114,9 @@ def _amount(money: MoneyValue) -> RubleAmount:
     return RubleAmount.from_api(money.amount)
 
 
-def _response_from_snapshot(snapshot: object) -> PositionResponse:
+def _response_from_snapshot(snapshot: object, *, names=None) -> PositionResponse:
     return PositionResponse(
+        short_name=names.name(instrument_id=snapshot.instrument_id) if names else None,
         id=snapshot.id,
         reporting_month_id=snapshot.reporting_month_id,
         account_id=snapshot.account_id,
@@ -151,9 +155,14 @@ def list_positions_endpoint(
     account_id: int | None = Query(default=None),
     session: Session = Depends(session_for_request),
 ) -> list[PositionResponse]:
+    from hermes_finance.services.instrument_names import instrument_names
+
     snapshots = list_position_snapshots(session)
+    names = instrument_names(session)
     return [
-        _response_from_snapshot(s)
+        _response_from_snapshot(s).model_copy(
+            update={"short_name": names.name(instrument_id=s.instrument_id)}
+        )
         for s in snapshots
         if s.reporting_month_id == month_id and (account_id is None or s.account_id == account_id)
     ]
@@ -173,9 +182,14 @@ def position_all_time_results(
             and (account_id is None or s.account_id == account_id)
         ]
         results = month_position_returns(session, month_id, snapshots)
+        from hermes_finance.services.instrument_names import instrument_names
+
+        names = instrument_names(session)
+        by_id = {row.id: row.instrument_id for row in snapshots}
         responses = {}
         for snapshot_id, value in results.items():
             result = dict(value)
+            result["short_name"] = names.name(instrument_id=by_id[snapshot_id])
             result["amount"] = _money_from_kopecks(result.pop("amount_kopecks"))
             responses[snapshot_id] = PositionAllTimeResult(**result)
         return responses
@@ -219,7 +233,7 @@ def create_position_endpoint(
         price_source=payload.price_source,
         notes=payload.notes,
     )
-    return _response_from_snapshot(snapshot)
+    return _response_from_snapshot(snapshot, names=instrument_names(session))
 
 
 @router.patch("/{snapshot_id}", response_model=PositionResponse)
@@ -258,7 +272,7 @@ def update_position_endpoint(
         if "historical_instrument_type" in payload.model_fields_set
         else UNCHANGED_IDENTITY,
     )
-    return _response_from_snapshot(snapshot)
+    return _response_from_snapshot(snapshot, names=instrument_names(session))
 
 
 @router.delete("/{snapshot_id}", status_code=status.HTTP_204_NO_CONTENT)

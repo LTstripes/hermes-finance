@@ -730,6 +730,7 @@ function HoldingsBlock({
                         )}
                         <span className={capitalStyles.holdingMeta}>
                           {holdingContextLabel(row)}
+                          {row.name === "Без названия" && row.isin ? ` · ${row.isin}` : ""}
                           {(mode === "risk_class" || group.key === "other") && row.accountName
                             ? ` · ${row.accountName}`
                             : ""}

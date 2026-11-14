@@ -3,7 +3,7 @@ export type KnownPayouts = {
   method: "known-booked-net-payouts";
   version: 1;
   account: { id: number; name: string };
-  instrument: { id: number; name: string };
+  instrument: { id: number; name: string; short_name?: string | null };
   t0: string;
   t1: string;
   currency: "RUB";

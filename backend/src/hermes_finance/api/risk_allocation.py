@@ -81,6 +81,7 @@ class ConcentrationItemOut(BaseModel):
     account_name: str | None
     instrument_id: int | None
     instrument_name: str | None
+    short_name: str | None = None
     instrument_type: str | None
     position_id: int | None
     event_count: int | None
@@ -225,4 +226,18 @@ def get_risk_allocation(
         top_n=top_n,
         forecast_version=forecast_version,
     )
-    return _response(result)
+    response = _response(result)
+    from hermes_finance.services.instrument_names import instrument_names
+
+    names = instrument_names(session)
+    for metric in (
+        response.top_positions,
+        response.payout_concentration,
+        response.redemption_concentration,
+    ):
+        for item in metric.items:
+            if item.instrument_id is not None:
+                item.short_name = names.name(
+                    instrument_id=item.instrument_id, name=item.instrument_name
+                )
+    return response

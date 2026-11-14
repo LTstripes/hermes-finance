@@ -13,6 +13,7 @@ from hermes_finance.domain import InvestmentCashFlowType, RubleAmount
 from hermes_finance.services.applied_statement_events import (
     list_active_statement_events_by_cash_flow_ids,
 )
+from hermes_finance.services.instrument_names import instrument_names
 from hermes_finance.services.investment_cash_flows import (
     create_investment_cash_flow,
     delete_investment_cash_flow,
@@ -65,6 +66,8 @@ class StatementLinkOut(BaseModel):
 
 
 class InvestmentFlowResponse(BaseModel):
+    short_name: str | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -115,8 +118,9 @@ def _statement_link(event: object | None) -> StatementLinkOut | None:
     )
 
 
-def _response(flow: object, event: object | None = None) -> InvestmentFlowResponse:
+def _response(flow: object, event: object | None = None, *, names=None) -> InvestmentFlowResponse:
     return InvestmentFlowResponse(
+        short_name=names.name(instrument_id=flow.instrument_id) if names else None,
         id=flow.id,
         reporting_month_id=flow.reporting_month_id,
         account_id=flow.account_id,
@@ -150,7 +154,15 @@ def list_flows(
         and (account_id is None or flow.account_id == account_id)
     ]
     events = list_active_statement_events_by_cash_flow_ids(session, [flow.id for flow in flows])
-    return [_response(flow, events.get(flow.id)) for flow in flows]
+    from hermes_finance.services.instrument_names import instrument_names
+
+    names = instrument_names(session)
+    return [
+        _response(flow, events.get(flow.id)).model_copy(
+            update={"short_name": names.name(instrument_id=flow.instrument_id)}
+        )
+        for flow in flows
+    ]
 
 
 @router.post("", response_model=InvestmentFlowResponse, status_code=status.HTTP_201_CREATED)
@@ -178,7 +190,7 @@ def create_flow(
         source=payload.source,
         notes=payload.notes,
     )
-    return _response(flow)
+    return _response(flow, names=instrument_names(session))
 
 
 @router.get("/{flow_id}", response_model=InvestmentFlowResponse)
@@ -188,7 +200,7 @@ def get_flow(
 ) -> InvestmentFlowResponse:
     flow = get_investment_cash_flow(session, flow_id)
     events = list_active_statement_events_by_cash_flow_ids(session, [flow.id])
-    return _response(flow, events.get(flow.id))
+    return _response(flow, events.get(flow.id), names=instrument_names(session))
 
 
 @router.patch("/{flow_id}", response_model=InvestmentFlowResponse)
@@ -215,7 +227,7 @@ def update_flow(
         source=payload.source,
         notes=payload.notes,
     )
-    return _response(flow)
+    return _response(flow, names=instrument_names(session))
 
 
 @router.delete("/{flow_id}", status_code=status.HTTP_204_NO_CONTENT)

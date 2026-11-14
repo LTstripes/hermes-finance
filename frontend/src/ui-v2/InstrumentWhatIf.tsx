@@ -126,7 +126,11 @@ export function InstrumentWhatIf({ scope }: { scope: PayoutScope }) {
       {fresh && h ? (
         <div data-testid="instrument-what-if-result" aria-live="polite">
           <p>
-            {data.account.name} · {data.instrument.name} · ({data.t0}, {data.t1}] · RUB
+            {data.account.name} ·{" "}
+            {data.instrument.short_name === undefined
+              ? data.instrument.name
+              : (data.instrument.short_name ?? "Без названия")}{" "}
+            · ({data.t0}, {data.t1}] · RUB
           </p>
           {h.conditional_result !== null && h.conditional_period_percent !== null ? (
             <p className={styles.value}>

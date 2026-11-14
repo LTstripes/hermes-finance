@@ -151,3 +151,166 @@ def test_instrument_validation_rejects_invalid_type_empty_name_and_negative_nomi
     finally:
         session.close()
         database.engine.dispose()
+
+
+def test_short_name_strips_only_exact_identity_suffixes():
+    from hermes_finance.services.instrument_names import short_instrument_name
+
+    assert (
+        short_instrument_name(
+            "Synthetic (series 2) (SYN) (RU000SYN0001)", isin="RU000SYN0001", ticker="SYN"
+        )
+        == "Synthetic (series 2)"
+    )
+    assert short_instrument_name("RU000SYN0001", isin="RU000SYN0001") is None
+    assert short_instrument_name("", isin="RU000SYN0001") is None
+
+
+def test_catalogue_name_is_shared_and_old_fields_are_unchanged():
+    from types import SimpleNamespace
+
+    from hermes_finance.services.instrument_names import InstrumentNames
+
+    names = InstrumentNames(
+        [SimpleNamespace(id=1, isin="RU000SYN0001", ticker="SYN", name="Synthetic (SYN)")]
+    )
+    for prior in ("Облигация 1", "RU000SYN0001", "Long source label", None):
+        original = {"isin": "RU000SYN0001", "name": prior, "pnl": {"value": None}, "accounts": []}
+        result = names.project(original)
+        assert result.pop("short_name") == "Synthetic"
+        assert result == original
+        assert "short_name" not in original
+    assert names.name(instrument_id=1) == names.name(isin="RU000SYN0001")
+
+
+def test_unknown_and_conflicting_names_are_not_guessed():
+    from hermes_finance.services.instrument_names import InstrumentNames
+
+    names = InstrumentNames([])
+    assert names.name(isin="RU000SYN0001", name="RU000SYN0001") is None
+    assert names.name(isin="RU000SYN0001", name="Source (RU000SYN0001)") == "Source"
+
+
+def test_card_reuses_unambiguous_name_already_present_in_account_details():
+    from hermes_finance.services.instrument_names import InstrumentNames
+
+    original = {
+        "isin": "RU000SYN0001",
+        "name": "RU000SYN0001",
+        "accounts": [{"clean": {"isin": "RU000SYN0001", "name": "Synthetic (RU000SYN0001)"}}],
+    }
+    result = InstrumentNames([]).project(original)
+    assert result["short_name"] == "Synthetic"
+    assert result["accounts"][0]["clean"]["short_name"] == "Synthetic"
+    assert result["name"] == original["name"]
+    original["accounts"].append({"clean": {"isin": "RU000SYN0001", "name": "Conflicting"}})
+    assert InstrumentNames([]).project(original)["short_name"] is None
+
+
+def test_statement_names_are_outside_immutable_receipt_document(monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from hermes_finance.services import instrument_names as module
+
+    names = module.InstrumentNames(
+        [SimpleNamespace(id=1, isin="RU000SYN0001", ticker="SYN", name="Synthetic (SYN)")]
+    )
+    monkeypatch.setattr(module, "instrument_names", lambda session: names)
+    document = {
+        "positions": [{"isin": "RU000SYN0001", "quantity": "1"}],
+        "trades": [{"core": {"isin": "RU000SYN0002", "amount": None}}],
+    }
+    for original in ({"document": document}, {"accepted": {"document": document}}):
+        before = deepcopy(original)
+        result = module.with_document_short_names(None, original)
+        assert result.pop("instrument_labels") == [
+            {"isin": "RU000SYN0001", "short_name": "Synthetic"},
+            {"isin": "RU000SYN0002", "short_name": None},
+        ]
+        assert result == before == original
+
+
+def test_source_name_uses_guarded_display_metadata_without_changing_old_fields(monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from fastapi import Response
+
+    from hermes_finance.api import source_instrument_returns as api
+    from hermes_finance.services import (
+        instrument_names,
+        source_investment_proofs,
+        source_monthly_returns,
+    )
+
+    monkeypatch.setattr(
+        instrument_names, "instrument_names", lambda session: instrument_names.InstrumentNames([])
+    )
+    reads = []
+    original = {"instruments": [{"isin": "RU000SYN0001", "source_name": None, "analysis": None}]}
+    monkeypatch.setattr(
+        api,
+        "read_instrument_returns",
+        lambda *a, **k: SimpleNamespace(to_dict=lambda: deepcopy(original)),
+    )
+    for basis in ("native", "pdf", "unknown"):
+        view = {
+            "document": {"positions": [], "trades": []},
+            "proposals": [{"isin": "RU000SYN0001", "source_name": "Synthetic Security"}],
+        }
+        monkeypatch.setattr(
+            source_monthly_returns,
+            "_selected_sources",
+            lambda *a, **k: ([(None, view, None)] if basis == "native" else [], {"SYNTHETIC"}),
+        )
+
+        def metadata(session, *, source_account, requested_isin):
+            reads.append((source_account, requested_isin))
+            return {
+                "source": {},
+                "pdf": {"RU000SYN0001": ("Synthetic Security",)} if basis == "pdf" else {},
+            }
+
+        monkeypatch.setattr(source_investment_proofs, "read_latest_display_candidates", metadata)
+        result = api.instrument_returns(Response(), "SYNTHETIC", session=None)
+        assert result["instruments"][0].pop("short_name") == (
+            "Synthetic Security" if basis != "unknown" else None
+        )
+        assert result == original
+    assert reads == [("SYNTHETIC", None), ("SYNTHETIC", None)]
+
+
+def test_source_label_reuses_exact_registration_identity_without_financial_attribution(monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from hermes_finance.services import money_instrument_links, source_instrument_events
+    from hermes_finance.services.instrument_names import source_label_candidates
+
+    resolver = SimpleNamespace(
+        reg_isins={},
+        conflicts=set(),
+        instruments={},
+        _related=lambda value: set(),
+        _candidates=lambda related: [],
+    )
+    monkeypatch.setattr(money_instrument_links, "MoneyInstrumentResolver", lambda session: resolver)
+    monkeypatch.setattr(
+        source_instrument_events, "_REGISTRATION_SCOPE", {"1-01-00001-A": "RU000SYN0001"}
+    )
+    view = {
+        "document": {"positions": [], "trades": []},
+        "proposals": [],
+        "money_classifications": [
+            {
+                "classification": "dividend",
+                "narrative": 'Дивиденды за 2030 г. по акциям ПАО "Синтетика" (1-01-00001-A). (Удержан налог 1 руб.).',
+            }
+        ],
+    }
+    original = deepcopy(view)
+    assert source_label_candidates(None, [view])["RU000SYN0001"]["names"] == {'ПАО "Синтетика"'}
+    assert view == original
+    view["money_classifications"][0]["security_issuer"] = "Conflicting issuer"
+    assert not source_label_candidates(None, [view])["RU000SYN0001"]["names"]

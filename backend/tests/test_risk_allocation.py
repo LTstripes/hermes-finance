@@ -155,7 +155,7 @@ def test_api_serializes_exact_amounts_and_decimal_percentages(client: TestClient
     assert account.status_code == 201, account.text
     instrument = client.post(
         "/api/instruments",
-        json={"name": "Synthetic API stock", "instrument_type": "stock"},
+        json={"name": "Synthetic API stock (SYN)", "ticker": "SYN", "instrument_type": "stock"},
     )
     assert instrument.status_code == 201, instrument.text
     month = client.post(
@@ -195,6 +195,8 @@ def test_api_serializes_exact_amounts_and_decimal_percentages(client: TestClient
         "currency": "RUB",
     }
     assert body["top_positions"]["top_share_pct"] == "100.00"
+    assert body["top_positions"]["items"][0]["short_name"] == "Synthetic API stock"
+    assert body["top_positions"]["items"][0]["instrument_name"] == "Synthetic API stock (SYN)"
 
 
 def test_allocation_uses_explicit_types_accounts_and_deterministic_top_n(

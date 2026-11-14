@@ -66,7 +66,15 @@ def preview(request: GoldHistoryIntent, session: Session = Depends(session_for_r
         from hermes_finance.services.clean_instrument_return import clean_gold_metric
 
         result = preview_gold_history(session, request)
-        return {**result, "clean_result": clean_gold_metric(result["result"])}
+        from hermes_finance.services.clean_gold_returns import clean_gold_decomposition
+
+        return {
+            **result,
+            "clean_result": clean_gold_metric(result["result"]),
+            "clean_decomposition": clean_gold_decomposition(
+                result["declaration"], result["result"]
+            ),
+        }
     except (GoldHistoryError, ValidationError) as error:
         raise HTTPException(422, str(error)) from None
 

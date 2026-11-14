@@ -11,9 +11,9 @@ import {
   ranked,
   tone,
 } from "./model";
+import styles from "./Returns.module.css";
 import { ReturnsDetail } from "./ReturnsDetail";
 import { CompactValue, Explanation } from "./ReturnsInfo";
-import styles from "./Returns.module.css";
 
 export function ReturnsMonthInstruments({
   rows,
@@ -38,7 +38,9 @@ export function ReturnsMonthInstruments({
   const filtered = rows.filter(
     (row) =>
       (kind === "all" || row.kind === kind) &&
-      `${row.name} ${row.isin}`.toLocaleLowerCase("ru").includes(search.toLocaleLowerCase("ru")),
+      `${row.short_name === undefined ? row.name : (row.short_name ?? "Без названия")} ${row.isin}`
+        .toLocaleLowerCase("ru")
+        .includes(search.toLocaleLowerCase("ru")),
   );
   const [field, direction] = sort.split("-");
   filtered.sort((a, b) => {
@@ -145,20 +147,19 @@ export function ReturnsMonthInstruments({
             <tbody>
               {(showAll ? filtered : filtered.slice(0, 10)).map((row) => (
                 <tr key={row.isin}>
-                  <th scope="row" title={`${row.name} · ${row.isin}`}>
+                  <th
+                    scope="row"
+                    title={`${row.short_name === undefined ? row.name : (row.short_name ?? "Без названия")} · ${row.isin}`}
+                  >
                     <button
                       type="button"
                       className={layout.linkButton}
                       onClick={() => setExpanded(row.isin)}
                     >
-                      {row.name}
+                      {row.short_name === undefined ? row.name : (row.short_name ?? "Без названия")}
                     </button>
                     <small>
-                      {row.name !== row.isin
-                        ? row.isin
-                        : row.kind === "bond"
-                          ? "Облигация"
-                          : "Акция"}
+                      {row.isin}
                       {isPartialResult(row.pnl) && " · неполный"}
                     </small>
                   </th>
@@ -199,12 +200,16 @@ export function ReturnsMonthInstruments({
               (row) =>
                 row.pnl.reason_codes.length ||
                 row.rate.reason_codes.length ||
-                row.name === row.isin,
+                (row.short_name === undefined ? row.name === row.isin : row.short_name === null),
             )
             .map((row) => (
               <div key={row.isin}>
-                <strong>{row.name}</strong>
-                {row.name === row.isin && <p>Название бумаги не найдено; показан ISIN.</p>}
+                <strong>
+                  {row.short_name === undefined ? row.name : (row.short_name ?? "Без названия")}
+                </strong>
+                {(row.short_name === undefined
+                  ? row.name === row.isin
+                  : row.short_name === null) && <p>Название бумаги не найдено; показан ISIN.</p>}
                 <Explanation
                   codes={[...new Set([...row.pnl.reason_codes, ...row.rate.reason_codes])]}
                 />
@@ -230,7 +235,7 @@ export function ReturnsMonthInstruments({
                     className={layout.linkButton}
                     onClick={() => setExpanded(row.isin)}
                   >
-                    {row.name}
+                    {row.short_name === undefined ? row.name : (row.short_name ?? "Без названия")}
                   </button>
                   <span className={layout.barTrack} data-tone={tone(row.pnl)} aria-hidden="true">
                     <span

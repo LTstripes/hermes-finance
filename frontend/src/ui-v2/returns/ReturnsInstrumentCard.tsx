@@ -1,13 +1,11 @@
-import { useAccountName } from "./useAccountName";
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { formatQuantity } from "../../lib/format";
 import { reasonCopy } from "../../lib/reasonCopy";
-import { shortInstrumentName } from "../instrumentName";
-import { UiV2Skeleton } from "../UiV2StateBlocks";
 import sheet from "../ReportSheet.module.css";
 import { money } from "../SourceInstrumentDetail";
+import { UiV2Skeleton } from "../UiV2StateBlocks";
 import { cardOperations, cardQuantityStatus, nonzeroAmount } from "./cardPresentation";
 import {
   cleanMetric,
@@ -21,9 +19,9 @@ import styles from "./InstrumentCard.module.css";
 import {
   compareDecimal,
   dateLabel,
+  displayCompactRate,
   displayMetric,
   displayWhole,
-  displayCompactRate,
   isPartialResult,
   type Metric,
   tone,
@@ -41,6 +39,7 @@ import {
 } from "./ReturnsInfo";
 import { ReturnsInstrumentResult } from "./ReturnsInstrumentResult";
 import { ReturnsResultMeta } from "./ReturnsResultMeta";
+import { useAccountName } from "./useAccountName";
 import { useReturnsInvalidated } from "./useReturnsInvalidated";
 
 const kindLabel = (kind: string | null) =>
@@ -262,9 +261,7 @@ export function ReturnsInstrumentCard({
         </p>
       ) : query.isFetching && !data ? (
         <>
-          {initialName && (
-            <Heading>{shortInstrumentName({ name: initialName, isin, ticker: null })}</Heading>
-          )}
+          {initialName && <Heading>{initialName}</Heading>}
           <UiV2Skeleton label="Загружаем инструмент…" expectedTime />
         </>
       ) : null}
@@ -279,16 +276,15 @@ export function ReturnsInstrumentCard({
         <>
           <header className={styles.header}>
             <p className={sheet.eyebrow}>
-              {kindLabel(data.kind)} · {data.isin} · {data.name}
+              {kindLabel(data.kind)} · {data.isin}
             </p>
             <div className={styles.titleRow}>
               <Heading>
-                {shortInstrumentName({
-                  name: initialName?.trim() || data.name,
-                  isin: data.isin,
-                  ticker: null,
-                })}{" "}
-                <MissingName name={data.name} isin={data.isin} />
+                {data.short_name === undefined ? data.name : (data.short_name ?? "Без названия")}{" "}
+                <MissingName
+                  name={data.short_name === undefined ? data.name : (data.short_name ?? data.isin)}
+                  isin={data.isin}
+                />
               </Heading>
               <button
                 type="button"

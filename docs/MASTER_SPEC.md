@@ -615,7 +615,8 @@ TWRR/XIRR and coverage diagnostics remain in the account details. Accepted accou
 and portfolio views also show known accepted coupon/dividend net payments by
 instrument, independently of unavailable P&L or percentage. Mark their coverage
 as partial once, without an estimate label. Gross and withheld tax are separate
-explanations; unknown tax stays a dash and is never deducted from net again. Missing names stay explicit; only exact
+explanations; unknown tax stays a dash and is never deducted from net again. All screens use backend `short_name`: one short catalogue/source name, with ISIN
+only as a secondary identity. Missing names show «Без названия»; only exact
 source/catalogue metadata may name a security, without changing the Owner catalogue.
 
 Deposits are outside this Returns UX package and remain a separate task; their
@@ -625,6 +626,10 @@ period return. A compact manual BUY/SELL history may be confirmed inside the
 existing gold instrument, using its existing monthly price field. It preserves
 actual dates, grams, amount/fee basis, completeness and correction history;
 supported realized, unrealized and total results remain independently visible.
+The gold card labels the clean FIFO parts «Зафиксировано» and «В цене», with
+the same explanatory disclosure as securities. Without a saved valuation the
+known realized part remains visible and the unrealized part is unknown.
+Unknown separate commissions retain an estimate; they are never recorded as zero.
 Preview/confirmation records Owner evidence without rewriting CLOSED months or
 broker operations. It is not a universal transaction editor, a second price
 field or a deposit importer. Use one compact heading and exact quantities without

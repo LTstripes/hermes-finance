@@ -102,6 +102,7 @@ class OverallInstrument(DTO):
     aggregate: InstrumentAggregate | None = None
     isin: str
     name: str
+    short_name: str | None = None
     kind: str | None
     accounts: list[CleanInstrumentAccount | InstrumentAccount]
     reason_codes: list[str]
@@ -263,6 +264,7 @@ class IncomeInstrumentAccount(DTO):
 class IncomeInstrument(DTO):
     isin: str
     name: str
+    short_name: str | None = None
     amount: Metric
     accounts: list[IncomeInstrumentAccount]
 
@@ -272,6 +274,7 @@ class IncomeEvent(DTO):
     label: str
     isin: str | None
     name: str | None
+    short_name: str | None = None
     date: date
     amount: Metric
 
@@ -330,6 +333,7 @@ class InstrumentCard(DTO):
     contract_version: Literal["returns_instrument_card_v1", "returns_instrument_card_v2"]
     isin: str
     name: str
+    short_name: str | None = None
     kind: str | None
     summary: CardSummary
     accounts: list[CardAccount]

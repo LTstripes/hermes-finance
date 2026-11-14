@@ -1587,6 +1587,12 @@
         },
         "reason_codes": {
           "$ref": "#/$defs/reason_codes"
+        },
+        "short_name": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -2421,6 +2427,12 @@
           "items": {
             "$ref": "#/$defs/source_event"
           }
+        },
+        "short_name": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -3978,6 +3990,12 @@
         "currency": {
           "type": "string",
           "pattern": "^[A-Z]{3}$"
+        },
+        "short_name": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -7326,6 +7344,12 @@
         },
         "xirr": {
           "$ref": "#/$defs/CleanPositionRate"
+        },
+        "short_name": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -7482,6 +7506,9 @@
             },
             "gold": {
               "type": "string"
+            },
+            "gold_decomposition": {
+              "type": "string"
             }
           }
         },
@@ -7624,6 +7651,22 @@
         },
         "split_status": {
           "const": "unknown"
+        },
+        "clean_decomposition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "realized_result",
+            "unrealized_result"
+          ],
+          "properties": {
+            "realized_result": {
+              "$ref": "#/$defs/clean_gold_metric"
+            },
+            "unrealized_result": {
+              "$ref": "#/$defs/clean_gold_metric"
+            }
+          }
         }
       }
     },
@@ -8038,6 +8081,12 @@
         },
         "invested_basis": {
           "const": "observed_period_purchases_with_nkd_excluding_fees"
+        },
+        "short_name": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

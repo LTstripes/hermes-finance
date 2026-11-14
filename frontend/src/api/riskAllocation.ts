@@ -48,6 +48,7 @@ export type RiskConcentrationItem = {
   account_name: string | null;
   instrument_id: number | null;
   instrument_name: string | null;
+  short_name?: string | null;
   instrument_type: string | null;
   position_id: number | null;
   event_count: number | null;

@@ -1,16 +1,16 @@
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { listAccounts } from "../api/accounts";
 import { formatApiError } from "../api/client";
 import { createExpectedFlow, deleteExpectedFlow, listExpectedFlows } from "../api/expectedFlows";
+import { listInstruments } from "../api/instruments";
 import {
   createInvestmentFlow,
   deleteInvestmentFlow,
   listInvestmentFlows,
   updateInvestmentFlow,
 } from "../api/investmentFlows";
-import { listInstruments } from "../api/instruments";
 import type { Account, ExpectedFlow, Instrument, InvestmentFlow } from "../api/types";
 import {
   Badge,
@@ -28,20 +28,19 @@ import {
   Td,
   Th,
 } from "../components/ui";
-import { formatDate, formatMoney } from "../lib/format";
 import {
   isManuallyEditableInvestmentFlow,
   isPassiveExpectedFlowType,
   isPassiveInvestmentFlowType,
   isRedemptionFlowType,
 } from "../lib/flowTypes";
+import { formatDate, formatMoney } from "../lib/format";
 import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, sumMoneyAmounts } from "../lib/money";
-import { shortInstrumentName } from "./instrumentName";
-import type { MonthEditorContext } from "./UiV2MonthEditorPage";
-import styles from "./UiV2MonthPayoutsSection.module.css";
 import { MonthPanelTotal } from "./MonthPanelTotal";
 import { validIsin } from "./returns/navigation";
+import type { MonthEditorContext } from "./UiV2MonthEditorPage";
+import styles from "./UiV2MonthPayoutsSection.module.css";
 
 type ActualDraft = {
   account_id: string;
@@ -337,7 +336,12 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
   }, [accounts]);
 
   const instrumentName = useMemo(() => {
-    const map = new Map(instruments.map((i) => [i.id, shortInstrumentName(i)]));
+    const map = new Map(
+      instruments.map((i) => [
+        i.id,
+        i.short_name === undefined ? i.name : (i.short_name ?? "Без названия"),
+      ]),
+    );
     return (id: number | null) => (id == null ? "—" : (map.get(id) ?? `#${id}`));
   }, [instruments]);
 
@@ -755,7 +759,9 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                       ? null
                       : instruments.find((item) => item.id === row.instrument_id);
                   const instrumentPrimary = instrument
-                    ? shortInstrumentName(instrument)
+                    ? instrument.short_name === undefined
+                      ? instrument.name
+                      : (instrument.short_name ?? "Без названия")
                     : accountName(row.account_id);
                   return (
                     <tr
@@ -1035,7 +1041,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                     <option value="">—</option>
                     {instruments.map((i) => (
                       <option key={i.id} value={i.id}>
-                        {i.name}
+                        {i.short_name === undefined ? i.name : (i.short_name ?? "Без названия")}
                         {i.ticker ? ` (${i.ticker})` : ""}
                       </option>
                     ))}
@@ -1178,7 +1184,9 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                             )
                             .join("")}
                         >
-                          {instrumentName(row.instrument_id)}
+                          {row.short_name === undefined
+                            ? instrumentName(row.instrument_id)
+                            : (row.short_name ?? "Без названия")}
                         </Td>
                         <Td numeric>
                           {formatMoney(moneyAmount(row.gross_amount), { currency: "" }).trim()}
@@ -1284,7 +1292,7 @@ export function UiV2MonthPayoutsSection({ context }: { context: MonthEditorConte
                       <option value="">—</option>
                       {instruments.map((i) => (
                         <option key={i.id} value={i.id}>
-                          {i.name}
+                          {i.short_name === undefined ? i.name : (i.short_name ?? "Без названия")}
                           {i.ticker ? ` (${i.ticker})` : ""}
                         </option>
                       ))}

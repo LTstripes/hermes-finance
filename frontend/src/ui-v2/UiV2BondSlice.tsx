@@ -134,7 +134,9 @@ export function UiV2BondSlice({
                             aria-pressed={instrument?.isin === row.isin}
                             onClick={() => select("bond_isin", row.isin)}
                           >
-                            {row.source_name ?? row.isin}
+                            {row.short_name === undefined
+                              ? (row.source_name ?? "Без названия")
+                              : (row.short_name ?? "Без названия")}
                           </button>
                           <br />
                           <small>{row.isin}</small>
@@ -167,7 +169,10 @@ export function UiV2BondSlice({
               ) : instrument ? (
                 <section aria-label={`Детали облигации ${instrument.isin}`}>
                   <h3>
-                    {instrument.source_name ?? instrument.isin} · {instrument.isin}
+                    {instrument.short_name === undefined
+                      ? (instrument.source_name ?? "Без названия")
+                      : (instrument.short_name ?? "Без названия")}{" "}
+                    · {instrument.isin}
                   </h3>
                   <SourceInstrumentDetail analysis={instrument.analysis} />
                 </section>

@@ -423,7 +423,12 @@ function EventRow({ event, showSource }: { event: CashFlowLadderEvent; showSourc
         </span>
       </span>
       <span className={incomeStyles.eventWhat}>
-        <strong>{event.instrument_name ?? "Без инструмента"}</strong>
+        <strong>
+          {event.short_name === undefined
+            ? (event.instrument_name ?? "Без инструмента")
+            : (event.short_name ??
+              (event.instrument_id == null ? "Без инструмента" : "Без названия"))}
+        </strong>
         <small className={incomeStyles.eventAccount}>
           {event.account_name}
           {showSource ? ` · ${ownerSourceLabel(event.source_kind)}` : ""}

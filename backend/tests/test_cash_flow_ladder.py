@@ -294,3 +294,41 @@ def test_dated_interest_replaces_estimate_only_for_same_account_and_window(tmp_p
     finally:
         session.close()
         database.engine.dispose()
+
+
+def test_ladder_api_short_name_is_catalogue_metadata_only(tmp_path):
+    from hermes_finance.api.cash_flow_ladder import get_cash_flow_ladder
+    from hermes_finance.services.instruments import update_instrument
+
+    session, database = session_for(tmp_path)
+    try:
+        month, account, instrument, _ = build_environment(session)
+        update_instrument(session, instrument, name="Synthetic Bond (SYN)", ticker="SYN")
+        create_expected_cash_flow(
+            session,
+            reporting_month_id=month,
+            account_id=account,
+            instrument_id=instrument,
+            flow_type=ExpectedCashFlowType.COUPON,
+            expected_date=date(2030, 5, 15),
+            gross_amount="25.00",
+            expected_tax_amount="0.00",
+            expected_net_amount="25.00",
+            source="synthetic",
+            source_as_of_date=date(2030, 5, 12),
+            forecast_version="v1",
+        )
+        result = get_cash_flow_ladder(month, forecast_version="v1", session=session)
+        for row in [
+            *result.months[0].items,
+            *result.upcoming_14_days.items,
+            *result.upcoming_30_days.items,
+        ]:
+            assert row.short_name == "Synthetic Bond"
+            assert row.instrument_name == "Synthetic Bond (SYN)"
+            assert row.expected_net_amount.amount == "25.00"
+        assert len(result.months[0].items) == 1
+        assert not session.dirty
+    finally:
+        session.close()
+        database.engine.dispose()

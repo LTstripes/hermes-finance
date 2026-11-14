@@ -184,7 +184,11 @@ export function UiV2MonthInstruments({
                       <th>
                         <button
                           type="button"
-                          title={row.source_name ?? row.isin}
+                          title={
+                            row.short_name === undefined
+                              ? (row.source_name ?? "Без названия")
+                              : (row.short_name ?? "Без названия")
+                          }
                           aria-pressed={instrument?.isin === row.isin}
                           onClick={() => {
                             // Retire the outgoing date callback synchronously,
@@ -197,7 +201,9 @@ export function UiV2MonthInstruments({
                           }}
                         >
                           <span className={monthStyles.instrumentName}>
-                            {row.source_name ?? row.isin}
+                            {row.short_name === undefined
+                              ? (row.source_name ?? "Без названия")
+                              : (row.short_name ?? "Без названия")}
                           </span>
                         </button>
                         <br />
@@ -229,7 +235,10 @@ export function UiV2MonthInstruments({
           ) : instrument ? (
             <section aria-label={`Инструмент ${instrument.isin}`} key={instrument.isin}>
               <h3>
-                {instrument.source_name ?? instrument.isin} · {instrument.isin}
+                {instrument.short_name === undefined
+                  ? (instrument.source_name ?? "Без названия")
+                  : (instrument.short_name ?? "Без названия")}{" "}
+                · {instrument.isin}
               </h3>
               <p>
                 {data.native_source_account} × {instrument.isin} · {opening} — {closing}. Источник

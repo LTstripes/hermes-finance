@@ -72,7 +72,9 @@ export type GoldResult = {
   realized_reason_codes: string[];
   unrealized_reason_codes: string[];
 };
+export type GoldDecomposition = { realized_result: Metric; unrealized_result: Metric };
 export type GoldHistory = {
+  clean_decomposition?: GoldDecomposition;
   contract_version: typeof GOLD_VERSION;
   source_kind: "owner_manual_gold_history";
   authority: "owner_attestation";
@@ -90,6 +92,7 @@ export type GoldHistory = {
   revisions: { revision: number; declaration: GoldDeclaration; accepted_at: string }[];
 };
 export type GoldPreview = {
+  clean_decomposition?: GoldDecomposition;
   contract_version: typeof GOLD_VERSION;
   source_kind: "owner_manual_gold_history";
   authority: "owner_attestation";

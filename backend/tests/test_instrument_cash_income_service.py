@@ -69,7 +69,7 @@ def test_net_120_null_tax_readonly_closed_http_and_scope(database):
         params = {"account_id": intent.account_id, "t0": str(A), "t1": str(B)}
         response = client.get(f"/api/instruments/{bond}/cash-income", params=params)
         assert response.status_code == 200, response.text
-        assert response.json() == result
+        assert _original_fields(response.json()) == result
         assert (
             client.get(
                 f"/api/instruments/{bond}/cash-income", params={**params, "t0": str(B)}
@@ -696,3 +696,16 @@ def test_returns_portfolio_uses_dated_membership_without_current_flag_fallback(d
         session.commit()
         excluded = read_overview(session, scope="portfolio", start=A, end=B)
         assert excluded["accepted_income"]["net_kopecks"] is None
+
+
+def _original_fields(value):
+    """All pre-existing response fields must still equal the authoritative reader."""
+    if isinstance(value, list):
+        return [_original_fields(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _original_fields(item) for key, item in value.items()}
+    if isinstance(result.get("instrument"), dict) and "name" in result["instrument"]:
+        name = result["instrument"].pop("short_name")
+        assert name is None or isinstance(name, str) and bool(name.strip())
+    return result

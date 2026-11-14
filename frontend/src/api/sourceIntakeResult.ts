@@ -35,6 +35,7 @@ export type SourceIntakeResult = {
   };
   account: { id: number; name: string } | null;
   instrument: {
+    short_name?: string | null;
     isin: string;
     instrument_type: "stock" | "bond" | null;
     hermes_id: number | null;

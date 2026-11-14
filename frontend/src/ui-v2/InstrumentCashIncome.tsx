@@ -166,7 +166,7 @@ export function InstrumentCashIncome({
                   <option value="">Выберите бумагу</option>
                   {(instruments.data ?? []).map((i) => (
                     <option key={i.id} value={i.id}>
-                      {i.name}
+                      {i.short_name === undefined ? i.name : (i.short_name ?? "Без названия")}
                       {i.is_active ? "" : " (неактивна)"}
                     </option>
                   ))}
@@ -223,7 +223,10 @@ export function InstrumentCashIncome({
           {fresh ? (
             <div>
               <h3>
-                {data.account.name} · {data.instrument.name}
+                {data.account.name} ·{" "}
+                {data.instrument.short_name === undefined
+                  ? data.instrument.name
+                  : (data.instrument.short_name ?? "Без названия")}
               </h3>
               <p>
                 {formatDate(data.t0)} EOD — {formatDate(data.t1)} EOD · RUB · выплаты за (t0,t1]

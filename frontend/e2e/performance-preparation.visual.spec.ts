@@ -388,7 +388,14 @@ for (const width of [1366]) {
         await route.fulfill({ json: [{ id: 3, name: "Synthetic Broker" }] });
       } else if (url.pathname === "/api/instruments") {
         await route.fulfill({
-          json: [{ id: 4, name: "Synthetic Security", instrument_type: "bond" }],
+          json: [
+            {
+              id: 4,
+              name: "Synthetic Security",
+              short_name: "Synthetic Security",
+              instrument_type: "bond",
+            },
+          ],
         });
       } else if (url.pathname === "/api/positions" || url.pathname === "/api/positions/7") {
         if (method === "PATCH") {

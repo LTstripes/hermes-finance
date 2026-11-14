@@ -16,6 +16,7 @@ from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
 
 INSTRUMENT_KEYS = {
+    "short_name",
     "id",
     "name",
     "instrument_type",

@@ -1,5 +1,7 @@
 import { apiMultipart, apiRequest } from "./client";
 
+export type InstrumentLabel = { isin: string; short_name: string | null };
+
 export type MyBrokerBinding = {
   kind: "account" | "instrument";
   identity: string;
@@ -78,6 +80,7 @@ export type MyBrokerChoices = {
   already_imported?: number | null;
 };
 export type MyBrokerPreview = MyBrokerChoices & {
+  instrument_labels?: InstrumentLabel[];
   document: MyBrokerDocument;
   mappings: MyBrokerBinding[];
   missing_mappings: { kind: "account" | "instrument"; identity: string }[];
@@ -89,6 +92,7 @@ export type MyBrokerPreview = MyBrokerChoices & {
 };
 export type MyBrokerImport = MyBrokerChoices & {
   import_id: number;
+  instrument_labels?: InstrumentLabel[];
   document: MyBrokerDocument;
   mappings: MyBrokerBinding[];
   confirmation_digest: string;

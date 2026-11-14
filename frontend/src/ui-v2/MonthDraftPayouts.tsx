@@ -419,7 +419,11 @@ export function MonthDraftPayouts({
                   <ul>
                     {group.map((item) => (
                       <li key={item.position_snapshot_id}>
-                        {item.account_name} · {item.instrument_name} · {item.isin}:{" "}
+                        {item.account_name} ·{" "}
+                        {item.short_name === undefined
+                          ? item.instrument_name
+                          : (item.short_name ?? "Без названия")}{" "}
+                        · {item.isin}:{" "}
                         {item.reason_codes.map((code) => {
                           const copy = reasonCopy(code, {
                             surface: "draftPayouts",

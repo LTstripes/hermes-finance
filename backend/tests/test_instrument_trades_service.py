@@ -68,7 +68,7 @@ def test_stock_two_effective_legs_closed_read_zero_dml_and_strict_api(database):
         finally:
             event.remove(database.engine, "before_cursor_execute", capture)
         assert response.status_code == 200, response.text
-        assert response.json() == result
+        assert _original_fields(response.json()) == result
         assert not any(
             s.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "REPLACE"))
             for s in statements
@@ -384,3 +384,16 @@ def test_corrective_mapping_same_transaction_aba_drops_old_execution_revision(da
         assert "source_enrichment_not_accepted" in revised["events"][0]["reason_codes"]
         assert revised["dependency_fingerprint"] is None
         assert all(v is None for v in values(revised["events"][0]).values())
+
+
+def _original_fields(value):
+    """All pre-existing response fields must still equal the authoritative reader."""
+    if isinstance(value, list):
+        return [_original_fields(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _original_fields(item) for key, item in value.items()}
+    if isinstance(result.get("instrument"), dict) and "name" in result["instrument"]:
+        name = result["instrument"].pop("short_name")
+        assert name is None or isinstance(name, str) and bool(name.strip())
+    return result
