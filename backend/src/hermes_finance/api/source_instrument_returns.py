@@ -78,13 +78,13 @@ def instrument_returns(
     for row in result["instruments"]:
         row["short_name"] = names.name(isin=row["isin"], name=row["source_name"])
     labels = {row["isin"]: row["short_name"] for row in result["instruments"]}
-    for row in result["income"]:
+    for row in result.get("income", ()):
         row["short_name"] = labels.get(row["isin"], names.name(isin=row["isin"]))
     # Income retains its existing account-wide scope even with an ISIN filter.
     # Resolve its source labels as well, without changing payout attribution.
     missing = [
         row
-        for row in [*result["instruments"], *result["income"]]
+        for row in [*result["instruments"], *result.get("income", ())]
         if row["isin"] is not None and row["short_name"] is None
     ]
     if missing:
