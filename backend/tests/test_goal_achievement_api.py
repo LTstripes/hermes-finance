@@ -1,10 +1,128 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
+
+
+@pytest.mark.parametrize(
+    "branch", ["complete", "partial", "base_unavailable", "unsupported", "income_estimate"]
+)
+def test_plan_parameter_validation_precedes_source_and_goal_branches(tmp_path, branch):
+    from decimal import Decimal
+    from itertools import product
+    from unittest.mock import patch
+
+    from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
+    from hermes_finance.services.goal_plan import build_goal_plan
+
+    database = create_database(tmp_path / "plan-validation.db")
+    Base.metadata.create_all(database.engine)
+    try:
+        with TestClient(create_app(database)) as client:
+            month = client.post(
+                "/api/months", json={"year": 2032, "month": 1, "snapshot_date": "2032-01-15"}
+            ).json()
+            passive = branch == "income_estimate"
+            goal = client.post(
+                "/api/goals",
+                json={
+                    "name": "Synthetic validation goal",
+                    "goal_type": "passive_income" if passive else "capital",
+                    "calculation_mode": "monthly_net_passive_income"
+                    if passive
+                    else "liquid_capital_net",
+                    "target_value": {"amount": "1000.01", "currency": "RUB"},
+                    "target_date": "2032-04-01",
+                    "is_active": branch != "unsupported",
+                },
+            ).json()
+            url = f"/api/goals/{goal['id']}/plan"
+            rates = [
+                None,
+                "0",
+                "15",
+                "100",
+                "-1",
+                "101",
+                "NaN",
+                "sNaN",
+                "Infinity",
+                "-Infinity",
+                "invalid",
+            ]
+            payments = [
+                None,
+                "0",
+                "12.34",
+                "1000000000000000",
+                "-1",
+                "NaN",
+                "Infinity",
+                "0.001",
+                "1000000000000000.01",
+                "invalid",
+            ]
+            invalid_rates = set(rates[4:])
+            invalid_payments = set(payments[4:])
+            coverage = (
+                "unavailable"
+                if branch == "base_unavailable"
+                else "partial"
+                if branch == "partial"
+                else "complete"
+            )
+            with patch(
+                "hermes_finance.services.goal_plan.portfolio_source_coverage_for_month",
+                return_value=PortfolioSourceCoverage(coverage),
+            ):
+                for rate, payment in product(rates, payments):
+                    params = {"reporting_month_id": month["id"]}
+                    if rate is not None:
+                        params["annual_rate_pct"] = rate
+                    if payment is not None:
+                        params["monthly_contribution"] = payment
+                    response = client.get(url, params=params)
+                    invalid = rate in invalid_rates or payment in invalid_payments
+                    assert response.status_code == (422 if invalid else 200), (
+                        params,
+                        response.text,
+                    )
+                    if not invalid:
+                        expected = (
+                            branch
+                            if branch in {"base_unavailable", "unsupported", "income_estimate"}
+                            else "contribution_missing"
+                            if payment is None
+                            else "not_reached"
+                            if payment == "0"
+                            else "projected"
+                        )
+                        assert response.json()["status"] == expected, params
+                        if branch == "unsupported":
+                            assert response.json() == {
+                                "method_version": "goal_plan_v1",
+                                "status": "unsupported",
+                            }
+                # Direct service consumers must get the same validation as HTTP callers.
+                with database.session_factory() as session:
+                    for rate in ("-1", "101", "NaN", "Infinity", "-Infinity"):
+                        with pytest.raises(ValueError, match="Годовая доходность"):
+                            build_goal_plan(
+                                session,
+                                goal["id"],
+                                month["id"],
+                                contribution=None,
+                                annual_rate=Decimal(rate),
+                            )
+                    for payment in (-1, 10**17 + 1):
+                        with pytest.raises(ValueError, match="Взнос"):
+                            build_goal_plan(session, goal["id"], month["id"], contribution=payment)
+    finally:
+        database.engine.dispose()
 
 
 def test_goals_summary_static_route_returns_backend_decimal_dto_and_filters_inactive(

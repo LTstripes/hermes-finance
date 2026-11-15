@@ -739,7 +739,7 @@ Invoke-HermesCase "candidate-only release notes perform zero commands" {
     $workspace = New-HermesTestWorkspace
     [IO.File]::WriteAllText(
         $workspace.NotesPath,
-        "# Hermes Finance v0.9.0 - release candidate`n`n> **Status:** PREPARED / UAT-PENDING`n>`n> This is a release candidate. It is not a published tag or GitHub Release.`n",
+        "# Finance v0.9.0 - release candidate`n`n> **Status:** PREPARED / UAT-PENDING`n>`n> This is a release candidate. It is not a published tag or GitHub Release.`n",
         (New-Object System.Text.UTF8Encoding $false)
     )
     $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot
@@ -872,6 +872,7 @@ Invoke-HermesCase "successful publish uses fetch-then-tag-then-tag-push-then-rel
     $result = Invoke-GuardedRelease -Workspace $workspace -World $world
 
     Assert-Equal -Expected "0.5.0" -Actual $result.Version -Label "version"
+    Assert-Equal -Expected "Finance 0.5.0" -Actual $result.Title -Label "release title"
     Assert-Equal -Expected $script:TagName -Actual $result.Tag -Label "tag"
     Assert-Equal -Expected $script:ExpectedSha -Actual $result.Sha -Label "sha"
     Assert-True -Condition ([bool]$result.TagCreated) -Message "Expected a new annotated tag."
@@ -940,6 +941,7 @@ Invoke-HermesCase "successful publish uses fetch-then-tag-then-tag-push-then-rel
 
     $creates = @(Get-CallsByPrefix -Calls $world.State.Calls -Name "gh" -Prefix @("release", "create"))
     Assert-Equal -Expected 1 -Actual $creates.Count -Label "release create count"
+    Assert-Equal -Expected "Finance 0.5.0" -Actual (Get-RequestFlagValue -Arguments $creates[0].Arguments -Flag "--title") -Label "GitHub release title"
     Assert-True -Condition (@($creates[0].Arguments) -contains "--verify-tag") -Message "release create must use --verify-tag."
     Assert-True -Condition (-not (@($creates[0].Arguments) -contains "--target")) -Message "release create must not use --target."
     Assert-True -Condition (-not (@($creates[0].Arguments) -contains "--draft")) -Message "release create must not be a draft."
@@ -1033,7 +1035,7 @@ Invoke-HermesCase "already published release is idempotent and does not mutate" 
         -RemoteTag @{ Name = $script:TagName; Sha = $script:ExpectedSha; Annotated = $true } `
         -Release @{
             tagName      = $script:TagName
-            name         = "Hermes Finance 0.5.0"
+            name         = "Finance 0.5.0"
             isDraft      = $false
             isPrerelease = $false
             url          = "https://github.com/LTstripes/hermes-finance/releases/tag/v0.5.0"

@@ -105,9 +105,17 @@ export function deleteGoal(goalId: number, signal?: AbortSignal): Promise<void> 
   return apiRequest<void>(`/api/goals/${goalId}`, { method: "DELETE", signal });
 }
 
-export type GoalPlan = {
+export type GoalPlan = { method_version: "goal_plan_v1"; status: "unsupported" } | GoalPlanWithBase;
+
+export type GoalPlanWithBase = {
   method_version: "goal_plan_v1";
-  status: string;
+  status:
+    | "base_unavailable"
+    | "income_estimate"
+    | "achieved"
+    | "contribution_missing"
+    | "projected"
+    | "not_reached";
   as_of_date: string;
   base_capital: string | null;
   coverage: string;

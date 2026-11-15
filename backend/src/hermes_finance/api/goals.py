@@ -250,6 +250,7 @@ def goal_plan_endpoint(
 
     from fastapi import HTTPException
 
+    from hermes_finance.domain.goal_plan import validate_plan_parameters
     from hermes_finance.services.goal_plan import build_goal_plan
 
     try:
@@ -261,13 +262,15 @@ def goal_plan_endpoint(
             if value != value.quantize(Decimal("0.01")):
                 raise ValueError("Взнос задаётся с точностью до копейки")
             amount = int(value * 100)
+        annual_rate = Decimal(annual_rate_pct)
+        validate_plan_parameters(annual_rate=annual_rate, contribution=amount)
         return build_goal_plan(
             session,
             goal_id,
             reporting_month_id,
             contribution=amount,
             first=first_contribution_date,
-            annual_rate=Decimal(annual_rate_pct),
+            annual_rate=annual_rate,
         )
     except (ValueError, InvalidOperation) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

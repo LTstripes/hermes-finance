@@ -5,6 +5,13 @@ from datetime import date
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, localcontext
 
 
+def validate_plan_parameters(*, annual_rate: Decimal, contribution: int | None) -> None:
+    if not annual_rate.is_finite() or not 0 <= annual_rate <= 100:
+        raise ValueError("Годовая доходность должна быть от 0 до 100%")
+    if contribution is not None and not 0 <= contribution <= 10**17:
+        raise ValueError("Взнос должен быть от 0 до 1 000 000 000 000 000 рублей")
+
+
 def contribution_date(first: date, offset: int) -> date:
     month = first.year * 12 + first.month - 1 + offset
     year, index = divmod(month, 12)
@@ -24,10 +31,7 @@ def calculate_goal_plan(
     first = first or contribution_date(snapshot.replace(day=1), 1)
     if first <= snapshot:
         raise ValueError("Первый взнос должен быть после даты снимка")
-    if not annual_rate.is_finite() or not 0 <= annual_rate <= 100:
-        raise ValueError("Годовая доходность должна быть от 0 до 100%")
-    if contribution is not None and not 0 <= contribution <= 10**17:
-        raise ValueError("Взнос должен быть от 0 до 1 000 000 000 000 000 рублей")
+    validate_plan_parameters(annual_rate=annual_rate, contribution=contribution)
     with localcontext() as ctx:
         ctx.prec = 60
         factor = (1 + annual_rate / 100) ** (Decimal(1) / 12)
