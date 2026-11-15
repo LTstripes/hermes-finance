@@ -5,7 +5,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.orm import Session
 
 from hermes_finance.database import coherent_read_operation
-from hermes_finance.domain.goal_plan import calculate_goal_plan, money
+from hermes_finance.domain.goal_plan import calculate_goal_plan, money, validate_plan_parameters
 from hermes_finance.services.goals import get_goal
 from hermes_finance.services.liquid_capital import liquid_capital_for_month
 from hermes_finance.services.passive_income_average import passive_income_average
@@ -15,6 +15,10 @@ from hermes_finance.services.reporting_months import get_reporting_month
 
 @coherent_read_operation
 def build_goal_plan(session: Session, goal_id: int, reporting_month_id: int, **parameters) -> dict:
+    validate_plan_parameters(
+        annual_rate=parameters.get("annual_rate", Decimal(0)),
+        contribution=parameters.get("contribution"),
+    )
     goal = get_goal(session, goal_id)
     month = get_reporting_month(session, reporting_month_id)
     if not goal.is_active or (goal.goal_type, goal.calculation_mode) not in {

@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { getGoalPlan, type Goal, type GoalPlan } from "../api/goals";
+import { type ReactNode, useEffect, useState } from "react";
 import { formatApiError } from "../api/client";
+import { type Goal, type GoalPlan, type GoalPlanWithBase, getGoalPlan } from "../api/goals";
 import { DataValue, Field, Input } from "../components/ui";
 import { formatDate, formatPercent } from "../lib/format";
 import { fromKopecks, moneySharePercent, normalizeMoneyInput, rub, toKopecks } from "../lib/money";
@@ -74,103 +74,102 @@ export function GoalPlanBlock({
     };
   }, [open, goal.id, monthId, normalizedPayment, normalizedRate, normalizedFirst, inputError]);
 
+  if (plan?.status === "unsupported") return null;
   const visiblePlan = inputError ? null : plan;
   const content = (
     <>
       {inputError || error ? <p role="alert">{inputError ?? error}</p> : null}
       {!inputError && !error && !visiblePlan ? <p role="status">Расчёт…</p> : null}
       {visiblePlan ? (
-        <>
-          {visiblePlan.status === "base_unavailable" ? (
-            <>
-              <p>Нет базы для расчёта.</p>
-              <details className="goal-plan-more">
-                <summary>Подробнее</summary>
+        visiblePlan.status === "base_unavailable" ? (
+          <>
+            <p>Нет базы для расчёта.</p>
+            <details className="goal-plan-more">
+              <summary>Подробнее</summary>
+              {details}
+            </details>
+          </>
+        ) : (
+          <>
+            {visiblePlan.coverage !== "complete" ? (
+              <p className="goal-plan-note">Расчёт по известной части капитала: данные неполные.</p>
+            ) : null}
+            {passive ? (
+              <PassiveEstimate plan={visiblePlan} currentIncome={currentIncome} />
+            ) : (
+              <>
+                <PlanResult plan={visiblePlan} payment={normalizedPayment} />
+                {visiblePlan.trajectory?.length && visiblePlan.base_capital !== null ? (
+                  <GoalPlanChart plan={visiblePlan} goal={goal} />
+                ) : null}
+              </>
+            )}
+            <details className="goal-plan-more">
+              <summary>Подробнее</summary>
+              <div className="goal-plan-explanation">
                 {details}
-              </details>
-            </>
-          ) : (
-            <>
-              {visiblePlan.coverage !== "complete" ? (
-                <p className="goal-plan-note">
-                  Расчёт по известной части капитала: данные неполные.
+                <p>
+                  База на {formatDate(visiblePlan.as_of_date)}: ликвидные активы{" "}
+                  {money(visiblePlan.components.liquid_assets)} минус включённые долги{" "}
+                  {money(visiblePlan.components.included_debts)}. Недвижимость исключена;
+                  сохранённые снимки выбранного месяца. Покрытие не подтверждает актуальность каждой
+                  оценки.
                 </p>
-              ) : null}
-              {passive ? (
-                <PassiveEstimate plan={visiblePlan} currentIncome={currentIncome} />
-              ) : (
-                <>
-                  <PlanResult plan={visiblePlan} payment={normalizedPayment} />
-                  {visiblePlan.trajectory?.length && visiblePlan.base_capital !== null ? (
-                    <GoalPlanChart plan={visiblePlan} goal={goal} />
-                  ) : null}
-                </>
-              )}
-              <details className="goal-plan-more">
-                <summary>Подробнее</summary>
-                <div className="goal-plan-explanation">
-                  {details}
-                  <p>
-                    База на {formatDate(visiblePlan.as_of_date)}: ликвидные активы{" "}
-                    {money(visiblePlan.components.liquid_assets)} минус включённые долги{" "}
-                    {money(visiblePlan.components.included_debts)}. Недвижимость исключена;
-                    сохранённые снимки выбранного месяца. Покрытие не подтверждает актуальность
-                    каждой оценки.
-                  </p>
-                  {passive ? (
-                    <>
+                {passive ? (
+                  <>
+                    <p>
+                      Отдача = фактический среднемесячный чистый пассивный доход × 12 / ликвидный
+                      капитал. Оценка предполагает сохранение текущей отдачи.
+                    </p>
+                    {visiblePlan.income_months_used?.length ? (
+                      <p>Месяцы дохода: {visiblePlan.income_months_used.join(", ")}.</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      Рост применяется ко всей базе, включая отрицательный капитал; начисление раз в
+                      месяц перед взносом. Без выбранной даты первый взнос —{" "}
+                      {visiblePlan.first_contribution_date
+                        ? formatDate(visiblePlan.first_contribution_date)
+                        : "первый день месяца после снимка"}
+                      . Следующие — в тот же день, в коротком месяце — в последний день.
+                    </p>
+                    {visiblePlan.required_contribution != null ? (
                       <p>
-                        Отдача = фактический среднемесячный чистый пассивный доход × 12 / ликвидный
-                        капитал. Оценка предполагает сохранение текущей отдачи.
+                        До срока: {visiblePlan.remaining_contributions} взносов.{" "}
+                        {visiblePlan.last_required_contribution != null
+                          ? `Последний необходимый взнос: ${money(visiblePlan.last_required_contribution)}.`
+                          : null}
                       </p>
-                      {visiblePlan.income_months_used?.length ? (
-                        <p>Месяцы дохода: {visiblePlan.income_months_used.join(", ")}.</p>
-                      ) : null}
-                    </>
-                  ) : (
-                    <>
-                      <p>
-                        Рост применяется ко всей базе, включая отрицательный капитал; начисление раз
-                        в месяц перед взносом. Без выбранной даты первый взнос —{" "}
-                        {visiblePlan.first_contribution_date
-                          ? formatDate(visiblePlan.first_contribution_date)
-                          : "первый день месяца после снимка"}
-                        . Следующие — в тот же день, в коротком месяце — в последний день.
-                      </p>
-                      {visiblePlan.required_contribution != null ? (
-                        <p>
-                          До срока: {visiblePlan.remaining_contributions} взносов. Последний
-                          необходимый взнос: {money(visiblePlan.last_required_contribution ?? "0")}.
-                        </p>
-                      ) : null}
-                      {visiblePlan.trajectory?.length ? (
-                        <div className="goal-plan-table-scroll">
-                          <table className="goal-plan-table">
-                            <caption>Помесячные взносы</caption>
-                            <thead>
-                              <tr>
-                                <th>Дата взноса</th>
-                                <th>Капитал после взноса</th>
+                    ) : null}
+                    {visiblePlan.trajectory?.length ? (
+                      <div className="goal-plan-table-scroll">
+                        <table className="goal-plan-table">
+                          <caption>Помесячные взносы</caption>
+                          <thead>
+                            <tr>
+                              <th>Дата взноса</th>
+                              <th>Капитал после взноса</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visiblePlan.trajectory.map((point) => (
+                              <tr key={point.date}>
+                                <td>{formatDate(point.date)}</td>
+                                <td>{money(point.capital)}</td>
                               </tr>
-                            </thead>
-                            <tbody>
-                              {visiblePlan.trajectory.map((point) => (
-                                <tr key={point.date}>
-                                  <td>{formatDate(point.date)}</td>
-                                  <td>{money(point.capital)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              </details>
-            </>
-          )}
-        </>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </details>
+          </>
+        )
       ) : null}
     </>
   );
@@ -209,7 +208,7 @@ export function GoalPlanBlock({
   );
 }
 
-function PlanResult({ plan, payment }: { plan: GoalPlan; payment: string | null }) {
+function PlanResult({ plan, payment }: { plan: GoalPlanWithBase; payment: string | null }) {
   const state =
     plan.status === "achieved"
       ? "Цель уже достигнута по базе."
@@ -220,50 +219,62 @@ function PlanResult({ plan, payment }: { plan: GoalPlan; payment: string | null 
           : plan.status === "contribution_missing"
             ? "Введите взнос в месяц (0 — без взносов)."
             : null;
-  if (state)
-    return (
-      <p className="goal-plan-state" role="status">
-        {state}
-      </p>
-    );
+  const stateMessage = state ? (
+    <p className="goal-plan-state" role="status">
+      {state}
+    </p>
+  ) : null;
+  if (plan.status === "achieved" || plan.deadline_status === "passed") return stateMessage;
   const difference = plan.contribution_difference;
   const negative = difference != null && toKopecks(difference) < 0n;
+  const hasValues = plan.achievement_date || plan.required_contribution != null || payment !== null;
   return (
     <>
-      <div className="goal-card__values goal-plan-results">
-        {plan.achievement_date ? (
-          <DataValue
-            label="Достигнете"
-            value={new Intl.DateTimeFormat("ru-RU", {
-              month: "long",
-              year: "numeric",
-              timeZone: "UTC",
-            })
-              .format(new Date(`${plan.achievement_date}T00:00:00Z`))
-              .replace(/\s*г\.$/, "")}
-          />
-        ) : null}
-        {plan.required_contribution != null ? (
-          <DataValue label="Нужно в месяц к сроку" value={money(plan.required_contribution)} />
-        ) : null}
-        {payment !== null ? (
-          <DataValue
-            label="Ваш взнос"
-            value={money(payment)}
-            meta={
-              difference != null ? (
-                <span className={negative ? "goal-plan-shortfall" : "goal-plan-surplus"}>
-                  {negative
-                    ? `не хватает ${money(difference.slice(1))} в месяц`
-                    : toKopecks(difference) === 0n
-                      ? "Достаточно к сроку"
-                      : `+${money(difference)} запаса`}
-                </span>
-              ) : undefined
-            }
-          />
-        ) : null}
-      </div>
+      {stateMessage}
+      {hasValues ? (
+        <div className="goal-card__values goal-plan-results">
+          {plan.achievement_date ? (
+            <DataValue
+              label="Достигнете"
+              value={new Intl.DateTimeFormat("ru-RU", {
+                month: "long",
+                year: "numeric",
+                timeZone: "UTC",
+              })
+                .format(new Date(`${plan.achievement_date}T00:00:00Z`))
+                .replace(/\s*г\.$/, "")}
+            />
+          ) : null}
+          {plan.required_contribution != null ? (
+            <DataValue
+              label="Нужно в месяц к сроку"
+              value={money(plan.required_contribution)}
+              meta={
+                plan.last_required_contribution != null
+                  ? `Последний взнос: ${money(plan.last_required_contribution)}`
+                  : undefined
+              }
+            />
+          ) : null}
+          {payment !== null ? (
+            <DataValue
+              label="Ваш взнос"
+              value={money(payment)}
+              meta={
+                difference != null ? (
+                  <span className={negative ? "goal-plan-shortfall" : "goal-plan-surplus"}>
+                    {negative
+                      ? `не хватает ${money(difference.slice(1))} в месяц`
+                      : toKopecks(difference) === 0n
+                        ? "Достаточно к сроку"
+                        : `+${money(difference)} запаса`}
+                  </span>
+                ) : undefined
+              }
+            />
+          ) : null}
+        </div>
+      ) : null}
       {plan.deadline_status === "absent" ? (
         <p className="goal-plan-note">Срок цели не задан.</p>
       ) : null}
@@ -281,7 +292,7 @@ function PassiveEstimate({
   plan,
   currentIncome,
 }: {
-  plan: GoalPlan;
+  plan: GoalPlanWithBase;
   currentIncome?: string | null;
 }) {
   if (plan.required_capital == null) return <p>Недостаточно данных для оценки нужного капитала.</p>;

@@ -27,6 +27,11 @@ class NamedSourceInstrumentReturn(SourceInstrumentReturn):
     short_name: str | None = None
 
 
+@dataclass(frozen=True)
+class NamedInstrumentIncome(InstrumentIncome):
+    short_name: str | None = None
+
+
 class SourceInstrumentReturnsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -38,7 +43,7 @@ class SourceInstrumentReturnsResponse(BaseModel):
     reconciliation: AccountReconciliation | None
     breakdown: ReturnBreakdown | None
     instruments: tuple[NamedSourceInstrumentReturn, ...]
-    income: tuple[InstrumentIncome, ...]
+    income: tuple[NamedInstrumentIncome, ...]
     gaps: tuple[InstrumentReturnGap, ...]
     authority: Literal["provisional"]
     financial_authority: Literal["none"]
@@ -72,7 +77,16 @@ def instrument_returns(
     names = instrument_names(session)
     for row in result["instruments"]:
         row["short_name"] = names.name(isin=row["isin"], name=row["source_name"])
-    missing = [row for row in result["instruments"] if row["short_name"] is None]
+    labels = {row["isin"]: row["short_name"] for row in result["instruments"]}
+    for row in result.get("income", ()):
+        row["short_name"] = labels.get(row["isin"], names.name(isin=row["isin"]))
+    # Income retains its existing account-wide scope even with an ISIN filter.
+    # Resolve its source labels as well, without changing payout attribution.
+    missing = [
+        row
+        for row in [*result["instruments"], *result.get("income", ())]
+        if row["isin"] is not None and row["short_name"] is None
+    ]
     if missing:
         from hermes_finance.services.instrument_names import source_label_candidates
         from hermes_finance.services.source_investment_proofs import (
@@ -97,7 +111,9 @@ def instrument_returns(
         # source names nor numeric fields of the financial response are changed.
         labels = (
             read_latest_display_candidates(
-                session, source_account=source_account, requested_isin=isin
+                session,
+                source_account=source_account,
+                requested_isin=isin if all(row["isin"] == isin for row in missing) else None,
             )
             if missing
             else {"source": {}, "pdf": {}}

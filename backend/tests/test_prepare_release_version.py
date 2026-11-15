@@ -63,6 +63,61 @@ def test_updates_independent_release_identities(fixture):
         assert '"9.8.7"' in (fixture / name).read_text()
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.parametrize("dependency_version", ["1.2.3", "9.8.7"])
+@pytest.mark.parametrize("quote", ['"', "'"])
+def test_bump_preserves_colliding_dependencies_and_other_bytes(
+    fixture, newline, dependency_version, quote
+):
+    old, new = "1.2.3", "9.8.7"
+    templates = {
+        FILES[0]: (
+            '# Synthetic "1.2.3" and "9.8.7"\n'
+            '[tool.synthetic]\nversion = "1.2.3"\n'
+            "[project] # keep section formatting\n"
+            'name = "hermes-finance-backend"\n'
+            f"version\t= {quote}@VERSION@{quote}  # keep comment\n"
+            f'dependencies = ["synthetic-pip=={dependency_version}"]\n'
+            f'[tool.synthetic.other]\nversion = "{dependency_version}"\n'
+        ),
+        FILES[1]: (
+            'version = 1\n\n[[package]]\nname = "synthetic-pip"\n'
+            f'version = "{dependency_version}"\n\n'
+            '[[package]]\nname = "hermes-finance-backend"\n'
+            'version = "@VERSION@"\nsource = { editable = "." }\n'
+        ),
+        FILES[2]: (
+            '"""Synthetic Ω "1.2.3" and "9.8.7"."""; '
+            f"__version__\t= {quote}@VERSION@{quote}  # keep comment\n"
+        ),
+        FILES[3]: (
+            '{\n  "dependencies": {"synthetic-npm": "'
+            + dependency_version
+            + '"},\n  "description": "escaped \\"version\\": \\"1.2.3\\"",\n'
+            '  "version" : "@VERSION@", "name": "synthetic-finance"\n}\n'
+        ),
+        FILES[4]: (
+            '{\n "packages": {\n'
+            '   "node_modules/synthetic-npm": {"version": "'
+            + dependency_version
+            + '"},\n   "": { "name": "synthetic-finance",\n'
+            '     "dependencies": {"synthetic-npm": "'
+            + dependency_version
+            + '"}, "version" : "@VERSION@"}\n },\n'
+            ' "version": "@VERSION@", "lockfileVersion": 3\n}\n'
+        ),
+    }
+    expected = {}
+    for name, template in templates.items():
+        content = template.replace("\n", newline).encode("utf-8")
+        (fixture / name).write_bytes(content.replace(b"@VERSION@", old.encode()))
+        expected[name] = content.replace(b"@VERSION@", new.encode())
+
+    module.prepare(fixture, new)
+
+    assert expected == {name: (fixture / name).read_bytes() for name in templates}
+
+
 def test_rejects_inconsistent_input_before_any_write(fixture):
     path = fixture / FILES[3]
     current = tomllib.loads((fixture / FILES[0]).read_text())["project"]["version"]
@@ -75,7 +130,9 @@ def test_rejects_inconsistent_input_before_any_write(fixture):
 
 def test_missing_notes_creates_guarded_skeleton(fixture):
     module.prepare(fixture, "9.8.6")
-    assert "UAT-PENDING" in (fixture / "docs/release-notes-9.8.6.md").read_text()
+    notes = (fixture / "docs/release-notes-9.8.6.md").read_text()
+    assert notes.startswith("# Finance 9.8.6\n")
+    assert "UAT-PENDING" in notes
 
 
 @pytest.mark.parametrize(

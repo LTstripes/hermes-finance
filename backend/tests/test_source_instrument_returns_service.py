@@ -2367,3 +2367,87 @@ def test_breakdown_sale_nkd_is_not_paid_again_and_sale_commission_is_separate():
         == result.pnl.value
         == 5370
     )
+
+
+def test_income_http_short_names_share_instrument_labels_and_bypass_cache(db, monkeypatch):
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.testclient import TestClient
+
+    from hermes_finance.api import read_cache
+    from hermes_finance.main import create_app
+
+    def unexpected_cache(*args):
+        raise AssertionError("source instruments are not a cached endpoint")
+
+    monkeypatch.setattr(read_cache, "_snapshot_key", unexpected_cache)
+
+    def unknown_bond(root):
+        for row in root.iter():
+            if row.get("ISIN1") == BOND:
+                row.set("active_name", BOND)
+
+    intake = save(
+        db,
+        trades=(),
+        extra=(("Дивиденды", f"Payment {ISIN}", "25"), ("Купон", f"Payment {BOND}", "30")),
+        mutate=unknown_bond,
+    )
+    with db.session_factory() as session:
+        for row in session.scalars(
+            select(SourceMoneyClassification).where(SourceMoneyClassification.intake_id == intake)
+        ):
+            choose_classification(
+                session,
+                intake,
+                row.source_reference,
+                "dividend" if ISIN in row.narrative else "coupon",
+            )
+    with db.session_factory() as session:
+        session.add(
+            Instrument(
+                name=f"Catalogue synthetic ({ISIN})",
+                isin=ISIN,
+                instrument_type="stock",
+                currency="RUB",
+            )
+        )
+        session.commit()
+    before = snapshot(db)
+    client = TestClient(create_app(database=db))
+    url = f"/api/source-returns/instruments?source_account={ACCOUNT}"
+    first = client.get(url)
+    assert first.status_code == 200, first.text
+    assert first.headers["cache-control"] == "no-store"
+    assert client.get(url).json() == first.json()
+    body = first.json()
+    assert {r["isin"]: r["short_name"] for r in body["income"]} == {
+        ISIN: "Catalogue synthetic",
+        BOND: None,
+    }
+    labels = {r["isin"]: r["short_name"] for r in body["instruments"]}
+    assert all(r["short_name"] == labels[r["isin"]] for r in body["income"])
+    assert snapshot(db) == before
+    with db.session_factory() as session:
+        session.scalar(
+            select(Instrument).where(Instrument.isin == ISIN)
+        ).name = f"Renamed synthetic ({ISIN})"
+        session.commit()
+    changed = client.get(url).json()
+    assert (
+        next(r for r in changed["income"] if r["isin"] == ISIN)["short_name"] == "Renamed synthetic"
+    )
+    for row in changed["income"]:
+        row.pop("short_name")
+    with db.session_factory() as session:
+        assert changed["income"] == jsonable_encoder(
+            read_instrument_returns(session, source_account=ACCOUNT).to_dict()["income"]
+        )
+        session.delete(session.scalar(select(Instrument).where(Instrument.isin == ISIN)))
+        session.commit()
+    filtered = client.get(url + f"&isin={BOND}")
+    assert filtered.status_code == 200, filtered.text
+    assert [row["isin"] for row in filtered.json()["instruments"]] == [BOND]
+    assert {row["isin"]: row["short_name"] for row in filtered.json()["income"]} == {
+        ISIN: "Synthetic stock",
+        BOND: None,
+    }

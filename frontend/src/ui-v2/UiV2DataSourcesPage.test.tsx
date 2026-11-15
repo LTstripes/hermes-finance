@@ -81,6 +81,31 @@ afterEach(() => {
 });
 
 describe("UI v2 Data sources", () => {
+  it("uses short names while retaining event labels and unknown-name fallback", async () => {
+    const { mount, state } = setup();
+    const quotes = state.freshness.families.find((f) => f.family_id === "market_quotes");
+    if (!quotes) throw new Error("missing quote fixture");
+    const original = quotes.items[0];
+    original.instrument_name = "Synthetic Stock (RU000A000000)";
+    original.label = original.instrument_name;
+    original.short_name = "Short $& synthetic";
+    quotes.items.push({
+      ...original,
+      instrument_name: "RU000A000001",
+      label: "RU000A000001",
+      short_name: null,
+    });
+    const payouts = state.freshness.families.find((f) => f.family_id === "t_invest_payouts");
+    if (!payouts) throw new Error("missing payout fixture");
+    payouts.items[0].short_name = "Short bond";
+    mount();
+    const quotePanel = await screen.findByTestId("freshness-technical-market_quotes");
+    expect(within(quotePanel).getByText("Broker · Short $& synthetic")).toBeTruthy();
+    expect(within(quotePanel).queryByText("Broker · Synthetic Stock (RU000A000000)")).toBeNull();
+    expect(within(quotePanel).getByText("Broker · RU000A000001")).toBeTruthy();
+    expect(screen.getByText("Broker · Short bond · coupon")).toBeTruthy();
+  });
+
   beforeEach(() => {
     vi.restoreAllMocks();
   });

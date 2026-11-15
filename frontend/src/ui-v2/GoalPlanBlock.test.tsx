@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getGoalPlan, type Goal, type GoalPlan } from "../api/goals";
+import { type Goal, type GoalPlanWithBase, getGoalPlan } from "../api/goals";
 import { GoalPlanBlock } from "./GoalPlanBlock";
 
 vi.mock("../api/goals", () => ({ getGoalPlan: vi.fn() }));
@@ -18,7 +18,7 @@ const goal: Goal = {
   is_main: false,
   notes: null,
 };
-const base: GoalPlan = {
+const base: GoalPlanWithBase = {
   method_version: "goal_plan_v1",
   status: "contribution_missing",
   as_of_date: "2032-01-31",
@@ -27,6 +27,7 @@ const base: GoalPlan = {
   components: { liquid_assets: "1200000.00", included_debts: "200000.00" },
   deadline_status: "available",
   required_contribution: "45000.00",
+  last_required_contribution: "44998.00",
   contribution_difference: null,
   achievement_date: null,
   trajectory: [],
@@ -79,14 +80,71 @@ describe("goal plan presentation", () => {
   it.each([
     ["achieved", "available", "Цель уже достигнута по базе."],
     ["projected", "passed", "Срок цели прошёл."],
-    ["not_reached", "available", "При этих условиях цель не достигается за 100 лет."],
-  ])("shows a short state for %s / %s", async (status, deadline_status, text) => {
+  ] as const)("shows a short state for %s / %s", async (status, deadline_status, text) => {
     vi.mocked(getGoalPlan).mockResolvedValue({ ...base, status, deadline_status });
     render(<GoalPlanBlock goal={goal} monthId={1} />);
     await screen.findByText(text);
     expect(screen.queryByText("Достигнете")).not.toBeInTheDocument();
     expect(screen.queryByText("Нужно в месяц к сроку")).not.toBeInTheDocument();
   });
+
+  it.each([
+    ["contribution_missing", "Введите взнос в месяц (0 — без взносов)."],
+    ["not_reached", "При этих условиях цель не достигается за 100 лет."],
+  ] as const)("keeps backend deadline payments visible below %s", async (status, text) => {
+    vi.mocked(getGoalPlan).mockResolvedValue({ ...base, status });
+    render(<GoalPlanBlock goal={goal} monthId={1} />);
+    const state = await screen.findByText(text);
+    const label = screen.getByText("Нужно в месяц к сроку");
+    expect(state).toBeVisible();
+    expect(state.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(label.closest(".goal-plan-results")).toBeVisible();
+    expect(screen.getByText("45 000 ₽")).toBeVisible();
+    expect(screen.getByText("Последний взнос: 44 998 ₽")).toBeVisible();
+    expect(screen.queryByText("Достигнете")).not.toBeInTheDocument();
+  });
+
+  it.each(["contribution_missing", "not_reached"] as const)(
+    "omits unavailable deadline amounts for %s",
+    async (status) => {
+      vi.mocked(getGoalPlan).mockResolvedValue({
+        ...base,
+        status,
+        required_contribution: null,
+        last_required_contribution: null,
+      });
+      render(<GoalPlanBlock goal={goal} monthId={1} />);
+      await waitFor(() => expect(screen.queryByText("Расчёт…")).not.toBeInTheDocument());
+      expect(screen.queryByText("Нужно в месяц к сроку")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Последний взнос:/)).not.toBeInTheDocument();
+      expect(document.querySelector(".goal-plan-results")).not.toBeInTheDocument();
+    },
+  );
+
+  it("preserves a backend zero required payment", async () => {
+    vi.mocked(getGoalPlan).mockResolvedValue({
+      ...base,
+      required_contribution: "0.00",
+      last_required_contribution: "0.00",
+    });
+    render(<GoalPlanBlock goal={goal} monthId={1} />);
+    await screen.findByText("Нужно в месяц к сроку");
+    expect(screen.getByText("0 ₽")).toBeVisible();
+    expect(screen.getByText("Последний взнос: 0 ₽")).toBeVisible();
+  });
+
+  it.each(["capital", "passive_income"])(
+    "quietly omits an unsupported %s plan without components",
+    async (goal_type) => {
+      vi.mocked(getGoalPlan).mockResolvedValue({
+        method_version: "goal_plan_v1",
+        status: "unsupported",
+      });
+      const { container } = render(<GoalPlanBlock goal={{ ...goal, goal_type }} monthId={1} />);
+      await waitFor(() => expect(container).toBeEmptyDOMElement());
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
 
   it("shows backend required payments and negative difference without changing them", async () => {
     vi.mocked(getGoalPlan).mockResolvedValue({

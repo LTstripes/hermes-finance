@@ -24,8 +24,17 @@ test("capital goal plan uses explicit assumptions and preserves actual progress"
   await expect(
     card.getByText("Введите взнос в месяц (0 — без взносов).", { exact: true }),
   ).toBeVisible();
+  const required = card.locator(".data-value").filter({ hasText: "Нужно в месяц к сроку" });
+  await expect(required).toBeVisible();
+  await expect(required.locator(".data-value__value")).toHaveText("45 455 ₽");
+  await expect(required.getByText("Последний взнос: 45 455 ₽", { exact: true })).toBeVisible();
   await expect(card.getByLabel("Доходность в год")).toHaveValue("0");
   await expect(card.getByLabel("Первый взнос")).toHaveAttribute("placeholder", "ДД.ММ.ГГГГ");
+  await card.getByLabel("Взнос в месяц").fill("0");
+  await expect(card.getByText("При этих условиях цель не достигается за 100 лет.")).toBeVisible();
+  await expect(required).toBeVisible();
+  await expect(required.locator(".data-value__value")).toHaveText("45 455 ₽");
+  await expect(required.getByText("Последний взнос: 45 455 ₽", { exact: true })).toBeVisible();
   await card.getByLabel("Взнос в месяц").fill("100 000,00");
   await card.getByLabel("Взнос в месяц").blur();
   await expect(card.getByLabel("Взнос в месяц")).toHaveValue("100 000");

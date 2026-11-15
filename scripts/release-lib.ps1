@@ -1,4 +1,4 @@
-# Guarded Windows release helper library for Hermes Finance.
+# Guarded Windows release helper library for Finance.
 # Public CLI: scripts/release.ps1. Tests inject a fake command runner.
 
 Set-StrictMode -Version 2.0
@@ -771,7 +771,7 @@ function Invoke-HermesRelease {
     Assert-HermesReleaseNotesPublicationReady -Path $notesPath
     $versionBare = $tag.Substring(1)
     if ([string]::IsNullOrWhiteSpace($Title)) {
-        $Title = "Hermes Finance $versionBare"
+        $Title = "Finance $versionBare"
     }
 
     if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
@@ -789,7 +789,7 @@ function Invoke-HermesRelease {
     $ghPath = Resolve-HermesToolPath -CommandResolver $CommandResolver -Name "gh" -InstallHint "Missing dependency 'gh'. Install GitHub CLI from https://cli.github.com/ and run 'gh auth login'. The release helper will not fall back to API token scraping or .env files."
 
     if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot ".git"))) {
-        throw "Repository metadata not found at '$RepoRoot'. Run scripts/release.ps1 from the Hermes Finance checkout."
+        throw "Repository metadata not found at '$RepoRoot'. Run scripts/release.ps1 from the Finance checkout."
     }
 
     $context = [pscustomobject]@{

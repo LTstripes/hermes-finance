@@ -1,4 +1,4 @@
-# GitHub-native release request validation for Hermes Finance.
+# GitHub-native release request validation for Finance.
 # This layer validates the narrow owner trigger and repository release identity.
 # Publication itself stays in scripts/release-lib.ps1 so the manual fallback and
 # GitHub-native automation share the same guarded release semantics.

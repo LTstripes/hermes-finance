@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Goal, GoalPlan } from "../api/goals";
+import type { Goal, GoalPlanWithBase } from "../api/goals";
 import { CssResponsiveContainer } from "../components/charts/CssResponsiveContainer";
 import { formatDate, formatMoney } from "../lib/format";
 import { moneyToChartNumber, rub } from "../lib/money";
@@ -20,7 +20,7 @@ const stamp = (date: string) => Date.parse(`${date}T00:00:00Z`);
 const tick = { fill: "var(--muted)", fontSize: 11 };
 
 /** Numbers are chart coordinates only; amount labels keep the exact API strings. */
-export function GoalPlanChart({ plan, goal }: { plan: GoalPlan; goal: Goal }) {
+export function GoalPlanChart({ plan, goal }: { plan: GoalPlanWithBase; goal: Goal }) {
   const fillId = useId();
   const points = [
     { date: plan.as_of_date, capital: plan.base_capital ?? "0" },
