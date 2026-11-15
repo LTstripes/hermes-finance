@@ -66,6 +66,14 @@ retains its original dated history and sources; it is not current installation e
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
+Shipped in 1.20.0 ([release notes](release-notes-1.20.0.md)), cleanup after the 15.11.2026 audit:
+[#1213](https://github.com/LTstripes/hermes-finance/pull/1213) short names on freshness, source income and statement returns;
+[#1214](https://github.com/LTstripes/hermes-finance/pull/1214) goal plan validation and visible required contribution;
+[#1215](https://github.com/LTstripes/hermes-finance/pull/1215) field-anchored version bump and "Finance X.Y.Z" release title;
+[#1216](https://github.com/LTstripes/hermes-finance/pull/1216) editor focus fix and stable tests;
+[#1217](https://github.com/LTstripes/hermes-finance/pull/1217) dead code and wording;
+[#1218](https://github.com/LTstripes/hermes-finance/pull/1218) pypdf 6.21.4 and frontend dev tools. No new migrations; no financial calculation changes.
+
 Shipped in 1.19.0 ([release notes](release-notes-1.19.0.md)):
 [#1209](https://github.com/LTstripes/hermes-finance/pull/1209) goal plan (`goal_plan_v1`,
 closes #1129 MVP) and passive-income capital estimate;
