@@ -99,6 +99,9 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "domain/test_total_income.py",
+    "test_total_income_service.py",
+    "test_total_income_api.py",
     "test_portfolio_annual_return_service.py",
     "test_owner_manual_gold_history_service.py",
     "domain/test_xirr_uniqueness.py",
@@ -221,6 +224,9 @@ CI_CORE_SHARD_WEIGHTS = {
 # Summed setup/call/teardown seconds per file, with a 0.01s floor. Only the
 # original core-a group is subdivided; the accepted A/B membership stays fixed.
 CI_CORE_A_SHARD_WEIGHTS = {
+    "domain/test_total_income.py": 0.05,
+    "test_total_income_service.py": 1.0,
+    "test_total_income_api.py": 1.0,
     "test_portfolio_annual_return_service.py": 1.0,
     "domain/test_cash_balance.py": 0.010,
     "domain/test_monthly_summary.py": 0.010,

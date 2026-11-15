@@ -9840,6 +9840,98 @@ normalized_bonus_monthly = sum(bonuses for selected 12m period) / 12
 
 Он используется только для аналитики и не подмешивается в фактический денежный поток других месяцев.
 
+<a id="c8-total-income"></a>
+#### Общий доход: read-only аналитика
+
+По решению Owner от 15.11.2026 общий доход состоит из net-зарплаты,
+фактически выплаченной net-премии, распределённой на 12 месяцев, и фактического
+пассивного дохода C02. Прогнозы, предполагаемые будущие премии и сбережения
+не входят в показатель. `side_income + cashback + other` выводятся отдельно
+как `other_net`, без дополнительного прибавления к общему доходу. Доход `other`,
+помеченный пассивным, участвует в C02 по его существующему правилу.
+
+Чистый калькулятор `domain/total_income.py` получает только существующие CLOSED
+месяцы. `services/total_income.py` читает их одним согласованным snapshot,
+суммирует сохранённые `net_amount_kopecks` SALARY/BONUS и использует пакетный
+`passive_income_for_months`. Флаги участия в cash flow не меняют эти net-факты.
+Настройки не создаются, налоги заново не рассчитываются, финансовые строки
+и статус Close не меняются.
+
+Нулевая зарплата CLOSED месяца раньше первого CLOSED месяца с ненулевой
+зарплатой аналитически заменяется зарплатой этого первого ненулевого месяца.
+`salary_is_estimate=true` и предупреждение называют основание. Более поздний
+ноль остаётся нулём; без ненулевого основания оценки нет. Это проекция в памяти,
+а не исправление БД. Отсутствующие месяцы не создаются.
+
+Для включительной границы `passive_income_history_start_month` применяется
+существующий контракт eligibility: раньше границы `passive_actual=null`,
+на границе и позже известный ноль участвует в знаменателе. `null` настройки
+означает отсутствие нижней границы. Каждый компонент без известных месяцев
+имеет `null` сумму и среднее, а не ноль.
+
+Все окна заканчиваются последним CLOSED месяцем по `(year, month)`:
+
+- `calendar_year`: январь его года — последний CLOSED месяц;
+- `rolling_12`: 12 календарных месяцев, включая последний CLOSED; пропуски
+  не заменяются более ранними наблюдениями;
+- `all`: все существующие CLOSED месяцы.
+
+Для каждого окна:
+
+```text
+bonus_target_months = max(12, calendar months from window start to its end)
+monthly_average = salary_sum / salary_months
+                + passive_sum / passive_months
+                + bonus_sum / bonus_target_months
+bonus_smoothed_monthly = bonus_sum / bonus_target_months
+current_level = latest_closed_salary_net
+              + known_passive_sum_in_last_3_closed / known_passive_months_in_last_3_closed
+              + bonus_sum / bonus_target_months
+```
+
+`current_level` использует последние три CLOSED наблюдения всей истории,
+не три последних известных пассивных значения; недоступные значения исключены
+из знаменателя, более ранними месяцами не заменяются. Его премиальная часть
+зависит от выбранного окна. Без известного пассивного компонента итоговые
+`monthly_average`/`current_level` недоступны. Бонус без выплат в наблюдаемом
+окне известен как ноль; без наблюдений — `null`. Для `calendar_year` и
+`rolling_12` делитель премии равен 12. Для `all` длиннее года премии всех
+наблюдаемых месяцев делятся на календарную длину окна, чтобы ежегодные
+премии не суммировались в одно месячное значение.
+`bonus_smoothed_monthly` — аналитический слой для каждого существующего месяца
+выбранного окна; фактический `bonus_net` остаётся только в месяце выплаты.
+Денежные вычисления — integer kopecks / Decimal / ROUND_HALF_UP. Итоги
+округляются один раз после сложения неокруглённых долей, до копейки;
+округлённые средние компонентов не используются для расчёта итога.
+
+##### API общего дохода
+
+`GET /api/analytics/total-income?month_id=<latest closed id>` — read-only,
+без provider I/O. Без `month_id` выбирается последний CLOSED; явный id обязан
+совпасть с ним. Старый CLOSED, DRAFT/reopened или отсутствующий id возвращает
+`404/not_found`; неположительный/невалидный id — `422`. Ответ содержит
+`latest_closed_report_id`; consumer сверяет его с выбранным последним CLOSED
+месяцем перед использованием общего показателя. Более новый DRAFT его не меняет.
+
+Контракт ответа (денежные поля — `MoneyValue {amount: decimal string, currency: "RUB"}`
+либо `null` там, где компонент недоступен):
+
+- `latest_closed_report_id`, `configured_start_month` (`YYYY-MM | null`);
+- `points[]`: `reporting_month_id`, `year`, `month`, `salary_net`,
+  `salary_is_estimate`, `bonus_net`, `passive_actual`, `other_net`;
+- `windows.{calendar_year,rolling_12,all}`: `from`, `to` (`YYYY-MM | null`),
+  `months_observed`, `months_used[]`, `salary_months`, `passive_months`,
+  `bonus_months`, `bonus_target_months` (12, или длина окна `all` длиннее года), `estimate_months`, `salary_sum`,
+  `passive_sum`, `bonus_sum`, `other_sum`, `salary_monthly_average`,
+  `passive_monthly_average`, `bonus_smoothed_monthly`, `monthly_average`,
+  `current_level`, `current_passive_months`, `warnings[]`.
+
+`months_used` — точные наблюдаемые календарные ключи; `from`/`to` — границы
+выбранного окна. Пустая история даёт `points=[]`, id/границы/суммы/средние
+`null`, счётчики `0` и русское предупреждение. Предупреждения каждого окна
+однократно объясняют оценки зарплаты, границу пассивки и неполное покрытие
+премии. Данная backend-проекция сама не меняет UI или AI export.
+
 
 <a id="c8-master_spec-860-1016-иис"></a>
 #### 10.16. ИИС

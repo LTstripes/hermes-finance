@@ -14,6 +14,7 @@ from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain.monthly_summary import MonthlyCapitalChange
 from hermes_finance.domain.passive_income import PassiveIncomeResult
 from hermes_finance.domain.portfolio_source_coverage import PortfolioSourceCoverage
+from hermes_finance.domain.total_income import TotalIncomeWindow
 from hermes_finance.domain.values import FINANCIAL_ROUNDING, RubleAmount
 from hermes_finance.services.capital_composition import (
     CapitalCompositionPoint,
@@ -25,6 +26,7 @@ from hermes_finance.services.passive_income_history import (
     PassiveIncomeSelectedReport,
     passive_income_history,
 )
+from hermes_finance.services.total_income import total_income
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -592,4 +594,124 @@ def get_passive_income_history(
             session,
             selected_reporting_month_id=reporting_month_id,
         )
+    )
+
+
+class TotalIncomePointOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reporting_month_id: int
+    year: int
+    month: int
+    salary_net: MoneyValue
+    salary_is_estimate: bool
+    bonus_net: MoneyValue
+    passive_actual: MoneyValue | None
+    other_net: MoneyValue
+
+
+class TotalIncomeWindowOut(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    from_month: str | None = Field(alias="from")
+    to_month: str | None = Field(alias="to")
+    months_observed: int
+    months_used: list[str]
+    salary_months: int
+    passive_months: int
+    bonus_months: int
+    bonus_target_months: int
+    estimate_months: int
+    salary_sum: MoneyValue | None
+    passive_sum: MoneyValue | None
+    bonus_sum: MoneyValue | None
+    other_sum: MoneyValue | None
+    salary_monthly_average: MoneyValue | None
+    passive_monthly_average: MoneyValue | None
+    bonus_smoothed_monthly: MoneyValue | None
+    monthly_average: MoneyValue | None
+    current_level: MoneyValue | None
+    current_passive_months: int
+    warnings: list[str]
+
+
+class TotalIncomeWindowsOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    calendar_year: TotalIncomeWindowOut
+    rolling_12: TotalIncomeWindowOut
+    all: TotalIncomeWindowOut
+
+
+class TotalIncomeOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    latest_closed_report_id: int | None
+    configured_start_month: str | None
+    points: list[TotalIncomePointOut]
+    windows: TotalIncomeWindowsOut
+
+
+def _optional_money(amount: RubleAmount | None) -> MoneyValue | None:
+    return _money(amount) if amount is not None else None
+
+
+def _total_income_window_out(window: TotalIncomeWindow) -> TotalIncomeWindowOut:
+    return TotalIncomeWindowOut(
+        from_month=window.from_month,
+        to_month=window.to_month,
+        months_observed=window.months_observed,
+        months_used=list(window.months_used),
+        salary_months=window.salary_months,
+        passive_months=window.passive_months,
+        bonus_months=window.bonus_months,
+        bonus_target_months=window.bonus_target_months,
+        estimate_months=window.estimate_months,
+        salary_sum=_optional_money(window.salary_sum),
+        passive_sum=_optional_money(window.passive_sum),
+        bonus_sum=_optional_money(window.bonus_sum),
+        other_sum=_optional_money(window.other_sum),
+        salary_monthly_average=_optional_money(window.salary_monthly_average),
+        passive_monthly_average=_optional_money(window.passive_monthly_average),
+        bonus_smoothed_monthly=_optional_money(window.bonus_smoothed_monthly),
+        monthly_average=_optional_money(window.monthly_average),
+        current_level=_optional_money(window.current_level),
+        current_passive_months=window.current_passive_months,
+        warnings=list(window.warnings),
+    )
+
+
+@router.get("/total-income", response_model=TotalIncomeOut)
+def get_total_income(
+    month_id: int | None = Query(default=None, gt=0),
+    session: Session = Depends(session_for_request),
+) -> TotalIncomeOut:
+    """Return net salary + bonus/12 + actual passive income, with coverage.
+
+    An explicit month_id must be the latest CLOSED report. Consumers must
+    match latest_closed_report_id to their selected latest CLOSED identity.
+    """
+    history = total_income(session, month_id=month_id)
+    result = history.result
+    return TotalIncomeOut(
+        latest_closed_report_id=history.latest_closed_report_id,
+        configured_start_month=result.configured_start_month,
+        points=[
+            TotalIncomePointOut(
+                reporting_month_id=p.reporting_month_id,
+                year=p.year,
+                month=p.month,
+                salary_net=_money(p.salary_net),
+                salary_is_estimate=p.salary_is_estimate,
+                bonus_net=_money(p.bonus_net),
+                passive_actual=_optional_money(p.passive_actual),
+                other_net=_money(p.other_net),
+            )
+            for p in result.points
+        ],
+        windows=TotalIncomeWindowsOut(
+            calendar_year=_total_income_window_out(result.calendar_year),
+            rolling_12=_total_income_window_out(result.rolling_12),
+            all=_total_income_window_out(result.all),
+        ),
     )
