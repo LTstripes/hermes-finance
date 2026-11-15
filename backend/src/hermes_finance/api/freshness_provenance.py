@@ -19,6 +19,7 @@ from hermes_finance.services.freshness_provenance import (
     ReportingMonthContext,
     build_freshness_provenance_summary,
 )
+from hermes_finance.services.instrument_names import instrument_names, short_instrument_name
 
 router = APIRouter(prefix="/api/months", tags=["freshness-provenance"])
 
@@ -60,6 +61,7 @@ class FreshnessItemOut(BaseModel):
     reason_codes: list[str]
     account_name: str | None = None
     instrument_name: str | None = None
+    short_name: str | None = None
 
 
 class FreshnessFamilyOut(BaseModel):
@@ -118,7 +120,7 @@ def _coverage_out(coverage: FreshnessCoverage) -> FreshnessCoverageOut:
     )
 
 
-def _item_out(item: FreshnessItem) -> FreshnessItemOut:
+def _item_out(item: FreshnessItem, names: dict[str, str | None]) -> FreshnessItemOut:
     return FreshnessItemOut(
         item_kind=item.item_kind,
         label=item.label,
@@ -133,10 +135,11 @@ def _item_out(item: FreshnessItem) -> FreshnessItemOut:
         reason_codes=[code.value for code in item.reason_codes],
         account_name=item.account_name,
         instrument_name=item.instrument_name,
+        short_name=names.get(item.instrument_name),
     )
 
 
-def _family_out(family: FreshnessFamily) -> FreshnessFamilyOut:
+def _family_out(family: FreshnessFamily, names: dict[str, str | None]) -> FreshnessFamilyOut:
     return FreshnessFamilyOut(
         family_id=family.family_id.value,
         title=family.title,
@@ -144,7 +147,7 @@ def _family_out(family: FreshnessFamily) -> FreshnessFamilyOut:
         providers=list(family.providers),
         coverage=_coverage_out(family.coverage),
         reasons=[_reason_out(reason) for reason in family.reasons],
-        items=[_item_out(item) for item in family.items],
+        items=[_item_out(item, names) for item in family.items],
     )
 
 
@@ -159,13 +162,15 @@ def _month_out(month: ReportingMonthContext) -> ReportingMonthContextOut:
     )
 
 
-def _summary_out(summary: FreshnessProvenanceSummary) -> FreshnessProvenanceSummaryOut:
+def _summary_out(
+    summary: FreshnessProvenanceSummary, names: dict[str, str | None]
+) -> FreshnessProvenanceSummaryOut:
     return FreshnessProvenanceSummaryOut(
         reporting_month=_month_out(summary.reporting_month),
         evaluated_on=summary.evaluated_on,
         quote_valuation_target_date=summary.quote_valuation_target_date,
         generated_at=summary.generated_at,
-        families=[_family_out(family) for family in summary.families],
+        families=[_family_out(family, names) for family in summary.families],
         reasons=[_reason_out(reason) for reason in summary.reasons],
         providers=list(summary.providers),
     )
@@ -186,4 +191,12 @@ def get_freshness_provenance(
         today=today,
         generated_at=generated_at,
     )
-    return _summary_out(summary)
+    # Freshness rows carry catalogue names, not source identities. Resolve only
+    # exact catalogue labels; never promote a generated fallback to a name.
+    names = {}
+    for label, rows in instrument_names(session).by_name.items():
+        candidates = {
+            short_instrument_name(row.name, isin=row.isin, ticker=row.ticker) for row in rows
+        }
+        names[label] = next(iter(candidates)) if len(candidates) == 1 else None
+    return _summary_out(summary, names)
