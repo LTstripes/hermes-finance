@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-14**. This is the current status; product and numerical rules
+Updated **2026-11-15**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -63,22 +63,6 @@ retains its original dated history and sources; it is not current installation e
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
-Changes since 1.15.0, shipped in 1.16.0 — the full UI audit of 10–11.11.2026 and
-faster returns reads:
-
-- Returns: [#1169](https://github.com/LTstripes/hermes-finance/pull/1169) halves the remaining returns read times with byte-identical
-  responses; [#1170](https://github.com/LTstripes/hermes-finance/pull/1170) one row per instrument and catalogue account names;
-  [#1172](https://github.com/LTstripes/hermes-finance/pull/1172) «По месяцам» in the overview layout.
-- Month: [#1167](https://github.com/LTstripes/hermes-finance/pull/1167) honest draft totals before statements; [#1168](https://github.com/LTstripes/hermes-finance/pull/1168) and [#1171](https://github.com/LTstripes/hermes-finance/pull/1171)
-  shared money field, inline deposits and one edit pattern; [#1177](https://github.com/LTstripes/hermes-finance/pull/1177) statements panel.
-- Home, capital, income and plans: [#1176](https://github.com/LTstripes/hermes-finance/pull/1176), [#1177](https://github.com/LTstripes/hermes-finance/pull/1177), [#1173](https://github.com/LTstripes/hermes-finance/pull/1173), [#1181](https://github.com/LTstripes/hermes-finance/pull/1181).
-- Navigation and settings: [#1178](https://github.com/LTstripes/hermes-finance/pull/1178), [#1179](https://github.com/LTstripes/hermes-finance/pull/1179), [#1180](https://github.com/LTstripes/hermes-finance/pull/1180), [#1175](https://github.com/LTstripes/hermes-finance/pull/1175).
-- Formats, wide screens, accessibility and mobile: [#1174](https://github.com/LTstripes/hermes-finance/pull/1174), [#1182](https://github.com/LTstripes/hermes-finance/pull/1182), [#1183](https://github.com/LTstripes/hermes-finance/pull/1183).
-- Test stability: [#1180](https://github.com/LTstripes/hermes-finance/pull/1180), [#1184](https://github.com/LTstripes/hermes-finance/pull/1184); status record [#1166](https://github.com/LTstripes/hermes-finance/pull/1166).
-
-There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
-checks do not establish Owner UAT.
-
 Shipped in 1.19.0 ([release notes](release-notes-1.19.0.md)):
 [#1209](https://github.com/LTstripes/hermes-finance/pull/1209) goal plan (`goal_plan_v1`,
 closes #1129 MVP) and passive-income capital estimate;
@@ -115,6 +99,22 @@ Shipped in 1.17.0 ([release notes](release-notes-1.17.0.md)); 1.17.1 ([release n
 
 No new database migrations since 1.16.0. Green CI and copy checks do not
 establish Owner UAT.
+
+Changes since 1.15.0, shipped in 1.16.0 — the full UI audit of 10–11.11.2026 and
+faster returns reads:
+
+- Returns: [#1169](https://github.com/LTstripes/hermes-finance/pull/1169) halves the remaining returns read times with byte-identical
+  responses; [#1170](https://github.com/LTstripes/hermes-finance/pull/1170) one row per instrument and catalogue account names;
+  [#1172](https://github.com/LTstripes/hermes-finance/pull/1172) «По месяцам» in the overview layout.
+- Month: [#1167](https://github.com/LTstripes/hermes-finance/pull/1167) honest draft totals before statements; [#1168](https://github.com/LTstripes/hermes-finance/pull/1168) and [#1171](https://github.com/LTstripes/hermes-finance/pull/1171)
+  shared money field, inline deposits and one edit pattern; [#1177](https://github.com/LTstripes/hermes-finance/pull/1177) statements panel.
+- Home, capital, income and plans: [#1176](https://github.com/LTstripes/hermes-finance/pull/1176), [#1177](https://github.com/LTstripes/hermes-finance/pull/1177), [#1173](https://github.com/LTstripes/hermes-finance/pull/1173), [#1181](https://github.com/LTstripes/hermes-finance/pull/1181).
+- Navigation and settings: [#1178](https://github.com/LTstripes/hermes-finance/pull/1178), [#1179](https://github.com/LTstripes/hermes-finance/pull/1179), [#1180](https://github.com/LTstripes/hermes-finance/pull/1180), [#1175](https://github.com/LTstripes/hermes-finance/pull/1175).
+- Formats, wide screens, accessibility and mobile: [#1174](https://github.com/LTstripes/hermes-finance/pull/1174), [#1182](https://github.com/LTstripes/hermes-finance/pull/1182), [#1183](https://github.com/LTstripes/hermes-finance/pull/1183).
+- Test stability: [#1180](https://github.com/LTstripes/hermes-finance/pull/1180), [#1184](https://github.com/LTstripes/hermes-finance/pull/1184); status record [#1166](https://github.com/LTstripes/hermes-finance/pull/1166).
+
+There are no new database migrations in 1.16.0 since 1.15.0. Green CI and copy
+checks do not establish Owner UAT.
 
 <a id="s3"></a>
 ## 3. Next actions
