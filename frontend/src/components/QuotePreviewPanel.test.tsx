@@ -383,7 +383,7 @@ describe("QuotePreviewPanel", () => {
         ],
         {
           batch_error:
-            "The market-data provider could not be reached. Local Hermes Finance is running.",
+            "The market-data provider could not be reached. Local Finance is running.",
           batch_error_reason: "provider_network",
         },
       ),
