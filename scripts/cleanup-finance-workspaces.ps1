@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Safely inventories and removes disposable Hermes Finance Windows workspaces.
+Safely inventories and removes disposable Finance Windows workspaces.
 .DESCRIPTION
 Dry-run by default. -Apply repeats every safety check before removal. The
 script never reads .env or SQLite contents; it inspects names and metadata only.

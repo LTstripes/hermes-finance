@@ -1,4 +1,4 @@
-# Composable exact-candidate Preview/UAT preparation for Hermes Finance.
+# Composable exact-candidate Preview/UAT preparation for Finance.
 # The public entrypoint is scripts/prepare-preview.ps1.  This helper keeps
 # candidate proof, clone/data-boundary checks, and target Prepare/Validate
 # invocations testable without making the launcher or a mutable main branch
@@ -446,7 +446,7 @@ function Assert-HermesPreviewRepositoryIdentity {
     $remote = Get-HermesPreviewGitText -Context $Context -WorkingDirectory $Checkout -ArgumentList @("remote", "get-url", "origin")
     if ([string]::IsNullOrWhiteSpace($remote) -or
         (Get-HermesPreviewRemoteKey -Value $remote) -ne (Get-HermesPreviewRemoteKey -Value $ExpectedRemote)) {
-        throw "$Label origin is not the expected Hermes Finance repository."
+        throw "$Label origin is not the expected Finance repository."
     }
 }
 

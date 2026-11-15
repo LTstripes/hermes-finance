@@ -53,7 +53,7 @@ OWNER_SAFE_MESSAGES: dict[QuoteFailureReason, str] = {
         "Automatic quote refresh is unavailable because the read-only token is not configured."
     ),
     QuoteFailureReason.PROVIDER_NETWORK: (
-        "The market-data provider could not be reached. Local Hermes Finance is running."
+        "The market-data provider could not be reached. Local Finance is running."
     ),
     QuoteFailureReason.QUOTE_UNAVAILABLE: "No usable quote is available for this instrument.",
     QuoteFailureReason.UNSUPPORTED: "This instrument is updated manually.",
