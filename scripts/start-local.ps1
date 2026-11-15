@@ -66,7 +66,7 @@ function Assert-PortAvailable {
         if ($RecoveryReadiness) {
             Throw-HermesRecoveryReadinessFailure -Classification "port_conflict"
         }
-        throw "Port $Port is already in use. Stop the existing process before starting Hermes Finance."
+        throw "Port $Port is already in use. Stop the existing process before starting Finance."
     }
 }
 
@@ -183,7 +183,7 @@ function Invoke-PreparedRuntimeValidation {
 
     $preparedStateScript = Join-Path $Checkout "scripts\prepare-runtime.ps1"
     if (-not (Test-Path -LiteralPath $preparedStateScript -PathType Leaf)) {
-        throw "Prepared runtime validation is unavailable. Run the explicit Prepare command from a complete Hermes Finance checkout."
+        throw "Prepared runtime validation is unavailable. Run the explicit Prepare command from a complete Finance checkout."
     }
 
     $savedErrorActionPreference = $ErrorActionPreference
@@ -559,10 +559,10 @@ try {
     $powershell = Get-RequiredCommand -Name "powershell.exe" -InstallHint "Windows PowerShell is required to validate the prepared runtime."
 
     if (-not (Test-Path (Join-Path $backendDir "pyproject.toml") -PathType Leaf)) {
-        throw "Backend project not found at '$backendDir'. Run this script from the Hermes Finance repository."
+        throw "Backend project not found at '$backendDir'. Run this script from the Finance repository."
     }
     if (-not (Test-Path (Join-Path $frontendDir "package.json") -PathType Leaf)) {
-        throw "Frontend project not found at '$frontendDir'. Run this script from the Hermes Finance repository."
+        throw "Frontend project not found at '$frontendDir'. Run this script from the Finance repository."
     }
 
     Invoke-PreparedRuntimeValidation -PowerShell $powershell -Checkout $repoRoot
@@ -626,16 +626,16 @@ try {
         }
 
         if ($ScratchPreflight) {
-            Write-Host "Starting Hermes Finance scratch preflight reader..." -ForegroundColor Cyan
+            Write-Host "Starting Finance scratch preflight reader..." -ForegroundColor Cyan
             $backendProcess = Start-Process -FilePath $uv -ArgumentList $backendArguments -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru
         }
         elseif ($previewRequested) {
-            Write-Host "Starting Hermes Finance isolated Preview backend..." -ForegroundColor Cyan
+            Write-Host "Starting Finance isolated Preview backend..." -ForegroundColor Cyan
             $backendProcess = Start-Process -FilePath $uv -ArgumentList $backendArguments -WorkingDirectory $backendDir -WindowStyle Hidden -PassThru
             $previewProcessIdentity = Get-HermesPreviewProcessIdentity -Backend $backendProcess
         }
         else {
-            Write-Host "Starting Hermes Finance production backend..." -ForegroundColor Cyan
+            Write-Host "Starting Finance production backend..." -ForegroundColor Cyan
             $backendProcess = Start-Process -FilePath $uv -ArgumentList $backendArguments -WorkingDirectory $backendDir -NoNewWindow -PassThru
         }
     }
@@ -665,7 +665,7 @@ try {
         -ExpectedDatabaseIdentity $env:HERMES_FINANCE_RECOVERY_DATABASE_IDENTITY `
         -ExpectedCheckoutSha $env:HERMES_FINANCE_RECOVERY_CHECKOUT_SHA
     }
-    Write-Host "Hermes Finance is ready: http://127.0.0.1:$selectedPort" -ForegroundColor Green
+    Write-Host "Finance is ready: http://127.0.0.1:$selectedPort" -ForegroundColor Green
     if ($ExitAfterReady) {
         if ($ScratchPreflight) {
             Write-Host "Scratch preflight readiness smoke test passed." -ForegroundColor Green
@@ -678,7 +678,7 @@ try {
         }
     }
     else {
-        Write-Host "Press Ctrl+C to stop Hermes Finance." -ForegroundColor DarkGray
+        Write-Host "Press Ctrl+C to stop Finance." -ForegroundColor DarkGray
         while ($true) {
             Assert-ProcessRunning -Process $backendProcess -Name "Backend"
             if ($previewRequested) {

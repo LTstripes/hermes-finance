@@ -466,7 +466,7 @@ if ($Validate) {
     $failure = {
         Invoke-PreviewPreparation -CandidateSha $candidateOne -PreviewName "preview wrong repository" | Out-Null
     }.GetNewClosure()
-    Assert-TestFailure -Label "wrong repository" -ExpectedText "expected Hermes Finance repository" -Operation $failure | Out-Null
+    Assert-TestFailure -Label "wrong repository" -ExpectedText "expected Finance repository" -Operation $failure | Out-Null
     Invoke-TestGit -WorkingDirectory $controlPath -Arguments @("remote", "set-url", "origin", $remotePath) | Out-Null
 
     Assert-TestEqual -Expected $stableBefore.Head -Actual (Get-TestGitText -WorkingDirectory $stablePath -Arguments @("rev-parse", "HEAD")) -Message "Stable HEAD is unchanged"

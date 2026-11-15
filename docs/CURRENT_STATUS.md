@@ -22,35 +22,38 @@ retains its original dated history and sources; it is not current installation e
   [43635231842](https://github.com/LTstripes/hermes-finance/actions/runs/43635231842),
   guarded publication
   [43636335678](https://github.com/LTstripes/hermes-finance/actions/runs/43636335678),
-  [release notes](release-notes-1.18.0.md)) is installed on the Owner computer on
-  2026-11-14 by backup-first OPS02, then Prepare and Start; health reads 1.18.0 and
-  the overall annual rate reads back as provisional for the portfolio and both accounts.
+  [release notes](release-notes-1.18.0.md)) was installed on the Owner computer on
+  2026-11-14 by backup-first OPS02, then Prepare and Start; health read 1.18.0 and
+  the overall annual rate read back as provisional for the portfolio and both accounts.
+  It was superseded on Stable by 1.19.0.
 - [v1.17.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.17.1)
   (hotfix, `41260fe677518c1233972ae70ebb1abaa49e27c1`, exact-main CI
   [43620042362](https://github.com/LTstripes/hermes-finance/actions/runs/43620042362),
   guarded publication
   [43621817007](https://github.com/LTstripes/hermes-finance/actions/runs/43621817007),
-  [release notes](release-notes-1.17.1.md)) is installed on the Owner computer on
-  2026-11-14 by backup-first OPS02, then Prepare and Start; health reads 1.17.1 and
-  the returns overview carries short names again. Owner UAT has not been performed.
+  [release notes](release-notes-1.17.1.md)) was installed on the Owner computer on
+  2026-11-14 by backup-first OPS02, then Prepare and Start; health read 1.17.1 and
+  the returns overview carried short names again. Owner UAT was not performed.
+  It was superseded on Stable by 1.18.0.
 - [v1.17.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.17.0)
   is published at `229def1f296ceb70673a9772df9bebbcf14a9eb9` with
   [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/43613070222)
   and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/43614408690)
   successful, with [release notes](release-notes-1.17.0.md).
-- 1.17.0 is installed on the Owner computer on 2026-11-14 by backup-first OPS02,
-  then Prepare and Start; the running health version reads back 1.17.0, the page
-  title reads "Finance", and a pre-update SQLite backup exists in the update backup
-  directory. Detailed numeric Owner UAT of 1.17.0 has not been performed.
+- 1.17.0 was installed on the Owner computer on 2026-11-14 by backup-first OPS02,
+  then Prepare and Start; the running health version read back 1.17.0, the page
+  title read "Finance", and a pre-update SQLite backup was created in the update backup
+  directory. Detailed numeric Owner UAT of 1.17.0 was not performed;
+  it was superseded on Stable by 1.17.1.
 - [v1.16.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.16.0)
   is published at `33496ec450f8ce7f8709e89e1e59c22b58cea2ae` with
   [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/43474463116)
   and [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/43476478277)
   successful, with [release notes](release-notes-1.16.0.md).
-- 1.16.0 is installed on the Owner computer on 2026-11-13 by backup-first OPS02,
-  then Prepare and Start; the running health version reads back 1.16.0 and a
-  pre-update SQLite backup exists in the update backup directory. Detailed numeric
-  Owner UAT of 1.16.0 has not been performed; it was superseded on Stable by 1.17.0.
+- 1.16.0 was installed on the Owner computer on 2026-11-13 by backup-first OPS02,
+  then Prepare and Start; the running health version read back 1.16.0 and a
+  pre-update SQLite backup was created in the update backup directory. Detailed numeric
+  Owner UAT of 1.16.0 was not performed; it was superseded on Stable by 1.17.0.
 - [v1.15.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.15.0)
   (`62f0a50eef0eb04c9ce031c39fbbf9fa49efacfc`, exact-main CI
   [42904115400](https://github.com/LTstripes/hermes-finance/actions/runs/42904115400),

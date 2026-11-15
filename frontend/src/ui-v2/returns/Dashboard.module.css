@@ -495,11 +495,6 @@
   cursor: pointer;
 }
 
-.instrumentAccountName {
-  color: var(--ink-2);
-  font-weight: var(--w-regular);
-}
-
 .instrumentAccount strong {
   font-family: var(--f-num);
   font-size: var(--t-md);

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Fail-closed cleanup of disposable Hermes Finance task workspaces (Windows PowerShell 5.1+).
+Fail-closed cleanup of disposable Finance task workspaces (Windows PowerShell 5.1+).
 .DESCRIPTION
 Dry-run is the default. -Retire relocates eligible roots; -Apply is refused. Roots are a fixed
 allowlist, not an arbitrary filesystem cleanup interface. Fetch updates only local
