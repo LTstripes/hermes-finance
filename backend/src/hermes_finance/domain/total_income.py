@@ -130,7 +130,8 @@ def _window(
         warnings.append(f"Пассивка учитывается с {month:02d}.{year:04d}")
     if not count:
         warnings.append("Нет закрытых месяцев для расчёта общего дохода")
-    elif count < bonus_target:
+    elif count < bonus_target and bonus_sum is not None and bonus_sum.kopecks != 0:
+        # Without any paid bonus the note only confuses; coverage counts stay explicit.
         warnings.append(
             f"Премия учтена за {count} мес из {bonus_target}; "
             f"сумма распределена на {bonus_target} месяцев"
