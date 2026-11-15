@@ -9,14 +9,23 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.20.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.20.0)
+  (`91ad33b2d2c2d86f30c8f547d9d29b322327fc4d`, exact-main CI
+  [43712083490](https://github.com/LTstripes/hermes-finance/actions/runs/43712083490),
+  guarded publication
+  [43713075819](https://github.com/LTstripes/hermes-finance/actions/runs/43713075819),
+  [release notes](release-notes-1.20.0.md)) is installed on the Owner computer on
+  2026-11-15 by backup-first OPS02, then Prepare and Start; health reads 1.20.0, the
+  page title reads "Finance" and an invalid goal plan rate is rejected. Owner UAT has
+  not been performed.
 - [v1.19.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.19.0)
   (`f6e244d50a8f546a87ad0757494989f2fbe644b8`, exact-main CI
   [43645700173](https://github.com/LTstripes/hermes-finance/actions/runs/43645700173),
   guarded publication
   [43646788043](https://github.com/LTstripes/hermes-finance/actions/runs/43646788043),
-  [release notes](release-notes-1.19.0.md)) is installed on the Owner computer on
-  2026-11-15 by backup-first OPS02, then Prepare and Start; health reads 1.19.0 and the
-  goal plan reads back for the capital goal.
+  [release notes](release-notes-1.19.0.md)) was installed on the Owner computer on
+  2026-11-15 by backup-first OPS02, then Prepare and Start; health read 1.19.0 and the
+  goal plan read back for the capital goal. It was superseded on Stable by 1.20.0.
 - [v1.18.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.18.0)
   (`099e443641d350c822459c77b46f13c91072c358`, exact-main CI
   [43635231842](https://github.com/LTstripes/hermes-finance/actions/runs/43635231842),
