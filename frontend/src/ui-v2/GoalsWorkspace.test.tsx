@@ -1,22 +1,22 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { createQueryClient } from "../queryClient";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
 import {
   createGoal,
   deleteGoal,
-  listGoals,
-  listGoalSummary,
-  updateGoal,
   type Goal,
   type GoalSummary,
+  getGoalPlan,
+  listGoalSummary,
+  listGoals,
+  updateGoal,
 } from "../api/goals";
 import { listMonths } from "../api/months";
-import UiV2GoalsPage from "./UiV2GoalsPage";
+import { createQueryClient } from "../queryClient";
 import { GoalsWorkspace } from "./GoalsWorkspace";
+import UiV2GoalsPage from "./UiV2GoalsPage";
 
 vi.mock("../api/goals", () => ({
   getGoalPlan: vi.fn().mockResolvedValue({ status: "base_unavailable", coverage: "unavailable" }),
@@ -128,6 +128,14 @@ const listMonthsMock = vi.mocked(listMonths);
 describe("GoalsWorkspace R03-09 cards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getGoalPlan).mockResolvedValue({
+      method_version: "goal_plan_v1",
+      status: "base_unavailable",
+      coverage: "unavailable",
+      as_of_date: "2031-02-28",
+      base_capital: null,
+      components: { liquid_assets: "0.00", included_debts: "0.00" },
+    });
     listGoalsMock.mockResolvedValue([secondGoal, inactiveGoal, mainGoal]);
     listGoalSummaryMock.mockResolvedValue([
       withForecast(mainGoal, "80.00"),
@@ -155,6 +163,37 @@ describe("GoalsWorkspace R03-09 cards", () => {
     createGoalMock.mockResolvedValue(secondGoal);
     updateGoalMock.mockResolvedValue(secondGoal);
     deleteGoalMock.mockResolvedValue(undefined);
+  });
+
+  it("uses summary actual income with the selected plan capital for the displayed annual yield", async () => {
+    listGoalsMock.mockResolvedValue([mainGoal]);
+    listGoalSummaryMock.mockResolvedValue([withForecast(mainGoal, "80.00")]);
+    const plan = {
+      method_version: "goal_plan_v1" as const,
+      status: "income_estimate" as const,
+      as_of_date: "2031-02-28",
+      base_capital: "4000000.00",
+      coverage: "complete",
+      components: { liquid_assets: "4500000.00", included_debts: "500000.00" },
+      // Deliberately represents a separate read using a different income average.
+      required_capital: "10000000.00",
+      income_months_count: 2,
+    };
+    vi.mocked(getGoalPlan).mockResolvedValue(plan);
+    const { rerender } = render(<GoalsWorkspace />);
+    const note = await screen.findByText("При текущей отдаче 24,0% в год, доход за 2 из 12 мес.");
+    expect(note).toBeVisible();
+    expect(screen.getByText("≈ 10 000 000 ₽")).toBeVisible();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("value", "80.00");
+    expect(screen.queryByText(/12,0% в год/)).not.toBeInTheDocument();
+
+    // A different selected-month base changes yield; summary income stays 80,000.
+    vi.mocked(getGoalPlan).mockResolvedValue({ ...plan, base_capital: "8000000.00" });
+    rerender(<GoalsWorkspace key="another-plan-read" />);
+    expect(
+      await screen.findByText("При текущей отдаче 12,0% в год, доход за 2 из 12 мес."),
+    ).toBeVisible();
+    expect(screen.getByText("≈ 10 000 000 ₽")).toBeVisible();
   });
 
   it("puts the main active goal first and keeps inactive goals collapsed", async () => {

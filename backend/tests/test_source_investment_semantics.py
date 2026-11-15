@@ -34,6 +34,7 @@ SEMANTIC_MODULES = (
     "services/mybroker_money_candidates.py",
     "services/returns_read_inputs.py",
     "services/source_investment_proofs.py",
+    "services/source_bond_valuation.py",
     "services/source_intake.py",
     "services/source_account_history.py",
     "services/source_instrument_events.py",
@@ -66,7 +67,7 @@ SEMANTIC_MODULES = (
 # requires independent review and unchanged account-proof dependencies.
 SEMANTICS_PIN = (
     "source_investment_semantics_v23",
-    "3bba8010c02f597befe7f14a45843b7f3a4a3d56836dd4dcd39b15b816b6414e",
+    "90dcf84b62df7dfe44cedb46b860a5ff756a1db0a7983877774badf85e2a5961",
 )
 
 

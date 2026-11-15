@@ -8,8 +8,13 @@ from sqlalchemy.orm import Session
 from hermes_finance.api.mybroker_import import _bytes
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.api.uploads import BoundedUploadRoute
-from hermes_finance.domain.broker_statement_return import BrokerStatementReturn
+from hermes_finance.domain.broker_statement_return import (
+    BrokerStatementReturn,
+    StatementEndpoint,
+    StatementPosition,
+)
 from hermes_finance.services.broker_statement_return import read_statement_return, statement_sources
+from hermes_finance.services.instrument_names import instrument_names
 from hermes_finance.statement_import.mybroker import MyBrokerError
 
 router = APIRouter(
@@ -19,6 +24,43 @@ router = APIRouter(
 )
 
 
+class NamedStatementPosition(StatementPosition):
+    short_name: str | None = None
+
+
+class NamedStatementEndpoint(StatementEndpoint):
+    positions: tuple[NamedStatementPosition, ...] = ()
+
+
+class NamedBrokerStatementReturn(BrokerStatementReturn):
+    opening: NamedStatementEndpoint
+    closing: NamedStatementEndpoint
+
+
+def _with_short_names(session, result):
+    # Endpoint model dumps are fingerprint operands. Enrich only the HTTP DTO,
+    # after calculation, keeping receipt and evidence bytes unchanged.
+    names = instrument_names(session)
+
+    def endpoint(value):
+        return NamedStatementEndpoint(
+            **value.model_dump(exclude={"positions"}),
+            positions=tuple(
+                NamedStatementPosition(
+                    **row.model_dump(),
+                    short_name=names.name(instrument_id=row.instrument_id, isin=row.isin),
+                )
+                for row in value.positions
+            ),
+        )
+
+    return NamedBrokerStatementReturn(
+        **result.model_dump(exclude={"opening", "closing", "period", "valuation_date"}),
+        opening=endpoint(result.opening),
+        closing=endpoint(result.closing),
+    )
+
+
 @router.get("/sources")
 def sources(account_id: int = Query(gt=0), session: Session = Depends(session_for_request)):
     return statement_sources(session, account_id)
@@ -26,18 +68,19 @@ def sources(account_id: int = Query(gt=0), session: Session = Depends(session_fo
 
 def _read(session, request_id, account_id, expected_fingerprint=None, **kwargs):
     try:
-        return read_statement_return(
+        result = read_statement_return(
             session,
             request_id=request_id,
             account_id=account_id,
             expected_fingerprint=expected_fingerprint,
             **kwargs,
         )
+        return _with_short_names(session, result)
     except MyBrokerError as error:
         raise HTTPException(404, str(error)) from None
 
 
-@router.get("", response_model=BrokerStatementReturn)
+@router.get("", response_model=NamedBrokerStatementReturn)
 def read(
     request_id: str,
     account_id: int = Query(gt=0),
@@ -47,7 +90,7 @@ def read(
     return _read(session, request_id, account_id, expected_fingerprint)
 
 
-@router.post("/preview", response_model=BrokerStatementReturn)
+@router.post("/preview", response_model=NamedBrokerStatementReturn)
 async def preview(
     request_id: str = Form(...),
     account_id: int = Form(gt=0),

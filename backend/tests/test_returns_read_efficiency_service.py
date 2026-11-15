@@ -12,7 +12,8 @@ from sqlalchemy import event, select
 from test_returns_view_service import END, SCOPE, START, basket_source
 from test_source_instrument_returns_service import save
 from test_source_monthly_returns_service import snapshot
-from test_statement_import_mybroker import ACCOUNT
+from test_statement_import_mybroker import ACCOUNT, ISIN
+from test_statement_import_mybroker import database as database
 from test_statement_import_mybroker_preflight import investment_case, saved_investment_preview
 
 from hermes_finance.persistence import SourceMoneyClassification, SourceReturnProof
@@ -2341,3 +2342,79 @@ def test_endpoint_scope_verifies_sources_once_across_separate_nested_readers(db,
         calls.clear()
         assert composed(session, 2) == first
         assert calls and all(count == 1 for count in Counter(calls).values())
+
+
+@pytest.mark.parametrize("projection", ["income", "statement"])
+def test_content_cache_short_name_projection_hit_and_catalogue_miss(db, database, projection):
+    from fastapi import Response
+    from fastapi.encoders import jsonable_encoder
+    from test_statement_import_broker_statement_return import prepared
+
+    from hermes_finance.api import broker_statement_return, source_instrument_returns
+    from hermes_finance.api.read_cache import cached_read_endpoint
+    from hermes_finance.persistence import Instrument
+
+    if projection == "statement":
+        db = database
+        prepared(db)
+    else:
+        intake = save(db, extra=(("Дивиденды", f"Payment {ISIN}", "25"),))
+        with db.session_factory() as session:
+            row = session.scalar(
+                select(SourceMoneyClassification).where(
+                    SourceMoneyClassification.intake_id == intake
+                )
+            )
+            choose_classification(session, intake, row.source_reference, "dividend")
+        with db.session_factory() as session:
+            session.add(
+                Instrument(
+                    name=f"Synthetic ({ISIN})", isin=ISIN, instrument_type="stock", currency="RUB"
+                )
+            )
+            session.commit()
+    calls = []
+
+    # These routes remain uncached in production. Exercise the shared content
+    # cache explicitly as a harness, without opting new endpoints into caching.
+    @cached_read_endpoint
+    def read_projection(session, projection):
+        calls.append(projection)
+        if projection == "statement":
+            result = broker_statement_return.read(
+                request_id="synthetic-batch",
+                account_id=1,
+                expected_fingerprint=None,
+                session=session,
+            )
+        else:
+            result = source_instrument_returns.instrument_returns(
+                response=Response(),
+                source_account=ACCOUNT,
+                isin=None,
+                opening_date=None,
+                closing_date=None,
+                session=session,
+            )
+        return jsonable_encoder(result)
+
+    def labels(result):
+        rows = result["income"] if projection == "income" else result["closing"]["positions"]
+        assert rows
+        return [r["short_name"] for r in rows]
+
+    with db.session_factory() as session:
+        before = read_projection(session, projection)
+        assert read_projection(session, projection) == before
+        assert calls == [projection]
+    with db.engine.begin() as writer:
+        assert (
+            writer.exec_driver_sql("UPDATE instruments SET name = 'Renamed synthetic'").rowcount > 0
+        )
+    with db.session_factory() as session:
+        changed = read_projection(session, projection)
+        assert labels(changed) != labels(before)
+        assert set(labels(changed)) == {"Renamed synthetic"}
+        assert calls == [projection, projection]
+        assert read_projection(session, projection) == changed
+        assert calls == [projection, projection]
