@@ -1629,7 +1629,8 @@ Counts describe observed operands, not proven complete portfolio membership.
 The checklist exposes only `has_statement_positions`; this cheap presence flag
 enables a separate React Query read without delaying the month overview.
 Repeated context and clean-account reads reuse results only within the owned
-read snapshot; no global result cache is introduced.
+read snapshot; the only cross-request reuse is the snapshot-keyed read cache
+(#1199) described under "Returns and Month projection reuse" below.
 
 [Owner decision #1010](https://github.com/LTstripes/hermes-finance/issues/1010):
 ordinary Close may be requested at any time for the selected DRAFT. Missing
