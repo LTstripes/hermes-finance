@@ -25,7 +25,7 @@
 
 .PARAMETER Title
     Optional GitHub Release / annotated-tag title. Defaults to
-    "Hermes Finance <X.Y.Z>".
+    "Finance <X.Y.Z>".
 
 .EXAMPLE
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\release.ps1 `
@@ -68,7 +68,7 @@ try {
         -CommandRunner (New-HermesDefaultCommandRunner) `
         -CommandResolver (New-HermesDefaultCommandResolver)
 
-    Write-Host "Published Hermes Finance $($result.Version)" -ForegroundColor Green
+    Write-Host "Published Finance $($result.Version)" -ForegroundColor Green
     Write-Host "Tag: $($result.Tag)"
     Write-Host "Commit: $($result.Sha)"
     if ([bool]$result.ReusedExistingTag) {

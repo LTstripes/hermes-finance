@@ -11,9 +11,8 @@ import re
 import stat
 import subprocess
 import tempfile
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
@@ -34,7 +33,7 @@ def assert_plain_path(path: Path, *, directory: bool = False) -> None:
         raise ValueError("Target must be an unlinked regular file")
 
 
-def runtime_version(text: str) -> str:
+def runtime_version_node(text: str) -> ast.Constant:
     nodes = ast.parse(text).body
     if (
         len(nodes) == 2
@@ -53,7 +52,77 @@ def runtime_version(text: str) -> str:
         or not isinstance(nodes[0].value.value, str)
     ):
         raise ValueError("Existing runtime version disagrees")
-    return nodes[0].value.value
+    return nodes[0].value
+
+
+def runtime_version(text: str) -> str:
+    return runtime_version_node(text).value
+
+
+def replace_runtime_version(text: str, new: str) -> str:
+    node = runtime_version_node(text)
+    # AST columns are UTF-8 byte offsets, including when a docstring precedes
+    # the assignment on the same line. Leave that docstring and comments alone.
+    lines = text.encode("utf-8").splitlines(keepends=True)
+    start = sum(map(len, lines[: node.lineno - 1])) + node.col_offset
+    end = sum(map(len, lines[: node.end_lineno - 1])) + node.end_col_offset
+    raw = text.encode("utf-8")
+    literal = raw[start:end]
+    quote = chr(literal[0])
+    if quote not in ("'", '"') or literal != f"{quote}{node.value}{quote}".encode():
+        raise ValueError("Unexpected runtime version literal")
+    return (raw[: start + 1] + new.encode() + raw[end - 1 :]).decode("utf-8")
+
+
+def replace_project_version(text: str, old: str, new: str) -> str:
+    section = re.search(r"(?m)^[ \t]*\[[ \t]*project[ \t]*\][ \t]*(?:#[^\r\n]*)?\r?\n", text)
+    if section is None:
+        raise ValueError("Missing [project] version section")
+    next_section = re.search(r"(?m)^[ \t]*\[", text[section.end() :])
+    end = section.end() + next_section.start() if next_section else len(text)
+    field = re.compile(
+        rf"""(?m)^([ \t]*version[ \t]*=[ \t]*)(["']){re.escape(old)}\2([ \t]*(?:\#[^\r\n]*)?\r?$)"""
+    )
+    body = text[section.end() : end]
+    if len(field.findall(body)) != 1:
+        raise ValueError("Unexpected [project].version field")
+    body = field.sub(lambda m: f"{m[1]}{m[2]}{new}{m[2]}{m[3]}", body)
+    return text[: section.end()] + body + text[end:]
+
+
+def replace_json_version(text: str, keys: tuple[str, ...], new: str) -> str:
+    """Locate an object member with JSON decoding; splice only its value token."""
+    decoder = json.JSONDecoder()
+
+    def skip_space(position: int) -> int:
+        while position < len(text) and text[position] in " \t\r\n":
+            position += 1
+        return position
+
+    def locate(position: int, path: tuple[str, ...]) -> tuple[int, int]:
+        position = skip_space(position)
+        if text[position] != "{":
+            raise ValueError("Expected JSON version object")
+        position = skip_space(position + 1)
+        matches = []
+        while text[position] != "}":
+            key, position = decoder.raw_decode(text, position)
+            position = skip_space(position)
+            if text[position] != ":":
+                raise ValueError("Expected JSON member separator")
+            start = skip_space(position + 1)
+            _, end = decoder.raw_decode(text, start)
+            if key == path[0]:
+                matches.append(locate(start, path[1:]) if len(path) > 1 else (start, end))
+            position = skip_space(end)
+            if text[position] == ",":
+                position = skip_space(position + 1)
+        if len(matches) != 1:
+            raise ValueError(f"Expected one JSON field at {keys!r}")
+        return matches[0]
+
+    start, end = locate(0, keys)
+    return text[:start] + json.dumps(new) + text[end:]
 
 
 def assert_clean_tree(root: Path) -> None:
@@ -97,9 +166,7 @@ def prepare(root: Path, new: str) -> list[str]:
     if not VERSION.fullmatch(old) or tuple(map(int, new.split("."))) <= tuple(
         map(int, old.split("."))
     ):
-        raise ValueError(
-            "Target version must be greater than the current stable version"
-        )
+        raise ValueError("Target version must be greater than the current stable version")
     if runtime_version(contents[paths[2]]) != old:
         raise ValueError("Existing runtime version disagrees")
     lock = tomllib.loads(contents[paths[1]])
@@ -139,11 +206,16 @@ def prepare(root: Path, new: str) -> list[str]:
                 raise ValueError(f"Unexpected version occurrences in {name}")
             replacements[name] = anchor.sub(lambda m: f'{m.group(1)}"{new}"', text)
             continue
-        needle = f'"{old}"'
-        expected = 2 if name.endswith("package-lock.json") else 1
-        if text.count(needle) != expected:
-            raise ValueError(f"Unexpected version occurrences in {name}")
-        replacements[name] = text.replace(needle, f'"{new}"')
+        if name == paths[0]:
+            replacements[name] = replace_project_version(text, old, new)
+        elif name == paths[2]:
+            replacements[name] = replace_runtime_version(text, new)
+        else:
+            replacements[name] = replace_json_version(text, ("version",), new)
+            if name == paths[4]:
+                replacements[name] = replace_json_version(
+                    replacements[name], ("packages", "", "version"), new
+                )
     new_project = tomllib.loads(replacements[paths[0]])["project"]
     new_lock = tomllib.loads(replacements[paths[1]])
     new_packages = [p for p in new_lock["package"] if p["name"] == new_project["name"]]
@@ -163,7 +235,7 @@ def prepare(root: Path, new: str) -> list[str]:
         raise ValueError("Prepared release identities disagree")
     if not notes.exists():
         replacements[notes_name] = (
-            f"# Hermes Finance {new}\n\n"
+            f"# Finance {new}\n\n"
             "UAT-PENDING - candidate notes; complete before publication.\n\n"
             "## Changes\n\nTODO\n\n## Verification\n\nTODO\n"
         )
@@ -206,21 +278,15 @@ def prepare(root: Path, new: str) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "version", help="stable X.Y.Z greater than current; requires a clean tree"
-    )
+    parser.add_argument("version", help="stable X.Y.Z greater than current; requires a clean tree")
     args = parser.parse_args()
     try:
         changed = prepare(ROOT, args.version)
     except SyntaxError:
-        parser.exit(
-            1, "Version preparation failed: a version file has invalid Python syntax\n"
-        )
+        parser.exit(1, "Version preparation failed: a version file has invalid Python syntax\n")
     except (OSError, ValueError, KeyError, TypeError) as error:
         parser.exit(1, f"Version preparation failed: {error}\n")
-    print(
-        "Prepared local metadata; review the diff and run independent identity checks:"
-    )
+    print("Prepared local metadata; review the diff and run independent identity checks:")
     for path in changed:
         print(path)
 
