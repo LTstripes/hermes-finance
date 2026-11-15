@@ -13,6 +13,7 @@ import type { MoneyValue } from "../api/types";
 import { closeOwnerActionFindings } from "../components/month-close/ownerCopy";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { formatDate, formatPercent } from "../lib/format";
+import { MonthSalaryTax } from "./MonthSalaryTax";
 import styles from "./UiV2MonthOverview.module.css";
 import {
   moneyText,
@@ -602,6 +603,7 @@ export function MonthOverview({
                           ›
                         </span>
                       </Link>
+                      {id === "income" ? <MonthSalaryTax monthId={workflow.month.id} /> : null}
                     </li>
                   );
                 })}

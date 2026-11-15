@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createQueryClient } from "../queryClient";
+import { salaryFixture } from "../test/monthSalaryTaxFixtures";
 import {
   makeUiV2CapitalHistory,
   makeUiV2Cash,
@@ -34,6 +35,7 @@ function setup(
   const client = createQueryClient();
   const reads: string[] = [];
   const state = {
+    salary: salaryFixture(monthId),
     months: uiV2Months,
     composition: makeUiV2CapitalHistory(),
     risk: makeUiV2RiskAllocation({ monthId }),
@@ -57,6 +59,14 @@ function setup(
       let data: unknown;
       let failed = false;
       switch (url.pathname) {
+        case `/api/months/${monthId}/summary`:
+          expect(url.searchParams.get("include_capital_change")).toBe("false");
+          data = state.salary.summary;
+          break;
+        case "/api/incomes":
+          expect(url.searchParams.get("month_id")).toBe(String(monthId));
+          data = [state.salary.salary];
+          break;
         case "/api/months":
           data = state.months;
           failed = state.monthsError;
@@ -125,6 +135,16 @@ afterEach(() => {
 });
 
 describe("UI v2 historical report", () => {
+  it("shows salary tax for the selected closed report from read-only APIs", async () => {
+    const { mount, state } = setup();
+    state.salary.summary.salary_actual_net = { amount: "87500.00", currency: "RUB" };
+    mount();
+    const salary = await screen.findByRole("region", { name: "Налог на зарплату" });
+    expect(salary).toHaveTextContent("До налога 100 000 ₽");
+    expect(salary).toHaveTextContent("Налог (13% + 15%) 14 000,01 ₽");
+    expect(salary).toHaveTextContent("На руки 87 500 ₽");
+    expect(within(salary).getAllByText(/Выплата отличается/)).toHaveLength(1);
+  });
   it("marks the selected historical known subtotal when its source coverage is partial", async () => {
     const { mount, state } = setup();
     const selected = state.composition.points.find(
@@ -206,8 +226,10 @@ describe("UI v2 historical report", () => {
       "/api/analytics/risk-allocation?month_id=90&top_n=5&forecast_version=v1",
       "/api/cash-balances?month_id=90",
       "/api/deposits?month_id=90",
+      "/api/incomes?month_id=90",
       "/api/instruments",
       "/api/months",
+      "/api/months/90/summary?include_capital_change=false",
       "/api/positions?month_id=90",
     ]);
   });

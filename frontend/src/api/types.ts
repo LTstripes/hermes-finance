@@ -415,6 +415,7 @@ export type IncomeUpdate = {
 export type SalaryTaxSummary = {
   tax: MoneyValue;
   calculated_net: MoneyValue;
+  parts?: Array<{ rate_bps: number; taxable: MoneyValue; tax: MoneyValue }>;
 };
 
 export type MonthSummary = {

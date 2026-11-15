@@ -25,6 +25,7 @@ import { queryKeys } from "../queryClient";
 import { CLASS_COLORS, classMeta } from "./assetClasses";
 import { buildHoldingRows, holdingContextLabel, type HoldingRow } from "./capitalHoldings";
 import { latestClosedMonth } from "./monthSelection";
+import { MonthSalaryTax } from "./MonthSalaryTax";
 import {
   contextualHistoryWindow,
   CURRENT_METHODOLOGY_CAVEAT,
@@ -581,6 +582,7 @@ export default function UiV2ReportPage() {
           {CURRENT_METHODOLOGY_CAVEAT}
         </p>
         <ReportValues point={position.point} />
+        <MonthSalaryTax key={month.id} monthId={month.id} report />
         <div className={styles.homeGrid}>
           <CompositionBlock assetClasses={assetClasses} point={position.point} />
           <HistoryBlock

@@ -15,6 +15,9 @@ import {
 
 const pathFor = (panel: string) => `/v2/close?month=12&panel=${panel}`;
 
+// Salary API reads and real overview placement are covered in MonthSalaryTax.test.tsx.
+vi.mock("./MonthSalaryTax", () => ({ MonthSalaryTax: () => null }));
+
 function renderOverview(workflow: MonthCloseWorkflow) {
   return render(
     <MemoryRouter>
