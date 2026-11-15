@@ -536,6 +536,7 @@ def test_api_returns_summary_and_404(tmp_path: Path) -> None:
     assert quote_item["import_apply_time"].startswith("2026-08-21")
     assert "multiple_providers" not in {reason["code"] for reason in body["reasons"]}
     assert any(reason["code"] == "quote_stale" for reason in body["reasons"])
+    assert quote_item["short_name"] == "Synthetic Stock"
     forbidden = {"freshness_score", "freshness_pct", "overall_freshness", "freshness_percent"}
 
     def _walk(value: object) -> None:
@@ -610,3 +611,50 @@ def test_retired_provider_baseline_history_stays_readable_and_unchanged(tmp_path
         baseline.apply_fingerprint,
     ) == original
     session.close()
+
+
+def test_api_short_names_are_nullable_and_freshness_bypasses_read_cache(tmp_path, monkeypatch):
+    from hermes_finance.api import read_cache
+
+    def unexpected_cache(*args):
+        raise AssertionError("timestamped freshness must not enter the content cache")
+
+    monkeypatch.setattr(read_cache, "_snapshot_key", unexpected_cache)
+    session, database = session_for(tmp_path)
+    month, account, _, stock, fund = _seed_month(session)
+    stock.isin = "RU000A000000"
+    stock.ticker = "SYN"
+    stock.name = f"Synthetic (class A) ({stock.isin}) (SYN)"
+    fund.isin = "RU000A000001"
+    fund.name = fund.isin
+    session.commit()
+    for instrument in (stock, fund):
+        _t_invest_snapshot(
+            session,
+            month_id=month.id,
+            account_id=account.id,
+            instrument_id=instrument.id,
+            price_date=TODAY,
+        )
+    application = create_app(database)
+    application.state.quote_preview_clock = lambda: TODAY
+    application.state.freshness_generated_at = lambda: GENERATED_AT
+    client = TestClient(application)
+    url = f"/api/months/{month.id}/freshness-provenance"
+    first = client.get(url)
+    assert first.status_code == 200, first.text
+    assert client.get(url).json() == first.json()
+    items = next(f for f in first.json()["families"] if f["family_id"] == "market_quotes")["items"]
+    assert {r["instrument_name"]: r["short_name"] for r in items} == {
+        stock.name: "Synthetic (class A)",
+        fund.name: None,
+    }
+    # A committed catalogue rename is visible immediately, without a cache TTL.
+    stock.name = f"Renamed synthetic ({stock.isin})"
+    session.commit()
+    items = next(
+        f for f in client.get(url).json()["families"] if f["family_id"] == "market_quotes"
+    )["items"]
+    assert {r["short_name"] for r in items} == {"Renamed synthetic", None}
+    session.close()
+    database.engine.dispose()
