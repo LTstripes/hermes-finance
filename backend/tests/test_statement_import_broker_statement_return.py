@@ -1140,3 +1140,48 @@ def test_effective_sections_do_not_override_real_h2_a2_reader(database):
         )
         assert session.get(MyBrokerImport, safe["import_id"]).normalized_json == frozen_s1
         assert_opaque_unavailable(result.model_dump(mode="json"))
+
+
+@pytest.mark.parametrize("known", [True, False])
+def test_http_position_names_preserve_fingerprint_receipts_and_export(database, monkeypatch, known):
+    from hermes_finance.api import read_cache
+    from hermes_finance.persistence import Instrument
+
+    def unexpected_cache(*args):
+        raise AssertionError("statement returns are not a cached endpoint")
+
+    monkeypatch.setattr(read_cache, "_snapshot_key", unexpected_cache)
+    client, raw = prepared(database)
+    with database.session_factory() as session:
+        instrument = session.scalar(select(Instrument))
+        instrument.name = f"Synthetic (class A) ({instrument.isin})" if known else instrument.isin
+        session.commit()
+        expected = read_statement_return(
+            session, request_id="synthetic-batch", account_id=1
+        ).model_dump(mode="json")
+    url = "/api/broker-statement-returns?account_id=1&request_id=synthetic-batch"
+    response = client.get(url)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert client.get(url).json() == result
+    export = client.get(
+        url.replace("returns?", "returns/export?")
+        + "&expected_fingerprint="
+        + result["material_fingerprint"]
+    )
+    assert export.status_code == 200, export.text
+    assert export.json() == result
+    preview = client.post(
+        "/api/broker-statement-returns/preview",
+        data={"account_id": "1", "request_id": "synthetic-batch"},
+        files={"file": (FILENAME, raw, "application/xml")},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json() == result
+    for side in ("opening", "closing"):
+        assert result[side]["positions"]
+        for row in result[side]["positions"]:
+            assert row.pop("short_name") == ("Synthetic (class A)" if known else None)
+    # Every pre-existing byte/value, including the fingerprint and receipts,
+    # equals the original domain DTO; HTTP labels never enter its model dump.
+    assert result == expected

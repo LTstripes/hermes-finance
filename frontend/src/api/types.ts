@@ -1527,6 +1527,7 @@ export type FreshnessItem = {
   reason_codes: string[];
   account_name: string | null;
   instrument_name: string | null;
+  short_name?: string | null;
 };
 
 export type FreshnessFamily = {

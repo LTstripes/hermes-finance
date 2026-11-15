@@ -1,6 +1,6 @@
-import { Link } from "react-router";
 import type { ReactNode } from "react";
-
+import { Link } from "react-router";
+import type { GuidedCloseStepId } from "../api/monthCloseWorkflow";
 import type { ProviderCapabilities } from "../api/providerCapabilities";
 import type {
   FreshnessFamily,
@@ -9,7 +9,6 @@ import type {
   FreshnessStatus,
   ReportingMonth,
 } from "../api/types";
-import type { GuidedCloseStepId } from "../api/monthCloseWorkflow";
 import { monthlyCloseReturnPath } from "../components/month-close/navigation";
 import { formatDate, formatDateTime, formatMonth } from "../lib/format";
 import {
@@ -132,6 +131,13 @@ function clockValue(item: FreshnessItem): string {
   if (item.source_date) return formatDate(item.source_date);
   if (item.source_datetime) return formatDateTime(item.source_datetime);
   return "—";
+}
+
+function itemLabel(item: FreshnessItem): string {
+  const shortName = item.short_name;
+  return shortName && item.instrument_name
+    ? item.label.replace(item.instrument_name, () => shortName)
+    : item.label;
 }
 
 function itemHasDetailTable(family: FreshnessFamily): boolean {
@@ -391,7 +397,9 @@ function FamilyCard({ family }: { family: FreshnessFamily }) {
                 {family.items.map((item) => (
                   <tr key={`${family.family_id}-${item.item_kind}-${item.label}`}>
                     <td>
-                      {item.account_name ? `${item.account_name} · ${item.label}` : item.label}
+                      {item.account_name
+                        ? `${item.account_name} · ${itemLabel(item)}`
+                        : itemLabel(item)}
                     </td>
                     <td>
                       <span
@@ -421,7 +429,7 @@ function FamilyCard({ family }: { family: FreshnessFamily }) {
       {family.items.length > 0 && !itemHasDetailTable(family) ? (
         <ul className={dataStyles.reasonList}>
           {family.items.map((item) => (
-            <li key={item.label}>{item.label}</li>
+            <li key={item.label}>{itemLabel(item)}</li>
           ))}
         </ul>
       ) : null}

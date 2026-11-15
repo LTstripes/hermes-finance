@@ -89,7 +89,7 @@ function New-IdentityWorkspace {
     )
     [IO.File]::WriteAllText(
         (Join-Path $package "__init__.py"),
-        "`"`"`"Hermes Finance backend package.`"`"`"`n`n__version__ = `"$PackageVersion`"`n",
+        "`"`"`"Finance backend package.`"`"`"`n`n__version__ = `"$PackageVersion`"`n",
         (New-Object System.Text.UTF8Encoding $false)
     )
 

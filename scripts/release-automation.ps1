@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Execute the GitHub-native owner-triggered Hermes Finance release path.
+    Execute the GitHub-native owner-triggered Finance release path.
 
 .DESCRIPTION
     Validates the permanent release-control issue event, parses the exact
@@ -126,7 +126,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "GitHub Release read-back failed: $([string]::Join(' ', @($releaseJson)))"
 }
 $release = ([string]::Join("`n", @($releaseJson))) | ConvertFrom-Json
-$expectedTitle = "Hermes Finance $($request.Version)"
+$expectedTitle = "Finance $($request.Version)"
 if ([string]$release.tagName -ne $result.Tag) {
     throw "Final GitHub Release tag '$($release.tagName)' does not match $($result.Tag)."
 }
@@ -141,7 +141,7 @@ $releaseState = "published"
 $summaryPath = [string]$env:GITHUB_STEP_SUMMARY
 if (-not [string]::IsNullOrWhiteSpace($summaryPath)) {
     $summaryLines = @(
-        "# Hermes Finance guarded release",
+        "# Finance guarded release",
         "",
         "- Version: ``$($request.Version)``",
         "- Tag: ``$($result.Tag)``",

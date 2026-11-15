@@ -451,9 +451,16 @@ def incoming_source(
 def test_real_reader_context_evaluate_export_reference_and_isolation(database):
     client, raw, filename = incoming_source(database)
     before = _all_month_tables(database)
-    actual_before = client.get(
+    actual_http_before = client.get(
         "/api/broker-statement-returns?account_id=1&request_id=synthetic-batch"
     ).json()
+    # WHAT-IF keeps the domain DTO. Only the separate statement HTTP projection
+    # adds display names; retain exact comparisons of every financial operand,
+    # receipt and fingerprint, and compare the entire HTTP response again below.
+    actual_before = deepcopy(actual_http_before)
+    for side in ("opening", "closing"):
+        for position in actual_before[side]["positions"]:
+            assert position.pop("short_name") == "Synthetic security"
     invariant_routes = [
         "/api/months",
         "/api/cash-boundary-coverages?account_id=1",
@@ -529,7 +536,7 @@ def test_real_reader_context_evaluate_export_reference_and_isolation(database):
             client.get(
                 "/api/broker-statement-returns?account_id=1&request_id=synthetic-batch"
             ).json()
-            == actual_before
+            == actual_http_before
         )
     finally:
         event.remove(database.engine, "before_cursor_execute", spy)

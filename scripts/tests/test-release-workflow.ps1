@@ -56,6 +56,40 @@ Invoke-Case "release automation entrypoint parses in Windows PowerShell" {
     }
 }
 
+Invoke-Case "release read-back requires the Finance X.Y.Z title" {
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+        $entrypointPath, [ref]$tokens, [ref]$errors
+    )
+    # Execute only the title assignment and comparison from the entrypoint.
+    # Publication, native commands and other entrypoint statements never run.
+    $assignment = @($ast.EndBlock.Statements | Where-Object {
+        $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $_.Left.Extent.Text -eq '$expectedTitle'
+    })
+    $comparison = @($ast.EndBlock.Statements | Where-Object {
+        $_ -is [System.Management.Automation.Language.IfStatementAst] -and
+        $_.Clauses[0].Item1.Extent.Text -eq '[string]$release.name -ne $expectedTitle'
+    })
+    Assert-True -Condition ($assignment.Count -eq 1 -and $comparison.Count -eq 1) -Message "Expected one release title assignment and refusal guard."
+    Assert-True -Condition ($assignment[0].Extent.Text -ceq '$expectedTitle = "Finance $($request.Version)"') -Message "Release read-back title must be Finance X.Y.Z."
+    $guard = [scriptblock]::Create($assignment[0].Extent.Text + "`n" + $comparison[0].Extent.Text)
+    $request = [pscustomobject]@{ Version = "0.5.0" }
+    $release = [pscustomobject]@{ name = "Finance 0.5.0" }
+    & $guard
+    foreach ($wrongTitle in @("Other 0.5.0", "Finance v0.5.0", "Finance 0.5.1")) {
+        $release.name = $wrongTitle
+        $refused = $false
+        try { & $guard }
+        catch {
+            Assert-True -Condition ($_.Exception.Message -like "Final GitHub Release title*does not match*") -Message "Unexpected title guard failure."
+            $refused = $true
+        }
+        Assert-True -Condition $refused -Message "Release title guard accepted '$wrongTitle'."
+    }
+}
+
 $workflow = [IO.File]::ReadAllText($workflowPath)
 
 Invoke-Case "workflow trigger is narrow issue_comment created" {

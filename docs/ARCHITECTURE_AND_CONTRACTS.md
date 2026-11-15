@@ -6970,6 +6970,10 @@ Statement preview/apply/readback envelopes expose `instrument_labels` with ISIN
 and `short_name`; normalized `document` and `accepted` objects remain byte-for-byte
 equivalent as data, so receipt comparison and confirmation digests are unchanged.
 No identity match, financial currentness or read/cache policy depends on this name.
+Freshness security items and source-instrument `income[]` also expose nullable
+`short_name`. Statement-return GET/preview/export share an HTTP-only named endpoint
+projection: domain endpoint model dumps remain unchanged because their bytes are
+material-fingerprint operands. Names do not enter statement receipts or evidence.
 Source labels may reuse the issuer text accepted by the existing exact
 registration-identity guard. This supplies a display label only; it does not
 create a payout link, change source attribution or authorize a financial value.
