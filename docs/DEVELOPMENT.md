@@ -595,6 +595,15 @@ backend-style directories only to make the trees look symmetrical.
 <a id="d4-test_suite_guide-1-useful-targeted-commands"></a>
 #### Useful targeted commands
 
+From `frontend/`, run `npm run test:e2e -- --project=goal-plan --retries=0`
+or `npm run test:e2e -- --project=returns-api --retries=0` (one project per
+invocation). Both run serially in the existing `g04-browser` CI job after the
+frontend build. Each fixture owns a temporary synthetic database; goal-plan
+uses backend port 18929 and Vite 5199, Returns API uses port 18963
+(`HERMES_RETURNS_TEST_PORT` overrides it). `HERMES_E2E_PYTHON` can select a local
+Python environment. The older standalone configs remain compatible local
+entry points; the main runner now also collects their one and four scenarios.
+
 Owner-local returns coverage can be checked with the backend environment: `python backend/scripts/returns_snapshot_check.py --database <existing-sqlite> --out <private-folder-outside-repository>`; use a fresh output folder for each run and `--compare <previous-summary.json>` to print only coverage differences. The source is opened read-only and backed up with SQLite into that folder; only the copy is queried, then deleted unless `--keep-copy` is supplied, and the reviewed bond valuation setting is honoured. Keep summaries and copies private and outside Git; CI runs only the synthetic tests, never this command against Owner data.
 
 From `backend/`, use a marker for the semantic implementation loop. The full

@@ -232,6 +232,19 @@ type BlockProps = {
  * the supported v1 operations, exact-money transport and a confirmed readback
  * of every write through the canonical API.
  */
+
+/** Focus the editor's first field on the next frame, unless the user has already
+ * moved focus into another field (a quick click must not have its typing redirected). */
+function focusNextFrameUnlessMoved(id: string) {
+  const before = document.activeElement;
+  requestAnimationFrame(() => {
+    const now = document.activeElement;
+    if (now !== before && now instanceof HTMLElement && now.matches("input, textarea, select"))
+      return;
+    document.getElementById(id)?.focus();
+  });
+}
+
 export function UiV2MonthLiabilities({ context }: { context: MonthEditorContext }) {
   const { month, readOnly, setDirty } = context;
   const monthId = month.id;
@@ -521,7 +534,7 @@ function DebtBlock({
       next_due_date: row.next_due_date ?? "",
       contract_end_date: row.contract_end_date ?? "",
     });
-    requestAnimationFrame(() => document.getElementById(`debt-edit-${row.id}-name`)?.focus());
+    focusNextFrameUnlessMoved(`debt-edit-${row.id}-name`);
   }
 
   async function confirmReadback(rows: DebtEntry[]): Promise<void> {
@@ -1241,7 +1254,7 @@ function PropertyBlock({
       monthly_payment: moneyAmount(row.monthly_payment),
       mortgage_annual_rate: row.mortgage_annual_rate ?? "",
     });
-    requestAnimationFrame(() => document.getElementById("prop-edit-name")?.focus());
+    focusNextFrameUnlessMoved("prop-edit-name");
   }
 
   async function confirmReadback(rows: PropertySnapshot[]): Promise<void> {

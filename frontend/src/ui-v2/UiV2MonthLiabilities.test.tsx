@@ -1074,7 +1074,46 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
     expect(createDebt).toHaveBeenCalledTimes(1);
   });
 
-  // Typing a full amount and the pending save can exceed 5 s on loaded CI runners.
+  async function editMortgage(user: ReturnType<typeof userEvent.setup>) {
+    const [, propertyTable] = await tables();
+    await user.click(
+      await rowAction(user, within(propertyTable), "Изменить объект «Синтетическая квартира»"),
+    );
+    const editor = screen.getByRole("region", { name: "Изменение объекта недвижимости" });
+    // startEditingProperty focuses the name on the next animation frame. Let
+    // that finish before userEvent moves focus to the mortgage input; otherwise
+    // the frame can redirect part of the typed amount into the name field.
+    await waitFor(() => expect(within(editor).getByLabelText("Название объекта")).toHaveFocus());
+    const mortgage = within(editor).getByLabelText("Остаток ипотеки");
+    await user.clear(mortgage);
+    await user.type(mortgage, "2900000.00");
+    expect(mortgage).toHaveValue("2900000.00");
+    expect(within(editor).getByLabelText("Название объекта")).toHaveValue(property.name);
+    return {
+      editor,
+      mortgage,
+      done: within(propertyTable).getByRole("button", { name: "Готово" }),
+    };
+  }
+
+  it("sends one property edit with the entered mortgage amount", async () => {
+    const user = userEvent.setup();
+    renderLeaf();
+    const { done } = await editMortgage(user);
+    await user.dblClick(done);
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Изменение объекта недвижимости" })).toBeNull(),
+    );
+    expect(updateProperty).toHaveBeenCalledExactlyOnceWith(property.id, {
+      name: property.name,
+      estimated_value: property.estimated_value,
+      mortgage_balance: { amount: "2900000.00", currency: "RUB" },
+      monthly_payment: property.monthly_payment,
+      mortgage_annual_rate: null,
+    });
+    expect((await tables())[1]).toHaveTextContent(/2\s*900\s*000\s*₽/);
+  });
+
   it("freezes property edit inputs while the save and its readback are pending", async () => {
     let release: (() => void) | null = null;
     vi.mocked(updateProperty).mockImplementation(
@@ -1090,52 +1129,39 @@ describe("UiV2MonthLiabilities leaf (#564)", () => {
 
     const user = userEvent.setup();
     renderLeaf();
-    const [, propertyTable] = await tables();
-    await user.click(
-      await rowAction(user, within(propertyTable), "Изменить объект «Синтетическая квартира»"),
+    const { editor, mortgage, done } = await editMortgage(user);
+    let releaseReadback: (() => void) | undefined;
+    vi.mocked(listProperties).mockImplementationOnce(
+      () =>
+        new Promise<PropertySnapshot[]>((resolve) => {
+          releaseReadback = () => resolve([{ ...findProperty(property.id) }]);
+        }),
     );
-    // On a loaded runner the edit row can re-render while typing and drop the
-    // value; re-find the field and retype until it holds the new amount.
-    const typedMortgage = () =>
-      (document.getElementById("prop-edit-mortgage_balance") as HTMLInputElement).value.replace(
-        /\s/g,
-        "",
-      );
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const mortgage = document.getElementById("prop-edit-mortgage_balance") as HTMLInputElement;
-      await user.clear(mortgage);
-      await user.type(mortgage, "2900000.00");
-      if (/^2900000([.,]00)?$/.test(typedMortgage())) break;
-    }
-    await waitFor(() => expect(typedMortgage()).toMatch(/^2900000([.,]00)?$/), { timeout: 5000 });
-    // «Готово» is disabled while any earlier operation is busy; a click on a
-    // disabled button is silently lost on a loaded runner, so wait for it.
-    const done = within(propertyTable).getByRole("button", { name: "Готово" });
-    await waitFor(() => expect(done).toBeEnabled(), { timeout: 5000 });
     await user.click(done);
-    // CI can be slow to start the save; the assertion itself is unchanged.
-    await waitFor(() => expect(updateProperty).toHaveBeenCalledTimes(1), { timeout: 5000 });
-
-    expect(
-      within(screen.getByRole("region", { name: "Изменение объекта недвижимости" })).getByLabelText(
-        "Название объекта",
-      ),
-    ).toBeDisabled();
-    const pendingMortgage = screen.getByDisplayValue("2900000.00");
-    expect(pendingMortgage).toBeDisabled();
-    await user.type(pendingMortgage, "9");
-    expect(screen.getByDisplayValue("2900000.00")).toBeInTheDocument();
-    expect(within(propertyTable).getByRole("button", { name: "Готово" })).toBeDisabled();
+    expect(updateProperty).toHaveBeenCalledTimes(1);
+    const expectFrozen = async () => {
+      for (const input of within(editor).getAllByRole("textbox")) expect(input).toBeDisabled();
+      expect(done).toBeDisabled();
+      await user.type(mortgage, "9");
+      expect(mortgage).toHaveValue("2900000.00");
+      expect(editor).toBeInTheDocument();
+    };
+    await expectFrozen();
+    expect(releaseReadback).toBeUndefined();
 
     await act(async () => {
       release?.();
     });
+    await waitFor(() => expect(releaseReadback).toBeTypeOf("function"));
+    await expectFrozen();
+    await act(async () => releaseReadback?.());
+    await waitFor(() => expect(editor).not.toBeInTheDocument());
 
     const [, propertyTableAfter] = await tables();
     expect(within(propertyTableAfter).queryByRole("button", { name: "Готово" })).toBeNull();
     expect(propertyTableAfter).toHaveTextContent(/2\s*900\s*000\s*₽/);
     expect(updateProperty).toHaveBeenCalledTimes(1);
-  }, 20_000);
+  });
 
   it("#650 keeps money as one unit with Owner language and no technical shorthand", async () => {
     renderLeaf();

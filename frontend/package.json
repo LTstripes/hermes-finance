@@ -21,6 +21,8 @@
     "test:e2e:capital-allocation": "playwright test --project=capital-allocation",
     "test:e2e:broker-month": "playwright test --project=broker-month",
     "test:e2e:chromium": "playwright test --project=chromium",
+    "test:e2e:goal-plan": "playwright test --project=goal-plan",
+    "test:e2e:returns-api": "playwright test --project=returns-api",
     "test:e2e:iis": "playwright test --project=iis",
     "test:e2e:instrument-eod": "playwright test --project=instrument-eod",
     "test:e2e:instrument-income": "playwright test --project=instrument-income",
