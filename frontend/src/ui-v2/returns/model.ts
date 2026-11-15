@@ -173,14 +173,6 @@ export function displayWhole(m: Metric, signed = false) {
   const value = { amount: fromKopecks(BigInt(m.value)), currency: "RUB" };
   return signed ? wholeMoneyDeltaText(value, "—") : wholeMoneyText(value, "—");
 }
-/** A rate with an explicit plus sign, for a signed chip next to a result. */
-export function displaySignedRate(m: Metric) {
-  const text = displayMetric(m);
-  return text === "—" || text.startsWith("−") || compareDecimal(m.value ?? "0", "0") === 0
-    ? text
-    : `+${text}`;
-}
-
 /** One decimal in the ordinary Returns path, shifting units without rounding twice. */
 export function displayCompactRate(m: Metric, signed = true) {
   const value = m.value === null ? null : decimal(m.value);

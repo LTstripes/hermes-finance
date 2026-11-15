@@ -513,7 +513,7 @@ def test_mixed_batch_and_provider_exceptions_are_per_row(tmp_path: Path) -> None
         assert failed_row.failure_reason.value == "provider_network"
         assert failed_row.message is not None
         assert "timeout" not in failed_row.message
-        assert "Hermes Finance" in failed_row.message
+        assert "Local Finance is running." in failed_row.message
     finally:
         session.close()
         database.engine.dispose()

@@ -41,7 +41,7 @@ function Assert-PortAvailable {
 
     $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
     if ($null -ne $listener) {
-        throw "Port $Port is already in use. Stop the existing process before starting Hermes Finance."
+        throw "Port $Port is already in use. Stop the existing process before starting Finance."
     }
 }
 
@@ -129,10 +129,10 @@ try {
     $node = Get-RequiredCommand -Name "node.exe" -InstallHint "Install Node.js 22.22 or newer from https://nodejs.org/."
 
     if (-not (Test-Path (Join-Path $backendDir "pyproject.toml") -PathType Leaf)) {
-        throw "Backend project not found at '$backendDir'. Run this script from the Hermes Finance repository."
+        throw "Backend project not found at '$backendDir'. Run this script from the Finance repository."
     }
     if (-not (Test-Path (Join-Path $frontendDir "package.json") -PathType Leaf)) {
-        throw "Frontend project not found at '$frontendDir'. Run this script from the Hermes Finance repository."
+        throw "Frontend project not found at '$frontendDir'. Run this script from the Finance repository."
     }
     if (-not (Test-Path (Join-Path $frontendDir "node_modules") -PathType Container)) {
         throw "Frontend dependencies are missing. Run 'cd frontend' and then 'npm ci'."
@@ -145,7 +145,7 @@ try {
     Assert-PortAvailable -Port 8000
     Assert-PortAvailable -Port 5173
 
-    Write-Host "Starting Hermes Finance backend and frontend..." -ForegroundColor Cyan
+    Write-Host "Starting Finance backend and frontend..." -ForegroundColor Cyan
     $pythonPathWasSet = Test-Path Env:PYTHONPATH
     $originalPythonPath = $env:PYTHONPATH
     try {
@@ -174,7 +174,7 @@ try {
 
     Wait-ForDevelopmentStack -Backend $backendProcess -Frontend $frontendProcess
 
-    Write-Host "Hermes Finance is ready: http://127.0.0.1:5173" -ForegroundColor Green
+    Write-Host "Finance is ready: http://127.0.0.1:5173" -ForegroundColor Green
     if ($ExitAfterReady) {
         Write-Host "Readiness smoke test passed." -ForegroundColor Green
     }

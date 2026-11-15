@@ -117,26 +117,6 @@ function availabilityLabel(card: ManualReviewCard): string {
   return isOptionalEmpty(card) ? reasonLabel("optional_empty") : "Есть данные";
 }
 
-/** Compact Month view uses the same availability/optional-empty rules as full review. */
-export function MonthCompletionSummary({
-  cards,
-  className,
-}: {
-  cards: ManualReviewCard[];
-  className?: string;
-}) {
-  return (
-    <ul aria-label="Заполнение месяца" className={className}>
-      {cards.map((card) => (
-        <li key={card.id}>
-          <span>{card.title}</span>
-          <strong>{availabilityLabel(card)}</strong>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function cardTone(card: ManualReviewCard): "ok" | "info" | "unknown" {
   if (!card.available) return "unknown";
   return isOptionalEmpty(card) ? "info" : "ok";

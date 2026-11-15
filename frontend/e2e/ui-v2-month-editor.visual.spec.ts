@@ -870,12 +870,29 @@ for (const width of [1280]) {
       await page.goto("/v2/data/months/7");
       await page.getByRole("button", { name: "Действия месяца" }).click();
       await page.getByRole("menuitem", { name: "Открыть месяц заново" }).click();
+      const reopened = page.waitForResponse(
+        async (response) =>
+          new URL(response.url()).pathname === "/api/months/7" &&
+          response.request().method() === "GET" &&
+          response.ok() &&
+          (await response.json()).status === "draft",
+      );
       await page.getByRole("button", { name: "Открыть заново", exact: true }).click();
+      expect((await (await reopened).json()).status).toBe("draft");
+      await expect(page.getByRole("button", { name: "Открыть заново", exact: true })).toHaveCount(
+        0,
+      );
+      const debtsRead = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === "/api/debts" && response.ok(),
+      );
       await page
         .getByRole("navigation", { name: "Разделы месяца" })
         .getByRole("link", { name: "Долги, кредитка и недвижимость", exact: true })
         .click();
-      await expect(page.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
+      await debtsRead;
+      const debtsPanel = page.getByRole("region", { name: "Долги месяца", exact: true });
+      await expect(debtsPanel).toBeVisible();
+      await expect(debtsPanel.getByRole("heading", { name: "Долги", exact: true })).toBeVisible();
 
       // Owner language, no technical shorthand; money is one unit.
 

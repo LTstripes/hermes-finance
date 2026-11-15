@@ -13,6 +13,7 @@ export default defineConfig({
       env: { PYTHONPATH: "src", PYTHONIOENCODING: "utf-8" },
       url: "http://127.0.0.1:18929/api/health",
       reuseExistingServer: false,
+      gracefulShutdown: { signal: "SIGINT", timeout: 10_000 },
     },
     {
       command: "npm run dev -- --port 5199 --strictPort",

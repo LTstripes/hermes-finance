@@ -753,11 +753,26 @@ test("ui-v2 instrument return restores table scroll and screen titles @viewport-
 
 test("Returns sidebar parent and AA contrast @viewport-owned", async ({ page }) => {
   await install(page);
+  await page.route("**/api/returns/instrument-card?*", (route) =>
+    route.fulfill({
+      json: instrumentCardFixture(
+        new URL(route.request().url()).searchParams.get("isin") ?? undefined,
+      ),
+    }),
+  );
   for (const destination of [
     "/v2/returns/account?scope=source:SYNTH-A",
     "/v2/returns/instrument/RU000A000001",
   ]) {
     await page.goto(destination);
+    await expect(
+      page.getByRole("region", {
+        name: destination.includes("/instrument/")
+          ? "Позиции и результат по счетам"
+          : "Результат периода",
+        exact: true,
+      }),
+    ).toBeVisible();
     const nav = page.getByRole("navigation", { name: "Основная навигация" });
     const active = nav.getByRole("link", { name: "Доходность", exact: true });
     await expect(active).toHaveAttribute("aria-current", "page");
@@ -786,10 +801,19 @@ test("Returns sidebar parent and AA contrast @viewport-owned", async ({ page }) 
           marker: style.boxShadow,
         };
       });
+    await expect
+      .poll(async () => {
+        const colors = await readColors();
+        return {
+          rendered:
+            /^rgba?\(/.test(colors.background) && /^rgba?\(/.test(colors.inactiveBackground ?? ""),
+          distinct: colors.background !== colors.inactiveBackground,
+          marked: !!colors.marker && colors.marker !== "none",
+          contrast: colors.contrast,
+        };
+      })
+      .toEqual({ rendered: true, distinct: true, marked: true, contrast: expect.any(Number) });
     await expect.poll(async () => (await readColors()).contrast).toBeGreaterThanOrEqual(4.5);
-    const colors = await readColors();
-    expect(colors.background).not.toBe(colors.inactiveBackground);
-    expect(colors.marker).not.toBe("none");
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
   }
 });

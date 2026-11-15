@@ -241,7 +241,7 @@ def test_preview_api_does_not_leak_raw_provider_text(tmp_path: Path) -> None:
             row = body["rows"][0]
             assert row["failure_reason"] == "provider_network"
             assert row["message"] is not None
-            assert "Local Hermes Finance is running" in row["message"]
+            assert "Local Finance is running" in row["message"]
             assert body["batch_error_reason"] == "provider_network"
             assert "Bearer" not in (body["batch_error"] or "")
     finally:
