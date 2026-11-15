@@ -370,6 +370,18 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e -- --project=statement
 
+      - name: Run capital goal plan with isolated synthetic database
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- --project=goal-plan --retries=0
+
+      - name: Run Returns API with isolated synthetic database
+        env:
+          TMPDIR: ${{ runner.temp }}
+        working-directory: frontend
+        run: npm run test:e2e -- --project=returns-api --retries=0
+
       - name: Run native Monthly Close edit return report and reopen
         env:
           TMPDIR: ${{ runner.temp }}
@@ -428,6 +440,8 @@ jobs:
             ${{ runner.temp }}/hermes-instrument-uat-playwright
             ${{ runner.temp }}/hermes-instrument-what-if-playwright
             ${{ runner.temp }}/hermes-bond-source-playwright
+            ${{ runner.temp }}/hermes-goal-plan-playwright
+            ${{ runner.temp }}/hermes-returns-api-playwright
           if-no-files-found: warn
 
   visual-audit-paths:
