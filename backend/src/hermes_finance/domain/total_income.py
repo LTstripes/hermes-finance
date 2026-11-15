@@ -45,6 +45,8 @@ class TotalIncomeWindow:
     current_level: RubleAmount | None
     current_passive_months: int
     warnings: tuple[str, ...]
+    passive_share_pct: str | None
+    total_net: RubleAmount | None
     bonus_target_months: int = 12
 
 
@@ -108,6 +110,17 @@ def _window(
         if salary_avg is not None and passive_avg is not None and bonus_avg is not None
         else None
     )
+    passive_average = _rounded(passive_avg) if passive_avg is not None else None
+    passive_share = (
+        format(
+            (Decimal(passive_average.kopecks) / Decimal(average.kopecks) * 100).quantize(
+                Decimal("0.1"), rounding=FINANCIAL_ROUNDING
+            ),
+            ".1f",
+        )
+        if passive_average is not None and average is not None and average.kopecks > 0
+        else None
+    )
     recent = tuple(p.passive_actual for p in latest_points[-3:] if p.passive_actual is not None)
     recent_avg = Decimal(sum(p.kopecks for p in recent)) / Decimal(len(recent)) if recent else None
     current_level = (
@@ -152,12 +165,18 @@ def _window(
         bonus_sum=bonus_sum,
         other_sum=RubleAmount(sum(p.other_net.kopecks for p in points)) if count else None,
         salary_monthly_average=_rounded(salary_avg) if salary_avg is not None else None,
-        passive_monthly_average=_rounded(passive_avg) if passive_avg is not None else None,
+        passive_monthly_average=passive_average,
         bonus_smoothed_monthly=_rounded(bonus_avg) if bonus_avg is not None else None,
         monthly_average=average,
         current_level=current_level,
         current_passive_months=len(recent),
         warnings=tuple(warnings),
+        passive_share_pct=passive_share,
+        total_net=(
+            RubleAmount(salary_sum.kopecks + passive_sum.kopecks + bonus_sum.kopecks)
+            if salary_sum is not None and passive_sum is not None and bonus_sum is not None
+            else None
+        ),
         bonus_target_months=bonus_target,
     )
 

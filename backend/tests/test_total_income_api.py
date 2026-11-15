@@ -24,6 +24,8 @@ def test_total_income_contract_and_month_guard(tmp_path: Path) -> None:
             assert empty.json()["latest_closed_report_id"] is None
             assert empty.json()["points"] == []
             assert empty.json()["windows"]["all"]["monthly_average"] is None
+            assert empty.json()["windows"]["all"]["passive_share_pct"] is None
+            assert empty.json()["windows"]["all"]["total_net"] is None
             ids = []
             for month in (1, 4, 5):
                 response = client.post(
@@ -110,6 +112,8 @@ def test_total_income_contract_and_month_guard(tmp_path: Path) -> None:
                 "monthly_average": money("1210.00"),
                 "current_level": money("1210.00"),
                 "current_passive_months": 1,
+                "passive_share_pct": "0.0",
+                "total_net": money("2520.00"),
                 "warnings": [
                     "Зарплата за 1 мес оценена по апрельской (04.2031)",
                     "Пассивка учитывается с 04.2031",

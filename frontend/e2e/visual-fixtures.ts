@@ -1,3 +1,4 @@
+import { totalIncomeFixture } from "../src/test/totalIncomeFixture";
 import type { Route } from "@playwright/test";
 import { homeSummaryFixture, overallFixture } from "../src/ui-v2/returns/overallFixtures";
 
@@ -641,6 +642,8 @@ export function syntheticApiResponse(
   if (path === "/api/analytics/closed-report-comparison" && method === "GET") {
     return { json: closedReportComparison };
   }
+  if (path === "/api/analytics/total-income" && method === "GET")
+    return { json: totalIncomeFixture(Number(url.searchParams.get("month_id") ?? 91)) };
   if (path === "/api/analytics/passive-income" && method === "GET") {
     return { json: passiveIncomeHistory };
   }

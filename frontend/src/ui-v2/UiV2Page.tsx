@@ -34,6 +34,7 @@ import {
 } from "./monthSelection";
 import styles from "./UiV2Home.module.css";
 import { UiV2HomeReturns } from "./UiV2HomeReturns";
+import { TotalIncomeWidget } from "./TotalIncome";
 import {
   CapitalAreaChart,
   type CapitalChartPoint,
@@ -928,6 +929,7 @@ export default function UiV2Page() {
           retryComparison={() => void comparisonQuery.refetch()}
           retryHistory={() => void compositionQuery.refetch()}
         />
+        <TotalIncomeWidget monthId={closedId as number} compact />
         <div className={styles.grid}>
           <PassiveBlock
             history={passiveReady ? passiveQuery.data : undefined}
