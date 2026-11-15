@@ -36,6 +36,8 @@ from hermes_finance.services import ai_analysis_bundle as bundle_service
 from hermes_finance.services.accounts import create_account
 from hermes_finance.services.ai_financial_review import validate_ai_financial_review
 from hermes_finance.services.instruments import create_instrument
+from hermes_finance.services.settings import update_settings
+from hermes_finance.services.total_income import total_income
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_analysis_bundle.schema.json"
@@ -548,7 +550,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
         response = _export(client)
     assert response.status_code == 200, response.text
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.4.0.json"
+        "hermes-ai-analysis-bundle-2026-04-30-v1.5.0.json"
         in response.headers["content-disposition"]
     )
     payload = json.loads(response.content.decode("utf-8"))
@@ -568,7 +570,7 @@ def test_bundle_export_is_schema_valid_full_history_and_read_only(
     assert payload["current_portfolio"]["reporting_status"] == "closed"
     assert payload["metadata"]["generation_mode"] == "read_only"
     assert payload["schema_name"] == "hermes.finance.ai_analysis_bundle"
-    assert payload["schema_version"] == "1.4.0"
+    assert payload["schema_version"] == "1.5.0"
 
     mixed_sources = {
         source for point in payload["reporting_history"] for source in point["provenance_sources"]
@@ -1377,10 +1379,10 @@ def test_bundle_export_markdown_uses_same_dto_and_triggers_no_network(
     assert response.status_code == 200, response.text
     assert "text/markdown" in response.headers["content-type"]
     assert (
-        "hermes-ai-analysis-bundle-2026-04-30-v1.4.0.md" in response.headers["content-disposition"]
+        "hermes-ai-analysis-bundle-2026-04-30-v1.5.0.md" in response.headers["content-disposition"]
     )
     body = response.content.decode("utf-8")
-    assert body.startswith("# Finance AI Analysis Bundle 1.4.0")
+    assert body.startswith("# Finance AI Analysis Bundle 1.5.0")
     assert "generation_mode: read_only" in body
     assert "Canonical machine-readable artifact" in body
     assert _table_counts(database) == before
@@ -1393,6 +1395,141 @@ def test_bundle_export_without_months_is_not_found(
     response = client.post("/api/export/ai-analysis-bundle")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def test_income_summary_uses_one_t1_read_and_preserves_saved_salary_and_bonus(
+    app_context: tuple[TestClient, Database], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, database = app_context
+    month_ids = []
+    for month, salary, bonus in (
+        (1, "0.00", "0.00"),
+        (4, "10000.00", "0.00"),
+        (6, "20000.00", "120.00"),
+        (7, "90000.00", "960.00"),
+    ):
+        month_id = _create_month(client, 2031, month)
+        month_ids.append(month_id)
+        for kind, net, passive in (
+            ("salary", salary, False),
+            ("bonus", bonus, False),
+            ("other", "8.00", True),
+            ("cashback", "12.00", False),
+        ):
+            _ok(
+                client.post(
+                    "/api/incomes",
+                    json={
+                        "reporting_month_id": month_id,
+                        "income_type": kind,
+                        "name": f"Synthetic {kind}",
+                        "gross_amount": _money(net),
+                        "tax_amount": _money("0.00"),
+                        "net_amount": _money(net),
+                        "include_in_cash_flow": False,
+                        "include_in_passive_income": passive,
+                    },
+                )
+            )
+        if month != 7:
+            _close(client, month_id)
+    with database.session_factory() as session:
+        update_settings(session, passive_income_history_start_month="2031-04")
+        expected = total_income(session)
+    calls = []
+
+    def counted(session):
+        calls.append(True)
+        return total_income(session)
+
+    monkeypatch.setattr(bundle_service, "total_income", counted)
+    before = _table_counts(database)
+    with _forbid_sql_writes(database.engine):
+        response = _export(client)
+    assert response.status_code == 200, response.text
+    assert calls == [True]
+    assert _table_counts(database) == before
+    payload = response.json()
+    summary = payload["income_summary"]
+    assert summary["latest_closed_period"] == {"year": 2031, "month": 6}
+    assert summary["configured_start_month"] == "2031-04"
+    assert summary["components"]["salary_estimate_months"] == ["2031-01"]
+    assert summary["components"]["passive_missing_months"] == ["2031-01"]
+    assert bundle_service.PASSIVE_HISTORY_BEFORE_START in summary["components"]["reason_codes"]
+    for name in ("calendar_year", "rolling_12", "all"):
+        window = summary["windows"][name]
+        authoritative = getattr(expected.result, name)
+        for field in (
+            "salary_sum",
+            "passive_sum",
+            "bonus_sum",
+            "other_sum",
+            "salary_monthly_average",
+            "passive_monthly_average",
+            "bonus_smoothed_monthly",
+            "monthly_average",
+            "current_level",
+        ):
+            assert window[field]["value"] == _money(getattr(authoritative, field).to_api())
+        for field in (
+            "months_observed",
+            "salary_months",
+            "passive_months",
+            "bonus_months",
+            "bonus_target_months",
+            "estimate_months",
+            "current_passive_months",
+        ):
+            assert window[field] == getattr(authoritative, field)
+        assert window["months_used"] == ["2031-01", "2031-04", "2031-06"]
+        assert window["salary_sum"]["precision"] == "approximate"
+        assert window["monthly_average"]["value"] == _money("13351.33")
+        assert window["other_sum"]["value"] == _money("60.00")
+        assert window["bonus_smoothed_monthly"]["value"] == _money("10.00")
+        assert (
+            bundle_service.PASSIVE_HISTORY_BEFORE_START in window["current_level"]["reason_codes"]
+        )
+        assert window["coverage"]["status"] == "partial"
+    history = payload["reporting_history"]
+    assert history[0]["kpis"]["salary_is_estimate"] is True
+    assert history[0]["kpis"]["salary"]["actual_net"]["value"] == _money("0.00")
+    assert history[-2]["kpis"]["bonus_net"]["value"] == _money("120.00")
+    assert history[-1]["kpis"]["salary_is_estimate"] is False
+    assert history[-1]["kpis"]["bonus_net"]["value"] == _money("960.00")
+    assert history[-1]["kpis"]["bonus_net"]["reason_codes"] == ["draft_value"]
+    markdown = bundle_service.render_bundle_markdown(payload)
+    for text in (
+        "## Income summary",
+        "13351.33",
+        "salary_estimate_months: 2031-01",
+        "passive_missing_months: 2031-01",
+        "| 2031-07 | draft | false | 960.00 |",
+        "other_net (window other_sum)",
+    ):
+        assert text in markdown
+
+
+def test_income_summary_with_only_draft_has_no_known_closed_income(
+    app_context: tuple[TestClient, Database],
+) -> None:
+    client, database = app_context
+    _create_month(client, 2031, 1)
+    with _forbid_sql_writes(database.engine):
+        response = _export(client)
+    assert response.status_code == 200, response.text
+    summary = response.json()["income_summary"]
+    assert summary["latest_closed_period"] is None
+    assert summary["components"]["salary_estimate_months"] == []
+    for window in summary["windows"].values():
+        assert window["months_observed"] == 0
+        assert window["months_used"] == []
+        assert window["monthly_average"] == {
+            "value": None,
+            "availability": "unavailable",
+            "precision": "unknown",
+            "source": "backend_derived",
+            "reason_codes": ["no_closed_reporting_months"],
+        }
 
 
 def test_bundle_export_uses_latest_available_when_no_closed_month(
@@ -1478,7 +1615,7 @@ def test_ai_financial_review_route_is_schema_valid_and_read_only(
     assert payload["metadata"]["source_contracts"] == [
         {
             "name": "hermes.finance.ai_analysis_bundle",
-            "version": "1.4.0",
+            "version": "1.5.0",
             "role": "financial_source",
         },
         {

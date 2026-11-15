@@ -11185,7 +11185,7 @@ already-built normalized result into a pure evaluator or add an additive
 preview-response integration, without introducing persistence or background
 provider work.
 
-The optional deterministic-insights section is preserved in current AI Analysis Bundle schema `1.4.0` with strict allowlists and version
+The optional deterministic-insights section is preserved in current AI Analysis Bundle schema `1.5.0` with strict allowlists and version
 invariants. This task's additive data-quality fields do not add deterministic
 insights to the bundle; the insight DTO remains a separate endpoint and future
 integration still requires its own reviewed contract decision.
@@ -14484,16 +14484,16 @@ For saved-file and reader compatibility, `application.name` in
 remains `Hermes Finance`; schema identifiers and `docs/schemas` stay unchanged.
 UI labels use Finance without rewriting that data.
 
-Machine schemas and their synthetic/example packages live together in `docs/schemas/`: `ai_analysis_bundle.schema.json`, `ai_financial_review.schema.json`, `portfolio_review_package.schema.json` and their fixtures; `legacy_month_mapping.schema.json`/example and `private_seed.schema.json`/example remain public supported formats. Co-location preserves relative schema references; schema identifiers, bytes and format versions are unchanged by the directory move. Format versions are independent of application version. AI analysis bundle format is 1.4.0. Integers/Decimal strings, units, nullable values, coverage and compatibility remain explicit. `portfolio_review_package.assistant-evaluation.json` is a synthetic expected-answer contract, not model accounting.
+Machine schemas and their synthetic/example packages live together in `docs/schemas/`: `ai_analysis_bundle.schema.json`, `ai_financial_review.schema.json`, `portfolio_review_package.schema.json` and their fixtures; `legacy_month_mapping.schema.json`/example and `private_seed.schema.json`/example remain public supported formats. Co-location preserves relative schema references; schema identifiers, bytes and format versions are unchanged by the directory move. Format versions are independent of application version. AI analysis bundle format is 1.5.0. Integers/Decimal strings, units, nullable values, coverage and compatibility remain explicit. `portfolio_review_package.assistant-evaluation.json` is a synthetic expected-answer contract, not model accounting.
 
 Legacy mapping imports require their declared schema and explicit field mappings; unsupported columns/identity never silently become financial facts. Private seed is an explicit local bootstrap input outside Git with real payloads excluded from CI; the retained public example is synthetic. Preserve historical receipt formats and reject unsupported versions rather than reinterpreting them. The detailed consumer contracts follow.
 
 <a id="c10-ai_analysis_bundle-1"></a>
-### AI analysis bundle 1.4.0 human contract
+### AI analysis bundle 1.5.0 human contract
 
 **Schema name:** `hermes.finance.ai_analysis_bundle`
 
-**Current schema version:** `1.4.0`
+**Current schema version:** `1.5.0`
 
 **Normative schema:** [`ai_analysis_bundle.schema.json`](schemas/ai_analysis_bundle.schema.json)
 
@@ -14527,7 +14527,7 @@ API, persist an AI interpretation, or change financial data while generating it.
 This contract does not introduce a financial model. The exporter calls existing
 backend services and maps their results; it does not reproduce formulas.
 The two UI buttons use `POST /api/export/ai-analysis-bundle` (JSON) and
-`POST /api/export/ai-analysis-bundle/markdown` (Markdown), both format `1.4.0`.
+`POST /api/export/ai-analysis-bundle/markdown` (Markdown), both format `1.5.0`.
 The `/api/export/ai-analysis-bundle/json` alias is removed. The `media` query
 selector is removed and returns `422` on either retained endpoint, with guidance
 to choose the endpoint instead; it never silently selects a different format.
@@ -14587,6 +14587,7 @@ shape, including NULL value and unknown precision when no effective amount exist
 |---|---|---|
 | Reporting period and status | `ReportingMonth` and reporting-month lifecycle | `closed` is immutable history; `draft` remains provisional. |
 | Liquid assets and net capital | `liquid_capital_for_month` and `asset_allocation_for_month` / ADR 0007 | `liquid_assets_total - included_debts = liquid_capital_net`; real estate and mortgage are outside liquid capital. |
+| Total income | `services.total_income.total_income` (C8) | `income_summary` projects the three CLOSED-history windows without recalculating sums or averages. Salary estimates are analytical only; paid bonuses stay in their payment months; `other_sum` is separate from total income. |
 | Actual passive income | `passive_income_for_month` | Deposit actual interest + coupon net + dividend net + other capital income net. Cashback, active income, deposits, withdrawals, redemption, and price growth are excluded. Persisted net amounts are not taxed or commissioned twice. |
 | Rolling actual average | `passive_income_average` / ADR 0008 | Last at most 12 eligible CLOSED records on/after the configured history boundary. Missing or draft months do not enter the denominator. |
 | Passive-income forecast | `forecast_passive_income` | Expected interest/coupons/other plus the actual CLOSED-month dividend component. Expected dividends are not added again. Redemption remains principal and is excluded. Persisted deposit monthly estimates are annualized by the current approximate method and labelled accordingly. |
@@ -14695,6 +14696,41 @@ No later price, quantity, or balance may be backfilled into an earlier reporting
 - minor: backward-compatible optional fields, optional sections, or additive enum values;
 - major: removal/rename, changed requiredness, changed units, changed counting/source semantics,
   or another change that can alter an existing consumer's interpretation.
+
+`1.5.0` adds optional `income_summary` and history KPIs `salary_is_estimate`
+and `bonus_net`; current exports always emit them. Existing money and salary
+reconciliation fields keep their meanings, including persisted salary
+`actual_net` (never replaced by an estimate). Draft bonuses are provisional
+saved net facts, independent of cash-flow inclusion, and never enter the summary.
+
+`income_summary.source=total_income` identifies the authoritative T1 service.
+`latest_closed_period` is a calendar period, never a database ID;
+`configured_start_month` retains the configured passive-history boundary.
+`windows.{calendar_year,rolling_12,all}` expose `from`, `to`, `months_used`,
+`months_observed`, `salary_months`, `passive_months`, `bonus_months`,
+`bonus_target_months`, `estimate_months`, `current_passive_months`, warnings and
+coverage. All monetary fields use the existing money-metric shape: `salary_sum`,
+`passive_sum`, `bonus_sum`, `other_sum`, `salary_monthly_average`,
+`passive_monthly_average`, `bonus_smoothed_monthly`, `monthly_average`,
+`current_level`. The exporter maps these values; it does not add the rounded
+component averages. `other_sum` is separate and must not be added to the total.
+
+`components.salary_estimate_months` and `components.passive_missing_months`
+list exact observed CLOSED calendar keys, in ascending order. Missing calendar
+observations are not invented. The latter reuses
+`passive_income_history_before_configured_start`; estimated salary metrics carry
+`salary_estimated_from_first_known` and `precision=approximate`. Component notes
+explain the salary basis, actual-only passive income, no future bonus estimates,
+and separate other income. Windows with no CLOSED observations expose unavailable
+metrics with `no_closed_reporting_months`; a component with no known passive
+months stays null with `passive_income_unavailable`. Known zero stays available.
+Coverage is partial for estimates, excluded passive history or fewer bonus
+observations than `bonus_target_months` (`bonus_observation_window_incomplete`).
+Markdown includes the same window metrics, precision/reasons, counts, notes and
+per-month estimate/bonus facts. Portfolio Review Package keeps its existing
+projection/version; its source-version allowlist accepts saved 1.4.0 and current
+1.5.0 bundles. No new income block is added to the separate Financial Review or
+Portfolio Review Package formats in this slice.
 
 `1.4.0` records the #498 completeness metadata for each history point. When a
 required active capital account lacks a snapshot, its known liquid-capital subtotals
@@ -15168,7 +15204,7 @@ The required sections are:
 
 `metadata.source_contracts` pins the source schemas used by the adapter:
 
-- `hermes.finance.ai_analysis_bundle` `1.4.0`;
+- `hermes.finance.ai_analysis_bundle` `1.5.0`;
 - `hermes.finance.portfolio_review_package` `1.1.0`.
 
 Saved v1/v2 performance sections record builder identities `R08-02`, `R08-03`
@@ -15205,8 +15241,8 @@ The following version history describes saved files, not supported generation.
 Version `1.4.0` adds optional provisional `source_returns` and its coverage domain,
 without changing earlier financial fields. Version `1.5.0` adds the optional
 current available-history Returns section and retains acceptance of historical
-1.4 instances. AI Analysis Bundle stays 1.4.0 and Portfolio Review Package stays
-1.1.0; these independent format versions are not application versions.
+1.4 instances. At that revision AI Analysis Bundle stayed 1.4.0 and Portfolio
+Review Package stayed 1.1.0; these independent format versions are not application versions.
 Version `1.2.0` adds the required `performance` section. Version `1.3.0`
 adds optional month-local linked-pair fields to `current_capital` and
 `historical_dynamics`. Current reports retain these fields, including empty

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.4.0/schema.json",
+  "$id": "https://hermes-finance.local/schema/ai-analysis-bundle/1.5.0/schema.json",
   "title": "Hermes Finance AI Analysis Bundle",
   "description": "Versioned read-only multi-period financial analysis export. Financial calculations are supplied by authoritative Hermes backend services; this schema defines transport only.",
   "type": "object",
@@ -20,10 +20,11 @@
     "warnings"
   ],
   "properties": {
+    "income_summary": {"$ref": "#/$defs/income_summary"},
     "statement_top_ups": {"$ref": "#/$defs/statement_top_ups"},
     "$schema": {"type": "string"},
     "schema_name": {"const": "hermes.finance.ai_analysis_bundle"},
-    "schema_version": {"const": "1.4.0"},
+    "schema_version": {"const": "1.5.0"},
     "metadata": {"$ref": "#/$defs/metadata"},
     "coverage": {"$ref": "#/$defs/coverage"},
     "reporting_history": {
@@ -47,6 +48,230 @@
     }
   },
   "$defs": {
+    "income_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "latest_closed_period",
+        "configured_start_month",
+        "windows",
+        "components"
+      ],
+      "properties": {
+        "source": {
+          "const": "total_income"
+        },
+        "latest_closed_period": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/period"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "configured_start_month": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "windows": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "calendar_year",
+            "rolling_12",
+            "all"
+          ],
+          "properties": {
+            "calendar_year": {
+              "$ref": "#/$defs/income_window"
+            },
+            "rolling_12": {
+              "$ref": "#/$defs/income_window"
+            },
+            "all": {
+              "$ref": "#/$defs/income_window"
+            }
+          }
+        },
+        "components": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "salary_estimate_months",
+            "passive_missing_months",
+            "reason_codes",
+            "note",
+            "other_net_note"
+          ],
+          "properties": {
+            "salary_estimate_months": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+              }
+            },
+            "passive_missing_months": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+              }
+            },
+            "reason_codes": {
+              "$ref": "#/$defs/reason_codes"
+            },
+            "note": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "other_net_note": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          }
+        }
+      }
+    },
+    "income_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "months_used",
+        "months_observed",
+        "salary_months",
+        "passive_months",
+        "bonus_months",
+        "estimate_months",
+        "current_passive_months",
+        "bonus_target_months",
+        "salary_sum",
+        "passive_sum",
+        "bonus_sum",
+        "other_sum",
+        "salary_monthly_average",
+        "passive_monthly_average",
+        "bonus_smoothed_monthly",
+        "monthly_average",
+        "current_level",
+        "coverage",
+        "warnings"
+      ],
+      "properties": {
+        "from": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "months_used": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+          }
+        },
+        "months_observed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "salary_months": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "passive_months": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bonus_months": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimate_months": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "current_passive_months": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bonus_target_months": {
+          "type": "integer",
+          "minimum": 12
+        },
+        "salary_sum": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "passive_sum": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "bonus_sum": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "other_sum": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "salary_monthly_average": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "passive_monthly_average": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "bonus_smoothed_monthly": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "monthly_average": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "current_level": {
+          "$ref": "#/$defs/money_metric"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage_state"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        }
+      }
+    },
     "statement_top_ups": {
       "type": "object",
       "additionalProperties": false,
@@ -418,6 +643,8 @@
         "passive_income_actual": {"$ref": "#/$defs/money_metric"},
         "passive_income_actual_breakdown": {"$ref": "#/$defs/passive_breakdown"},
         "salary": {"$ref": "#/$defs/salary_metrics"},
+        "salary_is_estimate": {"type": "boolean", "description": "T1 analytical salary estimate flag for CLOSED months; persisted salary actual_net is unchanged. False for drafts."},
+        "bonus_net": {"$ref": "#/$defs/money_metric"},
         "active_income_net": {"$ref": "#/$defs/money_metric"},
         "mandatory_expenses": {"$ref": "#/$defs/money_metric"},
         "saving_allocations": {"$ref": "#/$defs/money_metric"},

@@ -1070,13 +1070,13 @@ cost basis stays unknown, while an explicit zero stays zero.
 By the Owner decision of 2026-11-08, Finance UI is the sole API consumer; external
 clients and scripts do not use these AI exports. Older financial-review generation
 and its unsuffixed GET are retired. The technical AI Analysis Bundle retains only
-its JSON and Markdown `1.4.0` buttons, using `POST /api/export/ai-analysis-bundle`
+its JSON and Markdown `1.5.0` buttons, using `POST /api/export/ai-analysis-bundle`
 and `POST /api/export/ai-analysis-bundle/markdown`. Its `/json` alias and query
 format selector are retired. Retired selectors return an explicit 4xx error.
 Schemas and v2 reference expansion remain available to read and validate already
 saved files; historical file compatibility does not enable old-format generation.
 
-Markdown, JSON, AI analysis bundle, financial review and portfolio review package retain decimal precision, units, nullable values, coverage, reason codes and independent format versions. AI analysis bundle format is `1.4.0`, independent of app release version. Consumer limitations travel with the values; an export incapable of representing partial coverage must not assert complete capital or exact returns. C10 contains the full human-readable contracts; the retained machine schemas/examples remain at their existing paths.
+Markdown, JSON, AI analysis bundle, financial review and portfolio review package retain decimal precision, units, nullable values, coverage, reason codes and independent format versions. AI analysis bundle format is `1.5.0`, independent of app release version. Consumer limitations travel with the values; an export incapable of representing partial coverage must not assert complete capital or exact returns. C10 contains the full human-readable contracts; the retained machine schemas/examples remain at their existing paths.
 
 <a id="p6"></a>
 ## 6. Desktop UX

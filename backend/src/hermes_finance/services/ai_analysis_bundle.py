@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 from hermes_finance import __version__
 from hermes_finance.database import coherent_read_operation
 from hermes_finance.domain.goal_achievement import GOAL_ACHIEVEMENT_METHOD_VERSION
+from hermes_finance.domain.incomes import IncomeType
+from hermes_finance.domain.total_income import TotalIncomeWindow
 from hermes_finance.domain.values import FINANCIAL_ROUNDING, PercentageRate, RubleAmount
 from hermes_finance.persistence import (
     APP_SETTINGS_ID,
@@ -29,6 +31,7 @@ from hermes_finance.persistence import (
     AppSettings,
     IisContribution,
     IisProfile,
+    IncomeEntry,
     PositionQuoteProvenance,
     PropertySnapshot,
     ReportingMonth,
@@ -75,10 +78,11 @@ from hermes_finance.services.reporting_months import list_reporting_months
 from hermes_finance.services.risk_allocation import FUTURE_DATED_VALUATION
 from hermes_finance.services.salary import SalaryTaxSnapshot, salary_tax_snapshot_for_month
 from hermes_finance.services.settings import parse_passive_income_history_start_month
+from hermes_finance.services.total_income import TotalIncomeReadModel, total_income
 
 SCHEMA_NAME = "hermes.finance.ai_analysis_bundle"
-SCHEMA_VERSION = "1.4.0"
-SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.4.0/schema.json"
+SCHEMA_VERSION = "1.5.0"
+SCHEMA_URI = "https://hermes-finance.local/schema/ai-analysis-bundle/1.5.0/schema.json"
 ORDERING_CONTRACT = "arrays_are_stably_sorted_as_defined_by_contract"
 ACTUAL_HISTORY_METRIC_PATH = "reporting_history[].kpis.passive_income_actual"
 PASSIVE_HISTORY_BEFORE_START = "passive_income_history_before_configured_start"
@@ -261,6 +265,111 @@ def _provenance(source: str | None, observed_at: datetime | date | None) -> dict
 
 def _coverage(status: str, *reasons: str) -> dict[str, object]:
     return {"status": status, "reason_codes": sorted(set(reasons))}
+
+
+def _income_summary(model: TotalIncomeReadModel) -> dict[str, object]:
+    """Project T1 results once; the exporter supplies no income calculations."""
+    result = model.result
+    estimated = [point.key for point in result.points if point.salary_is_estimate]
+    missing_passive = [point.key for point in result.points if point.passive_actual is None]
+    component_reasons = []
+    if estimated:
+        component_reasons.append("salary_estimated_from_first_known")
+    if missing_passive:
+        component_reasons.append(PASSIVE_HISTORY_BEFORE_START)
+
+    def window(value: TotalIncomeWindow) -> dict[str, object]:
+        salary_reasons = ["salary_estimated_from_first_known"] if value.estimate_months else []
+        passive_reasons = (
+            [PASSIVE_HISTORY_BEFORE_START] if value.passive_months < value.months_observed else []
+        )
+        empty_reasons = [] if value.months_observed else ["no_closed_reporting_months"]
+        bonus_reasons = (
+            ["bonus_observation_window_incomplete"]
+            if value.months_observed and value.bonus_months < value.bonus_target_months
+            else []
+        )
+        reasons = [*empty_reasons, *salary_reasons, *passive_reasons, *bonus_reasons]
+        if value.months_observed and not value.passive_months:
+            reasons.append("passive_income_unavailable")
+        out = {
+            "from": value.from_month,
+            "to": value.to_month,
+            "months_used": list(value.months_used),
+            "warnings": list(value.warnings),
+            "coverage": _coverage(
+                "unavailable"
+                if not value.months_observed
+                else "partial"
+                if reasons
+                else "complete",
+                *reasons,
+            ),
+        }
+        for field in (
+            "months_observed",
+            "salary_months",
+            "passive_months",
+            "bonus_months",
+            "bonus_target_months",
+            "estimate_months",
+            "current_passive_months",
+        ):
+            out[field] = getattr(value, field)
+        for field in (
+            "salary_sum",
+            "passive_sum",
+            "bonus_sum",
+            "other_sum",
+            "salary_monthly_average",
+            "passive_monthly_average",
+            "bonus_smoothed_monthly",
+            "monthly_average",
+            "current_level",
+        ):
+            money = getattr(value, field)
+            uses_estimate = bool(value.estimate_months) and field in (
+                "salary_sum",
+                "salary_monthly_average",
+                "monthly_average",
+            )
+            metric_reasons = empty_reasons.copy()
+            if uses_estimate:
+                metric_reasons.extend(salary_reasons)
+            if field in ("passive_sum", "passive_monthly_average", "monthly_average"):
+                metric_reasons.extend(passive_reasons)
+            if field == "current_level" and value.current_passive_months < min(
+                3, len(result.points)
+            ):
+                metric_reasons.append(PASSIVE_HISTORY_BEFORE_START)
+            if field in ("bonus_smoothed_monthly", "monthly_average", "current_level"):
+                metric_reasons.extend(bonus_reasons)
+            if money is None and not empty_reasons:
+                metric_reasons.append("passive_income_unavailable")
+            out[field] = _metric(
+                money.kopecks if money is not None else None,
+                source="backend_derived",
+                precision="approximate" if uses_estimate else "exact",
+                reason_codes=metric_reasons,
+            )
+        return out
+
+    latest = result.points[-1] if result.points else None
+    return {
+        "source": "total_income",
+        "latest_closed_period": _period(latest.year, latest.month) if latest else None,
+        "configured_start_month": result.configured_start_month,
+        "windows": {
+            name: window(getattr(result, name)) for name in ("calendar_year", "rolling_12", "all")
+        },
+        "components": {
+            "salary_estimate_months": estimated,
+            "passive_missing_months": missing_passive,
+            "reason_codes": sorted(component_reasons),
+            "note": "Total income includes net salary, paid net bonus smoothed over the window's bonus_target_months, and actual passive income. Leading zero salaries are estimates from the first non-zero CLOSED salary; passive history before configured_start_month is unavailable. No future bonus is estimated.",
+            "other_net_note": "other_net (window other_sum) is reported separately and is not added to total income; any passive other income already follows the passive-income service's counting rules.",
+        },
+    }
 
 
 def _salary_reconciliation(snapshot: SalaryTaxSnapshot) -> tuple[str, list[str]]:
@@ -540,6 +649,26 @@ def assemble_ai_analysis_bundle(
     generated = generated_at or datetime.now(tz=zone)
     if generated.tzinfo is None:
         generated = generated.replace(tzinfo=zone)
+
+    income_model = total_income(session)
+    income_points = {point.reporting_month_id: point for point in income_model.result.points}
+    # T1 contains CLOSED months only. Draft bonus facts remain provisional,
+    # independent of cash-flow inclusion, and never enter the summary windows.
+    draft_ids = [month.id for month in ordered_months if month.status == "draft"]
+    draft_bonuses = (
+        dict(
+            session.execute(
+                select(IncomeEntry.reporting_month_id, func.sum(IncomeEntry.net_amount_kopecks))
+                .where(
+                    IncomeEntry.reporting_month_id.in_(draft_ids),
+                    IncomeEntry.income_type == IncomeType.BONUS.value,
+                )
+                .group_by(IncomeEntry.reporting_month_id)
+            ).all()
+        )
+        if draft_ids
+        else {}
+    )
 
     account_rows = sorted(
         list_accounts(session), key=lambda item: (item.name, item.account_type, item.id)
@@ -837,6 +966,18 @@ def assemble_ai_analysis_bundle(
                         ),
                     },
                     "salary": salary_block,
+                    "salary_is_estimate": (
+                        income_points[month.id].salary_is_estimate
+                        if month.id in income_points
+                        else False
+                    ),
+                    "bonus_net": _metric(
+                        income_points[month.id].bonus_net.kopecks
+                        if month.id in income_points
+                        else int(draft_bonuses.get(month.id, 0)),
+                        source="persisted_actual",
+                        reason_codes=draft_codes,
+                    ),
                     "active_income_net": _metric(
                         cash.breakdown.salary_net.kopecks
                         + cash.breakdown.bonus_net.kopecks
@@ -1760,6 +1901,7 @@ def assemble_ai_analysis_bundle(
         },
         "coverage": coverage,
         "reporting_history": history,
+        "income_summary": _income_summary(income_model),
         "current_portfolio": current_portfolio,
         "passive_income": {
             "actual_history_metric_path": ACTUAL_HISTORY_METRIC_PATH,
@@ -1904,6 +2046,69 @@ def render_bundle_markdown(bundle: dict[str, object]) -> str:
     if not bundle["warnings"]:
         lines.append("- none")
     lines.append("")
+    income = bundle.get("income_summary")
+    if income is not None:
+        lines.extend(["## Income summary", "", income["components"]["note"], ""])
+        for name, window in income["windows"].items():
+            lines.extend(
+                [
+                    f"### {name} ({window['from']} — {window['to']})",
+                    "",
+                    f"- months_used: {', '.join(window['months_used']) or 'none'}",
+                    f"- coverage: {window['coverage']['status']}; reason_codes: {', '.join(window['coverage']['reason_codes']) or 'none'}",
+                ]
+            )
+            for field in (
+                "months_observed",
+                "salary_months",
+                "passive_months",
+                "bonus_months",
+                "bonus_target_months",
+                "estimate_months",
+                "current_passive_months",
+            ):
+                lines.append(f"- {field}: {window[field]}")
+            lines.extend(
+                ["", "| Metric | RUB | Precision | Reasons |", "| --- | --- | --- | --- |"]
+            )
+            for field in (
+                "salary_sum",
+                "passive_sum",
+                "bonus_sum",
+                "other_sum",
+                "salary_monthly_average",
+                "passive_monthly_average",
+                "bonus_smoothed_monthly",
+                "monthly_average",
+                "current_level",
+            ):
+                metric = window[field]
+                amount = metric["value"]["amount"] if metric["value"] is not None else "unavailable"
+                lines.append(
+                    f"| {field} | {amount} | {metric['precision']} | {', '.join(metric['reason_codes']) or 'none'} |"
+                )
+            lines.extend(["", *[f"- {warning}" for warning in window["warnings"]], ""])
+        components = income["components"]
+        lines.extend(
+            [
+                f"- salary_estimate_months: {', '.join(components['salary_estimate_months']) or 'none'}",
+                f"- passive_missing_months: {', '.join(components['passive_missing_months']) or 'none'}",
+                f"- reason_codes: {', '.join(components['reason_codes']) or 'none'}",
+                f"- {components['other_net_note']}",
+                "",
+                "| Reporting month | Status | Salary is estimate | Paid bonus net (RUB) |",
+                "| --- | --- | --- | --- |",
+            ]
+        )
+        for point in bundle["reporting_history"]:
+            kpis = point["kpis"]
+            bonus = kpis.get("bonus_net", {}).get("value")
+            amount = bonus["amount"] if bonus is not None else "unavailable"
+            period = point["period"]
+            lines.append(
+                f"| {period['year']:04d}-{period['month']:02d} | {point['status']} | {str(kpis.get('salary_is_estimate', False)).lower()} | {amount} |"
+            )
+        lines.append("")
     funding = bundle.get("statement_top_ups", {}).get("months", [])
     if funding:
         lines.extend(
