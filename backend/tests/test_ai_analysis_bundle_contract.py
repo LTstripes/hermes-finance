@@ -7,6 +7,11 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
+from hermes_finance.domain.total_income import TotalIncomePoint, calculate_total_income
+from hermes_finance.domain.values import RubleAmount
+from hermes_finance.services.ai_analysis_bundle import _income_summary
+from hermes_finance.services.total_income import TotalIncomeReadModel
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "docs" / "schemas" / "ai_analysis_bundle.schema.json"
 FIXTURE_PATH = REPO_ROOT / "docs" / "schemas" / "ai_analysis_bundle.synthetic.json"
@@ -80,6 +85,103 @@ def test_schema_is_valid_draft_2020_12_and_fixture_validates(
 ) -> None:
     Draft202012Validator.check_schema(schema)
     _validator(schema).validate(bundle)
+
+
+def test_income_summary_golden_and_optional_additions(
+    schema: dict[str, object], bundle: dict[str, object]
+) -> None:
+    assert bundle["schema_version"] == "1.5.0"
+    summary = bundle["income_summary"]
+    assert summary["windows"]["all"]["monthly_average"]["value"]["amount"] == "339500.00"
+    assert summary["windows"]["all"]["current_level"]["value"]["amount"] == "351833.33"
+    assert summary["windows"]["calendar_year"]["monthly_average"]["value"]["amount"] == "334333.33"
+    assert summary["windows"]["all"]["other_sum"]["value"]["amount"] == "0.00"
+    assert summary["windows"]["all"]["months_used"] == [
+        "2025-11",
+        "2025-12",
+        "2026-01",
+        "2026-03",
+        "2026-04",
+    ]
+    assert bundle["reporting_history"][1]["kpis"]["bonus_net"]["value"]["amount"] == "150000.00"
+    # Minor-version additions do not change requiredness of the existing shape.
+    previous_shape = copy.deepcopy(bundle)
+    del previous_shape["income_summary"]
+    for point in previous_shape["reporting_history"]:
+        del point["kpis"]["salary_is_estimate"]
+        del point["kpis"]["bonus_net"]
+    _validator(schema).validate(previous_shape)
+    for path in ("unknown", "bad_metric", "bad_count"):
+        invalid = copy.deepcopy(bundle)
+        window = invalid["income_summary"]["windows"]["all"]
+        if path == "unknown":
+            invalid["income_summary"]["database_id"] = 1
+        elif path == "bad_metric":
+            window["monthly_average"]["value"]["amount"] = 339500.0
+        else:
+            window["passive_months"] = -1
+        with pytest.raises(ValidationError):
+            _validator(schema).validate(invalid)
+
+
+@pytest.mark.parametrize("known_passive", [False, True])
+def test_income_summary_preserves_unknown_and_known_zero(known_passive: bool) -> None:
+    result = calculate_total_income(
+        (
+            TotalIncomePoint(
+                reporting_month_id=1,
+                year=2031,
+                month=1,
+                salary_net=RubleAmount(0),
+                bonus_net=RubleAmount(0),
+                passive_actual=RubleAmount(0),
+                other_net=RubleAmount(123),
+            ),
+        ),
+        history_start_month=None if known_passive else (2031, 2),
+    )
+    summary = _income_summary(TotalIncomeReadModel(1, result))
+    window = summary["windows"]["all"]
+    assert window["estimate_months"] == 0
+    assert window["bonus_sum"]["value"]["amount"] == "0.00"
+    assert window["other_sum"]["value"]["amount"] == "1.23"
+    for field in ("passive_sum", "monthly_average", "current_level"):
+        metric = window[field]
+        if known_passive:
+            assert metric["value"]["amount"] == "0.00"
+            assert metric["availability"] == "available"
+            assert metric["precision"] == "exact"
+        else:
+            assert metric["value"] is None
+            assert metric["availability"] == "unavailable"
+            assert metric["precision"] == "unknown"
+            assert "passive_income_unavailable" in metric["reason_codes"]
+    assert summary["components"]["passive_missing_months"] == ([] if known_passive else ["2031-01"])
+
+
+def test_income_summary_keeps_long_window_bonus_denominator() -> None:
+    points = tuple(
+        TotalIncomePoint(
+            reporting_month_id=index + 1,
+            year=2030 + index // 12,
+            month=index % 12 + 1,
+            salary_net=RubleAmount(10000),
+            bonus_net=RubleAmount(12000 if index % 12 == 11 else 0),
+            passive_actual=RubleAmount(0),
+            other_net=RubleAmount(100),
+        )
+        for index in range(25)
+    )
+    result = calculate_total_income(points)
+    summary = _income_summary(TotalIncomeReadModel(25, result))
+    all_window = summary["windows"]["all"]
+    assert all_window["bonus_target_months"] == 25
+    assert all_window["bonus_sum"]["value"]["amount"] == "240.00"
+    assert all_window["bonus_smoothed_monthly"]["value"]["amount"] == "9.60"
+    assert all_window["monthly_average"]["value"]["amount"] == "109.60"
+    assert all_window["coverage"]["status"] == "complete"
+    assert summary["windows"]["rolling_12"]["bonus_target_months"] == 12
+    assert summary["windows"]["calendar_year"]["bonus_sum"]["value"]["amount"] == "0.00"
 
 
 def test_schema_fails_closed_for_unknown_or_inconsistent_fields(

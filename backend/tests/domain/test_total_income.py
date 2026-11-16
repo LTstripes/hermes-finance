@@ -217,3 +217,13 @@ def test_duplicate_or_invalid_month_fails() -> None:
         calculate_total_income((point(2031, 1), point(2031, 1)))
     with pytest.raises(ValueError, match="invalid"):
         calculate_total_income((replace(point(2031, 1), month=13),))
+
+
+def test_bonus_coverage_note_only_when_a_bonus_was_paid() -> None:
+    quiet = calculate_total_income((point(2031, 1), point(2031, 2)))
+    assert not any(w.startswith("Премия") for w in quiet.calendar_year.warnings)
+    assert quiet.calendar_year.bonus_months == 2
+    paid = calculate_total_income((point(2031, 1), point(2031, 2, bonus=1200)))
+    assert "Премия учтена за 2 мес из 12; сумма распределена на 12 месяцев" in (
+        paid.calendar_year.warnings
+    )
