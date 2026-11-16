@@ -9,15 +9,25 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.21.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.21.0)
+  (`3d8d4e1098f27642902e52f76d3e32d841011425`, exact-main CI
+  [43807791037](https://github.com/LTstripes/hermes-finance/actions/runs/43807791037),
+  guarded publication
+  [43808917512](https://github.com/LTstripes/hermes-finance/actions/runs/43808917512),
+  [release notes](release-notes-1.21.0.md)) is installed on the Owner computer on
+  2026-11-16 by backup-first OPS02, then Prepare and Start; health reads 1.21.0, the
+  total income endpoint reads back for the calendar year, rolling 12 months and all
+  time, "Весь доход" renders on Income and Home, and salary tax renders in a closed
+  month report. Owner UAT has not been performed.
 - [v1.20.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.20.0)
   (`91ad33b2d2c2d86f30c8f547d9d29b322327fc4d`, exact-main CI
   [43712083490](https://github.com/LTstripes/hermes-finance/actions/runs/43712083490),
   guarded publication
   [43713075819](https://github.com/LTstripes/hermes-finance/actions/runs/43713075819),
-  [release notes](release-notes-1.20.0.md)) is installed on the Owner computer on
-  2026-11-15 by backup-first OPS02, then Prepare and Start; health reads 1.20.0, the
-  page title reads "Finance" and an invalid goal plan rate is rejected. Owner UAT has
-  not been performed.
+  [release notes](release-notes-1.20.0.md)) was installed on the Owner computer on
+  2026-11-15 by backup-first OPS02, then Prepare and Start; health read 1.20.0, the
+  page title read "Finance" and an invalid goal plan rate was rejected. It was
+  superseded on Stable by 1.21.0.
 - [v1.19.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.19.0)
   (`f6e244d50a8f546a87ad0757494989f2fbe644b8`, exact-main CI
   [43645700173](https://github.com/LTstripes/hermes-finance/actions/runs/43645700173),
@@ -75,7 +85,7 @@ retains its original dated history and sources; it is not current installation e
 <a id="s2"></a>
 ## 2. Shipped code and limitations
 
-Prepared for 1.21.0 ([release notes](release-notes-1.21.0.md)), total income:
+Shipped in 1.21.0 ([release notes](release-notes-1.21.0.md)), total income:
 [#1221](https://github.com/LTstripes/hermes-finance/pull/1221) read-only total income
 (salary, passive income and smoothed bonus) over CLOSED months for the calendar year,
 rolling 12 months and all time, `GET /api/analytics/total-income`;
