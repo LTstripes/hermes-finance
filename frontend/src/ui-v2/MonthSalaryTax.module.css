@@ -1,0 +1,40 @@
+.summary {
+  min-width: 0;
+  margin: 0 12px 12px 56px;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.summary[data-report] {
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.summary h2 {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: var(--t-lg);
+}
+
+.flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+}
+
+.flow strong {
+  color: var(--ink);
+  font-family: var(--f-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--w-medium);
+  white-space: nowrap;
+}
+
+.difference {
+  margin: 6px 0 0;
+}

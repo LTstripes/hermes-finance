@@ -32,6 +32,22 @@ import {
   uiV2Months,
 } from "../src/test/uiV2Fixtures";
 import { fulfillMonthPlate } from "./visual-fixtures";
+import { salaryFixture } from "../src/test/monthSalaryTaxFixtures";
+
+async function fulfillSalaryRead(route: import("@playwright/test").Route) {
+  const url = new URL(route.request().url());
+  const summary = url.pathname.match(/^\/api\/months\/(\d+)\/summary$/);
+  if (route.request().method() !== "GET") return false;
+  if (summary) {
+    await route.fulfill({ json: salaryFixture(Number(summary[1])).summary });
+    return true;
+  }
+  if (url.pathname === "/api/incomes") {
+    await route.fulfill({ json: [salaryFixture(Number(url.searchParams.get("month_id"))).salary] });
+    return true;
+  }
+  return false;
+}
 
 type Scene = "normal" | "no-closed" | "first-closed" | "zero" | "passive-error" | "coverage";
 
@@ -70,6 +86,7 @@ async function installApi(page: Page, scene: Scene = "normal") {
   });
   await page.route("**/api/**", async (route) => {
     if (await fulfillMonthPlate(route)) return;
+    if (await fulfillSalaryRead(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -620,6 +637,7 @@ async function installCloseApi(page: Page) {
   });
   await page.route("**/api/**", async (route) => {
     if (await fulfillMonthPlate(route)) return;
+    if (await fulfillSalaryRead(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -946,6 +964,7 @@ async function installCapitalApi(page: Page, scene: CapitalScene = "normal") {
   });
   await page.route("**/api/**", async (route) => {
     if (await fulfillMonthPlate(route)) return;
+    if (await fulfillSalaryRead(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -1548,6 +1567,7 @@ async function installReportsApi(page: Page, scene: ReportsScene = "archive") {
   });
   await page.route("**/api/**", async (route) => {
     if (await fulfillMonthPlate(route)) return;
+    if (await fulfillSalaryRead(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/")) {
@@ -1867,3 +1887,50 @@ for (const scene of ["draft", "unknown", "current"] as const) {
     expect(evidence.errors).toEqual([]);
   });
 }
+
+test("ui-v2 salary tax in month and closed report fits desktop and mobile @viewport-owned", async ({
+  page,
+}, testInfo) => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const report of [false, true]) {
+      await page.unrouteAll({ behavior: "wait" });
+      if (report) await installReportsApi(page, "report");
+      else await installCloseApi(page);
+      const monthId = report ? uiV2CapitalPreviousMonthId : 12;
+      const fixture = salaryFixture(monthId);
+      fixture.summary.salary_actual_net = { amount: "87500.00", currency: "RUB" };
+      await page.route(`**/api/months/${monthId}/summary?*`, (route) =>
+        route.fulfill({ json: fixture.summary }),
+      );
+      await page.goto(report ? `/v2/reports/${monthId}` : `/v2/close?month=${monthId}`);
+      const block = page.getByRole("region", { name: "Налог на зарплату" });
+      await expect(block).toBeVisible();
+      await expect(block).toContainText("До налога 100 000 ₽");
+      await expect(block).toContainText("Налог (13% + 15%) 14 000,01 ₽");
+      await expect(block).toContainText("На руки 87 500 ₽");
+      await expect(block.getByText(/Выплата отличается/)).toHaveCount(1);
+      const bounded = await block.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return (
+          rect.left >= 0 &&
+          rect.right <= innerWidth &&
+          element.scrollWidth <= element.clientWidth + 1
+        );
+      });
+      expect(bounded).toBe(true);
+      await block.scrollIntoViewIfNeeded();
+      await capture(page, testInfo, `t4-salary-${report ? "report" : "month"}-${viewport.width}`);
+      await block.screenshot({
+        path: path.resolve(
+          ".visual-audit",
+          testInfo.project.name,
+          `t4-salary-block-${report ? "report" : "month"}-${viewport.width}.png`,
+        ),
+      });
+    }
+  }
+});
