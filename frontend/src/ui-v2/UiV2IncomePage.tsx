@@ -31,6 +31,7 @@ import { IncomeFactBars } from "./IncomeFactBars";
 import { sortReportingMonths } from "./monthSelection";
 import sheet from "./ReportSheet.module.css";
 import { IncomeTabs } from "./IncomeTabs";
+import { TotalIncomeWidget } from "./TotalIncome";
 import incomeStyles from "./UiV2Income.module.css";
 import { UiV2Shell } from "./UiV2Shell";
 import { isQueryReady, UiV2Loading, UiV2Notice, UiV2WidgetState } from "./UiV2StateBlocks";
@@ -925,6 +926,7 @@ export default function UiV2IncomePage() {
     const goal = summary?.coverage.goal_target ?? null;
     content = (
       <div className={sheet.sheet}>
+        <TotalIncomeWidget monthId={planningId as number} />
         <PassiveSection
           closedMonths={closedMonths}
           factHistory={factHistoryReady ? factHistoryQuery.data : undefined}

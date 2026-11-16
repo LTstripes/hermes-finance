@@ -1,3 +1,4 @@
+import { totalIncomeFixture } from "../test/totalIncomeFixture";
 import { onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { Suspense } from "react";
@@ -74,6 +75,8 @@ function setup(path = "/v2") {
       } else if (url.pathname === "/api/analytics/capital-composition") {
         data = state.capital;
         failed = state.capitalError;
+      } else if (url.pathname === "/api/analytics/total-income") {
+        data = totalIncomeFixture();
       } else if (url.pathname === "/api/analytics/passive-income") {
         expect(url.searchParams.get("reporting_month_id")).toBe("91");
         data = state.passive;

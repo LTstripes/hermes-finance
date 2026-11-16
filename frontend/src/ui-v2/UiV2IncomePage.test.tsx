@@ -1,3 +1,4 @@
+import { totalIncomeFixture } from "../test/totalIncomeFixture";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -222,6 +223,8 @@ function setup(path = "/v2/income") {
         expect(url.searchParams.get("forecast_version")).toBe("v1");
         data = state.summary;
         failed = state.summaryError;
+      } else if (url.pathname === "/api/analytics/total-income") {
+        data = totalIncomeFixture();
       } else if (url.pathname === "/api/analytics/passive-income") {
         const monthId = Number(url.searchParams.get("reporting_month_id"));
         data = selectedHistory(monthId, state.history);
@@ -471,7 +474,7 @@ describe("UI v2 Income and plans", () => {
     );
 
     expect(await screen.findByTestId("test-location")).toHaveTextContent("/v2/income?month=90");
-    expect(screen.getByText("Апрель 2031", { exact: false })).toBeVisible();
+    expect(screen.getByRole("option", { name: /Апрель\s2031/ })).toBeVisible();
     await screen.findByTestId("income-average");
     expect(screen.getByTestId("income-average")).toHaveTextContent("15 300 ₽");
     expect(reads.filter((read) => read.includes("/api/months/91/income-plan-summary")).length).toBe(

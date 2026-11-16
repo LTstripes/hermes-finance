@@ -9924,7 +9924,16 @@ current_level = latest_closed_salary_net
   `bonus_months`, `bonus_target_months` (12, или длина окна `all` длиннее года), `estimate_months`, `salary_sum`,
   `passive_sum`, `bonus_sum`, `other_sum`, `salary_monthly_average`,
   `passive_monthly_average`, `bonus_smoothed_monthly`, `monthly_average`,
-  `current_level`, `current_passive_months`, `warnings[]`.
+  `current_level`, `current_passive_months`, `warnings[]`, `total_net`, `passive_share_pct`.
+
+`total_net` — сумма `salary_sum + passive_sum + bonus_sum` в копейках, без
+`other_sum`; если любой компонент неизвестен, результат `null`. Сумма включает
+только наблюдаемые месяцы и известную пассивку, поэтому UI сохраняет покрытие.
+`passive_share_pct` — строка с одним десятичным знаком:
+`passive_monthly_average / monthly_average × 100`, Decimal / ROUND_HALF_UP.
+Если любая часть неизвестна или `monthly_average <= 0`, поле равно `null`.
+Используются опубликованные округлённые средние; frontend долю не пересчитывает.
+«Мои финансы» показывают долю окна `calendar_year`.
 
 `months_used` — точные наблюдаемые календарные ключи; `from`/`to` — границы
 выбранного окна. Пустая история даёт `points=[]`, id/границы/суммы/средние

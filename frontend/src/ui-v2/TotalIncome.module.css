@@ -1,0 +1,47 @@
+.chart {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  max-height: 310px;
+}
+
+.legend,
+.homeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 24px;
+  font-size: var(--t-sm);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.bonus {
+  background: repeating-linear-gradient(135deg, var(--c-stock) 0 1px, transparent 1px 4px);
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+
+.homeRow {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}

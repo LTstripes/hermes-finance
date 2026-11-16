@@ -18,6 +18,7 @@ export const queryKeys = {
   closedReportComparisonBasic: ["closed-report-comparison", "without-explanation"] as const,
   capitalComposition: ["capital-composition"] as const,
   passiveIncomeHistory: (monthId: number | null) => ["passive-income-history", monthId] as const,
+  totalIncome: (monthId: number | null) => ["total-income", monthId] as const,
   incomePlanSummary: (monthId: number | null) => ["income-plan-summary", monthId] as const,
   cashFlowLadder: (monthId: number | null) => ["cash-flow-ladder", monthId] as const,
   goalSummary: (monthId: number | null) => ["goal-summary", monthId] as const,

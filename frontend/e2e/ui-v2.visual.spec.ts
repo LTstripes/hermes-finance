@@ -1,3 +1,4 @@
+import { totalIncomeFixture } from "../src/test/totalIncomeFixture";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
@@ -113,6 +114,8 @@ async function installApi(page: Page, scene: Scene = "normal") {
       json = state.comparison;
     } else if (url.pathname === "/api/analytics/capital-composition") {
       json = state.capital;
+    } else if (url.pathname === "/api/analytics/total-income") {
+      json = totalIncomeFixture(Number(url.searchParams.get("month_id") ?? 91));
     } else if (url.pathname === "/api/analytics/passive-income") {
       json = state.passive;
       status = state.passiveError ? 503 : 200;
@@ -160,6 +163,26 @@ async function assertBounded(page: Page) {
   expect(clipped).toEqual([]);
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 }
+
+test("ui-v2 total income Home row and link @viewport-owned", async ({ page }, testInfo) => {
+  const evidence = await installApi(page);
+  await page.goto("/v2");
+  const row = page.getByTestId("total-income-home");
+  await expect(row).toContainText("120 000 ₽");
+  await expect(row).toContainText("пассивка закрывает 16,7% дохода");
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1200 });
+    await row.scrollIntoViewIfNeeded();
+    await row.screenshot({ path: testInfo.outputPath(`total-income-home-${width}.png`) });
+    expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(
+      true,
+    );
+  }
+  await row.getByRole("link", { name: "Весь доход →" }).click();
+  await expect(page).toHaveURL(/\/v2\/income$/);
+  await expect(page.getByTestId("total-income-section")).toBeVisible();
+  expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);
+});
 
 async function capture(page: Page, testInfo: TestInfo, name: string) {
   const dir = path.resolve(".visual-audit", testInfo.project.name);
@@ -684,6 +707,8 @@ async function installCloseApi(page: Page) {
       json = homeSummaryFixture();
     } else if (url.pathname === "/api/analytics/capital-composition") {
       json = makeUiV2CapitalHistory();
+    } else if (url.pathname === "/api/analytics/total-income") {
+      json = totalIncomeFixture(Number(url.searchParams.get("month_id") ?? 91));
     } else if (url.pathname === "/api/analytics/passive-income") {
       json = makeUiV2PassiveHistory();
     } else if (url.pathname === "/api/goals/summary") {
@@ -1588,6 +1613,8 @@ async function installReportsApi(page: Page, scene: ReportsScene = "archive") {
     } else if (url.pathname === "/api/analytics/capital-composition") {
       json = state.composition;
       status = state.compositionError ? 503 : 200;
+    } else if (url.pathname === "/api/analytics/total-income") {
+      json = totalIncomeFixture(Number(url.searchParams.get("month_id") ?? 91));
     } else if (url.pathname === "/api/analytics/passive-income") {
       json = makeUiV2PassiveHistory();
     } else if (url.pathname === "/api/analytics/risk-allocation") {

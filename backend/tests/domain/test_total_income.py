@@ -84,6 +84,36 @@ def test_no_passive_months_keeps_headline_unknown() -> None:
     assert window.passive_sum is window.passive_monthly_average is None
     assert window.monthly_average is window.current_level is None
     assert window.passive_months == window.current_passive_months == 0
+    assert window.passive_share_pct is None
+    assert window.total_net is None
+
+
+def test_passive_share_decimal_half_up_and_published_component_averages() -> None:
+    window = calculate_total_income((point(2031, 1, salary=667, passive=333),)).all
+    assert window.passive_share_pct == "33.3"
+    assert window.total_net == RubleAmount(1000)
+    # Exactly halfway: HALF_UP, not bankers rounding or binary float.
+    window = calculate_total_income((point(2031, 1, salary=1999, passive=1),)).all
+    assert window.passive_share_pct == "0.1"
+    # The ratio uses published rounded averages, as the API contract states.
+    window = calculate_total_income(
+        (point(2031, 1, salary=2, passive=1), point(2031, 2, salary=2, passive=0))
+    ).all
+    assert window.passive_monthly_average == RubleAmount(1)
+    assert window.monthly_average == RubleAmount(3)
+    assert window.passive_share_pct == "33.3"
+
+
+def test_passive_share_zero_negative_and_unknown() -> None:
+    assert calculate_total_income(()).all.passive_share_pct is None
+    for salary, passive, expected in (
+        (0, 0, None),
+        (-10, 0, None),
+        (10, 0, "0.0"),
+        (20, -10, "-100.0"),
+    ):
+        window = calculate_total_income((point(2031, 1, salary=salary, passive=passive),)).all
+        assert window.passive_share_pct == expected
 
 
 def test_calendar_windows_leave_missing_calendar_slots_absent() -> None:

@@ -1,3 +1,4 @@
+import { totalIncomeFixture } from "../src/test/totalIncomeFixture";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -13,6 +14,60 @@ import { makeUiV2Goals, makeUiV2PassiveHistory, uiV2Months } from "../src/test/u
 import { fulfillMonthPlate } from "./visual-fixtures";
 
 type IncomeScene = "normal" | "no-closed" | "first-closed" | "zero" | "partial";
+
+test("ui-v2 total income desktop and mobile @viewport-owned", async ({ page }, testInfo) => {
+  const evidence = await installIncomeApi(page);
+  await page.goto("/v2/income");
+  const section = page.getByTestId("total-income-section");
+  await expect(section.getByText("120 000 ₽", { exact: true })).toBeVisible();
+  await expect(section.getByText("за 4 из 12 мес", { exact: true })).toHaveCount(3);
+  await expect(section.getByTestId("total-income-month-88")).toHaveAttribute(
+    "data-estimate",
+    "true",
+  );
+  await expect(section.getByTestId("total-income-bonus-legend")).toHaveCount(0);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 1200 : 900 });
+    await expect(section.getByRole("button", { name: "Календарный год" })).toBeVisible();
+    await expect(section.getByRole("button", { name: "Всё", exact: true })).toBeVisible();
+    await expect(section.getByTestId("total-income-warnings")).toBeVisible();
+    expect(
+      await section.evaluate((element) => element.getBoundingClientRect().right <= innerWidth + 1),
+    ).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    );
+    await section.screenshot({ path: testInfo.outputPath(`total-income-${width}.png`) });
+  }
+  await section.getByRole("button", { name: "12 мес", exact: true }).click();
+  await expect(section.getByRole("button", { name: "12 мес", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(evidence.unexpected).toEqual([]);
+  expect(evidence.errors).toEqual([]);
+});
+
+test("ui-v2 total income retry recovers without showing stale values", async ({ page }) => {
+  await installIncomeApi(page);
+  let failed = true;
+  await page.route("**/api/analytics/total-income?*", async (route) => {
+    await route.fulfill({
+      status: failed ? 503 : 200,
+      json: failed
+        ? { error: { code: "unavailable", message: "Synthetic" } }
+        : totalIncomeFixture(),
+    });
+  });
+  await page.goto("/v2/income");
+  await expect(page.getByTestId("income-average")).toBeVisible();
+  await expect(page.getByTestId("total-income-section")).toHaveCount(0);
+  const retry = page.getByRole("button", { name: "Повторить", exact: true });
+  await expect(retry).toBeVisible();
+  failed = false;
+  await retry.click();
+  await expect(page.getByTestId("total-income-section")).toBeVisible();
+});
 
 test("ui-v2 Income fits desktop widths and zoom @viewport-owned", async ({ page }, testInfo) => {
   await installIncomeApi(page);
@@ -251,6 +306,8 @@ async function installIncomeApi(page: Page, scene: IncomeScene = "normal") {
     } else if (url.pathname === "/api/months/91/income-plan-summary") {
       expect(url.searchParams.get("forecast_version")).toBe("v1");
       json = state.summary;
+    } else if (url.pathname === "/api/analytics/total-income") {
+      json = totalIncomeFixture();
     } else if (url.pathname === "/api/analytics/passive-income") {
       json = state.history;
     } else if (url.pathname === "/api/months/91/cash-flow-ladder") {

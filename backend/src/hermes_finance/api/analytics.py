@@ -633,6 +633,8 @@ class TotalIncomeWindowOut(BaseModel):
     current_level: MoneyValue | None
     current_passive_months: int
     warnings: list[str]
+    passive_share_pct: str | None
+    total_net: MoneyValue | None
 
 
 class TotalIncomeWindowsOut(BaseModel):
@@ -678,6 +680,8 @@ def _total_income_window_out(window: TotalIncomeWindow) -> TotalIncomeWindowOut:
         current_level=_optional_money(window.current_level),
         current_passive_months=window.current_passive_months,
         warnings=list(window.warnings),
+        passive_share_pct=window.passive_share_pct,
+        total_net=_optional_money(window.total_net),
     )
 
 
