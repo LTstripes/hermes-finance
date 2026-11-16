@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-15**. This is the current status; product and numerical rules
+Updated **2026-11-16**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -74,6 +74,18 @@ retains its original dated history and sources; it is not current installation e
 
 <a id="s2"></a>
 ## 2. Shipped code and limitations
+
+Prepared for 1.21.0 ([release notes](release-notes-1.21.0.md)), total income:
+[#1221](https://github.com/LTstripes/hermes-finance/pull/1221) read-only total income
+(salary, passive income and smoothed bonus) over CLOSED months for the calendar year,
+rolling 12 months and all time, `GET /api/analytics/total-income`;
+[#1222](https://github.com/LTstripes/hermes-finance/pull/1222) salary tax in Month
+screens, mismatch shown above 1 000 ₽;
+[#1223](https://github.com/LTstripes/hermes-finance/pull/1223) AI export income summary,
+schema 1.5.0;
+[#1224](https://github.com/LTstripes/hermes-finance/pull/1224) "Весь доход" on Income
+and Home. No new migrations; the salary estimate before the first known salary is
+analytical only and never stored.
 
 Shipped in 1.20.0 ([release notes](release-notes-1.20.0.md)), cleanup after the 15.11.2026 audit:
 [#1213](https://github.com/LTstripes/hermes-finance/pull/1213) short names on freshness, source income and statement returns;
