@@ -99,6 +99,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "test_spending_diary.py",
     "domain/test_total_income.py",
     "test_total_income_service.py",
     "test_total_income_api.py",
@@ -224,6 +225,7 @@ CI_CORE_SHARD_WEIGHTS = {
 # Summed setup/call/teardown seconds per file, with a 0.01s floor. Only the
 # original core-a group is subdivided; the accepted A/B membership stays fixed.
 CI_CORE_A_SHARD_WEIGHTS = {
+    "test_spending_diary.py": 48.77,
     "domain/test_total_income.py": 0.05,
     "test_total_income_service.py": 1.0,
     "test_total_income_api.py": 1.0,
@@ -830,7 +832,10 @@ def semantic_markers_for(test_path: Path) -> tuple[str, ...]:
         markers.add("domain")
     if filename.endswith("_api.py"):
         markers.add("api")
-    if filename.endswith("_service.py") or filename == "test_source_instrument_events.py":
+    if filename.endswith("_service.py") or filename in {
+        "test_source_instrument_events.py",
+        "test_spending_diary.py",
+    }:
         markers.add("service")
     if filename.startswith("test_legacy_"):
         markers.update({"import_export", "legacy"})

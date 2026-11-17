@@ -37,6 +37,120 @@ class Base(DeclarativeBase):
     pass
 
 
+class SpendingCategory(Base):
+    __tablename__ = "spending_categories"
+    __table_args__ = (CheckConstraint("expense_type IN ('mandatory','comfortable','other')"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    name_key: Mapped[str] = mapped_column(String(128), unique=True)
+    expense_type: Mapped[str] = mapped_column(String(32), default="other")
+
+
+class SpendingRule(Base):
+    __tablename__ = "spending_rules"
+    __table_args__ = (
+        UniqueConstraint("scope", "key", name="uq_spending_rule"),
+        CheckConstraint("scope IN ('merchant','bank_category')"),
+        CheckConstraint("action IN ('expense','refund','not_spending')"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scope: Mapped[str] = mapped_column(String(32))
+    key: Mapped[str] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(String(32))
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("spending_categories.id"))
+
+
+class SpendingOperation(Base):
+    __tablename__ = "spending_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "source", "month", "fingerprint", "ordinal", name="uq_spending_occurrence"
+        ),
+        CheckConstraint("ordinal > 0 AND amount_kopecks != 0"),
+        CheckConstraint("source IN ('alfa_csv','manual_md')"),
+        CheckConstraint(
+            "decision IS NULL OR decision IN ('expense','refund','not_spending','duplicate','separate')"
+        ),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    upload_id: Mapped[int] = mapped_column(ForeignKey("spending_uploads.id"))
+    source: Mapped[str] = mapped_column(String(32))
+    month: Mapped[str] = mapped_column(String(7), index=True)
+    operation_date: Mapped[date | None] = mapped_column(Date)
+    transaction_date: Mapped[date | None] = mapped_column(Date)
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger)
+    direction: Mapped[str] = mapped_column(String(32))
+    currency: Mapped[str] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(String(64))
+    category: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str] = mapped_column(Text)
+    account: Mapped[str] = mapped_column(Text)
+    card: Mapped[str] = mapped_column(Text)
+    payment: Mapped[str] = mapped_column(String(16))
+    kind: Mapped[str] = mapped_column(String(32))
+    reason: Mapped[str | None] = mapped_column(String(64))
+    merchant_key: Mapped[str] = mapped_column(Text)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    raw_json: Mapped[str] = mapped_column(Text)
+    decision: Mapped[str | None] = mapped_column(String(32))
+    decision_category_id: Mapped[int | None] = mapped_column(ForeignKey("spending_categories.id"))
+    duplicate_of_id: Mapped[int | None] = mapped_column(ForeignKey("spending_operations.id"))
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class SpendingUpload(Base):
+    __tablename__ = "spending_uploads"
+    __table_args__ = (
+        CheckConstraint("source IN ('alfa_csv','manual_md')"),
+        CheckConstraint("date_to >= date_from"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))
+    month: Mapped[str] = mapped_column(String(7))
+    account: Mapped[str] = mapped_column(Text)
+    filename: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    date_from: Mapped[date] = mapped_column(Date)
+    date_to: Mapped[date] = mapped_column(Date)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SpendingExpenseLink(Base):
+    __tablename__ = "spending_expense_links"
+    __table_args__ = {"sqlite_autoincrement": True}
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    expense_entry_id: Mapped[int] = mapped_column(
+        ForeignKey("expense_entries.id", ondelete="CASCADE"), unique=True
+    )
+    remember_recurring: Mapped[bool] = mapped_column(Boolean, default=False)
+    # An empty remembered rule is NOT a confirmed link in another month.
+    merchant_keys_json: Mapped[str] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class SpendingLinkOperation(Base):
+    __tablename__ = "spending_link_operations"
+    link_id: Mapped[int] = mapped_column(
+        ForeignKey("spending_expense_links.id", ondelete="CASCADE"), primary_key=True
+    )
+    operation_id: Mapped[int] = mapped_column(
+        ForeignKey("spending_operations.id"), primary_key=True, unique=True
+    )
+
+
+class SpendingReview(Base):
+    """Unmatched decisions survive replacement as explicit unresolved exceptions."""
+
+    __tablename__ = "spending_reviews"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    month: Mapped[str] = mapped_column(String(7), index=True)
+    reason: Mapped[str] = mapped_column(String(64))
+    previous_json: Mapped[str] = mapped_column(Text)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class SourceIntakeOriginal(Base):
     """Immutable, private source descriptor; never an accepted S1 or raw-file cache."""
 

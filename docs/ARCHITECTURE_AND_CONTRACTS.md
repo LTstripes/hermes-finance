@@ -250,6 +250,130 @@ Liquid capital excludes property and subtracts included credit-card debt; refere
 <a id="c2-master_spec-295"></a>
 ### Conceptual persisted entities
 
+<a id="c2-spending-diary"></a>
+#### Spending diary v1 (#1227, T1)
+
+`spending_diary_v1`, migration `0069_spending_diary` after 0068. The diary is
+date-keyed, independent of reporting-month ownership/status. Only confirmed
+links reference `expense_entries`; diary commands never write monthly facts,
+create income, change Close/Reopen, capital or monthly cash-flow calculations.
+
+Persisted entities:
+
+- `spending_uploads`: source (`alfa_csv`/`manual_md`), month, local account,
+  basename, SHA256, actual operation-date replacement range and upload timestamp.
+  Multi-account files create one upload scope per account. Prior upload metadata
+  is retained; operations represent the current diary.
+- `spending_operations`: both dates, signed integer kopecks (positive spending,
+  negative replenishment/refund), direction, original currency/status/category,
+  description, private account/card, payment, class/reason, upload, fingerprint,
+  occurrence ordinal, original fields, per-row decision/category, duplicate
+  target and unresolved replacement flag. Identical purchases retain multiplicity;
+  purchase/refund direction is part of identity. Operation IDs are not recycled.
+- `spending_categories`: case-insensitive normalized source alias, display name
+  and category-owned `mandatory`/`comfortable`/`other` type (default `other`).
+  Rename preserves source alias. `spending_rules`: normalized merchant/recipient
+  key or bank-category alias → decision/category. Category mapping supports merging
+  bank categories without rewriting facts. Merchant overrides mapping; per-row
+  decision overrides merchant. Expense/refund rules respect direction.
+- `spending_expense_links` plus `spending_link_operations`: one confirmed expense
+  ↔ one or more diary operations, with recurring-memory flag and merchant keys.
+  An operation cannot satisfy two links. An inactive empty link records the
+  explicit «отдельная трата» answer. Invalidated links never silently suppress
+  facts. Remembered links are derived for later months only, with both sums,
+  without writing on GET; competing recurring entries/templates stay unresolved.
+- `spending_reviews`: unmatched decisions/links retained with previous decision,
+  category and link amounts. They require explicit acknowledgement; new ambiguous
+  rows additionally require a fresh per-row decision.
+
+`alfa_csv_v1` is a shared, pure adapter for #1228: UTF-8 BOM, comma, LF/CRLF,
+exactly `operationDate, transactionDate, accountName, accountNumber, cardName,
+cardNumber, merchant, amount, currency, status, category, mcc, type, comment,
+bonusValue, bonusTitle`. It returns every valid row with both dates and original
+fields, and line-numbered errors without private row payloads; it performs no
+month selection or spending filtering. Dates are DD.MM.YYYY; transaction date
+may be absent. Positive decimal amount with up to two digits is parsed exactly
+to kopecks with Decimal/ROUND_HALF_UP. Direction is `Списание`/`Пополнение`.
+Unknown headers/XLSX are rejected with a CSV instruction. Parse errors prevent
+CSV replacement. Cashback fields never become amounts/income.
+
+The diary layer uses operationDate. Rows outside the selected month are counted
+in preview, never stored. Known internal transfers, principal repayment
+(`Кредиты` + `Погашение ОД`) and savings interest remain stored technical rows.
+Transfer categories/SBP, cash withdrawal signals, unfamiliar cardless debits,
+technical charges and nontechnical replenishments are exceptions. Utility
+payments without a card are purchases. Replenishments require refund/not-spending
+confirmation. Foreign currencies remain exceptions without conversion and cannot
+be included by a rule. Cash withdrawal cannot be classified as spending. Status
+`В обработке` is included for otherwise included spending, counted separately;
+unknown statuses stay exceptions. MCC never overrides bank category.
+An old expense decision conflicting with a newly technical bank class remains
+visible as `technical_decision_conflict` and cannot include a technical row.
+
+Fingerprint: account, card, operation date, direction, amount, currency and
+normalized description; ordinal distinguishes identical rows. Normalization
+replaces `/` with `\`, collapses spaces and uppercases. A recognised city prefix
+(Москва/Moscow, Санкт-Петербург/SPB, Казань/Kazan, optional `Г.`) may be removed
+from the merchant-rule key only; other descriptions remain whole. No fuzzy match.
+
+CSV replaces each represented account only within min/max operation dates in the
+new file inside the selected month; absent accounts and outside-range operations
+remain. A CSV with no selected rows cannot establish a replacement range. Manual
+Markdown replaces the entire manual month, including undated rows; its fingerprint
+is date, signed amount, normalized category/description/payment plus ordinal.
+Version/month and table structure are validated; errors remain visible. Explicit
+`skip_error_lines` is allowed for manual errors only. New manual rows with
+`альфа`/empty payment remain excluded while a same-signed-amount bank candidate
+exists (±3 days if dated); `нал`/`сбер` are never matched.
+
+Replacement preserves decisions and operation IDs only for one-to-one matching
+fingerprints; unchanged content is idempotent, including renamed files/repeated
+Apply. Ambiguous multiplicity or changed hold descriptions produce explicit review
+records and invalidate links/duplicate decisions. Disappearance always requires
+confirmation. Preview binds file hash, source/month, decisions/skips and current
+DB state/process incarnation. Apply validates under BEGIN IMMEDIATE and commits
+atomically; changed state returns `409 preview_changed`. Exact no-op Apply may
+return unchanged even with the prior token. Preview/GET use coherent read snapshots
+and never create categories/uploads/rules/links.
+
+`GET /api/spending/months/{YYYY-MM}` is the one spending reader: included diary
+operations + all `expense_entries`, minus only confirmed linked expense entries.
+It returns integer-kopek total/known subtotal, category/type/source contributions,
+dated daily totals and source breakdowns, undated sum, negative returns, pending
+sum, operation exceptions, lost-decision reviews, link candidates and both linked
+amounts. Negative categories have `share_percent=null`; positive shares are decimal
+strings allocated deterministically in hundredths of a percent, summing to 100.
+An unloaded month without facts has `total_kopecks=null`; unresolved lost decisions
+or invalid active links also make the total unknown. Ordinary unresolved rows are
+excluded and visible, while possible month duplicates retain the monthly fact.
+Filename/date span does not establish full coverage; CSV months are `partial=true`.
+
+API v1 (all under `/api/spending`, local only):
+
+- `POST /uploads/preview`, `POST /uploads/apply`: multipart `file`, `source`,
+  `month`; optional JSON `choices` (fingerprint, ordinal, action, category,
+  duplicate_of_id), JSON `skip_error_lines`. Apply additionally requires
+  `preview_token`, plus `confirm_disappearance=true` for removals. Actions:
+  `expense`, `refund`, `not_spending`, `separate`, `duplicate`. Preview contains
+  before/after, delta, ranges, added/changed/disappearing, lost decisions, errors,
+  category proposals, outside-month/technical counts and the upload timing hint.
+- `PUT /operations/{id}/decision`: action/category/duplicate_of_id/remember;
+  remember creates a merchant rule for expense/refund/not_spending decisions.
+- `GET /rules`, `PUT /rules`, `DELETE /rules/{id}`: scope/key/action/category.
+  `GET /categories`, `PUT /categories/{id}`: display name and expense type.
+- `POST /links`: expense_entry_id, operation_ids, remember;
+  `DELETE /links/{id}`; `POST /month-expenses/{id}/separate`.
+- `POST /reviews/{id}/acknowledge`: acknowledge the old unmatched decision;
+  resolving any new row remains separate and explicit.
+- `GET /months`: known report/upload months with loaded/total/coverage/partial;
+  coverage is `statement_only`, `statement_and_manual`, `manual_only` or
+  `not_loaded`. An unlisted month remains readable with unknown/unloaded state.
+
+API operation DTOs use an allowlist without account/card/raw CSV. Those values
+stay in the local DB; no diary data is added to export/AI bundles. Public fixtures
+are synthetic. Diary downgrade refuses populated data. No UI, bank ledger,
+deposit writer or capital bridge is introduced by T1.
+
 <a id="c2-master_spec-295-9-модель-данных"></a>
 #### 9. Модель данных
 
