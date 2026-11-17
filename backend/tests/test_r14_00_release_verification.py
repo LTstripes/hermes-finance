@@ -28,6 +28,7 @@ TRANSITION = (
     "0067_investment_report_proofs",
     "0068_owner_manual_gold_history",
     "0069_spending_diary",
+    "0070_spending_screen",
 )
 
 

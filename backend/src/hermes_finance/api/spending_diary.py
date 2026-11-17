@@ -4,16 +4,24 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.database import coherent_read_snapshot
-from hermes_finance.persistence import SpendingCategory, SpendingReview, SpendingRule
+from hermes_finance.persistence import (
+    SpendingCategory,
+    SpendingOperation,
+    SpendingReview,
+    SpendingRule,
+    SpendingUpload,
+)
 from hermes_finance.services import spending_diary as diary
+from hermes_finance.services import spending_insights as insights
+from hermes_finance.services.spending_previews import PreviewStore
 from hermes_finance.spending_files import normalize
 
 router = APIRouter(prefix="/api/spending", tags=["spending"])
@@ -29,7 +37,8 @@ class Choice(StrictRequest):
     ordinal: int = Field(ge=1)
     action: Literal["expense", "refund", "not_spending", "separate", "duplicate"]
     category: str | None = Field(default=None, min_length=1, max_length=128)
-    duplicate_of_id: int | None = Field(default=None, ge=1)
+    duplicate_of_id: int | None = None
+    remember: bool = False
 
 
 class Decision(StrictRequest):
@@ -57,6 +66,81 @@ class CategoryRequest(StrictRequest):
     expense_type: Literal["mandatory", "comfortable", "other"] = "other"
 
 
+class CategoryPatch(StrictRequest):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    expense_type: Literal["mandatory", "comfortable", "other"] | None = None
+
+
+class MergeRequest(StrictRequest):
+    target_id: int = Field(ge=1)
+
+
+class SavedChoice(StrictRequest):
+    id: str
+    action: Literal[
+        "expense",
+        "refund",
+        "not_spending",
+        "separate",
+        "duplicate",
+        "link",
+        "unlink",
+        "acknowledge",
+    ]
+    category: str | None = Field(default=None, min_length=1, max_length=128)
+    duplicate_of_id: int | None = Field(default=None, ge=1)
+    operation_ids: list[int] = Field(default_factory=list)
+    remember: bool = False
+
+
+class SavedDecisions(StrictRequest):
+    decisions: list[SavedChoice]
+
+
+class PreviewLink(StrictRequest):
+    expense_entry_id: int = Field(ge=1)
+    action: Literal["link", "separate"]
+    operation_ids: list[int] = Field(default_factory=list)
+    remember: bool = False
+
+
+class PreviewDecisions(StrictRequest):
+    choices: list[Choice] = Field(default_factory=list)
+    entry_links: list[PreviewLink] = Field(default_factory=list)
+    skip_error_lines: list[int] | None = None
+
+
+class ApplyPreview(StrictRequest):
+    confirm_removal: bool = False
+    skip_unreadable_manual: bool = False
+
+
+def _private_response(session: Session, result):
+    values = {
+        value
+        for row in diary._objects(session, SpendingOperation)
+        for value in (row.account, row.card)
+        if value
+    }
+    values.update(
+        upload.account for upload in diary._objects(session, SpendingUpload) if upload.account
+    )
+    values.update(session.info.get("spending_redactions", set()))
+
+    def scrub(value):
+        if isinstance(value, str):
+            for secret in sorted(values, key=len, reverse=True):
+                value = value.replace(secret, "··" + secret[-4:])
+            return value
+        if isinstance(value, dict):
+            return {key: scrub(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [scrub(item) for item in value]
+        return value
+
+    return scrub(jsonable_encoder(result))
+
+
 def _call(session: Session, build, *, write: bool = False):
     try:
         if write:
@@ -67,7 +151,9 @@ def _call(session: Session, build, *, write: bool = False):
         else:
             with coherent_read_snapshot(session):
                 result = build()
-        return JSONResponse(jsonable_encoder(result), headers={"Cache-Control": "no-store"})
+        return JSONResponse(
+            _private_response(session, result), headers={"Cache-Control": "no-store"}
+        )
     except (ValueError, LookupError) as error:
         session.rollback()
         code = (
@@ -83,6 +169,7 @@ def _call(session: Session, build, *, write: bool = False):
                     "code": "preview_changed" if code == 409 else "spending_invalid",
                     "message": str(error),
                     "details": [],
+                    "stale": code == 409,
                 }
             },
             status_code=code,
@@ -155,13 +242,132 @@ async def apply(
 
 
 @router.get("/months")
-def months(session: SessionDep):
-    return _call(session, lambda: diary.list_months(session))
+def months(
+    session: SessionDep, until: str | None = None, count: int = Query(default=12, ge=1, le=1200)
+):
+    return _call(session, lambda: diary.list_months(session, until=until, count=count))
 
 
 @router.get("/months/{month}")
+@router.get("/month/{month}")
 def month_spending(month: str, session: SessionDep):
     return _call(session, lambda: diary.read_month(session, month))
+
+
+@router.get("/operations")
+def operation_list(
+    month: str,
+    session: SessionDep,
+    category: int | None = None,
+    source: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100000),
+):
+    return _call(
+        session,
+        lambda: insights.operations(
+            session,
+            diary.read_month_base(session, month),
+            category=category,
+            source=source,
+            limit=limit,
+        ),
+    )
+
+
+@router.get("/categories/{category_id}/history")
+def category_history(
+    category_id: int,
+    session: SessionDep,
+    until: str | None = None,
+    count: int = Query(default=12, ge=1, le=1200),
+):
+    return _call(
+        session, lambda: insights.history(session, until=until, count=count, category=category_id)
+    )
+
+
+@router.get("/exceptions")
+def exceptions(month: str, session: SessionDep):
+    return _call(session, lambda: insights.exceptions(session, month))
+
+
+@router.post("/exceptions/decisions")
+def exceptions_decisions(month: str, request: SavedDecisions, session: SessionDep):
+    return _call(
+        session,
+        lambda: insights.decide_exceptions(
+            session, month, [decision.model_dump() for decision in request.decisions]
+        ),
+        write=True,
+    )
+
+
+@router.get("/manual-template")
+def manual_template(month: str):
+    try:
+        diary.month_bounds(month)
+    except ValueError:
+        return JSONResponse({"error": {"code": "invalid_month"}}, status_code=422)
+    body = f"---\nfinance_expenses: 1\nmonth: {month}\n---\n\n| Дата | Сумма | Категория | Описание | Оплата |\n|---|---|---|---|---|\n"
+    return Response(
+        body,
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="finance-expenses-{month}.md"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _store(request: Request) -> PreviewStore:
+    if not hasattr(request.app.state, "spending_previews"):
+        request.app.state.spending_previews = PreviewStore()
+    return request.app.state.spending_previews
+
+
+@router.post("/preview")
+async def screen_preview(
+    request: Request,
+    session: SessionDep,
+    month: Annotated[str, Form()],
+    statement: Annotated[UploadFile | None, File()] = None,
+    manual: Annotated[UploadFile | None, File()] = None,
+):
+    files = []
+    for source, file in (("alfa_csv", statement), ("manual_md", manual)):
+        if file is not None:
+            files.append(
+                dict(source=source, filename=file.filename or "", content=await file.read())
+            )
+    return _call(session, lambda: _store(request).create(session, month, files))
+
+
+@router.get("/preview/{preview_id}")
+def get_preview(preview_id: str, request: Request, session: SessionDep):
+    return _call(session, lambda: _store(request).read(session, preview_id))
+
+
+@router.post("/preview/{preview_id}/decisions")
+def preview_decisions(
+    preview_id: str, body: PreviewDecisions, request: Request, session: SessionDep
+):
+    return _call(
+        session,
+        lambda: _store(request).decide(
+            session,
+            preview_id,
+            [choice.model_dump() for choice in body.choices],
+            [link.model_dump() for link in body.entry_links],
+            body.skip_error_lines,
+        ),
+    )
+
+
+@router.post("/preview/{preview_id}/apply")
+def apply_preview(preview_id: str, body: ApplyPreview, request: Request, session: SessionDep):
+    return _call(
+        session, lambda: _store(request).apply(session, preview_id, **body.model_dump()), write=True
+    )
 
 
 @router.put("/operations/{operation_id}/decision")
@@ -211,12 +417,28 @@ def link(request: LinkRequest, session: SessionDep):
 
 
 @router.delete("/links/{link_id}")
+@router.delete("/entry-links/{link_id}")
 def unlink(link_id: int, session: SessionDep):
     def build():
         diary.delete_link(session, link_id)
         return {"deleted": True}
 
     return _call(session, build, write=True)
+
+
+@router.get("/entry-links")
+def entry_links(session: SessionDep, month: str | None = None):
+    def build():
+        months = [month] if month is not None else diary.known_months(session)
+        return [
+            dict(month=value, **link)
+            for value in months
+            for link in insights._entry_links(
+                session, diary.read_month_base(session, value), include_unconfirmed=True
+            )
+        ]
+
+    return _call(session, build)
 
 
 @router.post("/month-expenses/{expense_entry_id}/separate")
@@ -272,3 +494,33 @@ def category(category_id: int, request: CategoryRequest, session: SessionDep):
         return {"id": obj.id, "name": obj.name, "expense_type": obj.expense_type}
 
     return _call(session, build, write=True)
+
+
+@router.patch("/categories/{category_id}")
+def patch_category(category_id: int, request: CategoryPatch, session: SessionDep):
+    def build():
+        obj = session.get(SpendingCategory, category_id)
+        if obj is None:
+            raise LookupError("Категория не найдена")
+        name = request.name.strip() if request.name is not None else obj.name
+        if not name or any(
+            c.id != obj.id and normalize(name) in {c.name_key, normalize(c.name)}
+            for c in diary._objects(session, SpendingCategory)
+        ):
+            raise ValueError("Введите уникальное имя категории")
+        obj.name = name
+        if request.expense_type is not None:
+            obj.expense_type = request.expense_type
+        session.flush()
+        return dict(id=obj.id, name=obj.name, expense_type=obj.expense_type)
+
+    return _call(session, build, write=True)
+
+
+@router.post("/categories/{category_id}/merge")
+def merge_category(category_id: int, request: MergeRequest, session: SessionDep):
+    return _call(
+        session,
+        lambda: insights.merge_category(session, category_id, request.target_id),
+        write=True,
+    )

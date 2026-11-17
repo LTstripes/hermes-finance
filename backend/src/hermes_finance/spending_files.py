@@ -16,6 +16,13 @@ VERSION = "spending_diary_v1"
 UNCATEGORIZED = "Без категории"
 
 
+class FileProblem(ValueError):
+    def __init__(self, code: str, message: str, **parameters):
+        super().__init__(message)
+        self.code = code
+        self.parameters = parameters
+
+
 def digest(value: object) -> str:
     return hashlib.sha256(
         json.dumps(
@@ -46,6 +53,20 @@ def month_bounds(month: str) -> tuple[date, date]:
         raise ValueError("Неверный месяц") from error
 
 
+def statement_period(filename: str) -> tuple[date, date] | None:
+    match = re.search(
+        r"Statement (\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}\.\d{2}\.\d{4})", filename, re.I
+    )
+    if match:
+        try:
+            start, end = map(parse_date, match.groups())
+            if start <= end:
+                return start, end
+        except ValueError:
+            pass
+    return None
+
+
 def classify_alfa(row: AlfaRow) -> tuple[str, str | None]:
     f = row.fields
     category = normalize(f["category"])
@@ -58,8 +79,8 @@ def classify_alfa(row: AlfaRow) -> tuple[str, str | None]:
         return "transfer", None
     if category == "КРЕДИТЫ" and "ПОГАШЕНИЕ ОД" in description:
         return "repayment", None
-    if category == "НАКОПЛЕНИЯ" and row.direction == "Пополнение":
-        return "interest", None
+    if category == "НАКОПЛЕНИЯ":
+        return ("interest" if row.direction == "Пополнение" else "transfer"), None
     if any(word in category + " " + description for word in ("ПЕРЕВОД", "СБП", "С КАРТЫ НА КАРТУ")):
         return "exception", "transfer_decision"
     if any(word in category + " " + description for word in ("НАЛИЧН", "БАНКОМАТ", "ATM")):
@@ -71,8 +92,6 @@ def classify_alfa(row: AlfaRow) -> tuple[str, str | None]:
         return "exception", "unknown_technical"
     if row.direction == "Пополнение":
         return "exception", "refund_candidate"
-    if not f["cardNumber"] and category != "КОММУНАЛЬНЫЕ УСЛУГИ":
-        return "exception", "unknown_cardless"
     return "purchase", "uncategorized" if not f["category"].strip() else None
 
 
@@ -86,11 +105,21 @@ def _ordinals(rows: list[dict]) -> list[dict]:
 
 def alfa_operations(content: bytes, month: str) -> dict:
     start, end = month_bounds(month)
-    parsed = parse_alfa_csv(content)
-    rows, outside = [], 0
+    try:
+        parsed = parse_alfa_csv(content)
+    except ValueError as error:
+        code = (
+            "invalid_encoding"
+            if "UTF-8" in str(error)
+            else "csv_headers"
+            if "заголовки" in str(error)
+            else "malformed_csv"
+        )
+        raise FileProblem(code, str(error)) from error
+    rows, outside = [], []
     for r in parsed.rows:
         if not start <= r.operation_date <= end:
-            outside += 1
+            outside.append(r.operation_date)
             continue
         f = r.fields
         description = f["merchant"] or f["comment"]
@@ -126,7 +155,13 @@ def alfa_operations(content: bytes, month: str) -> dict:
                 line=r.line,
             )
         )
-    return dict(rows=_ordinals(rows), errors=parsed.errors, outside_month=outside)
+    return dict(
+        rows=_ordinals(rows),
+        errors=parsed.errors,
+        outside_month=len(outside),
+        outside_from=min(outside) if outside else None,
+        outside_to=max(outside) if outside else None,
+    )
 
 
 def manual_operations(content: bytes, month: str) -> dict:
@@ -134,18 +169,34 @@ def manual_operations(content: bytes, month: str) -> dict:
     try:
         text = content.decode("utf-8-sig")
     except UnicodeDecodeError as error:
-        raise ValueError("Ручной файл должен быть UTF-8 Markdown") from error
+        raise FileProblem("invalid_encoding", "Ручной файл должен быть UTF-8 Markdown") from error
     front = re.match(r"\A---\s*\n(.*?)\n---(?:\s*\n|$)", text, re.S)
     if not front:
-        raise ValueError("Нужен frontmatter finance_expenses: 1 и month")
+        raise FileProblem("missing_frontmatter", "Нужен frontmatter finance_expenses: 1 и month")
     fields = {}
     for line in front[1].splitlines():
+        if line[:1].isspace():
+            continue
         key, sep, value = line.partition(":")
+        if key.strip() not in {"finance_expenses", "month"}:
+            continue
         if not sep or key.strip() in fields:
-            raise ValueError("Неверный frontmatter")
+            raise FileProblem("invalid_frontmatter", "Неверный frontmatter")
         fields[key.strip()] = value.strip()
-    if fields != {"finance_expenses": "1", "month": month}:
-        raise ValueError("Версия finance_expenses или month не совпадает")
+    if fields.get("finance_expenses") != "1":
+        raise FileProblem(
+            "manual_version", "Версия finance_expenses или month не совпадает", supported_version=1
+        )
+    if fields.get("month") != month:
+        file_month = fields.get("month")
+        raise FileProblem(
+            "month_mismatch",
+            "Версия finance_expenses или month не совпадает",
+            month=month,
+            file_month=file_month
+            if file_month and re.fullmatch(r"\d{4}-\d{2}", file_month)
+            else None,
+        )
     rows, errors, header, separator = [], [], False, False
     for number, line in enumerate(
         text[front.end() :].splitlines(), 1 + text[: front.end()].count("\n")
@@ -155,12 +206,15 @@ def manual_operations(content: bytes, month: str) -> dict:
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
         if not header:
             if cells != ["Дата", "Сумма", "Категория", "Описание", "Оплата"]:
-                raise ValueError("Ожидаются колонки Дата | Сумма | Категория | Описание | Оплата")
+                raise FileProblem(
+                    "manual_columns",
+                    "Ожидаются колонки Дата | Сумма | Категория | Описание | Оплата",
+                )
             header = True
             continue
         if not separator:
             if len(cells) != 5 or not all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
-                raise ValueError("Неверный разделитель таблицы")
+                raise FileProblem("manual_separator", "Неверный разделитель таблицы")
             separator = True
             continue
         try:
@@ -215,5 +269,5 @@ def manual_operations(content: bytes, month: str) -> dict:
                 }
             )
     if not separator:
-        raise ValueError("Не найдена таблица ручных трат")
+        raise FileProblem("manual_table_missing", "Не найдена таблица ручных трат")
     return dict(rows=_ordinals(rows), errors=errors, outside_month=0)

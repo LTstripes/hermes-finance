@@ -7,6 +7,7 @@ import json
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from types import SimpleNamespace
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,11 +26,13 @@ from hermes_finance.persistence import (
 from hermes_finance.spending_files import (
     UNCATEGORIZED,
     VERSION,
+    FileProblem,
     alfa_operations,
     digest,
     manual_operations,
     month_bounds,
     normalize,
+    statement_period,
 )
 
 # Models are deliberately separate from reporting-month children and guards.
@@ -120,22 +123,66 @@ def _category(session: Session, name: str) -> SpendingCategory:
         None,
     )
     if category is None:
+        mapping = session.scalar(
+            select(SpendingRule).where(
+                SpendingRule.scope == "bank_category", SpendingRule.key == key
+            )
+        )
+        if mapping and mapping.category_id:
+            return session.get(SpendingCategory, mapping.category_id)
         category = SpendingCategory(name=name, name_key=key, expense_type="other")
         session.add(category)
         session.flush()
     return category
 
 
-def _effective(session: Session, rows: list[dict]) -> list[dict]:
+def _preview_rules(session: Session, rows: list[dict], choices: list[dict]) -> dict:
+    categories = _categories(session)
+    by_name = {
+        key: category
+        for category in categories.values()
+        for key in {category.name_key, normalize(category.name)}
+    }
+    result = {}
+    for choice in choices:
+        if not choice.get("remember"):
+            continue
+        row = next((row for row in rows if _identity(row) == _identity(choice)), None)
+        if (
+            row is None
+            or row["source"] != "alfa_csv"
+            or choice["action"] not in {"expense", "refund", "not_spending"}
+        ):
+            raise ValueError("Это решение не может стать правилом продавца")
+        category = by_name.get(normalize(choice.get("category") or ""))
+        result["merchant", row["merchant_key"]] = SimpleNamespace(
+            action=choice["action"],
+            category_id=category.id if category else None,
+            category_name=choice.get("category"),
+        )
+    return result
+
+
+def _effective(
+    session: Session, rows: list[dict], rule_overrides: dict | None = None
+) -> list[dict]:
     categories = _categories(session)
     by_name = {key: c for c in categories.values() for key in {c.name_key, normalize(c.name)}}
     rules = {(r.scope, r.key): r for r in _objects(session, SpendingRule)}
+    rules.update(rule_overrides or {})
+    bank_candidates = (
+        _effective(session, [r for r in rows if r["source"] == "alfa_csv"], rule_overrides)
+        if any(r["source"] == "manual_md" for r in rows)
+        else []
+    )
     result = []
     for original in rows:
         row = original.copy()
+        row["bank_category"] = original["category"] if original["source"] == "alfa_csv" else None
         category = by_name.get(normalize(row["category"]))
         action, category_id = row.get("decision"), row.get("decision_category_id")
         rule = rules.get(("merchant", row["merchant_key"]))
+        override_name = None
         mapping = rules.get(("bank_category", normalize(row["category"])))
         if (
             not action
@@ -151,14 +198,18 @@ def _effective(session: Session, rows: list[dict]) -> list[dict]:
             and row["kind"] not in {"transfer", "repayment", "interest"}
         ):
             action, category_id = rule.action, rule.category_id
+            override_name = getattr(rule, "category_name", None)
         elif not action and mapping:
             category_id = mapping.category_id
         if category_id:
             category = categories.get(category_id)
         row["category"] = category.name if category else row["category"]
+        if override_name:
+            row["category"] = override_name
         if row.get("choice_category"):
             row["category"] = row["choice_category"]
         row["expense_type"] = category.expense_type if category else "other"
+        row["category_id"] = category.id if category else None
         row["included"] = (
             row["kind"] == "purchase" or row["source"] == "manual_md" and row["kind"] == "refund"
         )
@@ -173,9 +224,8 @@ def _effective(session: Session, rows: list[dict]) -> list[dict]:
         if row["source"] == "manual_md" and row["payment"] in {"", "альфа"}:
             candidates = [
                 r.get("id")
-                for r in rows
-                if r["source"] == "alfa_csv"
-                and r["currency"] == "RUR"
+                for r in bank_candidates
+                if r["included"]
                 and r["amount_kopecks"] == row["amount_kopecks"]
                 and (
                     not row["operation_date"]
@@ -195,10 +245,10 @@ def _effective(session: Session, rows: list[dict]) -> list[dict]:
         # A decision cannot mix currencies or turn cash withdrawal into a purchase.
         if row["currency"] != "RUR":
             row["included"] = False
-            row["effective_reason"] = "foreign_currency"
+            row["effective_reason"] = None if action == "not_spending" else "foreign_currency"
         if row["reason"] == "unknown_status":
             row["included"] = False
-            row["effective_reason"] = "unknown_status"
+            row["effective_reason"] = None if action == "not_spending" else "unknown_status"
         if row["kind"] in {"transfer", "repayment", "interest"} and row["included"]:
             row["included"] = False
             row["effective_reason"] = "technical_decision_conflict"
@@ -211,7 +261,7 @@ def _effective(session: Session, rows: list[dict]) -> list[dict]:
 
 def _public(row: dict) -> dict:
     # Deliberate allowlist: bank account/card/raw CSV are local storage only.
-    return {
+    result = {
         key: row.get(key)
         for key in (
             "id",
@@ -234,8 +284,25 @@ def _public(row: dict) -> dict:
             "effective_action",
             "duplicate_candidates",
             "expense_type",
+            "category_id",
+            "bank_category",
         )
     }
+    from hermes_finance.services.spending_insights import money
+
+    result["amount"] = money(
+        row.get("amount_kopecks"),
+        "RUB" if row.get("currency") == "RUR" else row.get("currency", "RUB"),
+    )
+    result["counted_now"] = bool(row.get("included"))
+    result["kind_hint"] = (
+        "cash_withdrawal" if row.get("reason") == "cash_withdrawal_decision" else None
+    )
+    result["remember_key"] = row.get("merchant_key") if row.get("source") == "alfa_csv" else None
+    result["remember_default"] = (
+        row.get("effective_reason") == "uncategorized" and row.get("source") == "alfa_csv"
+    )
+    return result
 
 
 def _decision_receipt(session: Session, row: dict) -> dict:
@@ -362,9 +429,57 @@ def _link_views(session: Session, month: str, rows: list[dict]) -> list[dict]:
     return result
 
 
-def _read(session: Session, month: str, rows: list[dict], *, loaded: bool) -> dict:
-    effective = _effective(session, rows)
+def _read(
+    session: Session,
+    month: str,
+    rows: list[dict],
+    *,
+    loaded: bool,
+    link_choices: list[dict] | None = None,
+    rule_overrides: dict | None = None,
+) -> dict:
+    effective = _effective(session, rows, rule_overrides)
     links = _link_views(session, month, effective)
+    for choice in link_choices or []:
+        link = next(
+            (link for link in links if link["expense_entry_id"] == choice["expense_entry_id"]), None
+        )
+        if link is None:
+            raise ValueError("Запись расходов не найдена в выбранном месяце")
+        if choice["action"] == "separate":
+            link.update(confirmed=False, separate=True, needs_review=False, operation_ids=[])
+            continue
+        ids = choice.get("operation_ids", [])
+        chosen = [row for row in effective if row["id"] in ids and row["included"]]
+        occupied = {
+            i
+            for other in links
+            if other is not link and other["confirmed"]
+            for i in other["operation_ids"]
+        }
+        if (
+            choice["action"] != "link"
+            or not ids
+            or len(set(ids)) != len(chosen)
+            or occupied.intersection(ids)
+        ):
+            raise ValueError("Выберите учитываемые операции для связи")
+        expense = next(
+            entry
+            for entry in _expense_rows(session, month)
+            if entry.id == choice["expense_entry_id"]
+        )
+        if choice.get("remember") and (
+            not expense.is_recurring or any(row["amount_kopecks"] <= 0 for row in chosen)
+        ):
+            raise ValueError("Запоминать можно связь повторяющегося расхода с покупками")
+        link.update(
+            confirmed=True,
+            separate=False,
+            needs_review=False,
+            operation_ids=ids,
+            diary_amount_kopecks=sum(row["amount_kopecks"] for row in chosen),
+        )
     excluded = {link["expense_entry_id"] for link in links if link["confirmed"]}
     contributions = [
         dict(
@@ -506,6 +621,12 @@ def _read(session: Session, month: str, rows: list[dict], *, loaded: bool) -> di
 
 
 def read_month(session: Session, month: str) -> dict:
+    from hermes_finance.services.spending_insights import enrich_month
+
+    return enrich_month(session, read_month_base(session, month))
+
+
+def read_month_base(session: Session, month: str) -> dict:
     month_bounds(month)
     result = _read(
         session,
@@ -515,34 +636,22 @@ def read_month(session: Session, month: str) -> dict:
             session.scalar(select(SpendingUpload.id).where(SpendingUpload.month == month).limit(1))
         ),
     )
-    sources = {
-        u.source
-        for u in session.scalars(select(SpendingUpload).where(SpendingUpload.month == month))
-    }
-    result["coverage"] = (
-        "statement_and_manual"
-        if sources == {"alfa_csv", "manual_md"}
-        else (
-            "statement_only"
-            if "alfa_csv" in sources
-            else "manual_only"
-            if sources
-            else "not_loaded"
-        )
-    )
-    # Operation dates or a filename never prove complete statement coverage.
-    result["partial"] = "alfa_csv" in sources
+    from hermes_finance.services.spending_insights import coverage_status
+
+    result.update(coverage_status(session, month))
     return result
 
 
-def list_months(session: Session) -> list[dict]:
+def list_months(session: Session, until: str | None = None, count: int = 12) -> dict:
+    from hermes_finance.services.spending_insights import history
+
+    return history(session, until=until, count=count)
+
+
+def known_months(session: Session) -> list[str]:
     months = {u.month for u in _objects(session, SpendingUpload)}
     months |= {f"{m.year:04d}-{m.month:02d}" for m in _objects(session, ReportingMonth)}
-    return [
-        {key: result[key] for key in ("month", "loaded", "total_kopecks", "coverage", "partial")}
-        for month in sorted(months)
-        for result in [read_month(session, month)]
-    ]
+    return sorted(months)
 
 
 def _identity(row: dict) -> tuple:
@@ -585,16 +694,29 @@ def _plan(
     content: bytes,
     choices: list[dict],
     skip_error_lines: list[int],
+    current_rows: list[dict] | None = None,
 ) -> dict:
     month_bounds(month)
     if source not in {"alfa_csv", "manual_md"}:
         raise ValueError("Поддерживаются alfa_csv и manual_md")
     if not filename.lower().endswith(".csv" if source == "alfa_csv" else ".md"):
-        raise ValueError("Выгрузите CSV Альфы" if source == "alfa_csv" else "Нужен файл .md")
+        raise FileProblem(
+            "unsupported_extension",
+            "Выгрузите CSV Альфы" if source == "alfa_csv" else "Нужен файл .md",
+            allowed_extension=".csv" if source == "alfa_csv" else ".md",
+        )
     parsed = (alfa_operations if source == "alfa_csv" else manual_operations)(content, month)
+    period = statement_period(filename) if source == "alfa_csv" else None
     incoming = parsed["rows"]
+    session.info.setdefault("spending_redactions", set()).update(
+        value for row in incoming for value in (row["account"], row["card"]) if value
+    )
     if source == "alfa_csv" and not incoming and not parsed["errors"]:
-        raise ValueError("Нет операций выбранного месяца; диапазон замены неизвестен")
+        raise FileProblem(
+            "no_month_rows",
+            "Нет операций выбранного месяца; диапазон замены неизвестен",
+            month=month,
+        )
     for r in incoming:
         r.update(
             source=source,
@@ -609,10 +731,10 @@ def _plan(
     if source == "manual_md":
         scopes[""] = month_bounds(month)
     else:
-        for account in {r["account"] for r in incoming}:
+        for account in sorted({r["account"] for r in incoming}):
             dates = [r["operation_date"] for r in incoming if r["account"] == account]
             scopes[account] = min(dates), max(dates)
-    current = _month_rows(session, month)
+    current = _month_rows(session, month) if current_rows is None else current_rows
     replaced = [
         r
         for r in current
@@ -624,6 +746,23 @@ def _plan(
         )
     ]
     old_by_id = {_identity(r): r for r in replaced}
+    categories = _categories(session)
+    by_name = {key: c.id for c in categories.values() for key in {c.name_key, normalize(c.name)}}
+    if source == "manual_md":
+        projected_bank_categories = {
+            normalize(row["category"]) for row in current if row["source"] == "alfa_csv"
+        }
+        for row in incoming:
+            old = old_by_id.get(_identity(row))
+            if row["category"] == UNCATEGORIZED:
+                row["reason"] = "uncategorized"
+            elif (
+                normalize(row["category"]) not in by_name
+                and normalize(row["category"]) not in projected_bank_categories
+                or old
+                and old["reason"] == "new_category"
+            ):
+                row["reason"] = "new_category"
     old_counts = Counter(r["fingerprint"] for r in replaced)
     new_counts = Counter(r["fingerprint"] for r in incoming)
     unchanged = bool(
@@ -635,6 +774,24 @@ def _plan(
     ) and sorted(digest([r[k] for k in ROW_FIELDS]) for r in replaced) == sorted(
         digest([r[k] for k in ROW_FIELDS]) for r in incoming
     )
+    if source == "alfa_csv":
+        for account in scopes:
+            previous = session.scalar(
+                select(SpendingUpload)
+                .where(
+                    SpendingUpload.month == month,
+                    SpendingUpload.source == source,
+                    SpendingUpload.account == account,
+                )
+                .order_by(SpendingUpload.id.desc())
+                .limit(1)
+            )
+            previous_period = (
+                (previous.period_from, previous.period_to)
+                if previous and previous.period_from
+                else None
+            )
+            unchanged = unchanged and previous is not None and previous_period == period
     added, changed, removed, lost = [], [], [], []
     memberships = {m.operation_id for m in _objects(session, SpendingLinkOperation)}
     duplicate_targets = {r["duplicate_of_id"] for r in current if r["duplicate_of_id"]}
@@ -666,8 +823,6 @@ def _plan(
     if lost:
         for r in added:
             r["needs_review"] = True
-    categories = _categories(session)
-    by_name = {c.name_key: c.id for c in categories.values()}
     choice_map = {}
     for choice in choices:
         key = choice["fingerprint"], choice["ordinal"]
@@ -721,10 +876,27 @@ def _plan(
             hashlib.sha256(content).hexdigest(),
             choices,
             sorted(skip_error_lines),
+            period,
         ]
     )
-    before = _read(session, month, current, loaded=bool(current))
-    after = _read(session, month, projected, loaded=True)
+    before = _read(
+        session,
+        month,
+        current,
+        loaded=bool(current)
+        or bool(
+            session.scalar(select(SpendingUpload.id).where(SpendingUpload.month == month).limit(1))
+        ),
+    )
+    after = _read(
+        session,
+        month,
+        projected,
+        loaded=True,
+        rule_overrides=_preview_rules(session, projected, choices),
+    )
+    from hermes_finance.services.spending_insights import enrich_preview
+
     if lost:
         after["total_kopecks"] = None
         after["unresolved"] = True
@@ -755,6 +927,18 @@ def _plan(
             {r["category"] for r in incoming if normalize(r["category"]) not in by_name}
         ),
     )
+    enrich_preview(
+        session,
+        public,
+        source=source,
+        month=month,
+        incoming=incoming,
+        projected=projected,
+        scopes=scopes,
+        period=period,
+        parsed=parsed,
+        rule_overrides=_preview_rules(session, projected, choices),
+    )
     return dict(
         public=public,
         incoming=incoming,
@@ -763,6 +947,8 @@ def _plan(
         lost=lost,
         removed=removed,
         unchanged=unchanged and not choices,
+        period=period,
+        projected=projected,
     )
 
 
@@ -822,6 +1008,15 @@ def apply_upload(
         raise ValueError("Подтвердите исчезновение операций внутри диапазона замены")
     uploads = {}
     for account, (start, end) in sorted(plan["scopes"].items()):
+        period = plan["period"]
+        account_name = next(
+            (
+                json.loads(r["raw_json"]).get("accountName", "")
+                for r in plan["incoming"]
+                if r["account"] == account
+            ),
+            "",
+        )
         upload = SpendingUpload(
             source=source,
             month=month,
@@ -830,6 +1025,9 @@ def apply_upload(
             sha256=hashlib.sha256(content).hexdigest(),
             date_from=start,
             date_to=end,
+            period_from=period[0] if period else None,
+            period_to=period[1] if period else None,
+            account_name=account_name,
             uploaded_at=datetime.now(UTC),
         )
         session.add(upload)
@@ -869,6 +1067,16 @@ def apply_upload(
             for key, value in values.items():
                 setattr(operation, key, value)
     session.flush()
+    for choice in choices or []:
+        if choice.get("remember"):
+            row = next(row for row in plan["incoming"] if _identity(row) == _identity(choice))
+            set_rule(
+                session,
+                scope="merchant",
+                key=row["merchant_key"],
+                action=choice["action"],
+                category=choice.get("category"),
+            )
     return dict(changed=True, month=read_month(session, month))
 
 

@@ -114,6 +114,9 @@ class SpendingUpload(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     date_from: Mapped[date] = mapped_column(Date)
     date_to: Mapped[date] = mapped_column(Date)
+    period_from: Mapped[date | None] = mapped_column(Date)
+    period_to: Mapped[date | None] = mapped_column(Date)
+    account_name: Mapped[str] = mapped_column(Text, default="", server_default="")
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
