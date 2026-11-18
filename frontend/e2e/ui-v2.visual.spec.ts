@@ -208,7 +208,11 @@ test("ui-v2 mobile Home, Returns and Month fit with reachable navigation @viewpo
       await expect(page.locator('#v2-main[aria-busy="false"]')).toBeVisible();
       await expect(page.getByRole("link", { name: /Рабочий месяц:/ })).toBeVisible();
       const nav = page.getByRole("navigation", { name: "Основная навигация", exact: true });
-      await expect(nav.getByRole("link")).toHaveCount(5);
+      await expect(nav.getByRole("link")).toHaveCount(6);
+      await expect(nav.getByRole("link", { name: "Траты" })).toHaveAttribute(
+        "href",
+        "/v2/spending",
+      );
       expect(await nav.evaluate((el) => getComputedStyle(el).position)).toBe("fixed");
       expect(await nav.evaluate((el) => el.getBoundingClientRect().bottom)).toBe(812);
       expect(await page.locator("aside").evaluate((el) => el.getBoundingClientRect().height)).toBe(

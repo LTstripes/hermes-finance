@@ -7,10 +7,16 @@ export function MonthNavigationGuard({
   dirty,
   pending,
   onDiscard,
+  discardTitle = "Несохранённые изменения",
+  discardDescription = "Есть несохранённые изменения. Перейти и потерять их?",
+  discardLabel = "Перейти без сохранения",
 }: {
   dirty: boolean;
   pending: boolean;
   onDiscard?: (destination?: string) => void;
+  discardTitle?: string;
+  discardDescription?: string;
+  discardLabel?: string;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -34,10 +40,7 @@ export function MonthNavigationGuard({
     if (!historyGuard.current || window.history.state?.monthNavigationGuard !== token) protect();
     const guardBack = () => {
       if (allowPop.current) return;
-      if (
-        !latest.current.pending &&
-        window.confirm("Есть несохранённые изменения. Перейти и потерять их?")
-      ) {
+      if (!latest.current.pending && window.confirm(discardDescription)) {
         allowPop.current = true;
         historyGuard.current = false;
         latest.current.onDiscard?.();
@@ -49,7 +52,7 @@ export function MonthNavigationGuard({
     };
     window.addEventListener("popstate", guardBack);
     return () => window.removeEventListener("popstate", guardBack);
-  }, [blocked, href, token]);
+  }, [blocked, discardDescription, href, token]);
   useEffect(() => {
     if (blocked || !historyGuard.current || window.history.state?.monthNavigationGuard !== token)
       return;
@@ -87,14 +90,14 @@ export function MonthNavigationGuard({
   return (
     <ConfirmDialog
       open={destination !== null}
-      title={pending ? "Сохранение ещё не подтверждено" : "Несохранённые изменения"}
+      title={pending ? "Сохранение ещё не подтверждено" : discardTitle}
       description={
         pending
           ? "Сначала заверши запрос или повторное чтение результата в этой форме. Повторная отправка не выполняется."
-          : "Есть несохранённые изменения. Перейти и потерять их?"
+          : discardDescription
       }
       cancelLabel="Остаться"
-      confirmLabel={pending ? "Вернуться к форме" : "Перейти без сохранения"}
+      confirmLabel={pending ? "Вернуться к форме" : discardLabel}
       onCancel={() => setDestination(null)}
       onConfirm={() => {
         if (!pending && destination) {

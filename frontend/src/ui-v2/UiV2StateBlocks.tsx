@@ -18,13 +18,15 @@ export function UiV2Notice({
   title,
   children,
   retry,
+  alert = false,
 }: {
   title: string;
   children: ReactNode;
   retry?: () => void;
+  alert?: boolean;
 }) {
   return (
-    <section className={styles.notice} role={retry ? "alert" : undefined}>
+    <section className={styles.notice} role={retry || alert ? "alert" : undefined}>
       <h2>{title}</h2>
       <p>{children}</p>
       {retry ? (

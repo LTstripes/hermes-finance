@@ -16,7 +16,9 @@ export function notifyApiWrite(path: string, method = "GET") {
   // These POST readers create no saved facts. A preview must not invalidate
   // its own evidence or another form's consent.
   const pathname = path.split("?")[0];
+  const spendingApply = /^\/api\/spending\/preview\/[^/]+\/apply$/.test(pathname);
   if (
+    !spendingApply &&
     /\/(?:[^/]*(?:preview|prepare|inspect|lookup|search|probe)|scenario-lab|broker-statement-what-if|broker-statement-provisional|ai-analysis-bundle|export)(?:\/|$)/.test(
       pathname,
     )

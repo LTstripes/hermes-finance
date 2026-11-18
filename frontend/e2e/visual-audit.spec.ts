@@ -45,6 +45,10 @@ const forbiddenVisibleCopy = [
   /\bcomparison-only\b/i,
   /\bas_of_date\b/i,
   /\bfingerprint\b/i,
+  /\bremember_key\b/i,
+  /\bpreview_id\b/i,
+  /\bpossible_duplicate\b/i,
+  /\bentry_link\b/i,
   /\bgross YTD\b/i,
   /\bmarginal\b/i,
   /\bsource_kind\b/i,
@@ -109,6 +113,7 @@ async function collectLayoutIssues(page: Page) {
       const style = getComputedStyle(element);
       if (style.display === "none" || style.visibility === "hidden") continue;
       if (element.closest(".table-wrap")) continue;
+      if (element.matches('input[type="file"]') && style.clipPath !== "none") continue;
       const rect = element.getBoundingClientRect();
       if (rect.width > 0 && (rect.left < -1 || rect.right > viewportWidth + 1)) {
         const identity =
@@ -194,6 +199,98 @@ for (const route of routes) {
     });
   });
 }
+
+test("spending visual matrix @viewport-owned", async ({ browser }, testInfo) => {
+  test.setTimeout(180_000);
+  for (const width of [1440, 1280, 390]) {
+    for (const theme of ["light", "dark"] as const) {
+      const page = await browser.newPage({
+        baseURL: testInfo.project.use.baseURL,
+        viewport: { width, height: 900 },
+        colorScheme: theme,
+        locale: "ru-RU",
+        reducedMotion: "reduce",
+      });
+      try {
+        await page.addInitScript((dark) => {
+          if (!dark) return;
+          // The application ships a light workspace. Exercise its existing design tokens
+          // against a dark background in this audit without enabling a product theme.
+          const install = () => {
+            const style = document.createElement("style");
+            style.textContent = `:root {
+              color-scheme: dark;
+              --bg: var(--side-bg); --surface: var(--side-raised); --surface-2: var(--side-active);
+              --ink: var(--side-marker); --ink-2: var(--side-text); --muted: var(--side-text);
+              --line: var(--side-line); --line-2: var(--side-line); --faint: var(--side-muted);
+              --accent: var(--side-marker); --accent-soft: var(--side-active);
+              --fc-ink: var(--side-progress);
+            } :root .btn.btn--primary { color: var(--side-bg); }`;
+            document.head.append(style);
+          };
+          document.addEventListener("DOMContentLoaded", install, { once: true });
+        }, theme === "dark");
+        const errors: string[] = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        const unhandled = await installSyntheticApi(page);
+        const dir = path.resolve(".visual-audit", "spending", `${width}-${theme}`);
+        fs.mkdirSync(dir, { recursive: true });
+        for (const [slug, route, ready] of [
+          ["month", "/v2/spending?month=2026-10", "Операции"],
+          ["import", "/v2/spending/import?month=2026-10", "Что изменится в октябре 2026"],
+          ["rules", "/v2/spending/rules", "Категории"],
+        ]) {
+          await page.goto(route);
+          if (slug === "import") {
+            await page.getByLabel("Выписка Альфа-Банка (CSV)", { exact: true }).setInputFiles({
+              name: "synthetic.csv",
+              mimeType: "text/csv",
+              buffer: Buffer.from("synthetic"),
+            });
+            await page.getByRole("button", { name: "Проверить" }).click();
+          }
+          await expect(page.getByRole("heading", { name: ready, exact: true })).toBeVisible();
+          await expect(
+            page.getByRole("status").filter({ hasText: /Загружа|Проверяем/ }),
+          ).toHaveCount(0);
+          if (slug === "month")
+            await expect(page.getByTestId("spending-daily").locator("svg").first()).toBeVisible();
+          await page.evaluate(() => document.fonts.ready.then(() => undefined));
+          if (width === 390) {
+            const layout = await collectLayoutIssues(page);
+            expect(layout.pageOverflow, layout.overflowCandidates.join(", ")).toBeLessThanOrEqual(
+              1,
+            );
+            expect(unhandled).toEqual([]);
+            expect(errors).toEqual([]);
+          } else await assertAuditState(page, unhandled, errors);
+          await page.screenshot({
+            path: path.join(dir, `${slug}.png`),
+            fullPage: true,
+            animations: "disabled",
+          });
+        }
+      } finally {
+        await page.close();
+      }
+    }
+  }
+});
+
+test("spending empty state @viewport-owned", async ({ page }, testInfo) => {
+  const unhandled = await installSyntheticApi(page, "empty");
+  await page.goto("/v2/spending?month=2026-10");
+  await expect(page.getByRole("heading", { name: "Трат пока нет" })).toBeVisible();
+  await expect(page.getByText(/0\s*₽/)).toHaveCount(0);
+  await assertAuditState(page, unhandled, []);
+  const dir = path.resolve(".visual-audit", "spending", testInfo.project.name);
+  fs.mkdirSync(dir, { recursive: true });
+  await page.screenshot({
+    path: path.join(dir, "empty.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+});
 
 test("loading, empty and error states stay bounded", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "1440x900", "State evidence is captured once at 1440×900");

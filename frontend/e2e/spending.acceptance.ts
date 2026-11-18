@@ -1,0 +1,168 @@
+import { expect, test } from "@playwright/test";
+
+const month = "2026-10";
+const header =
+  "operationDate transactionDate accountName accountNumber cardName cardNumber merchant amount currency status category mcc type comment bonusValue bonusTitle".split(
+    " ",
+  );
+function bankRow(
+  day: string,
+  description: string,
+  amount: string,
+  category = "Продукты",
+  direction = "Списание",
+  currency = "RUR",
+) {
+  return [
+    `${day}.10.2026`,
+    "",
+    "Тестовый счёт",
+    "SYNTHETIC-0001",
+    "",
+    "SYNTHETIC-CARD",
+    description,
+    amount,
+    currency,
+    "Выполнен",
+    category,
+    "",
+    direction,
+    "",
+    "",
+    "",
+  ].join(",");
+}
+const statement = Buffer.from(
+  [
+    header.join(","),
+    bankRow("01", "Начало месяца", "150"),
+    bankRow("20", "Тестовый магазин", "500"),
+    bankRow("21", "СБП Тестовый получатель", "350", "Переводы СБП"),
+    bankRow("22", "Тестовый возврат", "30", "Продукты", "Пополнение"),
+    bankRow("23", "Тестовая валюта", "12", "Продукты", "Списание", "EUR"),
+  ].join("\n"),
+);
+const manual = Buffer.from(`---
+finance_expenses: 1
+month: ${month}
+---
+
+| Дата | Сумма | Категория | Описание | Оплата |
+| --- | --- | --- | --- | --- |
+| 20.10 | 500 | Продукты | Повтор из файла | альфа |
+| 20.10 | 200 | Продукты | Рынок | нал |
+| 20.10 | 80 | Продукты | Аптека | сбер |
+`);
+
+test("spending: CSV and Markdown, disappearance, manual decision, saved review and charts", async ({
+  page,
+}) => {
+  await page.goto("/v2/spending");
+  const nav = page.getByRole("navigation", { name: "Основная навигация" });
+  await expect(nav.getByRole("link", { name: "Траты", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.getByTestId("spending-history")).toBeVisible();
+  await page.getByRole("link", { name: "Загрузить траты" }).click();
+
+  const uploads = page.getByLabel("Выписка Альфа-Банка (CSV)", { exact: true });
+  await uploads.setInputFiles({
+    name: "fixture.xlsx",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("fixture"),
+  });
+  await expect(page.getByRole("alert")).toContainText("Это файл Excel.");
+  await expect(page.getByRole("button", { name: "Проверить" })).toBeDisabled();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Скачать шаблон ручного файла" }).click();
+  expect((await download).suggestedFilename()).toBe("finance-expenses-2026-10.md");
+
+  await uploads.setInputFiles({
+    name: "Statement 01.10.2026 - 31.10.2026.csv",
+    mimeType: "text/csv",
+    buffer: statement,
+  });
+  await page
+    .getByLabel("Ручной файл (.md)", { exact: true })
+    .setInputFiles({ name: "expenses.md", mimeType: "text/markdown", buffer: manual });
+  await page.getByRole("button", { name: "Проверить" }).click();
+  await expect(page.getByRole("heading", { name: "Что изменится в октябре 2026" })).toBeVisible();
+  await expect(
+    page.getByText("Исчезнет 1 ранее загруженная операция", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("Старая покупка", { exact: false })).toBeVisible();
+  const apply = page.getByRole("button", { name: "Применить", exact: true });
+  await expect(apply).toBeDisabled();
+  const duplicate = page.getByText("Пока ручная строка не входит в траты");
+  await expect(duplicate).toHaveCount(1);
+  await expect(page.locator('input[type="radio"]:checked')).toHaveCount(0);
+  await expect(page.getByText("Тестовая валюта", { exact: false })).toBeVisible();
+  const row = page
+    .getByRole("radiogroup", { name: "Решение" })
+    .filter({ has: page.getByRole("radio", { name: "Отдельная трата" }) })
+    .locator("..");
+  await row.getByRole("radio", { name: "Отдельная трата" }).click();
+  await expect(page.getByText("✓ Отдельная трата")).toBeVisible();
+  await expect(page.getByText("1 430 ₽", { exact: true }).first()).toBeVisible();
+  const consent = page.getByRole("checkbox", {
+    name: "Понимаю, эти операции будут удалены из трат",
+  });
+  await expect(consent).not.toBeChecked();
+  await consent.check();
+  await expect(apply).toBeEnabled();
+
+  await page.getByRole("link", { name: "← К тратам" }).click();
+  await expect(page.getByRole("alertdialog", { name: "Выйти без применения?" })).toBeVisible();
+  await page.getByRole("button", { name: "Остаться" }).click();
+  const ack = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith("/apply"),
+  );
+  const read = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      response.url().endsWith("/api/spending/months/2026-10"),
+  );
+  await apply.click();
+  expect((await ack).ok()).toBe(true);
+  expect((await read).ok()).toBe(true);
+  await expect(page).toHaveURL(/\/v2\/spending\?month=2026-10$/);
+  await expect(page.getByRole("status").filter({ hasText: /Октябрь.*обновлён/ })).toBeVisible();
+  await expect(page.getByTestId("spending-history")).toBeVisible();
+  await expect(page.getByTestId("spending-daily")).toBeVisible();
+  await expect(page.getByText("Выписка + ручной файл", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Таблица" }).click();
+  await expect(page.getByRole("columnheader", { name: "Обязательные" })).toBeVisible();
+  await page.getByRole("button", { name: /Сентябрь.*220.*только выписка/i }).click();
+  await expect(page).toHaveURL(/month=2026-09/);
+  await page.goBack();
+  await expect(page).toHaveURL(/month=2026-10/);
+  const category = page.getByRole("button", { name: /^Продукты/ });
+  await category.click();
+  await expect(category).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("spending-category-history")).toBeVisible();
+  await page.goBack();
+  await expect(category).toHaveAttribute("aria-expanded", "false");
+  await page.getByRole("combobox", { name: "Источник", exact: true }).selectOption("cash");
+  await expect(page).toHaveURL(/source=cash/);
+  await expect(page.getByText(/Показано 1 операция на/)).toBeVisible();
+
+  await page.getByRole("link", { name: "Разобрать" }).click();
+  await expect(page).toHaveURL(/review=1/);
+  await expect(page.getByRole("heading", { name: "Переводы" })).toBeVisible();
+  const transfer = page
+    .getByRole("radiogroup", { name: "Решение" })
+    .filter({ has: page.getByRole("radio", { name: "Трата…" }) })
+    .locator("..");
+  await transfer.getByRole("radio", { name: "Не трата" }).click();
+  await expect(page.getByText(/✓ Не трата · запомнится/)).toBeVisible();
+  await page.getByRole("link", { name: "← К тратам" }).click();
+  await page.getByRole("link", { name: "Категории и правила" }).click();
+  await expect(page.getByRole("heading", { name: "Правила по продавцу" })).toBeVisible();
+  const categoryType = page.getByRole("combobox", { name: "Тип: Продукты" });
+  await categoryType.selectOption("mandatory");
+  await expect(categoryType).toHaveValue("mandatory");
+  await page.getByRole("button", { name: "Удалить", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Удалить", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Правила по продавцу" })).toHaveCount(0);
+});

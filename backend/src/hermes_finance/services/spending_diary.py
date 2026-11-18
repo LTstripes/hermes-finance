@@ -716,6 +716,7 @@ def _plan(
             "no_month_rows",
             "Нет операций выбранного месяца; диапазон замены неизвестен",
             month=month,
+            **{"from": parsed["outside_from"], "to": parsed["outside_to"]},
         )
     for r in incoming:
         r.update(

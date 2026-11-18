@@ -251,3 +251,12 @@ export function formatMonthKey(
   }
   return formatMonth(Number(m[1]), Number(m[2]), options);
 }
+
+export function pluralRu(value: number, forms: readonly [string, string, string]) {
+  const last = Math.abs(value) % 10;
+  const lastTwo = Math.abs(value) % 100;
+  if (lastTwo >= 11 && lastTwo <= 14) return forms[2];
+  if (last === 1) return forms[0];
+  if (last >= 2 && last <= 4) return forms[1];
+  return forms[2];
+}
