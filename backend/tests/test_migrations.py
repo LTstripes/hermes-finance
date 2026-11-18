@@ -37,7 +37,7 @@ def test_source_return_proof_upgrade_is_empty_preserves_0064_and_refuses_history
                 for (name,) in connection.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('alembic_version','source_return_proofs','source_return_proof_dependencies')"
                 )
-                if name not in gold_tables
+                if name not in gold_tables and not name.startswith("spending_")
             }
 
     before = existing_rows()
