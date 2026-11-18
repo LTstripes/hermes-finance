@@ -3,6 +3,72 @@
 export const PRINCIPAL_REPAYMENT_LABEL = "Возврат основной суммы";
 export const UNKNOWN_SOURCE_LABEL = "Источник не распознан";
 
+const SPENDING_MONTH_FORMS = {
+  accusative: [
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
+  ],
+  genitive: [
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+  ],
+  prepositional: [
+    "январе",
+    "феврале",
+    "марте",
+    "апреле",
+    "мае",
+    "июне",
+    "июле",
+    "августе",
+    "сентябре",
+    "октябре",
+    "ноябре",
+    "декабре",
+  ],
+};
+
+export function spendingMonthForm(month: string, form: keyof typeof SPENDING_MONTH_FORMS) {
+  return SPENDING_MONTH_FORMS[form][Number(month.slice(5)) - 1] ?? "";
+}
+
+export function spendingComparisonNote(
+  hasManual: boolean,
+  months: { month: string; has_manual: boolean }[],
+) {
+  if (!hasManual)
+    return months.some((item) => item.has_manual)
+      ? "Сравнение неточное: в этом месяце нет ручного файла, наличные и Сбер не учтены."
+      : null;
+  const missing = months
+    .filter((item) => !item.has_manual)
+    .map((item) => spendingMonthForm(item.month, "prepositional"));
+  if (!missing.length) return null;
+  const list =
+    missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(", ")} и ${missing.at(-1)}`;
+  return `Сравнение неточное: в ${list} нет ручного файла, траты там могли быть выше.`;
+}
+
 const EVENT_LABELS: Record<string, string> = {
   coupon: "Купон",
   dividend: "Дивиденд",

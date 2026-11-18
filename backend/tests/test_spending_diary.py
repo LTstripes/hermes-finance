@@ -1860,3 +1860,37 @@ def test_combined_preview_does_not_defer_manual_category_created_by_statement(db
         assert response.status_code == 200, response.text
         assert response.json()["month"]["open_exceptions"]["count"] == 0
         assert response.json()["month"]["total"]["amount"] == "570.00"
+
+
+@pytest.mark.parametrize("invalid", ["manual_format", "manual_row", "csv_row"])
+def test_screen_preview_applies_only_valid_input(db, invalid):
+    good_manual = md_file(("02.10", "150", "Продукты", "Синтетическая покупка", "нал"))
+    good_statement = csv_file(bank_row())
+    manual = {
+        "manual_format": b"invalid",
+        "manual_row": md_file(("02.10", "invalid", "Продукты", "Синтетическая покупка", "нал")),
+    }.get(invalid, good_manual)
+    statement = (
+        csv_file(bank_row(), bank_row(amount="invalid")) if invalid == "csv_row" else good_statement
+    )
+    with TestClient(create_app(db)) as client:
+        response = client.post(
+            "/api/spending/preview",
+            data={"month": MONTH},
+            files={"statement": ("test.csv", statement), "manual": ("test.md", manual)},
+        )
+        assert response.status_code == 200, response.text
+        preview = response.json()
+        assert preview["applicable"]
+        assert len(preview["file_errors"]) == 1
+        assert [item["kind"] for item in preview["sets"]] == [
+            "manual" if invalid == "csv_row" else "statement"
+        ]
+        expected = "150.00" if invalid == "csv_row" else "500.00"
+        assert preview["total_after"]["amount"] == expected
+        result = client.post(f"/api/spending/preview/{preview['preview_id']}/apply", json={})
+        assert result.status_code == 200, result.text
+        saved = client.get(f"/api/spending/months/{MONTH}").json()
+        assert saved["total"]["amount"] == expected
+        assert saved["has_manual"] == (invalid == "csv_row")
+        assert saved["has_statement"] == (invalid != "csv_row")

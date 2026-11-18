@@ -5,6 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from "
 import { createQueryClient } from "../queryClient";
 import { ReturnsLegacyRedirect } from "../ui-v2/returns/ReturnsLegacyRedirect";
 import {
+  SpendingEntry,
   UiV2CapitalAllocationEntry,
   UiV2CapitalEntry,
   UiV2CloseEntry,
@@ -85,6 +86,9 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/income/tax-iis" element={<UiV2TaxIisEntry />} />
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
           <Route path="v2/income/scenario-lab" element={<UiV2ScenarioLabEntry />} />
+          <Route path="v2/spending" element={<SpendingEntry screen="month" />} />
+          <Route path="v2/spending/import" element={<SpendingEntry screen="import" />} />
+          <Route path="v2/spending/rules" element={<SpendingEntry screen="rules" />} />
           <Route path="v1" element={<Navigate replace to="/v2" />} />
           <Route path="analytics" element={<ReturnsLegacyRedirect />} />
           <Route

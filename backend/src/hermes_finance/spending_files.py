@@ -105,6 +105,8 @@ def _ordinals(rows: list[dict]) -> list[dict]:
 
 def alfa_operations(content: bytes, month: str) -> dict:
     start, end = month_bounds(month)
+    if not content.removeprefix(b"\xef\xbb\xbf").strip():
+        raise FileProblem("invalid_encoding", "Файл пустой")
     try:
         parsed = parse_alfa_csv(content)
     except ValueError as error:

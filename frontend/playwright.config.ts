@@ -10,6 +10,9 @@ import { selectPlaywrightProjects } from "./playwrightProjects";
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), "hermes-finance-g04-"));
 const databasePath = path.join(databaseDir, "finance.db");
+const spendingPort = process.env.HERMES_STATEMENT_TEST_PORT ?? "18927";
+if (Number(spendingPort) === 8000) throw new Error("Use an isolated port for spending tests.");
+const spendingURL = `http://127.0.0.1:${spendingPort}`;
 
 // Keep each former config's project and server settings together. Playwright's
 // webServer/reporter/workers/forbidOnly settings are invocation-wide, so only the
@@ -373,6 +376,32 @@ const suites: Record<string, PlaywrightTestConfig> = {
       url: `http://127.0.0.1:${process.env.HERMES_SYNTHETIC_QUOTE_MAPPING_PORT ?? "18469"}/api/health`,
       reuseExistingServer: false,
       timeout: 60_000,
+    },
+  },
+  spending: {
+    testDir: "./e2e",
+    testMatch: "spending.acceptance.ts",
+    outputDir: path.join(os.tmpdir(), "hermes-spending-playwright"),
+    workers: 1,
+    retries: 0,
+    reporter: "list",
+    use: {
+      baseURL: spendingURL,
+      locale: "ru-RU",
+      viewport: { width: 1440, height: 900 },
+      trace: "retain-on-failure",
+    },
+    webServer: {
+      command: `"${process.env.HERMES_E2E_PYTHON ?? (process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python")}" ../frontend/e2e/spending_fixture.py`,
+      cwd: path.resolve(configDir, "../backend"),
+      env: {
+        PYTHONPATH: "src",
+        PYTHONIOENCODING: "utf-8",
+        HERMES_STATEMENT_TEST_PORT: spendingPort,
+      },
+      url: `${spendingURL}/api/health`,
+      reuseExistingServer: false,
+      timeout: 120_000,
     },
   },
   statement: {

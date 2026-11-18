@@ -28,6 +28,9 @@ const UiV2DataCatalogsPage = lazy(() => import("./UiV2DataCatalogsPage"));
 const UiV2DataFilesPage = lazy(() => import("./UiV2DataFilesPage"));
 const UiV2DataAppPage = lazy(() => import("./UiV2DataAppPage"));
 const UiV2IncomePage = lazy(() => import("./UiV2IncomePage"));
+const SpendingPage = lazy(() => import("./spending/SpendingPage"));
+const SpendingImportPage = lazy(() => import("./spending/SpendingImportPage"));
+const SpendingRulesPage = lazy(() => import("./spending/SpendingRulesPage"));
 const UiV2GoalsPage = lazy(() => import("./UiV2GoalsPage"));
 const UiV2TaxIisPage = lazy(() => import("./UiV2TaxIisPage"));
 const UiV2ScenarioLabPage = lazy(() => import("./UiV2ScenarioLabPage"));
@@ -242,6 +245,17 @@ export function UiV2IncomeEntry() {
   return (
     <SuspenseFrame>
       <UiV2IncomePage />
+    </SuspenseFrame>
+  );
+}
+
+export function SpendingEntry({ screen }: { screen: "month" | "import" | "rules" }) {
+  const Page = { month: SpendingPage, import: SpendingImportPage, rules: SpendingRulesPage }[
+    screen
+  ];
+  return (
+    <SuspenseFrame>
+      <Page />
     </SuspenseFrame>
   );
 }

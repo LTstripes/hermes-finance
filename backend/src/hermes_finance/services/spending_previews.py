@@ -134,12 +134,16 @@ class PreviewStore:
                 if choices
                 else initial
             )
+            errors.extend(plan["public"]["file_errors"])
+            # A rejected source must not affect the projected totals, replacements
+            # or the valid file's duplicate candidates.
+            if not plan["public"]["applicable"]:
+                continue
             for row in plan["incoming"]:
                 if row["id"] is None:
                     row["id"] = -int(digest(diary._identity(row))[:13], 16)
             projected = plan["projected"]
             plans.append(plan)
-            errors.extend(plan["public"]["file_errors"])
             for account, span in plan["scopes"].items():
                 period = plan["period"]
                 overrides.append(
@@ -208,9 +212,7 @@ class PreviewStore:
             preview_id=item["id"],
             month=month,
             stale=False,
-            applicable=not errors
-            or all(plan["public"]["applicable"] for plan in plans)
-            and len(plans) == len(item["files"]),
+            applicable=bool(plans),
             total_before=insights.money(before["total_kopecks"]) if before["loaded"] else None,
             total_after=insights.money(after["total_kopecks"]),
             sets=[scope for plan in plans for scope in plan["public"]["sets"]],
@@ -290,7 +292,12 @@ class PreviewStore:
                 raise ValueError("Кандидат preview больше не найден")
             return found
 
+        applicable_kinds = {scope["kind"] for scope in public["sets"]}
+        applied_choices = set()
         for file in item["files"]:
+            kind = "statement" if file["source"] == "alfa_csv" else "manual"
+            if kind not in applicable_kinds:
+                continue
             initial = diary._plan(
                 session,
                 file["source"],
@@ -306,6 +313,7 @@ class PreviewStore:
                 for choice in item["choices"]
                 if diary._identity(choice) in keys
             ]
+            applied_choices.update(diary._identity(choice) for choice in choices)
             kwargs = dict(
                 source=file["source"],
                 month=item["month"],
@@ -332,7 +340,7 @@ class PreviewStore:
                     remember=choice.get("remember", False),
                 )
         for choice in item["choices"]:
-            if choice.get("remember"):
+            if choice.get("remember") and diary._identity(choice) in applied_choices:
                 row = next(
                     row
                     for row in diary._month_rows(session, item["month"])

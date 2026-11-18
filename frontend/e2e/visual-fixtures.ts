@@ -1,3 +1,4 @@
+import { spendingVisualResponse } from "./spending-visual-fixtures";
 import { totalIncomeFixture } from "../src/test/totalIncomeFixture";
 import type { Route } from "@playwright/test";
 import { homeSummaryFixture, overallFixture } from "../src/ui-v2/returns/overallFixtures";
@@ -580,6 +581,8 @@ export function syntheticApiResponse(
   method: string,
   state: AuditState = "content",
 ): { status?: number; json: unknown } | null {
+  const spending = spendingVisualResponse(url, method, state);
+  if (spending) return spending;
   const path = url.pathname;
   if (path === "/api/returns/home-summary" && method === "GET")
     return { json: homeSummaryFixture() };

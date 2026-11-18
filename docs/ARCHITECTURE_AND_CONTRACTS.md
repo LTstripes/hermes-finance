@@ -443,15 +443,17 @@ currency: RUB}`; legacy integer `*_kopecks` fields remain):
   skip_error_lines:[]}`. New rows have stable temporary negative IDs in the exact
   integer range; Apply resolves saved IDs. Remembered merchant choices recalculate
   other affected rows. Apply takes `{confirm_removal:false,skip_unreadable_manual:false}`;
-  both files/decisions/links commit atomically under BEGIN IMMEDIATE. It returns
+  applicable files and their decisions/links commit atomically under BEGIN IMMEDIATE. It returns
   added/changed/removed and month. Concurrent DB changes yield stale=true on GET
   and 409 preview_changed on decisions/Apply, including exact-content no-ops.
 - Preview returns total_before/total_after per month and set,
   `sets[{label,kind,added,changed,removed,total_before,total_after,removed_items,changed_items}]`,
   coverage, `out_of_month:{count,from,to}`, technical/processing summaries,
-  file_errors (codes and line/month/file_month/allowed_extension parameters,
-  no finished text), blocking, exceptions. CSV errors always block; manual row
-  errors require explicit skip, removals require confirmation. Exception fields:
+  file_errors (codes and safe parameters such as line/month/file_month/date range,
+  no finished text), blocking, exceptions. CSV errors block replacement of that
+  statement. Manual row errors block the manual file until explicitly skipped.
+  The valid file can still be previewed and applied on its own. Removals from
+  applicable sets require confirmation. Exception fields:
   group,candidates,counted_now,remember_key,remember_default,kind_hint,
   carried_over_failed,previous_decision. If old/new correspondence is unproven,
   previous_decision is null and previous_decisions retains all old receipts;

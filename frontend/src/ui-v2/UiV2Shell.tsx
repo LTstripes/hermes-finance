@@ -11,7 +11,7 @@ import { UiV2BackToTop } from "./UiV2BackToTop";
 import { UiV2MonthPlate } from "./UiV2MonthPlate";
 import styles from "./UiV2Page.module.css";
 
-export type UiV2Section = "home" | "capital" | "returns" | "data" | "income";
+export type UiV2Section = "home" | "capital" | "returns" | "data" | "income" | "spending";
 
 const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: ReactNode; to: string }> = [
   {
@@ -48,6 +48,18 @@ const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: ReactNode; 
       </>
     ),
     to: "/v2/income",
+  },
+  {
+    id: "spending",
+    label: "Траты",
+    icon: (
+      <>
+        <path d="M4 7a2 2 0 0 1 2-2h11v4" />
+        <rect height="12" rx="2" width="17" x="4" y="7" />
+        <path d="M16 13h2" />
+      </>
+    ),
+    to: "/v2/spending",
   },
   {
     id: "data",
