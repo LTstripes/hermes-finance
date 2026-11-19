@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-16**. This is the current status; product and numerical rules
+Updated **2026-11-19**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -83,7 +83,17 @@ retains its original dated history and sources; it is not current installation e
   from CI or copy checks.
 
 <a id="s2"></a>
-## 2. Shipped code and limitations
+## 2. Integrated code and limitations
+
+Spending diary [#1227](https://github.com/LTstripes/hermes-finance/issues/1227)
+was integrated on 2026-11-18 in
+[#1229](https://github.com/LTstripes/hermes-finance/pull/1229) and
+[#1230](https://github.com/LTstripes/hermes-finance/pull/1230).
+[Exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/44267030592)
+passed for that feature merge. Finance 1.22.0 includes Alfa CSV and manual Markdown
+imports, the spending overview, rules and migrations `0069_spending_diary` and
+`0070_spending_screen`. Owner UAT is pending. See the
+[release notes](release-notes-1.22.0.md) for preview limitations.
 
 Shipped in 1.21.0 ([release notes](release-notes-1.21.0.md)), total income:
 [#1221](https://github.com/LTstripes/hermes-finance/pull/1221) read-only total income
@@ -139,7 +149,7 @@ Shipped in 1.17.0 ([release notes](release-notes-1.17.0.md)); 1.17.1 ([release n
   [#1190](https://github.com/LTstripes/hermes-finance/pull/1190),
   [#1192](https://github.com/LTstripes/hermes-finance/pull/1192).
 
-No new database migrations since 1.16.0. Green CI and copy checks do not
+There were no new database migrations from 1.16.0 through 1.21.0. Green CI and copy checks do not
 establish Owner UAT.
 
 Changes since 1.15.0, shipped in 1.16.0 — the full UI audit of 10–11.11.2026 and
@@ -160,6 +170,10 @@ checks do not establish Owner UAT.
 
 <a id="s3"></a>
 ## 3. Next actions
+
+For the spending diary, the Owner acceptance scenario is one Alfa CSV and one
+manual Markdown file for the same month, followed by preview, application and
+reconciliation of the resulting monthly total. Historical imports follow that check.
 
 1. The Owner monitors numbers in everyday use and reports problems as new issues
    (formal UAT card #711 closed on 14.11.2026). At month close the Owner compares
