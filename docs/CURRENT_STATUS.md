@@ -9,16 +9,27 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.22.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.22.0)
+  (`02c9b937f12e54f433ba04d57848546f777e6377`, exact-main CI
+  [44455120917](https://github.com/LTstripes/hermes-finance/actions/runs/44455120917),
+  guarded publication
+  [44456447669](https://github.com/LTstripes/hermes-finance/actions/runs/44456447669),
+  [release notes](release-notes-1.22.0.md)) was installed on Stable on 2026-11-19
+  through backup-first OPS02, followed by Start. Health reported 1.22.0, and
+  the spending page and month endpoints responded successfully. The database
+  upgraded from revision 0068 to 0070. Reporting months, expenses, income,
+  positions and deposits matched the pre-update backup. The Owner approved
+  rollout in chat. The first import and reconciliation on real data are pending.
 - [v1.21.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.21.0)
   (`3d8d4e1098f27642902e52f76d3e32d841011425`, exact-main CI
   [43807791037](https://github.com/LTstripes/hermes-finance/actions/runs/43807791037),
   guarded publication
   [43808917512](https://github.com/LTstripes/hermes-finance/actions/runs/43808917512),
-  [release notes](release-notes-1.21.0.md)) is installed on the Owner computer on
+  [release notes](release-notes-1.21.0.md)) was installed on the Owner computer on
   2026-11-16 by backup-first OPS02, then Prepare and Start; health reads 1.21.0, the
   total income endpoint reads back for the calendar year, rolling 12 months and all
   time, "Весь доход" renders on Income and Home, and salary tax renders in a closed
-  month report. Owner UAT has not been performed.
+  month report. Owner UAT was not performed. It was superseded on Stable by 1.22.0.
 - [v1.20.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.20.0)
   (`91ad33b2d2c2d86f30c8f547d9d29b322327fc4d`, exact-main CI
   [43712083490](https://github.com/LTstripes/hermes-finance/actions/runs/43712083490),
@@ -92,8 +103,7 @@ was integrated on 2026-11-18 in
 [Exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/44267030592)
 passed for that feature merge. Finance 1.22.0 includes Alfa CSV and manual Markdown
 imports, the spending overview, rules and migrations `0069_spending_diary` and
-`0070_spending_screen`. Owner UAT is pending. See the
-[release notes](release-notes-1.22.0.md) for preview limitations.
+`0070_spending_screen`. See the [release notes](release-notes-1.22.0.md) for preview limitations.
 
 Shipped in 1.21.0 ([release notes](release-notes-1.21.0.md)), total income:
 [#1221](https://github.com/LTstripes/hermes-finance/pull/1221) read-only total income
@@ -171,9 +181,9 @@ checks do not establish Owner UAT.
 <a id="s3"></a>
 ## 3. Next actions
 
-For the spending diary, the Owner acceptance scenario is one Alfa CSV and one
-manual Markdown file for the same month, followed by preview, application and
-reconciliation of the resulting monthly total. Historical imports follow that check.
+For the first real spending import, use one Alfa CSV and one manual Markdown file
+for the same month. Review the preview, apply the import and reconcile the monthly
+total before loading historical statements.
 
 1. The Owner monitors numbers in everyday use and reports problems as new issues
    (formal UAT card #711 closed on 14.11.2026). At month close the Owner compares
