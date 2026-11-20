@@ -252,6 +252,7 @@ export function spendingVisualResponse(
         filtered_total: money(content ? "4000" : "0"),
       },
     };
+  if (path === "/api/spending/payment-rules" && method === "GET") return { json: [] };
   if (path === "/api/spending/categories") return { json: content ? categories : [] };
   if (path === "/api/spending/rules")
     return {
