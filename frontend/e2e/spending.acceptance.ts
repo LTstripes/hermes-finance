@@ -196,6 +196,49 @@ test("annual payment note persists, projects a monthly amount and can stop renew
   await expect(card.getByLabel("Следующая оплата")).toHaveCount(0);
 });
 
+test("record next rent against the existing schedule and undo the selection", async ({
+  page,
+  request,
+}) => {
+  async function rent(month: number) {
+    const report = await request.post("/api/months", {
+      data: { year: 2024, month, snapshot_date: `2024-${month}-28` },
+    });
+    expect(report.ok()).toBe(true);
+    const fact = await request.post("/api/expenses", {
+      data: {
+        reporting_month_id: (await report.json()).id,
+        category: "Аренда жилья",
+        expense_type: "mandatory",
+        amount: { amount: "30000.00", currency: "RUB" },
+      },
+    });
+    expect(fact.ok()).toBe(true);
+  }
+  await rent(10);
+  await rent(11);
+  async function open(month: string) {
+    await page.goto(`/v2/spending?month=${month}`);
+    await page.getByRole("button", { name: "Аренда жилья", exact: true }).click();
+    return page.getByRole("dialog", { name: "Карточка покупки" });
+  }
+  const first = await open("2024-10");
+  await first.getByLabel("Планирую повторять").check();
+  await first.getByLabel("Интервал, месяцев").fill("1");
+  await first.getByRole("button", { name: "Сохранить" }).click();
+  await expect(first.getByRole("status")).toHaveText("Сохранено");
+  await first.getByRole("button", { name: "Закрыть" }).click();
+  const second = await open("2024-11");
+  const pick = second.getByLabel("Существующий график");
+  await pick.selectOption({ index: 1 });
+  await second.getByRole("button", { name: "Уже оплачено по этому графику" }).click();
+  await expect(second.getByText(/Оплачено по графику · Аренда жилья/)).toBeVisible();
+  await second.getByRole("button", { name: "Закрыть" }).click();
+  await open("2024-11");
+  await second.getByRole("button", { name: "Отменить решение" }).click();
+  await expect(second.getByText(/Оплачено по графику · Аренда жилья/)).toHaveCount(0);
+});
+
 test("report expenses open in the same month before its first upload", async ({
   page,
   request,
