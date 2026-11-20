@@ -18,6 +18,14 @@ export type ReserveView = {
   target: MoneyValue | null;
   difference: MoneyValue | null;
   snapshot_date: string | null;
+  history_coverage: {
+    month: string;
+    full: boolean;
+    manual: boolean;
+    accounts: number;
+    same_sources: boolean;
+    unresolved: boolean;
+  }[];
   sources: { key: string; label: string; kind: string; balance: MoneyValue | null }[];
   categories: { id: number; name: string }[];
   basis: { id: number; name: string; method: "estimate" | "history"; amount: MoneyValue | null }[];

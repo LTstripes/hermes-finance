@@ -90,6 +90,19 @@ def test_historical_variable_amount_excludes_rule_and_uses_matching_sources(monk
     p = plan(categories=[dict(id=1)], months=["2026-10", "2026-11"])
     rules = [rule(month=m, source="alfa", operation_id=1) for m in p.months]
     assert reserve.historical_amounts(FakeSession(), p, rules)[1] == 150000
+    canceled = [{**r, "repeat": False, "was_recurring": True} for r in rules]
+    assert reserve.historical_amounts(FakeSession(), p, canceled)[1] == 150000
+    notes_only = [{**r, "repeat": False, "was_recurring": False} for r in rules]
+    assert reserve.historical_amounts(FakeSession(), p, notes_only)[1] == 2550000
+
+    class DifferentAccounts:
+        def __init__(self):
+            self.accounts = iter([["account-a"], ["account-b"]])
+
+        def scalars(self, query):
+            return next(self.accounts)
+
+    assert reserve.historical_amounts(DifferentAccounts(), p, rules) is None
     monkeypatch.setattr(
         spending_diary,
         "read_month_base",

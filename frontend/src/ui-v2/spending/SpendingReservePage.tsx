@@ -359,6 +359,23 @@ export default function SpendingReservePage() {
                 </Table>
               </Section>
             )}
+            {data.history_coverage.length > 0 && (
+              <details>
+                <summary>Покрытие месяцев в среднем</summary>
+                <ul>
+                  {data.history_coverage.map((m) => (
+                    <li key={m.month}>
+                      {formatMonthKey(m.month)} ·{" "}
+                      {m.full ? "по загруженным выпискам весь месяц" : "период выписок неполный"} ·
+                      счетов Альфы {m.accounts} ·{" "}
+                      {m.manual ? "ручной файл загружен" : "ручного файла нет"}
+                      {!m.same_sources ? " · другой набор источников" : ""}
+                      {m.unresolved ? " · есть вопросы к операциям" : ""}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             <ReserveSettings data={data} />
             {!!data.rules.length && (
               <Section title="Правила обязательных платежей">

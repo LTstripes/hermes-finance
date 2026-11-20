@@ -185,7 +185,7 @@ def reserve_total(selections, catalog, gaps):
     return total
 
 
-def historical_amounts(session, plan, rules):
+def historical_amounts(session, plan, rules, evidence=None):
     totals = defaultdict(Decimal)
     if not plan.months:
         return None
@@ -202,6 +202,7 @@ def historical_amounts(session, plan, rules):
     ):
         return None
     signature = None
+    complete = True
     for month in plan.months:
         base = diary.read_month_base(session, month)
         accounts = set(
@@ -212,17 +213,28 @@ def historical_amounts(session, plan, rules):
             )
         )
         current = (frozenset(accounts), base["has_manual"])
-        if (
-            not base["coverage"]["full"]
-            or base["unresolved"]
-            or (signature is not None and signature != current)
-        ):
-            return None
-        signature = current
+        matching = signature is None or signature == current
+        eligible = base["coverage"]["full"] and not base["unresolved"] and matching
+        if evidence is not None:
+            evidence.append(
+                dict(
+                    month=month,
+                    full=base["coverage"]["full"],
+                    manual=base["has_manual"],
+                    accounts=len(accounts),
+                    same_sources=matching,
+                    unresolved=base["unresolved"],
+                )
+            )
+        if signature is None:
+            signature = current
+        if not eligible:
+            complete = False
+            continue
         for item in insights.operations(session, base, limit=None)["items"]:
             if (month, item["source"], item["id"]) not in excluded:
                 totals[item["category_id"]] += Decimal(item["amount"]["amount"]) * 100
-    return {c.id: totals[c.id] / len(plan.months) for c in plan.categories}
+    return {c.id: totals[c.id] / len(plan.months) for c in plan.categories} if complete else None
 
 
 def next_dates(anchor, period, first, last):
@@ -358,8 +370,9 @@ def read(session: Session):
         ).all()
     )
     rules = payment_rules_for_budget(session)
+    evidence = []
     historical = (
-        historical_amounts(session, plan, rules)
+        historical_amounts(session, plan, rules, evidence)
         if any(c.estimate is None for c in plan.categories)
         else None
     )
@@ -370,6 +383,7 @@ def read(session: Session):
         **metrics,
         gaps=list(dict.fromkeys(gaps)),
         snapshot_date=observed,
+        history_coverage=evidence,
         sources=[
             dict(key=s["key"], label=s["label"], kind=s["kind"], balance=money(s["amount_kopecks"]))
             for s in catalog
