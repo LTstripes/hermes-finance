@@ -46,6 +46,33 @@ class SpendingCategory(Base):
     expense_type: Mapped[str] = mapped_column(String(32), default="other")
 
 
+class SpendingPaymentRule(Base):
+    __tablename__ = "spending_payment_rules"
+    __table_args__ = (
+        CheckConstraint("operation_id IS NULL OR entry_id IS NULL"),
+        CheckConstraint("period_months IS NULL OR period_months > 0"),
+        CheckConstraint("amount_kopecks IS NULL OR amount_kopecks >= 0"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("spending_operations.id", ondelete="SET NULL"), unique=True
+    )
+    entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("expense_entries.id", ondelete="SET NULL"), unique=True
+    )
+    month: Mapped[str] = mapped_column(String(7), index=True)
+    source: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(Text)
+    note: Mapped[str] = mapped_column(Text, default="")
+    mandatory_override: Mapped[bool | None] = mapped_column(Boolean)
+    repeat: Mapped[bool] = mapped_column(Boolean, default=False)
+    period_months: Mapped[int | None] = mapped_column(Integer)
+    next_due: Mapped[date | None] = mapped_column(Date)
+    amount_kopecks: Mapped[int | None] = mapped_column(BigInteger)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class SpendingRule(Base):
     __tablename__ = "spending_rules"
     __table_args__ = (

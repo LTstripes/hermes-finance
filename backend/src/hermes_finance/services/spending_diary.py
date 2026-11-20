@@ -19,6 +19,7 @@ from hermes_finance.persistence import (
     SpendingExpenseLink,
     SpendingLinkOperation,
     SpendingOperation,
+    SpendingPaymentRule,
     SpendingReview,
     SpendingRule,
     SpendingUpload,
@@ -41,6 +42,7 @@ TABLES = (
     SpendingRule,
     SpendingUpload,
     SpendingOperation,
+    SpendingPaymentRule,
     SpendingExpenseLink,
     SpendingLinkOperation,
     SpendingReview,
@@ -795,6 +797,11 @@ def _plan(
             unchanged = unchanged and previous is not None and previous_period == period
     added, changed, removed, lost = [], [], [], []
     memberships = {m.operation_id for m in _objects(session, SpendingLinkOperation)}
+    annotated = set(
+        session.scalars(
+            select(SpendingPaymentRule.operation_id).where(SpendingPaymentRule.month == month)
+        )
+    )
     duplicate_targets = {r["duplicate_of_id"] for r in current if r["duplicate_of_id"]}
     for r in incoming:
         old = old_by_id.get(_identity(r))
@@ -808,7 +815,12 @@ def _plan(
                     "needs_review",
                 ):
                     r[field] = old[field]
-            elif old["decision"] or old["id"] in memberships or old["id"] in duplicate_targets:
+            elif (
+                old["decision"]
+                or old["id"] in memberships
+                or old["id"] in duplicate_targets
+                or old["id"] in annotated
+            ):
                 lost.append(old)
                 r["needs_review"] = True
             if any(r[k] != old[k] for k in ROW_FIELDS):
@@ -1036,6 +1048,11 @@ def apply_upload(
         uploads[account] = upload.id
     lost_ids = {r["id"] for r in plan["lost"]} | {r["id"] for r in plan["removed"]}
     receipts = [_decision_receipt(session, old) for old in plan["lost"]]
+    for rule in session.scalars(
+        select(SpendingPaymentRule).where(SpendingPaymentRule.operation_id.in_(lost_ids))
+    ):
+        rule.operation_id = None
+        rule.version += 1
     _invalidate_links(session, lost_ids)
     for receipt in receipts:
         session.add(
