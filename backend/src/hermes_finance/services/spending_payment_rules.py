@@ -38,7 +38,7 @@ def _target(rule):
 def _project(rule, purchase):
     mandatory = rule.mandatory_override
     if mandatory is None:
-        mandatory = bool(purchase and purchase["expense_type"] == "mandatory")
+        mandatory = purchase["expense_type"] == "mandatory" if purchase else None
     return dict(
         id=rule.id,
         title=purchase["title"] if purchase else rule.title,
@@ -53,6 +53,7 @@ def _project(rule, purchase):
         period_months=rule.period_months,
         next_due=rule.next_due,
         amount_kopecks=rule.amount_kopecks,
+        amount=_money(rule.amount_kopecks),
         monthly_amount=_money(
             int(
                 (Decimal(rule.amount_kopecks) / rule.period_months).quantize(

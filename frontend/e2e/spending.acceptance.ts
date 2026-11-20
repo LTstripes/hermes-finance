@@ -167,6 +167,35 @@ test("spending: CSV and Markdown, disappearance, manual decision, saved review a
   await expect(page.getByRole("heading", { name: "Правила по продавцу" })).toHaveCount(0);
 });
 
+test("annual payment note persists, projects a monthly amount and can stop renewing", async ({
+  page,
+}) => {
+  await page.goto("/v2/spending?month=2026-09");
+  const purchase = page.getByRole("button", { name: "Сентябрьская покупка", exact: true });
+  await purchase.focus();
+  await page.keyboard.press("Enter");
+  const card = page.getByRole("dialog", { name: "Карточка покупки" });
+  await card.getByLabel("Моя заметка").fill("Проезд на работу");
+  await card.getByLabel("Обязательность для бюджета").selectOption("true");
+  await card.getByLabel("Планирую повторять").check();
+  await card.getByLabel("Интервал, месяцев").fill("12");
+  await card.getByLabel("Следующая оплата").fill("2027-09-01");
+  await card.getByLabel("Ожидаемая сумма, ₽").fill("24000,00");
+  await card.getByRole("button", { name: "Сохранить" }).click();
+  await expect(card.getByRole("status")).toHaveText("Сохранено");
+  await expect(card.getByText(/В среднем за месяц/)).toContainText("2 000");
+  await card.getByRole("button", { name: "Закрыть" }).click();
+  await page.reload();
+  await purchase.click();
+  await expect(card.getByLabel("Моя заметка")).toHaveValue("Проезд на работу");
+  await expect(card.getByLabel("Следующая оплата")).toHaveValue("2027-09-01");
+  await card.getByLabel("Планирую повторять").uncheck();
+  await card.getByRole("button", { name: "Сохранить" }).click();
+  await expect(card.getByRole("status")).toHaveText("Сохранено");
+  await expect(card.getByLabel("Моя заметка")).toHaveValue("Проезд на работу");
+  await expect(card.getByLabel("Следующая оплата")).toHaveCount(0);
+});
+
 test("report expenses open in the same month before its first upload", async ({
   page,
   request,
