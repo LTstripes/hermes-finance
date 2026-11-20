@@ -230,7 +230,11 @@ test("record next rent against the existing schedule and undo the selection", as
   await first.getByRole("button", { name: "Закрыть" }).click();
   const second = await open("2024-11");
   const pick = second.getByLabel("Существующий график");
-  await pick.selectOption({ index: 1 });
+  const schedule = pick.getByRole("option", { name: /Аренда жилья · 2024-10/ });
+  await expect(schedule).toHaveCount(1);
+  const scheduleId = await schedule.getAttribute("value");
+  if (!scheduleId) throw new Error("Не найден график октябрьской аренды");
+  await pick.selectOption(scheduleId);
   await second.getByRole("button", { name: "Уже оплачено по этому графику" }).click();
   await expect(second.getByText(/Оплачено по графику · Аренда жилья/)).toBeVisible();
   await second.getByRole("button", { name: "Закрыть" }).click();
