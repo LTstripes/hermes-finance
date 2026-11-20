@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import type { SpendingSource } from "./spending";
 import type { MoneyValue } from "./types";
 
 export type ReservePlan = {
@@ -18,6 +19,16 @@ export type ReserveView = {
   target: MoneyValue | null;
   difference: MoneyValue | null;
   snapshot_date: string | null;
+  payment_candidates: {
+    month: string;
+    source: SpendingSource;
+    operation_id: number;
+    rule_id: number;
+    title: string;
+    category: string;
+    date: string;
+    amount: MoneyValue;
+  }[];
   history_coverage: {
     month: string;
     full: boolean;
@@ -32,7 +43,7 @@ export type ReserveView = {
   calendar: {
     month: string;
     variable: MoneyValue | null;
-    payments: { rule_id: number; date: string; title: string; amount: MoneyValue }[];
+    payments: { rule_id: number; date: string; title: string; amount: MoneyValue | null }[];
     total: MoneyValue | null;
   }[];
   rules: {

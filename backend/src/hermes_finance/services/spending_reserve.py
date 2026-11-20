@@ -22,6 +22,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services import spending_diary as diary
 from hermes_finance.services import spending_insights as insights
+from hermes_finance.spending_files import month_bounds
 
 
 class StrictModel(BaseModel):
@@ -52,6 +53,8 @@ class Plan(StrictModel):
             or (self.end - self.start).days > 366 * 10
         ):
             raise ValueError("Выберите период до десяти лет")
+        if not any(category.estimate is None for category in self.categories):
+            self.months = []
         for keys in ([s.key for s in self.sources], [c.id for c in self.categories], self.months):
             if len(keys) != len(set(keys)):
                 raise ValueError("Источник, категория или месяц указаны дважды")
@@ -185,22 +188,31 @@ def reserve_total(selections, catalog, gaps):
     return total
 
 
-def historical_amounts(session, plan, rules, evidence=None):
+def historical_amounts(session, plan, rules, evidence=None, candidates=None):
     totals = defaultdict(Decimal)
-    if not plan.months:
+    selected = {category.id for category in plan.categories if category.estimate is None}
+    if not plan.months or not selected:
         return None
-    excluded = {
-        (r["month"], r["source"], r["operation_id"])
-        for r in rules
-        if r["repeat"] or r.get("was_recurring") or r["mandatory_override"] is False
-    }
-    if any(
-        r["needs_review"]
-        and r["month"] in plan.months
-        and (r["repeat"] or r.get("was_recurring") or r["mandatory_override"] is False)
-        for r in rules
-    ):
-        return None
+    excluded = set()
+    separate = set()
+    unresolved_categories = set()
+    for rule in rules:
+        if not (rule["repeat"] or rule["was_recurring"] or rule["mandatory_override"] is False):
+            continue
+        if rule["needs_review"] and rule["month"] in plan.months:
+            return None
+        excluded.add((rule["month"], rule["source"], rule["operation_id"]))
+        for link in rule.get("occurrences", []):
+            if link["month"] not in plan.months:
+                continue
+            if link["needs_review"]:
+                # After an ambiguous reimport neither amount nor category can be assumed.
+                return None
+            key = (link["month"], link["source"], link["operation_id"])
+            if link["decision"] == "payment":
+                excluded.add(key)
+            elif link["decision"] == "separate":
+                separate.add((rule["id"], key))
     signature = None
     complete = True
     for month in plan.months:
@@ -231,10 +243,66 @@ def historical_amounts(session, plan, rules, evidence=None):
         if not eligible:
             complete = False
             continue
+        schedule = defaultdict(list)
+        first, last = month_bounds(month)
+        for rule in rules:
+            if (
+                not rule["repeat"]
+                or rule["needs_review"]
+                or rule["category_id"] not in selected
+                or rule["month"] >= month
+                or rule["amount_kopecks"] is None
+                or not rule["period_months"]
+                or not rule["next_due"]
+            ):
+                continue
+            for day in next_dates(rule["next_due"], rule["period_months"], first, last):
+                schedule[
+                    (
+                        rule["source"],
+                        rule["category_id"],
+                        rule["title"],
+                        rule["amount_kopecks"],
+                        day,
+                    )
+                ].append(rule["id"])
         for item in insights.operations(session, base, limit=None)["items"]:
-            if (month, item["source"], item["id"]) not in excluded:
-                totals[item["category_id"]] += Decimal(item["amount"]["amount"]) * 100
-    return {c.id: totals[c.id] / len(plan.months) for c in plan.categories} if complete else None
+            key = (month, item["source"], item["id"])
+            category = item["category_id"]
+            if key in excluded or category not in selected:
+                continue
+            amount = Decimal(item["amount"]["amount"]) * 100
+            totals[category] += amount
+            if amount <= 0:
+                continue
+            matching_rules = schedule.get(
+                (item["source"], category, item["description"], amount, item["date"]), []
+            )
+            for rule_id in matching_rules:
+                if (rule_id, key) in separate:
+                    continue
+                unresolved_categories.add(category)
+                if candidates is not None:
+                    candidates.append(
+                        dict(
+                            month=month,
+                            source=item["source"],
+                            operation_id=item["id"],
+                            rule_id=rule_id,
+                            title=item["description"],
+                            category_id=category,
+                            category=item["category_name"],
+                            date=item["date"],
+                            amount=money(amount),
+                        )
+                    )
+    if not complete:
+        return None
+    return {
+        category: totals[category] / len(plan.months)
+        for category in selected
+        if category not in unresolved_categories
+    }
 
 
 def next_dates(anchor, period, first, last):
@@ -251,7 +319,49 @@ def next_dates(anchor, period, first, last):
         n += 1
 
 
-def calculate(plan, rules, categories, historical, reserve, gaps):
+def monthly_equivalent(rule):
+    amount = rule["amount_kopecks"]
+    if rule["needs_review"] or amount is None:
+        return None
+    if amount == 0:
+        return Decimal(0)
+    return Decimal(amount) / rule["period_months"] if rule["period_months"] else None
+
+
+def calendar_for_rule(rule, plan, by_month, uncertain, gaps):
+    title = rule["title"]
+    if rule["needs_review"]:
+        gaps.append(f"Проверьте правило «{title}».")
+        uncertain.update(by_month)
+        return
+    amount, period, due = rule["amount_kopecks"], rule["period_months"], rule["next_due"]
+    if amount is None:
+        gaps.append(f"Неизвестна сумма платежа «{title}».")
+    if period is None:
+        gaps.append(f"Неизвестен интервал платежа «{title}».")
+    if due is None:
+        gaps.append(f"Неизвестна следующая дата платежа «{title}».")
+        if amount != 0:
+            uncertain.update(by_month)
+        return
+    # Rules repeat in integer months. With unknown cadence, the anchor is confirmed
+    # and subsequent monthly anniversaries are possible, never confirmed payments.
+    for day in next_dates(due, period or 1, plan.start, plan.end):
+        month = day.strftime("%Y-%m")
+        if period is None and day != due:
+            if amount != 0:
+                uncertain.add(month)
+            continue
+        by_month[month]["payments"].append(
+            dict(rule_id=rule["id"], date=day, title=title, amount=money(amount))
+        )
+        if amount is None:
+            uncertain.add(month)
+        else:
+            by_month[month]["fixed_kopecks"] += amount
+
+
+def calculate(plan, rules, categories, historical, reserve, gaps, *, pending_categories=()):
     periods = []
     first = plan.start.replace(day=1)
     variable = Decimal(0)
@@ -263,9 +373,10 @@ def calculate(plan, rules, categories, historical, reserve, gaps):
         )
         if c.id not in categories or amount is None or amount < 0:
             known_monthly = False
-            gaps.append(
-                f"Нужна оценка категории «{categories.get(c.id, 'удалена')}» или полные сопоставимые месяцы."
-            )
+            if c.id not in pending_categories:
+                gaps.append(
+                    f"Нужна оценка категории «{categories.get(c.id, 'удалена')}» или полные сопоставимые месяцы."
+                )
         else:
             variable += amount
         basis.append(
@@ -283,12 +394,17 @@ def calculate(plan, rules, categories, historical, reserve, gaps):
         last = first.replace(day=monthrange(first.year, first.month)[1])
         count = (min(last, plan.end) - max(first, plan.start)).days + 1
         periods.append(
-            dict(month=first.strftime("%Y-%m"), variable=variable * count / last.day, payments=[])
+            dict(
+                month=first.strftime("%Y-%m"),
+                variable=variable * count / last.day,
+                payments=[],
+                fixed_kopecks=0,
+            )
         )
         first = move_month(first, 1)
     by_month = {p["month"]: p for p in periods}
     monthly = variable
-    cash_known = known_monthly
+    uncertain = set()
     active = []
     for r in rules:
         if not r["repeat"] or (
@@ -296,39 +412,31 @@ def calculate(plan, rules, categories, historical, reserve, gaps):
         ):
             continue
         active.append(r)
-        amount, period, due = r["amount_kopecks"], r["period_months"], r["next_due"]
-        if r["needs_review"] or not period or amount is None:
-            known_monthly = cash_known = False
-            gaps.append(f"Проверьте правило «{r['title']}».")
-            continue
-        monthly += Decimal(amount) / period
-        if due is None:
-            cash_known = False
-            gaps.append(f"Неизвестна следующая дата платежа «{r['title']}».")
-            continue
-        for day in next_dates(due, period, plan.start, plan.end):
-            by_month[day.strftime("%Y-%m")]["payments"].append(
-                dict(rule_id=r["id"], date=day, title=r["title"], amount=money(amount))
-            )
+        equivalent = monthly_equivalent(r)
+        if equivalent is None:
+            known_monthly = False
+        else:
+            monthly += equivalent
+        calendar_for_rule(r, plan, by_month, uncertain, gaps)
     has_budget = bool(plan.categories or active)
     if not has_budget:
         gaps.append("Выберите обязательные категории или отметьте повторяющийся платёж.")
     calendar = []
     goal = 0
     for item in periods:
-        amount = rounded(item["variable"]) + sum(
-            rounded(Decimal(p["amount"]["amount"]) * 100) for p in item["payments"]
-        )
+        amount = rounded(item["variable"]) + item["fixed_kopecks"]
         goal += amount
         calendar.append(
             dict(
                 month=item["month"],
                 variable=money(item["variable"]) if variable_known and has_budget else None,
                 payments=item["payments"],
-                total=money(amount) if has_budget and cash_known else None,
+                total=money(amount)
+                if has_budget and variable_known and item["month"] not in uncertain
+                else None,
             )
         )
-    goal = goal if has_budget and cash_known else None
+    goal = goal if has_budget and variable_known and not uncertain else None
     monthly = monthly if has_budget and known_monthly else None
     months = (
         (Decimal(reserve) / monthly).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
@@ -348,9 +456,7 @@ def calculate(plan, rules, categories, historical, reserve, gaps):
                 id=r["id"],
                 title=r["title"],
                 amount=money(r["amount_kopecks"]),
-                monthly=money(Decimal(r["amount_kopecks"]) / r["period_months"])
-                if not r["needs_review"] and r["amount_kopecks"] is not None and r["period_months"]
-                else None,
+                monthly=money(monthly_equivalent(r)),
                 period_months=r["period_months"],
                 next_due=r["next_due"],
                 needs_review=r["needs_review"],
@@ -374,12 +480,21 @@ def read(session: Session):
     )
     rules = payment_rules_for_budget(session)
     evidence = []
+    candidates = []
     historical = (
-        historical_amounts(session, plan, rules, evidence)
+        historical_amounts(session, plan, rules, evidence, candidates)
         if any(c.estimate is None for c in plan.categories)
         else None
     )
-    metrics = calculate(plan, rules, categories, historical, reserve, gaps)
+    metrics = calculate(
+        plan,
+        rules,
+        categories,
+        historical,
+        reserve,
+        gaps,
+        pending_categories={item["category_id"] for item in candidates},
+    )
     return dict(
         revision=revision,
         plan=plan.model_dump(mode="json"),
@@ -387,6 +502,7 @@ def read(session: Session):
         gaps=list(dict.fromkeys(gaps)),
         snapshot_date=observed,
         history_coverage=evidence,
+        payment_candidates=candidates,
         sources=[
             dict(key=s["key"], label=s["label"], kind=s["kind"], balance=money(s["amount_kopecks"]))
             for s in catalog

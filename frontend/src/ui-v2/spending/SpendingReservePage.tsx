@@ -1,5 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import type { Purchase } from "../../api/spendingPayments";
+import { PaymentRuleDialog } from "./PaymentRuleDialog";
 import { formatApiError } from "../../api/client";
 import {
   getReserve,
@@ -153,8 +155,9 @@ function ReserveSettings({ data }: { data: ReserveView }) {
         <fieldset disabled={pending} className={styles.reserveFields}>
           <legend>Переменные обязательные расходы</legend>
           <p>
-            Для выбранной категории укажите сумму в месяц или оставьте поле пустым для среднего.
-            Отдельные повторяющиеся платежи уже входят в календарь.
+            Для ручной оценки укажите только переменную часть расходов. Регулярные платежи с
+            отдельным правилом прибавятся к ней. Оставьте поле пустым для среднего по выбранным
+            месяцам.
           </p>
           {categories.map((row) => {
             const sel = plan.categories.find((c) => c.id === row.id);
@@ -265,6 +268,7 @@ function ReserveSettings({ data }: { data: ReserveView }) {
   );
 }
 export default function SpendingReservePage() {
+  const [candidate, setCandidate] = useState<(Purchase & { ruleId: number }) | null>(null);
   const query = useQuery({ queryKey, queryFn: ({ signal }) => getReserve(signal) });
   const data = query.data;
   return (
@@ -324,6 +328,39 @@ export default function SpendingReservePage() {
                   </strong>
                 </p>
               )}
+              {data.payment_candidates.map((c) => (
+                <div
+                  className={styles.actions}
+                  key={`${c.month}:${c.source}:${c.operation_id}:${c.rule_id}`}
+                >
+                  <p>
+                    {formatMonthKey(c.month)} · {c.category}: «{c.title}»,{" "}
+                    <Money value={c.amount} /> за {shortDate(c.date, true)}. Проверьте совпадение с
+                    графиком или укажите переменную часть вручную.
+                  </p>
+                  <Button
+                    type="button"
+                    onClick={() =>
+                      setCandidate({
+                        month: c.month,
+                        source: c.source,
+                        id: c.operation_id,
+                        ruleId: c.rule_id,
+                      })
+                    }
+                  >
+                    Открыть покупку «{c.title}»
+                  </Button>
+                </div>
+              ))}
+              {candidate && (
+                <PaymentRuleDialog
+                  purchase={candidate}
+                  suggestedRuleId={candidate.ruleId}
+                  detached={[]}
+                  onClose={() => setCandidate(null)}
+                />
+              )}
               {data.gaps.map((gap) => (
                 <p key={gap} className={sheet.gapNote}>
                   {gap}
@@ -380,7 +417,9 @@ export default function SpendingReservePage() {
                 </Table>
                 {data.basis.some((c) => c.method === "history") && (
                   <p className={sheet.gapNote}>
-                    В среднем по категории учтены покупки без собственного правила продления.
+                    Среднее исключает покупки с отдельным графиком и подтверждённые оплаты по нему.
+                    Для других оплат по тому же графику подтвердите связь в карточке покупки или
+                    укажите переменную часть вручную.
                   </p>
                 )}
               </Section>
@@ -427,7 +466,8 @@ export default function SpendingReservePage() {
                       <Td>
                         {m.payments.map((p) => (
                           <div key={`${p.date}-${p.rule_id}`}>
-                            {shortDate(p.date)} · {p.title} · <Money value={p.amount} />
+                            {shortDate(p.date)} · {p.title} ·{" "}
+                            <Money value={p.amount} empty="сумма неизвестна" />
                           </div>
                         ))}
                       </Td>
