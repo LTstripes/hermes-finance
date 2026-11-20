@@ -15,6 +15,7 @@ import {
 } from "../UiV2StateBlocks";
 import { spendingComparisonNote, spendingMonthForm } from "../uiV2Copy";
 import { coordinate, DailyChart, HistoryChart } from "./SpendingCharts";
+import { ExpenseTabs } from "./ExpenseTabs";
 import { operationForms, Operations } from "./SpendingOperations";
 import {
   coverageLabel,
@@ -441,6 +442,7 @@ export default function SpendingPage() {
       }
     >
       <div className={sheet.sheet}>
+        <ExpenseTabs />
         {invalid ? (
           <>
             <UiV2WidgetState title="Такого месяца нет" />

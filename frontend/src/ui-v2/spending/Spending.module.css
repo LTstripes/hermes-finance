@@ -35,6 +35,27 @@
 .status [data-coverage="single"]::before {
   background: var(--faint);
 }
+.reserveFields {
+  display: grid;
+  gap: 10px;
+  border: 0;
+  margin: 16px 0;
+  padding: 0;
+}
+.reserveFields legend {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.reserveLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.reserveFields input:not([type="checkbox"]) {
+  padding: 5px 8px;
+  max-width: 14em;
+}
 .candidates {
   border: 0;
   min-width: 0;

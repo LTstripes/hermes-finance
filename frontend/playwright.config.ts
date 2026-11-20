@@ -380,7 +380,7 @@ const suites: Record<string, PlaywrightTestConfig> = {
   },
   spending: {
     testDir: "./e2e",
-    testMatch: "spending.acceptance.ts",
+    testMatch: ["spending.acceptance.ts", "reserve.acceptance.ts"],
     outputDir: path.join(os.tmpdir(), "hermes-spending-playwright"),
     workers: 1,
     retries: 0,

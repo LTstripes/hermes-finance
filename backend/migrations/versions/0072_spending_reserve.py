@@ -1,4 +1,5 @@
 """Owner-selected spending reserve plan, independent of reporting month facts."""
+
 import sqlalchemy as sa
 from alembic import op
 

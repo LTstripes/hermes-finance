@@ -1,4 +1,5 @@
 """Local spending reserve plan API."""
+
 from fastapi import APIRouter
 from pydantic import Field
 
@@ -23,4 +24,5 @@ def update_reserve(session: SessionDep, body: Save):
     def write():
         reserve.save_plan(session, body.expected_revision, body.plan)
         return reserve.read(session)
+
     return _call(session, write, write=True)

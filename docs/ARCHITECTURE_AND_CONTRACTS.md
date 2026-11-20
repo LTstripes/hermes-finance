@@ -250,6 +250,14 @@ Liquid capital excludes property and subtracts included credit-card debt; refere
 <a id="c2-master_spec-295"></a>
 ### Conceptual persisted entities
 
+### Spending reserve (#1235)
+
+`GET/PUT /api/spending/reserve` reads or replaces the owner's reserve plan in a coherent snapshot. A singleton with optimistic revision introduced in `0072_spending_reserve` stores dates, whole or partial selections, category budgets and historical months. A retry of an unchanged plan is idempotent. Downgrade refuses to discard saved choices. No monthly facts are written.
+
+Rubles come from the latest closed snapshot on or before the earlier of the start date and today. Eligible positions are cash balances and savings deposits; dated balances are displayed. Account-linked rows are grouped by balance type and stable account identity. Unlinked rows bind to their recorded snapshot, and require reselection in a later report. A missing amount, conflicting types for one account or an excessive selected portion makes the reserve unknown. Earmarked money may be included in an allocated portion; it is never added again as income or extra balance.
+
+Mandatory recurring payments come from owner rules. Actual purchase amounts stay in the paid month. The normalized budget adds amount divided by cadence. Cash requirements include full dated renewals within inclusive endpoints; month-end recurrences clamp to the shorter month from the original anchor. Variable budgets use an explicit estimate or the net category average over owner-selected full months with matching bank accounts and manual-file coverage. Unresolved source data prevents a definitive average. Purchases governed by a separate recurring rule (including canceled renewal) and explicitly discretionary purchases are excluded. Remaining negative estimates require owner input. Variable costs are prorated by calendar days for partial months. Money is rounded to kopecks half-up, and the horizon sums the monthly amounts shown. Missing independent inputs keep affected outputs null. A zero monthly budget has no numeric months-of-cover ratio.
+
 <a id="c2-spending-diary"></a>
 #### Spending diary v1 (#1227, T1/T1b)
 

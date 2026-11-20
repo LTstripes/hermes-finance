@@ -30,6 +30,7 @@ TRANSITION = (
     "0069_spending_diary",
     "0070_spending_screen",
     "0071_spending_payment_rules",
+    "0072_spending_reserve",
 )
 
 
