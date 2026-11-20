@@ -51,7 +51,7 @@ const NATIVE_SECTIONS: Array<{ id: UiV2Section; label: string; icon: ReactNode; 
   },
   {
     id: "spending",
-    label: "Траты",
+    label: "Расходы",
     icon: (
       <>
         <path d="M4 7a2 2 0 0 1 2-2h11v4" />

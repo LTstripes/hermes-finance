@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,7 +66,7 @@ function contextWith(overrides: Partial<MonthEditorContext> = {}): MonthEditorCo
 }
 
 function renderLeaf(context: MonthEditorContext) {
-  return render(<UiV2MonthBudgetSection context={context} />);
+  return render(<UiV2MonthBudgetSection context={context} />, { wrapper: MemoryRouter });
 }
 
 const expenseFoodMandatory = {
@@ -163,11 +164,30 @@ describe("UiV2MonthBudgetSection plan/fact matrix", () => {
         <strong id="month-panel-total" />
         <UiV2MonthBudgetSection context={contextWith({ workspace: true })} />
       </>,
+      { wrapper: MemoryRouter },
     );
     await waitFor(() =>
       expect(document.getElementById("month-panel-total")).toHaveTextContent(
         "обязательные 50 000 ₽ · крупные и прочие 125,50 ₽",
       ),
+    );
+  });
+  it("opens the closed report's calendar month even when its snapshot is later", async () => {
+    renderLeaf(
+      contextWith({
+        month: {
+          ...draftMonth,
+          year: 2025,
+          month: 12,
+          snapshot_date: "2026-01-02",
+          status: "closed",
+        },
+        readOnly: true,
+      }),
+    );
+    expect(await screen.findByRole("link", { name: "Открыть ленту расходов" })).toHaveAttribute(
+      "href",
+      "/v2/spending?month=2025-12#spending-operations",
     );
   });
   it("renders plan-only with an explicit fact gap", async () => {

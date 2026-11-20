@@ -209,7 +209,7 @@ test("ui-v2 mobile Home, Returns and Month fit with reachable navigation @viewpo
       await expect(page.getByRole("link", { name: /Рабочий месяц:/ })).toBeVisible();
       const nav = page.getByRole("navigation", { name: "Основная навигация", exact: true });
       await expect(nav.getByRole("link")).toHaveCount(6);
-      await expect(nav.getByRole("link", { name: "Траты" })).toHaveAttribute(
+      await expect(nav.getByRole("link", { name: "Расходы" })).toHaveAttribute(
         "href",
         "/v2/spending",
       );

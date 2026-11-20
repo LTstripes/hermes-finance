@@ -400,16 +400,21 @@ export default function SpendingPage() {
       spending?: { month: string; added: number; changed: number; removed: number };
     } | null
   )?.spending;
+  const operationsLocation =
+    !busy && result && result.month === month && location.hash === "#spending-operations"
+      ? location.key
+      : null;
   useEffect(() => {
-    if (location.hash === "#spending-operations" && result?.loaded && source)
+    if (operationsLocation) {
       document.getElementById("spending-operations")?.scrollIntoView({ block: "start" });
-  }, [location.hash, result?.loaded, source]);
+    }
+  }, [operationsLocation]);
   return (
     <UiV2Shell
       busy={busy}
       header={
         <div className={`${styles.actions} ${styles.screenHeader}`}>
-          <h1>Траты</h1>
+          <h1>Расходы</h1>
           {month && !invalid && (
             <>
               <div className={styles.actions}>
@@ -477,33 +482,68 @@ export default function SpendingPage() {
                 {status.removed}.
               </p>
             )}
-            {!last?.loaded && !result.loaded ? (
+            {result.loaded ? (
               <>
-                <UiV2Notice title="Трат пока нет">
-                  Раз в месяц, 5–6 числа, загрузите выписку Альфа-Банка в CSV и, если вели, ручной
-                  файл с наличными и Сбером. Finance разберёт операции и покажет, куда ушли деньги.
+                <MonthFigures data={result} />
+                <Section title="Операции" eyebrow={monthName} id="spending-operations">
+                  <div className={styles.filters}>
+                    <label className={sheet.select}>
+                      Категория{" "}
+                      <select
+                        value={category ?? ""}
+                        onChange={(event) => update({ category: event.target.value || null })}
+                      >
+                        <option value="">Все</option>
+                        {result.categories.map((item) => (
+                          <option value={item.id} key={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={sheet.select}>
+                      Источник{" "}
+                      <select
+                        value={source ?? ""}
+                        onChange={(event) => update({ source: event.target.value || null })}
+                      >
+                        <option value="">Все</option>
+                        {sources.map((item) => (
+                          <option value={item} key={item}>
+                            {sourceLabels[item]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <Operations
+                    key={`${month}:${category}:${source}`}
+                    month={month}
+                    category={category}
+                    source={source}
+                  />
+                </Section>
+              </>
+            ) : (
+              <>
+                <UiV2Notice title={`${monthName}: файлы расходов не загружены`}>
+                  Загрузите выписку Альфа-Банка в CSV и ручной файл Markdown, если вели его.
                 </UiV2Notice>
                 <div className={styles.actions}>
                   <UploadLink month={month} />
                   <TemplateButton month={month} />
                 </div>
+                <Section
+                  title="Записи из отчёта месяца"
+                  eyebrow={monthName}
+                  id="spending-operations"
+                >
+                  <Operations key={month} month={month} source="month_entries" />
+                </Section>
               </>
-            ) : (
+            )}
+            {(last?.loaded || result.loaded) && (
               <>
-                {result.loaded ? (
-                  <MonthFigures data={result} />
-                ) : (
-                  <>
-                    <UiV2WidgetState title={`${monthName} не загружен`} />
-                    {isNonzero(result.month_entries_total) && (
-                      <p className={sheet.gapNote}>
-                        В отчёте месяца записано расходов на{" "}
-                        <Money value={result.month_entries_total} /> — это не все траты месяца.
-                      </p>
-                    )}
-                    <UploadLink month={month} />
-                  </>
-                )}
                 <Section
                   title="Траты по месяцам"
                   eyebrow="История"
@@ -563,44 +603,6 @@ export default function SpendingPage() {
                         <DailyChart month={month} daily={result.daily} />
                       </Section>
                     </div>
-                    <Section title="Операции" eyebrow={monthName} id="spending-operations">
-                      <div className={styles.filters}>
-                        <label className={sheet.select}>
-                          Категория{" "}
-                          <select
-                            value={category ?? ""}
-                            onChange={(event) => update({ category: event.target.value || null })}
-                          >
-                            <option value="">Все</option>
-                            {result.categories.map((item) => (
-                              <option value={item.id} key={item.id}>
-                                {item.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className={sheet.select}>
-                          Источник{" "}
-                          <select
-                            value={source ?? ""}
-                            onChange={(event) => update({ source: event.target.value || null })}
-                          >
-                            <option value="">Все</option>
-                            {sources.map((item) => (
-                              <option value={item} key={item}>
-                                {sourceLabels[item]}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                      <Operations
-                        key={`${month}:${category}:${source}`}
-                        month={month}
-                        category={category}
-                        source={source}
-                      />
-                    </Section>
                   </>
                 )}
               </>

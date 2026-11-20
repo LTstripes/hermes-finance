@@ -19,7 +19,7 @@ const TITLES: Record<string, string> = {
   "/v2/income/goals": "Цели",
   "/v2/income/tax-iis": "Налоги и ИИС",
   "/v2/income/scenario-lab": "Сценарии",
-  "/v2/spending": "Траты",
+  "/v2/spending": "Расходы",
   "/v2/spending/import": "Загрузка трат",
   "/v2/spending/rules": "Категории трат",
 };

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
+import { Link } from "react-router";
+import { monthPath, validMonth } from "./spending/common";
 import { formatApiError } from "../api/client";
 import { createExpense, deleteExpense, listExpenses, updateExpense } from "../api/expenses";
 import {
@@ -134,6 +136,7 @@ type PlanDraft = {
 export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContext }) {
   const { month, readOnly, refresh, setDirty } = context;
   const monthId = month.id;
+  const journalMonth = `${month.year}-${String(month.month).padStart(2, "0")}`;
 
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [savings, setSavings] = useState<SavingAllocation[]>([]);
@@ -875,6 +878,9 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
       ) : null}
       <section aria-label="Расходы месяца" className={styles.panel}>
         {!context.workspace && <h2>Расходы</h2>}
+        {validMonth(journalMonth) && (
+          <Link to={`${monthPath(journalMonth)}#spending-operations`}>Открыть ленту расходов</Link>
+        )}
         {(
           [
             { id: "mandatory", title: "Обязательные", total: mandatoryTotal },
