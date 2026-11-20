@@ -802,6 +802,7 @@ def _plan(
             select(SpendingPaymentRule.operation_id).where(SpendingPaymentRule.month == month)
         )
     )
+    ambiguous_notes = set()
     duplicate_targets = {r["duplicate_of_id"] for r in current if r["duplicate_of_id"]}
     for r in incoming:
         old = old_by_id.get(_identity(r))
@@ -815,14 +816,15 @@ def _plan(
                     "needs_review",
                 ):
                     r[field] = old[field]
-            elif (
-                old["decision"]
-                or old["id"] in memberships
-                or old["id"] in duplicate_targets
-                or old["id"] in annotated
-            ):
+            elif old["decision"] or old["id"] in memberships or old["id"] in duplicate_targets:
                 lost.append(old)
                 r["needs_review"] = True
+            if (
+                old["id"] in annotated
+                and not unchanged
+                and (old_counts[r["fingerprint"]] != 1 or new_counts[r["fingerprint"]] != 1)
+            ):
+                ambiguous_notes.add(old["id"])
             if any(r[k] != old[k] for k in ROW_FIELDS):
                 changed.append(r)
         else:
@@ -962,6 +964,7 @@ def _plan(
         unchanged=unchanged and not choices,
         period=period,
         projected=projected,
+        ambiguous_notes=ambiguous_notes,
     )
 
 
@@ -1049,7 +1052,9 @@ def apply_upload(
     lost_ids = {r["id"] for r in plan["lost"]} | {r["id"] for r in plan["removed"]}
     receipts = [_decision_receipt(session, old) for old in plan["lost"]]
     for rule in session.scalars(
-        select(SpendingPaymentRule).where(SpendingPaymentRule.operation_id.in_(lost_ids))
+        select(SpendingPaymentRule).where(
+            SpendingPaymentRule.operation_id.in_(lost_ids | plan["ambiguous_notes"])
+        )
     ):
         rule.operation_id = None
         rule.version += 1

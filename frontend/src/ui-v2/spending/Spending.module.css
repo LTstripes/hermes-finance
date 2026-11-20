@@ -326,3 +326,50 @@ details > summary.sectionLink {
     margin-inline-start: 0;
   }
 }
+
+.paymentLink {
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  text-decoration: underline;
+}
+.paymentDialog {
+  width: min(32rem, 92vw);
+  max-height: 90vh;
+  overflow: auto;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+.paymentDialog::backdrop {
+  background: rgb(0 0 0 / 32%);
+}
+.paymentForm,
+.paymentForm fieldset {
+  display: grid;
+  gap: 0.7rem;
+}
+.paymentForm fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.paymentForm label {
+  display: grid;
+  gap: 0.25rem;
+}
+.paymentForm .paymentCheck {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.paymentForm textarea,
+.paymentForm input,
+.paymentForm select {
+  font: inherit;
+}

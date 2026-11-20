@@ -549,7 +549,22 @@ class PaymentReattachRequest(StrictRequest):
 
 @router.get("/payment-rules")
 def payment_rules(session: SessionDep, month: str):
-    return _call(session, lambda: payments.payment_rules_for_budget(session, month))
+    return _call(
+        session, lambda: payments.payment_rules_for_budget(session, month, include_archived=True)
+    )
+
+
+class ArchiveRuleRequest(StrictRequest):
+    version: int = Field(ge=1)
+
+
+@router.post("/archived-payment-rules/{rule_id}")
+def archive_payment_rule(session: SessionDep, month: str, rule_id: int, body: ArchiveRuleRequest):
+    return _call(
+        session,
+        lambda: payments.archive_detached(session, month, rule_id, body.version),
+        write=True,
+    )
 
 
 @router.get("/payment-rules/{source}/{operation_id}")
