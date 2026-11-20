@@ -1000,6 +1000,48 @@ def _invalidate_links(session: Session, operation_ids: set[int]) -> None:
     session.flush()
 
 
+def _move_confirmed_duplicate_notes(session: Session, month: str) -> None:
+    candidates = session.execute(
+        select(SpendingPaymentRule, SpendingOperation.duplicate_of_id)
+        .join(SpendingOperation, SpendingPaymentRule.operation_id == SpendingOperation.id)
+        .where(
+            SpendingPaymentRule.month == month,
+            SpendingOperation.decision == "duplicate",
+            SpendingOperation.duplicate_of_id.is_not(None),
+        )
+    ).all()
+    if not candidates:
+        return
+    rows = {row["id"]: row for row in read_month_base(session, month)["operations"]}
+    by_target = defaultdict(list)
+    for rule, target_id in candidates:
+        source = rows.get(rule.operation_id)
+        target = rows.get(target_id)
+        if (
+            source
+            and source["effective_reason"] is None
+            and target
+            and target["included"]
+            and target["source"] == "alfa_csv"
+        ):
+            by_target[target_id].append(rule)
+    occupied = set(
+        session.scalars(
+            select(SpendingPaymentRule.operation_id).where(
+                SpendingPaymentRule.operation_id.in_(by_target)
+            )
+        )
+    )
+    for target_id, notes in by_target.items():
+        if len(notes) == 1 and target_id not in occupied:
+            rule = notes[0]
+            rule.operation_id = target_id
+            rule.source = "alfa"
+            rule.title = rows[target_id]["description"]
+            rule.version += 1
+    session.flush()
+
+
 def apply_upload(
     session: Session,
     *,
@@ -1100,6 +1142,7 @@ def apply_upload(
                 action=choice["action"],
                 category=choice.get("category"),
             )
+    _move_confirmed_duplicate_notes(session, month)
     return dict(changed=True, month=read_month(session, month))
 
 
@@ -1136,6 +1179,7 @@ def decide_operation(
             session, scope="merchant", key=operation.merchant_key, action=action, category=category
         )
     session.flush()
+    _move_confirmed_duplicate_notes(session, operation.month)
     return read_month(session, operation.month)
 
 

@@ -227,7 +227,7 @@ CI_CORE_SHARD_WEIGHTS = {
 # original core-a group is subdivided; the accepted A/B membership stays fixed.
 CI_CORE_A_SHARD_WEIGHTS = {
     "test_spending_diary.py": 48.77,
-    "test_spending_payment_rules.py": 1.0,
+    "test_spending_payment_rules.py": 9.73,
     "domain/test_total_income.py": 0.05,
     "test_total_income_service.py": 1.0,
     "test_total_income_api.py": 1.0,

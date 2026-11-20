@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from test_spending_diary import MONTH, bank_row, csv_file, db, upload  # noqa: F401
+from test_spending_diary import MONTH, bank_row, csv_file, db, md_file, upload  # noqa: F401
 
 from hermes_finance.main import create_app
 from hermes_finance.persistence import SpendingOperation
@@ -104,6 +104,46 @@ def test_unknown_budget_inputs_and_category_precedence(db):  # noqa: F811
         assert archived.json()["archived"] and archived.json()["note"] == body["note"]
         with db.session_factory() as session:
             assert payment_rules_for_budget(session) == []
+
+
+def test_confirmed_manual_duplicate_moves_its_note_once(db):  # noqa: F811
+    from hermes_finance.services import spending_diary as diary
+    from hermes_finance.services.spending_payment_rules import card, save
+
+    with db.session_factory() as session:
+        upload(
+            session,
+            md_file(("03.10", "500", "Продукты", "Ручная покупка", "альфа")),
+            source="manual_md",
+        )
+        manual_id = session.scalar(select(SpendingOperation.id))
+        # An owner-approved separate expense first exists only in the manual file.
+        diary.decide_operation(session, manual_id, action="expense", category="Продукты")
+        source = card(session, MONTH, "alfa", manual_id)
+        saved = save(
+            session,
+            MONTH,
+            "alfa",
+            manual_id,
+            dict(
+                token=source["token"],
+                note="Сохранить заметку",
+                mandatory_override=None,
+                repeat=True,
+                period_months=12,
+                next_due=None,
+                amount="500.00",
+            ),
+        )
+        upload(session, csv_file(bank_row()))
+        target = session.scalar(
+            select(SpendingOperation.id).where(SpendingOperation.source == "alfa_csv")
+        )
+        diary.decide_operation(session, manual_id, action="duplicate", duplicate_of_id=target)
+        bank = card(session, MONTH, "alfa", target)["rule"]
+        assert bank["id"] == saved["rule"]["id"] and bank["note"] == "Сохранить заметку"
+        assert not bank["needs_review"] and bank["was_recurring"]
+        assert len(payment_rules_for_budget(session)) == 1
 
 
 def test_closed_month_entry_annotation_does_not_write_month(db):  # noqa: F811
