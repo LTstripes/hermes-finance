@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { spendingApi, type SpendingOperation, type SpendingSource } from "../../api/spending";
 import { paymentApi, type PaymentRule } from "../../api/spendingPayments";
@@ -100,6 +100,19 @@ export function Operations({
     queryKey: ["spending", "payment-rules", month],
     queryFn: ({ signal }) => paymentApi.list(month, signal),
   });
+  const cache = useQueryClient();
+  const archive = useMutation({
+    mutationFn: async (rule: PaymentRule) => {
+      await paymentApi.archive(month, rule);
+      const read = await paymentApi.list(month);
+      if (!read.find((r) => r.id === rule.id && r.archived))
+        throw new Error("Не удалось подтвердить архивирование");
+    },
+    onSettled: async () => {
+      await cache.invalidateQueries({ queryKey: ["spending", "payment-rules", month] });
+      await cache.invalidateQueries({ queryKey: ["spending", "reserve"] });
+    },
+  });
   const detached = rules.data?.filter((r) => r.needs_review) ?? [];
   const query = useQuery({
     queryKey: ["spending", "operations", month, category, source, limit],
@@ -124,16 +137,26 @@ export function Operations({
       )}
       {!inline && detached.length > 0 && (
         <details>
-          <summary>Пометки для сверки · {detached.length}</summary>
+          <summary>Пометки без покупки · {detached.length}</summary>
           <p>Выберите покупку в ленте и восстановите связь с прежней пометкой.</p>
           <ul>
             {detached.map((rule) => (
               <li key={rule.id}>
-                {rule.title} · {rule.note || "Без заметки"}
+                {rule.title} · {rule.note || "Без заметки"}{" "}
+                {rule.archived ? (
+                  "В архиве"
+                ) : (
+                  <Button disabled={archive.isPending} onClick={() => archive.mutate(rule)}>
+                    Убрать из плана в архив
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
         </details>
+      )}
+      {archive.isError && (
+        <p role="alert">Не удалось подтвердить архивирование. Обновите список пометок.</p>
       )}
       <OperationTable items={items} rules={rules.data ?? []} select={setSelected} />
       {selected && (

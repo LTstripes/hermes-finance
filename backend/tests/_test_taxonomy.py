@@ -837,6 +837,7 @@ def semantic_markers_for(test_path: Path) -> tuple[str, ...]:
     if filename.endswith("_service.py") or filename in {
         "test_source_instrument_events.py",
         "test_spending_diary.py",
+        "test_spending_payment_rules.py",
     }:
         markers.add("service")
     if filename.startswith("test_legacy_"):

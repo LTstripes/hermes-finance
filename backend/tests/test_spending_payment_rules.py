@@ -4,11 +4,11 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from test_spending_diary import MONTH, bank_row, csv_file, db, upload  # noqa: F401
 
 from hermes_finance.main import create_app
 from hermes_finance.persistence import SpendingOperation
 from hermes_finance.services.spending_payment_rules import payment_rules_for_budget
-from test_spending_diary import MONTH, bank_row, csv_file, db, upload  # noqa: F401
 
 
 def test_owner_rule_survives_reimport_cancel_and_ambiguous_replacement(db):  # noqa: F811
@@ -52,6 +52,7 @@ def test_owner_rule_survives_reimport_cancel_and_ambiguous_replacement(db):  # n
                 "amount": None,
             },
         ).json()
+        assert cancelled["rule"]["was_recurring"] is True
         assert cancelled["rule"]["repeat"] is False and cancelled["rule"]["note"] == body["note"]
         with db.session_factory() as session:
             upload(session, csv_file(row, row))
@@ -96,6 +97,13 @@ def test_unknown_budget_inputs_and_category_precedence(db):  # noqa: F811
             upload(session, csv_file(bank_row(amount="501")), confirm_disappearance=True)
             lost = payment_rules_for_budget(session)[0]
             assert lost["needs_review"] and lost["mandatory"] is None
+            session.commit()
+        archive_path = f"/api/spending/archived-payment-rules/{lost['id']}?month={MONTH}"
+        archived = client.post(archive_path, json={"version": lost["version"]})
+        assert archived.status_code == 200, archived.text
+        assert archived.json()["archived"] and archived.json()["note"] == body["note"]
+        with db.session_factory() as session:
+            assert payment_rules_for_budget(session) == []
 
 
 def test_closed_month_entry_annotation_does_not_write_month(db):  # noqa: F811

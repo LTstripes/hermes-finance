@@ -16,6 +16,7 @@ export type PaymentRule = {
   amount: string | null;
   monthly_amount: string | null;
   needs_review: boolean;
+  archived: boolean;
   version: number;
 };
 
@@ -42,6 +43,11 @@ function path(purchase: Purchase, action = "") {
 export const paymentApi = {
   list: (month: string, signal?: AbortSignal) =>
     apiRequest<PaymentRule[]>(`${root}?month=${month}`, { signal, cache: "no-store" }),
+  archive: (month: string, rule: PaymentRule) =>
+    apiRequest<PaymentRule>(`/api/spending/archived-payment-rules/${rule.id}?month=${month}`, {
+      method: "POST",
+      body: { version: rule.version },
+    }),
   card: (purchase: Purchase, signal?: AbortSignal) =>
     apiRequest<PaymentCard>(path(purchase), { signal, cache: "no-store" }),
   save: (purchase: Purchase, token: string, edit: PaymentEdit) =>

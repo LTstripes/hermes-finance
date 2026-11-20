@@ -949,7 +949,6 @@ def _plan(
         month=month,
         incoming=incoming,
         projected=projected,
-        ambiguous_notes=ambiguous_notes,
         scopes=scopes,
         period=period,
         parsed=parsed,

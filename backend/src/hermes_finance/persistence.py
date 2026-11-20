@@ -67,6 +67,8 @@ class SpendingPaymentRule(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     mandatory_override: Mapped[bool | None] = mapped_column(Boolean)
     repeat: Mapped[bool] = mapped_column(Boolean, default=False)
+    was_recurring: Mapped[bool] = mapped_column(Boolean, default=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
     period_months: Mapped[int | None] = mapped_column(Integer)
     next_due: Mapped[date | None] = mapped_column(Date)
     amount_kopecks: Mapped[int | None] = mapped_column(BigInteger)

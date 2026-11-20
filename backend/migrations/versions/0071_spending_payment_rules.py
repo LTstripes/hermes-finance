@@ -31,6 +31,8 @@ def upgrade():
         sa.Column("note", sa.Text(), nullable=False),
         sa.Column("mandatory_override", sa.Boolean()),
         sa.Column("repeat", sa.Boolean(), nullable=False),
+        sa.Column("was_recurring", sa.Boolean(), nullable=False),
+        sa.Column("archived", sa.Boolean(), nullable=False),
         sa.Column("period_months", sa.Integer()),
         sa.Column("next_due", sa.Date()),
         sa.Column("amount_kopecks", sa.BigInteger()),
