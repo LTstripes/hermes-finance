@@ -280,7 +280,10 @@ test("spending visual matrix @viewport-owned", async ({ browser }, testInfo) => 
 test("spending empty state @viewport-owned", async ({ page }, testInfo) => {
   const unhandled = await installSyntheticApi(page, "empty");
   await page.goto("/v2/spending?month=2026-10");
-  await expect(page.getByRole("heading", { name: "Трат пока нет" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Октябрь 2026: файлы расходов не загружены" }),
+  ).toBeVisible();
+  await expect(page.getByText("Операций нет", { exact: true })).toBeVisible();
   await expect(page.getByText(/0\s*₽/)).toHaveCount(0);
   await assertAuditState(page, unhandled, []);
   const dir = path.resolve(".visual-audit", "spending", testInfo.project.name);
