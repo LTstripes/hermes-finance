@@ -554,6 +554,47 @@ def payment_rules(session: SessionDep, month: str):
     )
 
 
+class OccurrenceDecision(StrictRequest):
+    token: str = Field(min_length=64, max_length=64)
+    rule_id: int = Field(ge=1)
+    version: int = Field(ge=1)
+    decision: Literal["payment", "separate"]
+
+
+class UndoOccurrence(StrictRequest):
+    token: str = Field(min_length=64, max_length=64)
+    occurrence_id: int = Field(ge=1)
+    version: int = Field(ge=1)
+
+
+@router.put("/payment-rules/{source}/{operation_id}/occurrence")
+def choose_payment_occurrence(
+    session: SessionDep,
+    source: PaymentSource,
+    operation_id: int,
+    month: str,
+    body: OccurrenceDecision,
+):
+    return _call(
+        session,
+        lambda: payments.choose_occurrence(
+            session, month, source, operation_id, **body.model_dump()
+        ),
+        write=True,
+    )
+
+
+@router.post("/payment-rules/{source}/{operation_id}/undo-occurrence")
+def undo_payment_occurrence(
+    session: SessionDep, source: PaymentSource, operation_id: int, month: str, body: UndoOccurrence
+):
+    return _call(
+        session,
+        lambda: payments.undo_occurrence(session, month, source, operation_id, **body.model_dump()),
+        write=True,
+    )
+
+
 class ArchiveRuleRequest(StrictRequest):
     version: int = Field(ge=1)
 

@@ -29,22 +29,41 @@ function PaymentForm({
   purchase,
   initial,
   detached,
+  suggestedRuleId,
   onClose,
   protect,
 }: {
   purchase: Purchase;
   initial: PaymentCard;
   detached: PaymentRule[];
+  suggestedRuleId?: number;
   onClose: () => void;
   protect: (dirty: boolean, pending: boolean) => void;
 }) {
   const cache = useQueryClient();
   const [saved, setSaved] = useState(initial);
+  const ownedRule = saved.rule;
   const [draft, setDraft] = useState(() => initialEdit(initial));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [attach, setAttach] = useState("");
+  const [scheduleId, setScheduleId] = useState(() =>
+    initial.schedules.some((s) => s.id === suggestedRuleId) ? String(suggestedRuleId) : "",
+  );
+  const chosenSchedule = saved.schedules.find((s) => String(s.id) === scheduleId);
+  function record(decision: "payment" | "separate") {
+    if (chosenSchedule)
+      void write(() =>
+        paymentApi.occurrence(
+          purchase,
+          saved.token,
+          chosenSchedule.id,
+          chosenSchedule.version,
+          decision,
+        ),
+      );
+  }
   const running = useRef(false);
   const dirty = JSON.stringify(initialEdit(saved)) !== JSON.stringify(draft);
   useEffect(() => protect(dirty, pending), [dirty, pending, protect]);
@@ -52,7 +71,7 @@ function PaymentForm({
     setDraft((old) => ({ ...old, ...values }));
     setStatus("");
   };
-  async function write(rule?: PaymentRule) {
+  async function write(action: () => Promise<PaymentCard>) {
     if (running.current) return;
     running.current = true;
     setPending(true);
@@ -60,12 +79,7 @@ function PaymentForm({
     setStatus("");
     let acknowledged = false;
     try {
-      const response = rule
-        ? await paymentApi.reattach(purchase, saved.token, rule)
-        : await paymentApi.save(purchase, saved.token, {
-            ...draft,
-            amount: draft.amount?.trim().replace(",", ".") || null,
-          });
+      const response = await action();
       acknowledged = true;
       const current = await paymentApi.card(purchase);
       if (current.token !== response.token)
@@ -73,6 +87,7 @@ function PaymentForm({
       setSaved(current);
       setDraft(initialEdit(current));
       setAttach("");
+      setScheduleId("");
       setStatus("Сохранено");
     } catch (cause) {
       setError(
@@ -89,7 +104,12 @@ function PaymentForm({
   }
   function submit(event: FormEvent) {
     event.preventDefault();
-    void write();
+    void write(() =>
+      paymentApi.save(purchase, saved.token, {
+        ...draft,
+        amount: draft.amount?.trim().replace(",", ".") || null,
+      }),
+    );
   }
   return (
     <form onSubmit={submit} className={styles.paymentForm}>
@@ -184,6 +204,98 @@ function PaymentForm({
               : formatMoney(saved.rule.monthly_amount)}
           </p>
         )}
+        {(saved.schedules.length > 0 || saved.decisions.length > 0) && (
+          <section>
+            <h3>Связь с графиком</h3>
+            {saved.decisions.map((d) => (
+              <p key={d.id}>
+                {d.needs_review
+                  ? "Требует сверки"
+                  : d.decision === "payment"
+                    ? "Оплачено по графику"
+                    : "Самостоятельная покупка"}{" "}
+                · {d.rule_title}{" "}
+                <Button
+                  type="button"
+                  disabled={dirty}
+                  onClick={() =>
+                    void write(() =>
+                      paymentApi.undoOccurrence(purchase, saved.token, d.id, d.rule_version),
+                    )
+                  }
+                >
+                  Отменить решение
+                </Button>
+              </p>
+            ))}
+            {saved.schedules.length > 0 && (
+              <>
+                <label>
+                  Существующий график
+                  <select value={scheduleId} onChange={(e) => setScheduleId(e.target.value)}>
+                    <option value="">Выберите график</option>
+                    {saved.schedules.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title} · {s.month} ·{" "}
+                        {s.amount ? formatMoney(s.amount) : "Сумма неизвестна"}
+                        {s.repeat ? "" : " · продление отключено"} · №{s.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className={styles.actions}>
+                  <Button
+                    type="button"
+                    disabled={
+                      dirty ||
+                      !chosenSchedule ||
+                      Boolean(saved.rule?.was_recurring) ||
+                      saved.decisions.some(
+                        (d) => d.decision === "payment" && d.rule_id !== chosenSchedule?.id,
+                      )
+                    }
+                    onClick={() => record("payment")}
+                  >
+                    Уже оплачено по этому графику
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={dirty || !chosenSchedule}
+                    onClick={() => record("separate")}
+                  >
+                    Самостоятельная покупка
+                  </Button>
+                </div>
+              </>
+            )}
+          </section>
+        )}
+        {ownedRule && ownedRule.occurrences.length > 0 && (
+          <section>
+            <h3>Решения по покупкам этого графика</h3>
+            {ownedRule.occurrences.map((o) => (
+              <p key={o.id}>
+                {o.month} · {o.title} ·{" "}
+                {o.needs_review
+                  ? "Требует сверки"
+                  : o.decision === "payment"
+                    ? "Оплачено"
+                    : "Самостоятельная покупка"}{" "}
+                <Button
+                  type="button"
+                  disabled={dirty}
+                  onClick={() =>
+                    void write(() =>
+                      paymentApi.undoOccurrence(purchase, saved.token, o.id, ownedRule.version),
+                    )
+                  }
+                >
+                  Отменить решение
+                </Button>
+              </p>
+            ))}
+          </section>
+        )}
         {!saved.rule && detached.length > 0 && (
           <div>
             <label>
@@ -202,7 +314,7 @@ function PaymentForm({
               disabled={!attach || dirty}
               onClick={() => {
                 const r = detached.find((item) => String(item.id) === attach);
-                if (r) void write(r);
+                if (r) void write(() => paymentApi.reattach(purchase, saved.token, r));
               }}
             >
               Связать с этой покупкой
@@ -227,10 +339,12 @@ function PaymentForm({
 export function PaymentRuleDialog({
   purchase,
   detached,
+  suggestedRuleId,
   onClose,
 }: {
   purchase: Purchase;
   detached: PaymentRule[];
+  suggestedRuleId?: number;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -279,6 +393,7 @@ export function PaymentRuleDialog({
           purchase={purchase}
           initial={query.data}
           detached={detached}
+          suggestedRuleId={suggestedRuleId}
           onClose={close}
           protect={protect}
         />

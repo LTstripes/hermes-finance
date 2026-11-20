@@ -1,6 +1,15 @@
 import { apiRequest } from "./client";
 import type { SpendingSource } from "./spending";
 
+export type PaymentOccurrence = {
+  id: number;
+  month: string;
+  source: SpendingSource;
+  operation_id: number | null;
+  title: string;
+  decision: "payment" | "separate";
+  needs_review: boolean;
+};
 export type PaymentRule = {
   id: number;
   title: string;
@@ -17,6 +26,8 @@ export type PaymentRule = {
   monthly_amount: string | null;
   needs_review: boolean;
   archived: boolean;
+  was_recurring: boolean;
+  occurrences: PaymentOccurrence[];
   version: number;
 };
 
@@ -26,6 +37,11 @@ export type PaymentCard = {
   fact_amount: string;
   category_mandatory: boolean;
   rule: PaymentRule | null;
+  schedules: Pick<
+    PaymentRule,
+    "id" | "title" | "month" | "version" | "repeat" | "amount" | "next_due"
+  >[];
+  decisions: (PaymentOccurrence & { rule_id: number; rule_title: string; rule_version: number })[];
 };
 export type PaymentEdit = {
   note: string;
@@ -52,6 +68,22 @@ export const paymentApi = {
     apiRequest<PaymentCard>(path(purchase), { signal, cache: "no-store" }),
   save: (purchase: Purchase, token: string, edit: PaymentEdit) =>
     apiRequest<PaymentCard>(path(purchase), { method: "PUT", body: { ...edit, token } }),
+  occurrence: (
+    purchase: Purchase,
+    token: string,
+    rule_id: number,
+    version: number,
+    decision: "payment" | "separate",
+  ) =>
+    apiRequest<PaymentCard>(path(purchase, "/occurrence"), {
+      method: "PUT",
+      body: { token, rule_id, version, decision },
+    }),
+  undoOccurrence: (purchase: Purchase, token: string, occurrence_id: number, version: number) =>
+    apiRequest<PaymentCard>(path(purchase, "/undo-occurrence"), {
+      method: "POST",
+      body: { token, occurrence_id, version },
+    }),
   reattach: (purchase: Purchase, token: string, rule: PaymentRule) =>
     apiRequest<PaymentCard>(path(purchase, "/reattach"), {
       method: "POST",

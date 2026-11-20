@@ -7,11 +7,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import uvicorn
-
 from hermes_finance.alfa_csv import COLUMNS
 from hermes_finance.database import create_database
 from hermes_finance.main import create_app
 from hermes_finance.persistence import Base
+from hermes_finance.services.database_admission import database_admission
 from hermes_finance.services.spending_diary import apply_upload, preview_upload
 
 
@@ -62,7 +62,13 @@ def main():
                 )
                 session.commit()
             static_dir = Path(__file__).resolve().parents[1] / "dist"
-            uvicorn.run(create_app(database, static_dir=static_dir), host="127.0.0.1", port=port)
+            # Match the stock CLI: concurrent HTTP requests share its outer database admission.
+            with database_admission(database.database_path):
+                uvicorn.run(
+                    create_app(database, static_dir=static_dir),
+                    host="127.0.0.1",
+                    port=port,
+                )
         finally:
             database.engine.dispose()
 

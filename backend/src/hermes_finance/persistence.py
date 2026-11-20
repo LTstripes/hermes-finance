@@ -85,6 +85,44 @@ class SpendingPaymentRule(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class SpendingPaymentOccurrence(Base):
+    """One owner's decision about one observed purchase and one existing schedule."""
+
+    __tablename__ = "spending_payment_occurrences"
+    __table_args__ = (
+        UniqueConstraint("rule_id", "operation_id"),
+        UniqueConstraint("rule_id", "entry_id"),
+        CheckConstraint("operation_id IS NULL OR entry_id IS NULL"),
+        CheckConstraint("decision IN ('payment','separate')"),
+        Index(
+            "uq_spending_occ_paid_operation",
+            "operation_id",
+            unique=True,
+            sqlite_where=text("decision='payment'"),
+        ),
+        Index(
+            "uq_spending_occ_paid_entry",
+            "entry_id",
+            unique=True,
+            sqlite_where=text("decision='payment'"),
+        ),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("spending_payment_rules.id"), index=True)
+    operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("spending_operations.id", ondelete="SET NULL")
+    )
+    entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("expense_entries.id", ondelete="SET NULL")
+    )
+    month: Mapped[str] = mapped_column(String(7))
+    source: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(Text)
+    decision: Mapped[str] = mapped_column(String(16))
+    evidence: Mapped[str] = mapped_column(String(64))
+
+
 class SpendingRule(Base):
     __tablename__ = "spending_rules"
     __table_args__ = (

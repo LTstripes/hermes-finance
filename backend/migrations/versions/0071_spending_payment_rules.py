@@ -44,8 +44,46 @@ def upgrade():
     )
     op.create_index("ix_spending_payment_rules_month", "spending_payment_rules", ["month"])
 
+    op.create_table(
+        "spending_payment_occurrences",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column(
+            "rule_id", sa.Integer(), sa.ForeignKey("spending_payment_rules.id"), nullable=False
+        ),
+        sa.Column(
+            "operation_id",
+            sa.Integer(),
+            sa.ForeignKey("spending_operations.id", ondelete="SET NULL"),
+        ),
+        sa.Column(
+            "entry_id", sa.Integer(), sa.ForeignKey("expense_entries.id", ondelete="SET NULL")
+        ),
+        sa.Column("month", sa.String(7), nullable=False),
+        sa.Column("source", sa.String(32), nullable=False),
+        sa.Column("title", sa.Text(), nullable=False),
+        sa.Column("decision", sa.String(16), nullable=False),
+        sa.Column("evidence", sa.String(64), nullable=False),
+        sa.UniqueConstraint("rule_id", "operation_id"),
+        sa.UniqueConstraint("rule_id", "entry_id"),
+        sa.CheckConstraint("operation_id IS NULL OR entry_id IS NULL"),
+        sa.CheckConstraint("decision IN ('payment','separate')"),
+        sqlite_autoincrement=True,
+    )
+    op.create_index(
+        "ix_spending_payment_occurrences_rule_id", "spending_payment_occurrences", ["rule_id"]
+    )
+    for key in ("operation", "entry"):
+        op.create_index(
+            f"uq_spending_occ_paid_{key}",
+            "spending_payment_occurrences",
+            [f"{key}_id"],
+            unique=True,
+            sqlite_where=sa.text("decision='payment'"),
+        )
+
 
 def downgrade():
     if op.get_bind().execute(sa.text("SELECT 1 FROM spending_payment_rules LIMIT 1")).first():
         raise RuntimeError("cannot discard owner payment notes or schedules")
+    op.drop_table("spending_payment_occurrences")
     op.drop_table("spending_payment_rules")

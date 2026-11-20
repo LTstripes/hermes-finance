@@ -146,6 +146,180 @@ def test_confirmed_manual_duplicate_moves_its_note_once(db):  # noqa: F811
         assert len(payment_rules_for_budget(session)) == 1
 
 
+def test_two_month_rent_is_one_schedule_and_two_distinct_facts(db):  # noqa: F811
+    with db.session_factory() as session:
+        oct_row = bank_row(merchant="Аренда", amount="30000", category="Жильё")
+        nov_row = {**oct_row, "operationDate": "03.11.2030", "transactionDate": "05.11.2030"}
+        upload(session, csv_file(oct_row))
+        upload(session, csv_file(nov_row), month="2030-11")
+        october, november = session.scalars(
+            select(SpendingOperation.id).order_by(SpendingOperation.id)
+        ).all()
+        session.commit()
+    with TestClient(create_app(db)) as client:
+        base = "/api/spending/payment-rules/alfa/"
+        anchor = f"{base}{october}?month=2030-10"
+        target = f"{base}{november}?month=2030-11"
+        choose = target.replace("?", "/occurrence?")
+        revert = target.replace("?", "/undo-occurrence?")
+        root = client.get(anchor).json()
+        schedule = client.put(
+            anchor,
+            json=dict(
+                token=root["token"],
+                note="Аренда",
+                mandatory_override=True,
+                repeat=True,
+                period_months=1,
+                next_due="2030-12-03",
+                amount="30000",
+            ),
+        ).json()["rule"]
+        before = client.get("/api/spending/months/2030-11").json()
+        initial = client.get(target).json()
+        assert (
+            initial["rule"] is None
+            and initial["decisions"] == []
+            and len(initial["schedules"]) == 1
+        )
+        args = dict(
+            token=initial["token"],
+            rule_id=schedule["id"],
+            version=schedule["version"],
+            decision="payment",
+        )
+        paid = client.put(choose, json=args)
+        assert paid.status_code == 200, paid.text
+        assert client.put(choose, json=args).status_code == 409
+        recorded = paid.json()
+        assert recorded["rule"] is None and len(recorded["decisions"]) == 1
+        row = recorded["decisions"][0]
+        with db.session_factory() as session:
+            rules = payment_rules_for_budget(session)
+            assert len(rules) == 1 and rules[0]["monthly_amount"] == "30000.00"
+            assert [
+                (o["month"], o["operation_id"], o["decision"], o["needs_review"])
+                for o in rules[0]["occurrences"]
+            ] == [("2030-11", november, "payment", False)]
+        after = client.get("/api/spending/months/2030-11").json()
+        assert before["total"] == after["total"] == {"amount": "30000.00", "currency": "RUB"}
+        # Reimporting the same receipt preserves the one owner's decision.
+        with db.session_factory() as session:
+            upload(session, csv_file(nov_row), month="2030-11")
+            session.commit()
+        assert client.get(target).json() == recorded
+        as_separate = client.put(
+            choose,
+            json={
+                **args,
+                "token": recorded["token"],
+                "version": row["rule_version"],
+                "decision": "separate",
+            },
+        )
+        assert as_separate.status_code == 200, as_separate.text
+        standalone = as_separate.json()
+        assert standalone["decisions"][0]["decision"] == "separate"
+        undone = client.post(
+            revert,
+            json=dict(
+                token=standalone["token"],
+                occurrence_id=row["id"],
+                version=standalone["decisions"][0]["rule_version"],
+            ),
+        )
+        assert undone.status_code == 200 and undone.json()["decisions"] == []
+        # Losing the real target never silently credits the new operation.
+        confirmed = client.put(
+            choose,
+            json={
+                **args,
+                "token": undone.json()["token"],
+                "version": undone.json()["schedules"][0]["version"],
+            },
+        )
+        assert confirmed.status_code == 200
+        with db.session_factory() as session:
+            upload(
+                session,
+                csv_file({**nov_row, "amount": "31000"}),
+                month="2030-11",
+                confirm_disappearance=True,
+            )
+            session.commit()
+        reopened = client.get(anchor).json()
+        missing = reopened["rule"]["occurrences"][0]
+        assert missing["needs_review"] and missing["operation_id"] is None
+        removed = client.post(
+            anchor.replace("?", "/undo-occurrence?"),
+            json=dict(
+                token=reopened["token"],
+                occurrence_id=missing["id"],
+                version=reopened["rule"]["version"],
+            ),
+        )
+        assert removed.status_code == 200 and removed.json()["rule"]["occurrences"] == []
+
+
+def test_paid_occurrence_follows_only_the_confirmed_bank_duplicate(db):  # noqa: F811
+    from hermes_finance.services import spending_diary as diary
+    from hermes_finance.services.spending_payment_rules import card, choose_occurrence, save
+
+    with db.session_factory() as session:
+        upload(
+            session,
+            csv_file(bank_row(operationDate="03.09.2030", transactionDate="05.09.2030")),
+            month="2030-09",
+        )
+        anchor = session.scalar(select(SpendingOperation.id))
+        rule = save(
+            session,
+            "2030-09",
+            "alfa",
+            anchor,
+            dict(
+                token=card(session, "2030-09", "alfa", anchor)["token"],
+                note="",
+                mandatory_override=True,
+                repeat=True,
+                period_months=1,
+                next_due=None,
+                amount="500.00",
+            ),
+        )["rule"]
+        upload(
+            session,
+            md_file(("03.10", "500", "Продукты", "Ручная оплата", "альфа")),
+            source="manual_md",
+        )
+        receipt = session.scalar(
+            select(SpendingOperation.id).where(SpendingOperation.source == "manual_md")
+        )
+        diary.decide_operation(session, receipt, action="expense", category="Продукты")
+        choose_occurrence(
+            session,
+            MONTH,
+            "alfa",
+            receipt,
+            card(session, MONTH, "alfa", receipt)["token"],
+            rule["id"],
+            rule["version"],
+            "payment",
+        )
+        upload(session, csv_file(bank_row()))
+        assert payment_rules_for_budget(session)[0]["occurrences"][0]["needs_review"]
+        target = session.scalar(
+            select(SpendingOperation.id).where(
+                SpendingOperation.month == MONTH, SpendingOperation.source == "alfa_csv"
+            )
+        )
+        diary.decide_operation(session, receipt, action="duplicate", duplicate_of_id=target)
+        occurrences = payment_rules_for_budget(session)[0]["occurrences"]
+        assert [
+            (row["operation_id"], row["decision"], row["needs_review"]) for row in occurrences
+        ] == [(target, "payment", False)]
+
+
 def test_closed_month_entry_annotation_does_not_write_month(db):  # noqa: F811
     with TestClient(create_app(db)) as client:
         month = client.post(
