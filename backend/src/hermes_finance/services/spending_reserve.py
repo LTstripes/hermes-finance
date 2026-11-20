@@ -348,6 +348,9 @@ def calculate(plan, rules, categories, historical, reserve, gaps):
                 id=r["id"],
                 title=r["title"],
                 amount=money(r["amount_kopecks"]),
+                monthly=money(Decimal(r["amount_kopecks"]) / r["period_months"])
+                if not r["needs_review"] and r["amount_kopecks"] is not None and r["period_months"]
+                else None,
                 period_months=r["period_months"],
                 next_due=r["next_due"],
                 needs_review=r["needs_review"],

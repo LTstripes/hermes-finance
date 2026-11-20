@@ -42,6 +42,7 @@ def test_paid_pass_and_renewal_within_horizon():
     near = calc(plan(), [rule()])
     assert near["monthly"]["amount"] == "40000.00"
     assert near["coverage_months"] == "4.5"
+    assert near["rules"][0]["monthly"]["amount"] == "2000.00"
     assert near["target"]["amount"] == "228000.00"
     assert near["difference"]["amount"] == "-48000.00"
     late = calc(plan(start="2028-06-01", end="2028-11-30"), [rule()])

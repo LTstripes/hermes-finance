@@ -330,25 +330,46 @@ export default function SpendingReservePage() {
                 </p>
               ))}
             </Section>
-            {!!data.basis.length && (
-              <Section title="Состав месячной оценки">
+            {(data.basis.length > 0 || data.rules.length > 0) && (
+              <Section title="Из чего складывается обязательный месяц">
                 <Table>
                   <thead>
                     <tr>
-                      <Th>Категория</Th>
-                      <Th>Основание</Th>
+                      <Th>Статья</Th>
+                      <Th>Основание расчёта</Th>
                       <Th numeric>В месяц</Th>
                     </tr>
                   </thead>
                   <tbody>
+                    {data.rules.map((rule) => (
+                      <tr key={`rule-${rule.id}`}>
+                        <Td>
+                          {rule.title}
+                          {rule.needs_review ? " · проверить" : ""}
+                        </Td>
+                        <Td>
+                          <Money value={rule.amount} empty="Сумма неизвестна" />{" "}
+                          {rule.period_months
+                            ? `раз в ${rule.period_months} мес.`
+                            : "· период неизвестен"}
+                          <br />
+                          <small className={sheet.muted}>
+                            Следующая оплата ·{" "}
+                            {rule.next_due ? shortDate(rule.next_due, true) : "дата неизвестна"}
+                          </small>
+                        </Td>
+                        <Td numeric>
+                          <Money value={rule.monthly} />
+                        </Td>
+                      </tr>
+                    ))}
                     {data.basis.map((row) => (
-                      <tr key={row.id}>
+                      <tr key={`category-${row.id}`}>
                         <Td>{row.name}</Td>
                         <Td>
                           {row.method === "estimate"
-                            ? "Ваша оценка"
-                            : "Среднее · " +
-                              data.plan.months.map((m) => formatMonthKey(m)).join(", ")}
+                            ? "Ваша оценка переменных расходов"
+                            : `Переменные расходы · среднее за ${data.plan.months.map((m) => formatMonthKey(m)).join(", ")}`}
                         </Td>
                         <Td numeric>
                           <Money value={row.amount} />
@@ -357,6 +378,11 @@ export default function SpendingReservePage() {
                     ))}
                   </tbody>
                 </Table>
+                {data.basis.some((c) => c.method === "history") && (
+                  <p className={sheet.gapNote}>
+                    В среднем по категории учтены покупки без собственного правила продления.
+                  </p>
+                )}
               </Section>
             )}
             {data.history_coverage.length > 0 && (
@@ -377,36 +403,6 @@ export default function SpendingReservePage() {
               </details>
             )}
             <ReserveSettings data={data} />
-            {!!data.rules.length && (
-              <Section title="Правила обязательных платежей">
-                <Table>
-                  <thead>
-                    <tr>
-                      <Th>Платёж</Th>
-                      <Th>Следующая оплата</Th>
-                      <Th numeric>Сумма</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.rules.map((r) => (
-                      <tr key={r.id}>
-                        <Td>
-                          {r.title}
-                          {r.needs_review ? " · проверить" : ""}
-                        </Td>
-                        <Td>
-                          {r.next_due ? shortDate(r.next_due, true) : "Дата неизвестна"}
-                          {r.period_months ? ` · каждые ${r.period_months} мес.` : ""}
-                        </Td>
-                        <Td numeric>
-                          <Money value={r.amount} />
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              </Section>
-            )}
             <Section title="Календарь обязательных расходов">
               <p>
                 В неполном месяце переменная часть пропорциональна числу дней. Продления приходятся

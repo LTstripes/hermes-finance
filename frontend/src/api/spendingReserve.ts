@@ -40,6 +40,7 @@ export type ReserveView = {
     title: string;
     amount: MoneyValue | null;
     period_months: number | null;
+    monthly: MoneyValue | null;
     next_due: string | null;
     needs_review: boolean;
   }[];
