@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { Link } from "react-router";
-import { monthPath, validMonth } from "./spending/common";
+import { importPath, monthPath, validMonth } from "./spending/common";
 import { formatApiError } from "../api/client";
 import { createExpense, deleteExpense, listExpenses, updateExpense } from "../api/expenses";
 import {
@@ -137,6 +137,11 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
   const { month, readOnly, refresh, setDirty } = context;
   const monthId = month.id;
   const journalMonth = `${month.year}-${String(month.month).padStart(2, "0")}`;
+
+  const journalAvailable = validMonth(journalMonth);
+  const journalFirst = context.workspace && journalAvailable;
+  const [expandedReport, setExpandedReport] = useState<number | null>(null);
+  const showReportRows = !journalFirst || expandedReport === monthId;
 
   const [expenses, setExpenses] = useState<ExpenseEntry[]>([]);
   const [savings, setSavings] = useState<SavingAllocation[]>([]);
@@ -876,11 +881,44 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
           </button>
         </div>
       ) : null}
-      <section aria-label="Расходы месяца" className={styles.panel}>
+      {journalAvailable && (
+        <div className={styles.panel}>
+          <div className={styles.toolbar}>
+            <Link
+              className="btn btn--primary"
+              to={`${monthPath(journalMonth)}#spending-operations`}
+            >
+              Открыть ленту расходов
+            </Link>
+            <Link to={importPath(journalMonth)}>Загрузить выписку или Markdown</Link>
+          </div>
+          {journalFirst && (
+            <>
+              <p>
+                {expenses.length
+                  ? `Записей в отчёте: ${expenses.length}`
+                  : "В отчёте пока нет записей о расходах"}
+                {plan.length > 0 && <> · План {formatMoney(plannedTotal)}</>}
+              </p>
+              <button
+                type="button"
+                aria-controls={`expense-report-${monthId}`}
+                aria-expanded={showReportRows}
+                onClick={() => setExpandedReport(showReportRows ? null : monthId)}
+              >
+                Записи отчёта и план по категориям
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      <section
+        id={`expense-report-${monthId}`}
+        hidden={!showReportRows}
+        aria-label="Расходы месяца"
+        className={styles.panel}
+      >
         {!context.workspace && <h2>Расходы</h2>}
-        {validMonth(journalMonth) && (
-          <Link to={`${monthPath(journalMonth)}#spending-operations`}>Открыть ленту расходов</Link>
-        )}
         {(
           [
             { id: "mandatory", title: "Обязательные", total: mandatoryTotal },

@@ -187,6 +187,19 @@ test("report expenses open in the same month before its first upload", async ({
   expect(expense.ok()).toBe(true);
   const source = `/v2/close?month=${id}&panel=budget`;
   await page.goto(source);
+  const details = page.getByRole("button", { name: "Записи отчёта и план по категориям" });
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("link", { name: "Загрузить выписку или Markdown" })).toHaveAttribute(
+    "href",
+    "/v2/spending/import?month=2025-12",
+  );
+  await details.click();
+  await expect(
+    page
+      .getByRole("table", { name: "Расходы месяца" })
+      .getByRole("cell", { name: "Тестовый проездной" }),
+  ).toBeVisible();
+  await details.click();
   await page.getByRole("link", { name: "Открыть ленту расходов" }).click();
   await expect(page).toHaveURL(/month=2025-12#spending-operations$/);
   await expect(page.getByRole("heading", { name: "Записи из отчёта месяца" })).toBeVisible();
