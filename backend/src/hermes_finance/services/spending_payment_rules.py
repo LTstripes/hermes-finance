@@ -14,7 +14,7 @@ from hermes_finance.services import spending_insights as insights
 from hermes_finance.spending_files import digest, month_bounds
 
 
-def _purchases(session, month):
+def _purchases(session, month, targets):
     month_bounds(month)
     result = diary.read_month_base(session, month)
     descriptions = {row["id"]: row["description"] for row in result["operations"]}
@@ -27,7 +27,7 @@ def _purchases(session, month):
             "category_id": insights._category_id(session, item["category"]),
         }
         for item in result["contributions"]
-        if item["amount_kopecks"] > 0
+        if item["amount_kopecks"] > 0 and (insights._source(item), item["id"]) in targets
     }
 
 
@@ -88,13 +88,14 @@ def payment_rules_for_budget(
         grouped[rule.month].append(rule)
     rows = []
     for key, rules in grouped.items():
-        purchases = _purchases(session, key)
+        purchases = _purchases(session, key, {_target(rule) for rule in rules})
         rows.extend(_project(rule, purchases.get(_target(rule))) for rule in rules)
     return rows
 
 
 def _get_target(session, month, source, operation_id):
-    purchase = _purchases(session, month).get((source, operation_id))
+    target = (source, operation_id)
+    purchase = _purchases(session, month, {target}).get(target)
     if purchase is None:
         raise LookupError("Покупка больше не входит в расходы этого месяца")
     key = (
@@ -159,7 +160,7 @@ def archive_detached(session, month, rule_id, version):
         or rule.month != month
         or rule.version != version
         or rule.archived
-        or _target(rule) in _purchases(session, month)
+        or _target(rule) in _purchases(session, month, {_target(rule)})
     ):
         raise diary.PreviewChanged("Пометка изменилась. Обновите список.")
     rule.entry_id = rule.operation_id = None
@@ -178,7 +179,7 @@ def reattach(session, month, source, operation_id, token, rule_id, version):
         or rule.version != version
         or existing is not None
         or token != identity
-        or _target(rule) in _purchases(session, month)
+        or _target(rule) in _purchases(session, month, {_target(rule)})
     ):
         raise diary.PreviewChanged("Привязка изменилась. Обновите сведения о покупке.")
     rule.entry_id = operation_id if source == "month_entries" else None

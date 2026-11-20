@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { MonthNavigationGuard } from "../MonthNavigationGuard";
 import { formatApiError } from "../../api/client";
 import {
   paymentApi,
@@ -92,6 +93,7 @@ function PaymentForm({
   }
   return (
     <form onSubmit={submit} className={styles.paymentForm}>
+      <MonthNavigationGuard dirty={dirty} pending={pending} />
       <h2 id="payment-card-title">{saved.title}</h2>
       <p>Оплачено {formatMoney(saved.fact_amount)}</p>
       <fieldset disabled={pending}>
