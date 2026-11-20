@@ -37,6 +37,14 @@ class Base(DeclarativeBase):
     pass
 
 
+class SpendingReservePlan(Base):
+    __tablename__ = "spending_reserve_plans"
+    __table_args__ = (CheckConstraint("id = 1 AND revision >= 1", name="ck_spending_reserve_singleton"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    settings_json: Mapped[str] = mapped_column(Text)
+
+
 class SpendingCategory(Base):
     __tablename__ = "spending_categories"
     __table_args__ = (CheckConstraint("expense_type IN ('mandatory','comfortable','other')"),)
