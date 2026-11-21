@@ -94,6 +94,7 @@ Propose in plain Russian:
 
 The issue/accepted contract holds acceptance criteria; do not duplicate it in the prompt.
 **Owner preference: normally 5–10 lines for a Worker launch or remediation prompt.** Link the exact issue/review note instead of copying its requirements, test matrix or invariants. New-session prompts point to the latest closeout and pending decisions, not a second project manual. Longer prompts require a specific request or genuinely missing authoritative scope.
+State which local checks the Worker must run and which evidence to return. Treat one-time acceptance and permanent CI coverage as separate decisions. Adding a recurring check needs a named regression and a check for existing coverage. For a required private comparison, identify the authoritative source in the private handoff.
 Use standing workspace self-create where applicable; do not invent a root, SHA or missing safety-critical authorization.
 Choose one execution route at launch. An alternative may be unavailable/not recommended; say so rather than manufacture a choice.
 
