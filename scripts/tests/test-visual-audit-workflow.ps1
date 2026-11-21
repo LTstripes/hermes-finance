@@ -40,14 +40,14 @@ function Invoke-Case {
 
 Invoke-Case "CI has a pull-request visual-audit path filter" {
     Assert-True -Condition ($workflow -match '(?ms)^  visual-audit-paths:.*?^  visual-audit:') -Message "ci.yml must define the visual-audit path-filter job before the audit job."
-    Assert-True -Condition ($workflow -match '(?m)^    if: github\.event_name == ''pull_request''\r?$') -Message "Path filtering must run for pull requests only."
+    Assert-True -Condition ($workflow -match '(?m)^    if: always\(\) && !cancelled\(\) && github\.event_name == ''pull_request''\r?$') -Message "Path filtering must run for pull requests only."
     Assert-True -Condition ($workflow -match 'scripts/visual_audit_paths\.py --from-file') -Message "The path-filter job must use the deterministic classifier."
     Assert-True -Condition ($workflow -match '(?m)^      run: \$\{\{ steps\.filter\.outputs\.run \}\}\r?$') -Message "The path-filter result must be exposed as a job output."
 }
 
 Invoke-Case "backend and documentation-only pull requests skip the heavy job" {
     Assert-True -Condition ($workflow -match "github\.event_name == 'push' \|\| needs\.visual-audit-paths\.outputs\.run == 'true'") -Message "The heavy audit must run on main pushes or eligible pull requests only."
-    Assert-True -Condition ($workflow -match 'needs: visual-audit-paths') -Message "The heavy audit must depend on the path-filter job."
+    Assert-True -Condition ($workflow -match 'needs: \[visual-audit-paths, docs-only-classify\]') -Message "The heavy audit must depend on the path-filter job."
 }
 
 Invoke-Case "main push and release gate execute the synthetic audit" {

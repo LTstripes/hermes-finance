@@ -897,7 +897,7 @@ For the normal chat-driven path the owner can ask the integrator to release a pr
 
 For the PowerShell/gh route, run
 `pwsh -NoProfile -File scripts/request-release.ps1 -Version X.Y.Z -DryRun`
-to check live origin/main, exact successful canonical push CI and notes on that
+to check live origin/main, full canonical push CI including its successful synthetic visual audit, and notes on that
 SHA and print the exact body without posting. After release authorization,
 run the same command without `-DryRun`: it checks the authenticated owner,
 posts once to #124 using a temporary UTF-8 body file (avoiding Git Bash path

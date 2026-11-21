@@ -732,16 +732,32 @@ function Assert-HermesExactMainCiSuccess {
         throw "No exact-main GitHub Actions CI run found for commit $ExpectedSha (workflow $($script:HermesReleaseWorkflow), event push, branch main). Latest-branch green is not enough."
     }
 
-    $successful = @()
-    foreach ($run in $exactMain) {
-        if ([string]$run.status -eq "completed" -and [string]$run.conclusion -eq "success") {
-            $successful += $run
-        }
+    $run = $exactMain | Sort-Object { [long]$_.databaseId } -Descending | Select-Object -First 1
+    if ($run.status -ne "completed" -or $run.conclusion -ne "success") {
+        throw "Exact-main CI for $ExpectedSha is not completed/success (status=$($run.status), conclusion=$($run.conclusion)). Refusing to publish."
     }
 
-    if ($successful.Count -eq 0) {
-        $sample = $exactMain[0]
-        throw "Exact-main CI for $ExpectedSha is not completed/success (status=$($sample.status), conclusion=$($sample.conclusion)). Refusing to publish."
+    # A successful status-only run also has a green ci-ok. Read the latest
+    # attempt of this exact run and require its full-coverage and visual evidence.
+    $detail = Invoke-HermesTool -Context $Context -Name "gh" -ArgumentList @(
+        "run", "view", ([string]$run.databaseId), "--repo", $script:HermesReleaseSlug,
+        "--json", "databaseId,headSha,headBranch,event,status,conclusion,jobs"
+    )
+    $view = $detail.Stdout | ConvertFrom-Json
+    if ($view.databaseId -ne $run.databaseId -or $view.headSha -ne $ExpectedSha -or
+        $view.headBranch -cne "main" -or $view.event -cne "push" -or
+        $view.status -ne "completed" -or $view.conclusion -ne "success") {
+        throw "Exact-main CI identity or completion changed for $ExpectedSha."
+    }
+    $gate = @($view.jobs | Where-Object { $_.name -ceq "ci-ok" })
+    $visual = @($view.jobs | Where-Object { $_.name -ceq "Synthetic visual audit" })
+    if ($gate.Count -ne 1 -or $gate[0].conclusion -ne "success" -or
+        $visual.Count -ne 1 -or $visual[0].conclusion -ne "success") {
+        throw "Full main push CI and a successful synthetic visual audit are required for $ExpectedSha."
+    }
+    $proof = @($gate[0].steps | Where-Object { $_.name -ceq "Verify full main push coverage" })
+    if ($proof.Count -ne 1 -or $proof[0].conclusion -ne "success") {
+        throw "Missing successful full main push coverage for $ExpectedSha."
     }
 }
 

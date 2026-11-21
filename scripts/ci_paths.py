@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Conservative per-area PR job selection; main and release remain full.
+"""Conservative PR area selection and a narrow post-installation main push path.
 
 Only regular text additions/edits in known product trees can narrow coverage.
 Both the current base/head diff and the PR-owned diff are inspected, so a
@@ -19,6 +19,7 @@ from docs_only_ci import (
     _load_records,
     _plain_relative_path,
     ordinary_doc_path,
+    whitespace_ok,
 )
 
 AREAS = ("backend", "frontend", "browser", "visual", "release", "windows")
@@ -174,12 +175,51 @@ def classify_repo(repo: Path, base: str, head: str) -> frozenset[str]:
         return full
 
 
+def status_section_boundary(content: bytes) -> tuple[str, str] | None:
+    """Compare everything outside the existing release/installation section."""
+    text = content.decode("utf-8")
+    start = '<a id="s1"></a>\n## 1. Code, release, installation and UAT\n'
+    end = '\n<a id="s2"></a>\n## 2. Integrated code and limitations\n'
+    if "\0" in text or text.count(start) != 1 or text.count(end) != 1:
+        return None
+    prefix, _, section = text.partition(start)
+    _body, marker, suffix = section.partition(end)
+    return (prefix, suffix) if marker else None
+
+
+def main_push_mode(repo: Path, base: str, head: str) -> str:
+    path = "docs/CURRENT_STATUS.md"
+    try:
+        records = _load_records(repo, base, head)
+        if records != [DiffRecord(REGULAR_FILE, REGULAR_FILE, "M", path, path, False)]:
+            return "full"
+        code, parent, _ = _git(repo, "rev-parse", f"{head}^1")
+        if code or parent.decode("ascii").strip() != base or not whitespace_ok(repo, base, head):
+            return "full"
+        boundaries = []
+        for sha in (base, head):
+            code, blob, _ = _git(repo, "cat-file", "blob", f"{sha}:{path}")
+            outside = status_section_boundary(blob)
+            if code or outside is None:
+                return "full"
+            boundaries.append(outside)
+        if boundaries[0] == boundaries[1]:
+            return "status-only"
+    except (OSError, UnicodeError):
+        pass
+    return "full"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path())
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
+    parser.add_argument("--main-push", action="store_true")
     args = parser.parse_args()
+    if args.main_push:
+        print(f"mode={main_push_mode(args.repo, args.base, args.head)}")
+        return 0
     selected = classify_repo(args.repo, args.base, args.head)
     print("mode=full" if selected else "mode=docs-only")
     for area in AREAS:
