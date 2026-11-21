@@ -194,7 +194,9 @@ export default function SpendingRulesPage() {
       header={
         <div className={`${styles.actions} ${styles.screenHeader}`}>
           <h1>Категории трат</h1>
-          <Link to={month && validMonth(month) ? monthPath(month) : spendingPath}>← К тратам</Link>
+          <Link to={month && validMonth(month) ? monthPath(month) : spendingPath}>
+            ← К расходам
+          </Link>
         </div>
       }
     >

@@ -59,7 +59,7 @@ test("spending: CSV and Markdown, disappearance, manual decision, saved review a
 }) => {
   await page.goto("/v2/spending");
   const nav = page.getByRole("navigation", { name: "Основная навигация" });
-  await expect(nav.getByRole("link", { name: "Траты", exact: true })).toHaveAttribute(
+  await expect(nav.getByRole("link", { name: "Расходы", exact: true })).toHaveAttribute(
     "aria-current",
     "page",
   );
@@ -112,7 +112,7 @@ test("spending: CSV and Markdown, disappearance, manual decision, saved review a
   await consent.check();
   await expect(apply).toBeEnabled();
 
-  await page.getByRole("link", { name: "← К тратам" }).click();
+  await page.getByRole("link", { name: "← К расходам" }).click();
   await expect(page.getByRole("alertdialog", { name: "Выйти без применения?" })).toBeVisible();
   await page.getByRole("button", { name: "Остаться" }).click();
   const ack = page.waitForResponse(
@@ -156,7 +156,7 @@ test("spending: CSV and Markdown, disappearance, manual decision, saved review a
     .locator("..");
   await transfer.getByRole("radio", { name: "Не трата" }).click();
   await expect(page.getByText(/✓ Не трата · запомнится/)).toBeVisible();
-  await page.getByRole("link", { name: "← К тратам" }).click();
+  await page.getByRole("link", { name: "← К расходам" }).click();
   await page.getByRole("link", { name: "Категории и правила" }).click();
   await expect(page.getByRole("heading", { name: "Правила по продавцу" })).toBeVisible();
   const categoryType = page.getByRole("combobox", { name: "Тип: Продукты" });
@@ -165,4 +165,47 @@ test("spending: CSV and Markdown, disappearance, manual decision, saved review a
   await page.getByRole("button", { name: "Удалить", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Удалить", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Правила по продавцу" })).toHaveCount(0);
+});
+
+test("report expenses open in the same month before its first upload", async ({
+  page,
+  request,
+}) => {
+  const report = await request.post("/api/months", {
+    data: { year: 2025, month: 12, snapshot_date: "2026-01-02" },
+  });
+  expect(report.ok()).toBe(true);
+  const { id } = await report.json();
+  const expense = await request.post("/api/expenses", {
+    data: {
+      reporting_month_id: id,
+      category: "Тестовый проездной",
+      expense_type: "mandatory",
+      amount: { amount: "24000.00", currency: "RUB" },
+    },
+  });
+  expect(expense.ok()).toBe(true);
+  const source = `/v2/close?month=${id}&panel=budget`;
+  await page.goto(source);
+  const details = page.getByRole("button", { name: "Записи отчёта и план по категориям" });
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("link", { name: "Загрузить выписку или Markdown" })).toHaveAttribute(
+    "href",
+    "/v2/spending/import?month=2025-12",
+  );
+  await details.click();
+  await expect(
+    page
+      .getByRole("table", { name: "Расходы месяца" })
+      .getByRole("cell", { name: "Тестовый проездной" }),
+  ).toBeVisible();
+  await details.click();
+  await page.getByRole("link", { name: "Открыть ленту расходов" }).click();
+  await expect(page).toHaveURL(/month=2025-12#spending-operations$/);
+  await expect(page.getByRole("heading", { name: "Записи из отчёта месяца" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Тестовый проездной" })).toContainText(
+    "24 000",
+  );
+  await page.goBack();
+  await expect(page.getByRole("link", { name: "Открыть ленту расходов" })).toBeVisible();
 });

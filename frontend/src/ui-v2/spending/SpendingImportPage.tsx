@@ -561,7 +561,7 @@ export default function SpendingImportPage() {
       header={
         <div className={`${styles.actions} ${styles.screenHeader}`}>
           <h1>Загрузка трат</h1>
-          <Link to={valid ? monthPath(month) : "/v2/spending"}>← К тратам</Link>
+          <Link to={valid ? monthPath(month) : "/v2/spending"}>← К расходам</Link>
         </div>
       }
     >
