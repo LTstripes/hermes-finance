@@ -138,6 +138,9 @@ function Start-HermesGuidedPowerShell {
 
 function Assert-HermesGuidedStartEnvironment {
     param($Plan)
+    if ($null -eq (Get-Command Invoke-RestMethod -ErrorAction SilentlyContinue)) {
+        throw "Stable Start preflight failed: Invoke-RestMethod is unavailable for health readback in the guided updater."
+    }
     $probe = Join-Path $Plan.Main 'scripts\check-stable-start-environment.ps1'
     $process = Start-HermesGuidedPowerShell $probe $Plan.Stable Hidden
     try {
@@ -145,8 +148,8 @@ function Assert-HermesGuidedStartEnvironment {
         switch ($process.ExitCode) {
             0  { return }
             12 { throw "Stable Start preflight failed: Get-FileHash (SHA256) is unavailable in the child Windows PowerShell validator. Check its module path before stopping Stable." }
-            13 { throw "Stable Start preflight failed: the child validator could not resolve git, uv or ConvertFrom-Json. Check its environment before stopping Stable." }
-            default { throw "Stable Start preflight failed: check Windows PowerShell, Get-NetTCPConnection, Invoke-RestMethod and npm.cmd before stopping Stable." }
+            13 { throw "Stable Start preflight failed: the child Windows PowerShell could not resolve git, uv, ConvertFrom-Json or npm.cmd for preparation and validation. Check its environment before stopping Stable." }
+            default { throw "Stable Start preflight failed: check Windows PowerShell, uv and Invoke-WebRequest for Start readiness before stopping Stable." }
         }
     }
     finally { $process.Dispose() }

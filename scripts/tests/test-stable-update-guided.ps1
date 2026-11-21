@@ -137,6 +137,33 @@ try {
         Check ((Get-FileHash $db).Hash -ceq $dbHash -and -not (Test-Path -LiteralPath $plan.Backup)) 'failed preflight leaves synthetic DB and backup destination unchanged'
     }
     finally { $env:PSModulePath = $priorModulePath }
+    # Restrict only command lookup in the synthetic Start process. The real
+    # validator still runs in a clean child and the guide keeps its own commands.
+    $probeScript = Join-Path $probeDirectory 'check-stable-start-environment.ps1'
+    $realProbe = Join-Path $probeDirectory 'start-probe-under-test.ps1'
+    Copy-Item -LiteralPath $probeScript -Destination $realProbe
+    $startHarness = @'
+function Get-Command {
+    [CmdletBinding()]
+    param([string[]]$Name, [string]$CommandType)
+    if ($Name -contains '__MISSING__') {
+        if ($ErrorActionPreference -eq 'SilentlyContinue') { return }
+        throw 'Synthetic command unavailable in Start'
+    }
+    Microsoft.PowerShell.Core\Get-Command @PSBoundParameters
+}
+& (Join-Path $PSScriptRoot 'start-probe-under-test.ps1')
+exit $LASTEXITCODE
+'@
+    [IO.File]::WriteAllText($probeScript, $startHarness.Replace('__MISSING__', 'Get-NetTCPConnection'))
+    Invoke-HermesGuidedOperation $main $stable '1.2.3' -DryRun
+    [IO.File]::WriteAllText($probeScript, $startHarness.Replace('__MISSING__', 'Invoke-WebRequest'))
+    Reject { Invoke-HermesGuidedOperation $main $stable '1.2.3' } '*Invoke-WebRequest*Start readiness*'
+    Check ($script:prompts -eq 0 -and $script:updates -eq 0 -and $script:starts -eq 0) 'missing Start readiness command fails before downtime or confirmation'
+    & {
+        function Get-Command { param($Name, $ErrorAction) if ($Name -ne 'Invoke-RestMethod') { throw 'Unexpected parent lookup' } }
+        Reject { Assert-HermesGuidedStartEnvironment $plan } '*Invoke-RestMethod*guided updater*'
+    }
     function Assert-HermesGuidedStartEnvironment { param($Plan) }
     Reject { Invoke-HermesGuidedOperation $main $stable '1.2.3' } '*Port 8000*'
     function Assert-HermesGuidedPortFree { }
