@@ -27,6 +27,7 @@ from ci_paths import (
     BACKEND_TEST_AREAS,
     FRONTEND_AREAS,
     classify_repo,
+    main_push_mode,
     selected_areas,
 )
 from ci_run_receipt import inherited_verdict, timing_summary
@@ -374,6 +375,37 @@ class GitTests(unittest.TestCase):
             self.assertEqual(classify_repo(self.repo, base, candidate), FULL)
         with patch("ci_paths._load_records", side_effect=OSError("git unavailable")):
             self.assertEqual(classify_repo(self.repo, self.base, head), FULL)
+
+    def test_only_single_main_push_edit_inside_installation_section_can_omit_jobs(self) -> None:
+        path = "docs/CURRENT_STATUS.md"
+        status = (
+            b'<a id="s1"></a>\n## 1. Code, release, installation and UAT\n'
+            b'Installed synthetic v1.0.0.\n'
+            b'<a id="s2"></a>\n## 2. Integrated code and limitations\nOther status.\n'
+        )
+        before = self.commit(path, status)
+        update = status.replace(b"v1.0.0", b"v1.1.0")
+        head = self.commit(path, update)
+        self.assertEqual(main_push_mode(self.repo, before, head), "status-only")
+        for base, candidate in ((self.base, before), (head, head), ("0" * 40, head),
+                                ("not-a-sha", head), (head, before)):
+            self.assertEqual(main_push_mode(self.repo, base, candidate), "full")
+        for other in (b"header\n" + update, update + b"footer\n",
+                      update.replace(b"v1.1.0.\n", b"v1.2.0. \t\n"),
+                      update.replace(b"Installed", b"\0Installed"),
+                      update.replace(b"Installed", b"\xffInstalled"),
+                      update.replace(b'id="s1"', b'id="other"')):
+            self.git("checkout", "--detach", head)
+            with self.subTest(other=other):
+                self.assertEqual(main_push_mode(self.repo, head, self.commit(path, other)), "full")
+        self.git("checkout", "--detach", head)
+        shared = self.commit("scripts/build.py", b"# synthetic change\n")
+        mixed = self.commit(path, status)
+        self.assertEqual(main_push_mode(self.repo, head, mixed), "full")
+        self.assertEqual(main_push_mode(self.repo, shared, mixed), "status-only")
+        self.git("update-index", "--chmod=+x", path)
+        self.git("commit", "-m", "mode change")
+        self.assertEqual(main_push_mode(self.repo, mixed, self.git("rev-parse", "HEAD")), "full")
 
     def test_rename_and_delete_are_full(self) -> None:
         previous = self.commit("frontend/src/Old.tsx", b"synthetic frontend\n")
@@ -756,6 +788,28 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(completed.stderr, "")
             self.assertEqual(output_file.read_text().strip(), "omit=false")
 
+    def test_main_status_route_and_release_proof_use_actual_job_results(self) -> None:
+        for job in (*OWNERS, "visual-audit"):
+            self.assertFalse(self.runs(job, event="push", mode="status-only"), job)
+            for mode, result in (("full", "success"), ("", "success"), ("status-only", "failure")):
+                self.assertTrue(self.runs(job, event="push", mode=mode, result=result), job)
+        classifier = self.job("docs-only-classify")
+        self.assertIn("github.event.before", classifier)
+        self.assertIn('"$GITHUB_REF" == "refs/heads/main" && "$FORCED" == "false"', classifier)
+        final = self.job("ci-ok").split("- name: Verify full main push coverage", 1)[1]
+        self.assertIn("if: github.event_name == 'push' && needs.docs-only-classify.outputs.mode == 'full'", final)
+        script = textwrap.dedent(final.split("python3 - <<'PY'\n", 1)[1].split("          PY", 1)[0])
+        outcomes = {job: {"result": "success"} for job in (*OWNERS, "visual-audit", "privacy", "docs-only-classify")}
+        outcomes.update({job: {"result": "skipped"} for job in ("docs-fast-path", "visual-audit-paths")})
+
+        def verify(results):
+            return subprocess.run([sys.executable, "-c", script], capture_output=True,
+                                  env={**os.environ, "NEEDS_JSON": json.dumps(results)}).returncode
+
+        self.assertEqual(verify(outcomes), 0)
+        for job in (*OWNERS, "visual-audit", "privacy", "docs-only-classify"):
+            self.assertNotEqual(verify({**outcomes, job: {"result": "skipped"}}), 0, job)
+
     def test_full_label_bypasses_docs_area_and_visual_filters(self) -> None:
         for job in (*OWNERS, "visual-audit"):
             with self.subTest(job=job):
@@ -777,8 +831,8 @@ class WorkflowTests(unittest.TestCase):
             # are judged by ci-ok rather than a false documentation verdict.
             self.assertFalse(self.runs("docs-fast-path", mode="docs-only", labels=(label,)))
         for job in ("privacy", "docs-only-classify", "visual-audit-paths", "ci-ok"):
-            if job == "privacy":
-                self.assertNotIn("    if:", self.job(job))
+            if job in {"privacy", "docs-only-classify"}:
+                self.assertNotIn("\n    if:", self.job(job))
             else:
                 self.assertTrue(self.runs(job, labels=("ci:full",)))
 

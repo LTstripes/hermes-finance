@@ -187,7 +187,7 @@ function Submit-HermesReleaseRequest {
     $file = $notes.Stdout | ConvertFrom-Json
     if ($file.type -ne "file" -or [long]$file.size -le 0) { throw "Canonical release notes must be a nonempty file on main." }
     $body = "/release`nversion=$Version`nexpected_main_sha=$sha"
-    Write-Host "Checks passed: canonical origin/main $sha; completed successful ci.yml push; notes on exact main."
+    Write-Host "Checks passed: canonical origin/main $sha; successful full ci.yml push and synthetic visual audit; notes on exact main."
     if ($DryRun) {
         Write-Output $body
         return

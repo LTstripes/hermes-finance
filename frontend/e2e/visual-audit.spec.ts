@@ -202,11 +202,15 @@ for (const route of routes) {
 
 test("spending visual matrix @viewport-owned", async ({ browser }, testInfo) => {
   test.setTimeout(180_000);
-  for (const width of [1440, 1280, 390]) {
-    for (const theme of ["light", "dark"] as const) {
+  const extended = process.env.HERMES_SPENDING_VISUAL_EXTENDED === "true";
+  const sizes = [[1280, 720]];
+  if (extended) sizes.push([1440, 900], [1280, 900], [390, 900]);
+  for (const [width, height] of sizes) {
+    const themes = height === 720 ? (["light"] as const) : (["light", "dark"] as const);
+    for (const theme of themes) {
       const page = await browser.newPage({
         baseURL: testInfo.project.use.baseURL,
-        viewport: { width, height: 900 },
+        viewport: { width, height },
         colorScheme: theme,
         locale: "ru-RU",
         reducedMotion: "reduce",
@@ -233,7 +237,11 @@ test("spending visual matrix @viewport-owned", async ({ browser }, testInfo) => 
         const errors: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
         const unhandled = await installSyntheticApi(page);
-        const dir = path.resolve(".visual-audit", "spending", `${width}-${theme}`);
+        const dir = path.resolve(
+          ".visual-audit",
+          "spending",
+          height === 720 ? "1280x720-light" : `${width}-${theme}`,
+        );
         fs.mkdirSync(dir, { recursive: true });
         for (const [slug, route, ready] of [
           ["month", "/v2/spending?month=2026-10", "Операции"],
@@ -275,6 +283,40 @@ test("spending visual matrix @viewport-owned", async ({ browser }, testInfo) => 
       }
     }
   }
+});
+
+test("spending laptop reserve and annual payment @viewport-owned", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const dir = path.resolve(".visual-audit", "spending", "1280x720-light");
+  fs.mkdirSync(dir, { recursive: true });
+  const errors: string[] = [];
+  page.on("pageerror", (err) => errors.push(err.message));
+  const unhandled = await installSyntheticApi(page);
+  const capture = async (name: string) => {
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await assertAuditState(page, unhandled, errors);
+    await page.screenshot({ path: path.join(dir, `${name}.png`), animations: "disabled" });
+  };
+  await page.goto("/v2/spending?month=2026-10");
+  await page.getByRole("button", { name: "Тестовый магазин", exact: true }).first().click();
+  const card = page.getByRole("dialog", { name: "Карточка покупки" });
+  await expect(card.getByLabel("Интервал, месяцев")).toHaveValue("12");
+  await expect(card.getByText(/В среднем за месяц/)).toContainText(/2\s000/);
+  await capture("annual-card");
+  await page.goto("/v2/spending/reserve");
+  await expect(page.getByText("12 мес.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Тестовый магазин" }).last()).toContainText(
+    /24\s000/,
+  );
+  await capture("reserve");
+  await page.unroute("**/api/**");
+  const incompleteUnhandled = await installSyntheticApi(page, "empty");
+  await page.reload();
+  await expect(page.getByText("Для категории «Покупки» недостаточно истории.")).toBeVisible();
+  await expect(page.getByText("Недостаточно данных", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("12 мес.", { exact: true })).toHaveCount(0);
+  expect(incompleteUnhandled).toEqual([]);
+  await capture("reserve-incomplete");
 });
 
 test("spending empty state @viewport-owned", async ({ page }, testInfo) => {

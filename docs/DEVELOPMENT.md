@@ -94,6 +94,7 @@ Propose in plain Russian:
 
 The issue/accepted contract holds acceptance criteria; do not duplicate it in the prompt.
 **Owner preference: normally 5–10 lines for a Worker launch or remediation prompt.** Link the exact issue/review note instead of copying its requirements, test matrix or invariants. New-session prompts point to the latest closeout and pending decisions, not a second project manual. Longer prompts require a specific request or genuinely missing authoritative scope.
+State which local checks the Worker must run and which evidence to return. Treat one-time acceptance and permanent CI coverage as separate decisions. Adding a recurring check needs a named regression and a check for existing coverage. For a required private comparison, identify the authoritative source in the private handoff.
 Use standing workspace self-create where applicable; do not invent a root, SHA or missing safety-critical authorization.
 Choose one execution route at launch. An alternative may be unavailable/not recommended; say so rather than manufacture a choice.
 
@@ -479,8 +480,7 @@ the legacy visual-path match; unsafe Git records still force full coverage.
 
 Add the existing `ci:full` label to a PR to request all product jobs, including
 browser and visual checks. The label event starts CI; the full visual run keeps
-all viewports/scenarios without duplicate-evidence omission. Canonical main
-pushes remain full, and release verification does not consult PR area outputs.
+all viewports/scenarios without duplicate-evidence omission. Main push selection is independent of PR area outputs.
 The `ci:windows` label retains the existing Windows/release opt-in. Other label
 events omit product jobs and cannot cancel product runs. Their required verdict
 inherits only the latest completed successful CI run for the same PR/head;
@@ -494,7 +494,7 @@ Its bounded Actions snapshot reports attempt wall time separately from pauses
 before reruns and lists expensive completed jobs/steps when available. These
 overlapping durations are not CPU time, runner queue measurements or a new ledger.
 
-The [documentation-only classifier](../scripts/docs_only_ci.py) permits only its proven non-executable prose fast path. A green Documentation fast path reports classification/privacy/diff evidence, not omitted product suites. Canonical main pushes and release gates retain full verification.
+The [documentation-only classifier](../scripts/docs_only_ci.py) permits only its proven non-executable prose fast path. A green Documentation fast path reports classification/privacy/diff evidence, not omitted product suites. A non-forced, single-update main push can omit product jobs only for a clean regular-file edit confined to the existing S1 release/installation section of `docs/CURRENT_STATUS.md`. Privacy and classification still run. Any other change, unknown diff, or changed section boundary runs the full pipeline. A release requires successful full main push coverage and the synthetic visual audit in the same exact-SHA CI run. A status-only head cannot be published.
 
 
 <a id="d4-test_suite_guide-1-add-a-regression-to-the-semantic-owner"></a>
@@ -732,7 +732,8 @@ Keep durable rules in this book; do not copy the project constitution into every
 - Capital combines accepted allocation and monetary-result links with accepted Performance summary/detail. Monetary result is cash income for a reporting month plus separately labelled unrealized snapshot evidence; Performance uses exact snapshot dates, historical scope and backend-owned interval returns. Neither replaces the other.
 - Main/#538 and #621–#624 source/coverage and lifecycle protections remain in ancestry. The union uses canonical readiness, preserves null/unknown/partial, and retains existing query keys. Mutation invalidation and restore invalidation retain Performance and Monthly Close reads; no financial calculation was added in React.
 - Empty Home/Capital/Income close actions now go to `/v2/close`; Home's payouts/forecast action goes to `/v2/income`. Native Monthly Close origin/step/month query and editor return mapping are retained. Retired legacy routes redirect to their native `/v2` workspaces.
-- Required `g04-browser` CI job runs G04 and Performance, builds the production frontend, then runs the accepted statement and Monthly Close configs serially, with zero retries. Synthetic screenshots/traces are retained as `native-v2-real-backend-evidence`. Full Vitest uses `--maxWorkers=1` locally and in CI.
+- Spending visual acceptance captures the diary, preview, rules, reserve (known and missing coverage) and annual payment card at 1280×720, plus the empty-diary state. For layout changes, set `HERMES_SPENDING_VISUAL_EXTENDED=true` when running `npm run audit:visual` to add the original 1440/1280/390 light and dark matrix. CI also selects this extended set on main, on `ci:full`, and for affected layout paths.
+- Required `g04-browser` runs three independently rerunnable groups on isolated runners: diary/Close, broker-month, and Returns/instruments. Each builds the production frontend. The matrix waits for every group even after a failure; `ci-ok` consumes its aggregate result. Synthetic screenshots/traces and failure request timings carry the group name; spending traces are included. Local spending sessions allocate a private database, a free loopback port and their own Playwright result directory. Full Vitest uses `--maxWorkers=1` locally and in CI.
 - Visual discovery adds existing month/editor/import/payout/IIS/allocation/Scenario specs. Allocation uses `/v2/capital/allocation` on the actual App route rather than the standalone leaf fixture. API-mocked visual evidence remains distinct from real-backend evidence.
 
 
@@ -985,7 +986,9 @@ Use the existing issue/PR and review/acceptance notes with the AGENTS completion
 <a id="d5-agent_orchestration-20-staged-integration-for-parallel-slices"></a>
 #### Staged integration for parallel slices
 
-Use temporary `integration/*` staging early when sibling tasks overlap shared application structure or must be Owner-UATed together; main remains the only release source.
+At assignment, the Integrator records the dependency order and the owner of the shared contract in the existing issue. When a consumer depends on a changing contract, accept the producer first. The consumer can develop against agreed synthetic examples and run focused checks until the interface settles.
+
+For slices that need parallel review and joint acceptance, use temporary `integration/*` staging. Review the individual changes, then open one integration PR to main once the inputs are ready. Run the required checks on the combined tree and retain each slice’s applicable evidence. Main remains the only release source. Publication requires successful full push CI on the exact release commit.
 - Each task retains its isolated child branch/workspace; Workers do not merge siblings or independently refresh from main.
 - Integrate an exact accepted head promptly and run proportional integration smoke, not a mandatory extra full suite.
 - Later candidates should use the current accepted staging context when practical or prove compatibility; baseline reconciliation is Integrator-owned.

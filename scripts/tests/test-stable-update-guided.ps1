@@ -25,10 +25,13 @@ function Reject([scriptblock]$Action, [string]$Pattern) {
     }
     Check $caught "refused: $Pattern"
 }
-$root = Join-Path ([IO.Path]::GetTempPath()) ('hermes-guided-' + [guid]::NewGuid().ToString('N'))
+$root = Join-Path ([IO.Path]::GetTempPath()) ('hermes guided ' + [guid]::NewGuid().ToString('N'))
 $main = Join-Path $root 'main'
 $stable = Join-Path $root 'stable'
 foreach ($path in @($main, $stable)) { New-Item -ItemType Directory -Path $path | Out-Null }
+$probeDirectory = Join-Path $main 'scripts'
+New-Item -ItemType Directory -Path $probeDirectory | Out-Null
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../check-stable-start-environment.ps1') -Destination $probeDirectory
 $db = Join-Path $root 'Synthetic Data.db'
 [IO.File]::WriteAllText($db, 'synthetic database placeholder')
 $envFile = Join-Path $stable '.env'
@@ -107,7 +110,9 @@ try {
     [IO.Directory]::Delete($plan.Backup)
     $before = @(Get-ChildItem $root -Recurse -Force | ForEach-Object { $_.FullName }) -join "`n"
     $envHash = (Get-FileHash $envFile).Hash; $dbHash = (Get-FileHash $db).Hash
-    function Assert-HermesGuidedPortFree { }
+    # DryRun exercises the real nested child Windows PowerShell even while the
+    # old synthetic runtime occupies its port. No actual listener is needed.
+    function Assert-HermesGuidedPortFree { throw 'Port 8000 is occupied' }
     $script:gitCalls = @()
     $output = Invoke-HermesGuidedOperation $main '' '1.2.3' -DryRun 6>&1 | Out-String -Width 10000
     Check ($output.Contains('-DatabasePath') -and $output.Contains($db) -and $output.Contains('-BackupDirectory')) 'DryRun shows explicit command'
@@ -116,8 +121,51 @@ try {
     Check (@($script:gitCalls | Where-Object { $_ -match 'pull|fetch' }).Count -eq 0) 'DryRun no network/ref mutation'
     Check ($before -ceq (@(Get-ChildItem $root -Recurse -Force | ForEach-Object { $_.FullName }) -join "`n")) 'DryRun creates no files'
     Check ((Get-FileHash $envFile).Hash -ceq $envHash -and (Get-FileHash $db).Hash -ceq $dbHash) 'DryRun leaves inputs unchanged'
-    function Assert-HermesGuidedPortFree { throw 'Port 8000 is occupied' }
-    Reject { Invoke-HermesGuidedOperation $main $stable '1.2.3' -DryRun } '*Port 8000*'
+    # Shadow the utility module only in the child processes. The parent's
+    # already loaded Get-FileHash remains usable, as during the incident.
+    $modules = Join-Path $root 'synthetic modules'
+    $utility = Join-Path $modules 'Microsoft.PowerShell.Utility'
+    New-Item -ItemType Directory -Path $utility -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $utility 'Microsoft.PowerShell.Utility.psm1'), 'function Get-FileHash { throw "synthetic unavailable" }; Export-ModuleMember -Function Get-FileHash')
+    $priorModulePath = $env:PSModulePath
+    try {
+        $env:PSModulePath = $modules + ';' + $priorModulePath
+        Check ((Get-FileHash $db).Hash -ceq $dbHash) 'parent retains its loaded hash function'
+        Reject { Invoke-HermesGuidedOperation $main $stable '1.2.3' -DryRun } '*Get-FileHash*child Windows PowerShell*'
+        Reject { Invoke-HermesGuidedOperation $main $stable '1.2.3' } '*Get-FileHash*child Windows PowerShell*'
+        Check ($script:prompts -eq 0 -and $script:updates -eq 0 -and $script:starts -eq 0) 'broken child stops before prompts, update or Start'
+        Check ((Get-FileHash $db).Hash -ceq $dbHash -and -not (Test-Path -LiteralPath $plan.Backup)) 'failed preflight leaves synthetic DB and backup destination unchanged'
+    }
+    finally { $env:PSModulePath = $priorModulePath }
+    # Restrict only command lookup in the synthetic Start process. The real
+    # validator still runs in a clean child and the guide keeps its own commands.
+    $probeScript = Join-Path $probeDirectory 'check-stable-start-environment.ps1'
+    $realProbe = Join-Path $probeDirectory 'start-probe-under-test.ps1'
+    Copy-Item -LiteralPath $probeScript -Destination $realProbe
+    $startHarness = @'
+function Get-Command {
+    [CmdletBinding()]
+    param([string[]]$Name, [string]$CommandType)
+    if ($Name -contains '__MISSING__') {
+        if ($ErrorActionPreference -eq 'SilentlyContinue') { return }
+        throw 'Synthetic command unavailable in Start'
+    }
+    Microsoft.PowerShell.Core\Get-Command @PSBoundParameters
+}
+& (Join-Path $PSScriptRoot 'start-probe-under-test.ps1')
+exit $LASTEXITCODE
+'@
+    [IO.File]::WriteAllText($probeScript, $startHarness.Replace('__MISSING__', 'Get-NetTCPConnection'))
+    Invoke-HermesGuidedOperation $main $stable '1.2.3' -DryRun
+    [IO.File]::WriteAllText($probeScript, $startHarness.Replace('__MISSING__', 'Invoke-WebRequest'))
+    Reject { Invoke-HermesGuidedOperation $main $stable '1.2.3' } '*Invoke-WebRequest*Start readiness*'
+    Check ($script:prompts -eq 0 -and $script:updates -eq 0 -and $script:starts -eq 0) 'missing Start readiness command fails before downtime or confirmation'
+    & {
+        function Get-Command { param($Name, $ErrorAction) if ($Name -ne 'Invoke-RestMethod') { throw 'Unexpected parent lookup' } }
+        Reject { Assert-HermesGuidedStartEnvironment $plan } '*Invoke-RestMethod*guided updater*'
+    }
+    function Assert-HermesGuidedStartEnvironment { param($Plan) }
+    Reject { Invoke-HermesGuidedOperation $main $stable '1.2.3' } '*Port 8000*'
     function Assert-HermesGuidedPortFree { }
     $script:answers = @('NO')
     Reject { Invoke-HermesGuidedOperation $main $stable '1.2.3' } '*synchronization cancelled*'

@@ -821,7 +821,7 @@ Owner convenience entry point, from clean trusted canonical Main on branch `main
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\update-stable-guided.ps1 -TargetVersion X.Y.Z
 ```
 
-Use `-DryRun` for local resolution and the explicit OPS02 command only; it makes no changes or network requests. `-StableCheckout` is optional and defaults to `stable` beside Main. The guide requires canonical origin and no local-only commits, asks for `PULL` before `git pull --ff-only origin main`, extracts only `HERMES_FINANCE_DATABASE_PATH` from Stable's `.env`, and proposes a new `Backups/stable-X.Y.Z-update` directory beside Main. The selector must be a single literal absolute existing local file path (no interpolation; use forward slashes in double quotes). Other dotenv keys are neither loaded into the environment nor printed. Verify the displayed path is the accepted production database, then type `X.Y.Z` to authorize the displayed command with explicit `-DatabasePath` and `-BackupDirectory`; OPS02 guards/defaults are unchanged. Existing backup destinations and occupied port 8000 refuse. After successful OPS02 only, typing `START` separately authorizes Stable's `start-local.ps1`; the guide reads back `/api/health` and requires the requested version. A Start/readback failure does not trigger rollback or another update; inspect the runtime before retrying.
+Before stopping Stable, run the guide with `-DryRun` from the same Windows PowerShell environment intended for the update and Start. This works while the current runtime owns port 8000. It launches a no-profile Windows PowerShell in the Stable working directory, exercises SHA256 in its validation child, checks command availability, and displays the proposed OPS02 command. A failed preflight identifies the environment to fix while the current version is still available. DryRun makes no checkout or database changes or network requests. The actual update repeats the probe and still requires port 8000 to be free. `-StableCheckout` is optional and defaults to `stable` beside Main. The guide requires canonical origin and no local-only commits, asks for `PULL` before `git pull --ff-only origin main`, extracts only `HERMES_FINANCE_DATABASE_PATH` from Stable's `.env`, and proposes a new `Backups/stable-X.Y.Z-update` directory beside Main. The selector must be a single literal absolute existing local file path (no interpolation; use forward slashes in double quotes). Other dotenv keys are neither loaded into the environment nor printed. Verify the displayed path is the accepted production database, then type `X.Y.Z` to authorize the displayed command with explicit `-DatabasePath` and `-BackupDirectory`; OPS02 guards/defaults are unchanged. Existing backup destinations refuse. An occupied port 8000 blocks the actual update. After successful OPS02 only, typing `START` separately authorizes Stable's `start-local.ps1`; the guide reads back `/api/health` and requires the requested version. A Start/readback failure does not trigger rollback or another update; inspect the runtime before retrying.
 
 <a id="o3-owner_runtime_operations-124"></a>
 ### Release sequence and bounded failures
@@ -829,7 +829,7 @@ Use `-DryRun` for local resolution and the explicit OPS02 command only; it makes
 <a id="o3-owner_runtime_operations-124-9-normal-future-release-sequence"></a>
 #### 9. Normal future release sequence
 
-Prepare one exact canonical candidate and pass its final CI → perform isolated Test and manual acceptance when required by the change or an explicit accepted gate → guarded publication through #124 → independent tag/release read-back → stop owned Stable → explicit backup-first OPS02 → target pin/preparation read-back → explicit Start → health/version and data-continuity check. The backup must be verified before Stable changes. Record any UAT not performed; an existing task-specific UAT requirement is not silently discharged by this general rule.
+Prepare one exact canonical candidate and pass its final CI → perform isolated Test and manual acceptance when required by the change or an explicit accepted gate → guarded publication through #124 → independent tag/release read-back → guided DryRun with Start environment preflight → stop owned Stable → explicit backup-first OPS02 → target pin/preparation read-back → explicit Start → health/version and data-continuity check. The backup must be verified before Stable changes. Record any UAT not performed; an existing task-specific UAT requirement is not silently discharged by this general rule.
 
 Do not call a GitHub merge a release or a runtime update. Filesystem relocation and janitor deployment do not promote code versions.
 
@@ -897,7 +897,7 @@ For the normal chat-driven path the owner can ask the integrator to release a pr
 
 For the PowerShell/gh route, run
 `pwsh -NoProfile -File scripts/request-release.ps1 -Version X.Y.Z -DryRun`
-to check live origin/main, exact successful canonical push CI and notes on that
+to check live origin/main, full canonical push CI including its successful synthetic visual audit, and notes on that
 SHA and print the exact body without posting. After release authorization,
 run the same command without `-DryRun`: it checks the authenticated owner,
 posts once to #124 using a temporary UTF-8 body file (avoiding Git Bash path

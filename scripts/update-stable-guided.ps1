@@ -129,13 +129,37 @@ function Invoke-HermesGuidedUpdate {
     if ($LASTEXITCODE -ne 0) { throw "OPS02 failed; Start was not offered. Inspect the existing operation receipt before retrying." }
 }
 
+function Start-HermesGuidedPowerShell {
+    param([string]$ScriptPath, [string]$WorkingDirectory, [string]$WindowStyle)
+    if ($ScriptPath.Contains('"')) { throw "Invalid Stable script path." }
+    return Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $ScriptPath + '"')) `
+        -WorkingDirectory $WorkingDirectory -WindowStyle $WindowStyle -PassThru
+}
+
+function Assert-HermesGuidedStartEnvironment {
+    param($Plan)
+    if ($null -eq (Get-Command Invoke-RestMethod -ErrorAction SilentlyContinue)) {
+        throw "Stable Start preflight failed: Invoke-RestMethod is unavailable for health readback in the guided updater."
+    }
+    $probe = Join-Path $Plan.Main 'scripts\check-stable-start-environment.ps1'
+    $process = Start-HermesGuidedPowerShell $probe $Plan.Stable Hidden
+    try {
+        $process.WaitForExit()
+        switch ($process.ExitCode) {
+            0  { return }
+            12 { throw "Stable Start preflight failed: Get-FileHash (SHA256) is unavailable in the child Windows PowerShell validator. Check its module path before stopping Stable." }
+            13 { throw "Stable Start preflight failed: the child Windows PowerShell could not resolve git, uv, ConvertFrom-Json or npm.cmd for preparation and validation. Check its environment before stopping Stable." }
+            default { throw "Stable Start preflight failed: check Windows PowerShell, uv and Invoke-WebRequest for Start readiness before stopping Stable." }
+        }
+    }
+    finally { $process.Dispose() }
+}
+
 function Start-HermesGuidedStable {
     param($Plan)
     Assert-HermesGuidedPortFree
     $start = Join-Path $Plan.Stable 'scripts\start-local.ps1'
-    if ($start.Contains('"')) { throw "Invalid Stable script path." }
-    $process = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $start + '"')) `
-        -WorkingDirectory $Plan.Stable -WindowStyle Normal -PassThru
+    $process = Start-HermesGuidedPowerShell $start $Plan.Stable Normal
     $deadline = [DateTime]::UtcNow.AddSeconds(90)
     while ([DateTime]::UtcNow -lt $deadline) {
         if ($process.HasExited) { throw "Stable Start exited before health readback." }
@@ -155,9 +179,10 @@ function Start-HermesGuidedStable {
 function Invoke-HermesGuidedOperation {
     param([string]$Main, [string]$Stable, [string]$Version, [switch]$DryRun)
     Assert-HermesGuidedMain $Main
-    Assert-HermesGuidedPortFree
     $plan = Get-HermesGuidedPlan $Main $Stable $Version
+    Assert-HermesGuidedStartEnvironment $plan
     if (-not $DryRun) {
+        Assert-HermesGuidedPortFree
         Write-Host "Main synchronization: git pull --ff-only origin main"
         if ((Read-Host 'Type PULL to confirm fetching and fast-forwarding Main') -cne 'PULL') { throw "Main synchronization cancelled." }
         $null = Invoke-HermesGuidedGit $Main @('pull', '--ff-only', 'origin', 'main')

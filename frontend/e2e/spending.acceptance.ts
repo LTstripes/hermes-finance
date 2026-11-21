@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./spending-test";
 
 const month = "2026-10";
 const header =
