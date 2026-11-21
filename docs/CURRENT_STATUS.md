@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-19**. This is the current status; product and numerical rules
+Updated **2026-11-21**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -9,6 +9,12 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- The unified expense journal ([#1236](https://github.com/LTstripes/hermes-finance/pull/1236)),
+  purchase notes and recurring obligations ([#1238](https://github.com/LTstripes/hermes-finance/pull/1238)),
+  and the emergency fund ([#1237](https://github.com/LTstripes/hermes-finance/pull/1237))
+  are integrated on main for 1.23.0. The release adds revisions 0071 and 0072.
+  Historical statement import and private reconciliation remain open under
+  [#1227](https://github.com/LTstripes/hermes-finance/issues/1227).
 - [v1.22.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.22.0)
   (`02c9b937f12e54f433ba04d57848546f777e6377`, exact-main CI
   [44455120917](https://github.com/LTstripes/hermes-finance/actions/runs/44455120917),
