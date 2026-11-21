@@ -80,12 +80,17 @@ Invoke-Case "workflow trigger is not path-filtered" {
     Assert-True -Condition ($onBlock -notmatch '(?m)^\s*paths:') -Message "Workflow-level paths filters leave a required check pending."
 }
 
-Invoke-Case "classification is recomputed from the current pull request commits" {
+Invoke-Case "classify each event from its current commit pair" {
     $classify = Get-Job "docs-only-classify"
-    Assert-True -Condition ($classify -match "if: github\.event_name == 'pull_request'") -Message "Classification is pull-request-only; main stays full."
-    Assert-True -Condition ($classify -match 'scripts/ci_paths\.py --base') -Message "The classifier must read the diff itself."
-    Assert-True -Condition ($classify -match 'github\.event\.pull_request\.base\.sha') -Message "The base SHA must come from the current event."
-    Assert-True -Condition ($classify -match 'github\.event\.pull_request\.head\.sha') -Message "The head SHA must come from the current event."
+    Assert-True -Condition ($classify -notmatch '(?m)^    if:') -Message "PR and main push both need classification."
+    Assert-True -Condition ($classify.Contains('BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}')) -Message "Read the PR base or previous push tip."
+    Assert-True -Condition ($classify.Contains('HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}')) -Message "Read the PR head or new push tip."
+    Assert-True -Condition ($classify.Contains('if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then')) -Message "Main push and PR must use separate classification rules."
+    Assert-True -Condition ($classify.Contains('python3 scripts/ci_paths.py --base "$BASE_SHA" --head "$HEAD_SHA"')) -Message "PR classification must inspect its exact diff."
+    Assert-True -Condition ($classify.Contains('FORCED: ${{ github.event.forced }}')) -Message "The force-push flag must come from GitHub."
+    Assert-True -Condition ($classify.Contains('if [[ "$GITHUB_REF" == "refs/heads/main" && "$FORCED" == "false" ]]; then')) -Message "Only an ordinary canonical main update can qualify for the status shortcut."
+    Assert-True -Condition ($classify.Contains('python3 scripts/ci_paths.py --main-push --base "$BASE_SHA" --head "$HEAD_SHA"')) -Message "Main push classification must use the restricted status classifier."
+    Assert-True -Condition ($classify.Contains('echo "mode=full" >> "$GITHUB_OUTPUT"')) -Message "Other push events must retain full coverage."
     Assert-True -Condition ($classify -notmatch 'actions/cache@') -Message "A cached mode would be stale after synchronize."
 }
 
@@ -99,7 +104,7 @@ Invoke-Case "docs-only guard remains on product suites" {
     )) {
         $job = Get-Job $jobId
         Assert-True -Condition (Test-JobDependency $job "docs-only-classify") -Message "$jobId must observe the classifier."
-        Assert-True -Condition ($job -match 'always\(\)') -Message "$jobId must still start when the classifier is skipped on main."
+        Assert-True -Condition ($job -match 'always\(\)') -Message "$jobId must still evaluate its guard when the classifier fails or is skipped."
         Assert-True -Condition ($job -match '!cancelled\(\)') -Message "$jobId must not start after cancellation."
         Assert-True -Condition ($job -match [regex]::Escape($condition)) -Message "$jobId must fail closed to the full suite."
     }
