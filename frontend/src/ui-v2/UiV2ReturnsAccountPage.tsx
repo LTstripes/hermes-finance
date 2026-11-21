@@ -1,7 +1,8 @@
 import { useAccountName } from "./returns/useAccountName";
 import { useReturnsPrefetch } from "./returns/useReturnsPrefetch";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import sheet from "./ReportSheet.module.css";
 import layout from "./returns/Dashboard.module.css";
@@ -37,6 +38,7 @@ const BrokerStatementReturnDiagnostics = lazy(() => import("./BrokerStatementRet
 
 export default function UiV2ReturnsAccountPage() {
   const [params, setParams] = useSearchParams();
+  const [accountChangePending, startAccountChange] = useTransition();
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(() => params.has("diagnostics"));
   const [diagnosticsLoaded, setDiagnosticsLoaded] = useState(diagnosticsExpanded);
   const [statementExpanded, setStatementExpanded] = useState(
@@ -305,7 +307,10 @@ export default function UiV2ReturnsAccountPage() {
                   }
                   for (const key of ["isin", "source_account", "bond_isin", "bond_period"])
                     next.delete(key);
-                  setParams(next);
+                  // Retire outgoing source controls before another input can navigate
+                  // using their previous account and search parameters.
+                  if (scope === account.id) setParams(next);
+                  else flushSync(() => startAccountChange(() => setParams(next)));
                 }}
               >
                 {accountName(account.account_link, account.label)}
@@ -499,6 +504,7 @@ export default function UiV2ReturnsAccountPage() {
             {diagnosticsLoaded && (
               <Suspense fallback={<p>Загружаем подробности…</p>}>
                 {scope.startsWith("source:") ? (
+                  !accountChangePending &&
                   context.data?.accounts.some((account) => account.id === scope) ? (
                     <ReturnsSourceDiagnostics key={scope} account={scope.slice(7)} />
                   ) : null
