@@ -330,10 +330,46 @@ test("two-account bond desktop: reported holdings, linked coupons, eligible esti
   expect(bond.analysis.statement_estimate.pnl.value).toBe(4000);
   await panel.screenshot({ path: info.outputPath("bond-no-trade-1440.png") });
 
-  await page.getByRole("group", { name: "Счета" }).locator('button[title="8765432-000"]').click();
+  let markReadStarted!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    markReadStarted = resolve;
+  });
+  let releaseRead!: () => void;
+  const pendingRead = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  const secondAccountRead = (url: URL) =>
+    url.pathname === "/api/source-returns/instruments" &&
+    url.searchParams.get("source_account") === "8765432-000";
+  await page.route(secondAccountRead, async (route) => {
+    markReadStarted();
+    await pendingRead;
+    await route.continue();
+  });
+  const switchedUrl = (url: URL) => url.searchParams.get("scope") === "source:8765432-000";
+  try {
+    // Force the outgoing period control and the account click into the same browser turn.
+    await page.getByRole("group", { name: "Счета" }).evaluate((group) => {
+      const period = document.querySelector<HTMLSelectElement>(
+        'select[aria-label="Период облигаций"]',
+      );
+      const account = group.querySelector<HTMLButtonElement>('button[title="8765432-000"]');
+      if (!period || !account) throw new Error("Missing account or period control");
+      account.click();
+      if (period.isConnected) {
+        period.value = "2030-05-01";
+        period.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await expect(page).toHaveURL(switchedUrl);
+    await readStarted;
+    await expect(panel.getByLabel("Период облигаций")).toHaveCount(0);
+  } finally {
+    releaseRead();
+  }
   await panel.getByLabel("Период облигаций").selectOption("2030-05-01");
-  // The previous account stays on screen until the new source read returns.
-  await expect(panel.getByText("8765432-000", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByText("8765432-000", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(switchedUrl);
   await expect(withinTable().getByRole("cell", { name: "8", exact: true })).toBeVisible();
   await expect(panel.getByRole("table", { name: "Сделки по строкам источников" })).toContainText(
     "% от номинала",
