@@ -303,7 +303,7 @@ jobs:
         run: npm run build
 
   g04-browser:
-    name: G04 and native v2 real-backend journeys
+    name: G04 and native v2 real-backend journeys (${{ matrix.group }})
     needs: [docs-only-classify, privacy]
     if: >-
       always() &&
@@ -313,6 +313,10 @@ jobs:
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.browser != 'false'))
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [diary-and-close, broker-month, returns-and-instruments]
     timeout-minutes: 20
     env:
       HERMES_CI_REQUEST_TIMING_LOG: /tmp/hermes-backend-request-timing.jsonl
@@ -349,12 +353,14 @@ jobs:
         run: npx playwright install chromium
 
       - name: Run G04 and Performance synthetic real-backend journeys
+        if: matrix.group == 'diary-and-close'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- g04-smoke.spec.ts performance-real-backend.spec.ts --project=chromium --retries=0
 
       - name: Run home linked-pair real-backend journey
+        if: matrix.group == 'diary-and-close'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
@@ -365,60 +371,70 @@ jobs:
         run: npm run build
 
       - name: Run native statement import apply and authoritative readback
+        if: matrix.group == 'diary-and-close'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=statement
 
       - name: Run native spending diary with isolated synthetic database
+        if: matrix.group == 'diary-and-close'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=spending --retries=0
 
       - name: Run capital goal plan with isolated synthetic database
+        if: matrix.group == 'diary-and-close'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=goal-plan --retries=0
 
       - name: Run Returns API with isolated synthetic database
+        if: matrix.group == 'returns-and-instruments'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=returns-api --retries=0
 
       - name: Run native Monthly Close edit return report and reopen
+        if: matrix.group == 'diary-and-close'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=monthly-close
 
       - name: Run source-first broker-month Preview DRAFT readback and Close
+        if: matrix.group == 'broker-month'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=broker-month
 
       - name: Run zero-metadata source-intake provisional desktop journey
+        if: matrix.group == 'returns-and-instruments'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=provisional
 
       - name: Run isolated read-only instrument UAT desktop journey
+        if: matrix.group == 'returns-and-instruments'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=instrument-uat
 
       - name: Run conditional instrument return and stale evidence protection
+        if: matrix.group == 'returns-and-instruments'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
         run: npm run test:e2e -- --project=instrument-what-if
 
       - name: Run read-only two-account bond source desktop journey
+        if: matrix.group == 'returns-and-instruments'
         env:
           TMPDIR: ${{ runner.temp }}
         working-directory: frontend
@@ -428,7 +444,7 @@ jobs:
         if: failure() && needs.privacy.result == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: g04-backend-request-timing
+          name: g04-backend-request-timing-${{ matrix.group }}
           path: /tmp/hermes-backend-request-timing.jsonl
           if-no-files-found: warn
 
@@ -436,7 +452,7 @@ jobs:
         if: always() && needs.privacy.result == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: native-v2-real-backend-evidence
+          name: native-v2-real-backend-evidence-${{ matrix.group }}
           path: |
             ${{ runner.temp }}/hermes-finance-playwright-results
             ${{ runner.temp }}/hermes-spending-playwright
