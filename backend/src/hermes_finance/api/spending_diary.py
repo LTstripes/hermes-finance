@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
@@ -21,6 +22,7 @@ from hermes_finance.persistence import (
 )
 from hermes_finance.services import spending_diary as diary
 from hermes_finance.services import spending_insights as insights
+from hermes_finance.services import spending_payment_rules as payments
 from hermes_finance.services.spending_previews import PreviewStore
 from hermes_finance.spending_files import normalize
 
@@ -522,5 +524,120 @@ def merge_category(category_id: int, request: MergeRequest, session: SessionDep)
     return _call(
         session,
         lambda: insights.merge_category(session, category_id, request.target_id),
+        write=True,
+    )
+
+
+PaymentSource = Literal["alfa", "cash", "sber", "manual_other", "month_entries"]
+
+
+class PaymentRuleRequest(StrictRequest):
+    token: str = Field(min_length=64, max_length=64)
+    note: str = Field(max_length=2000)
+    mandatory_override: bool | None
+    repeat: bool
+    period_months: int | None = Field(ge=1, le=120)
+    next_due: date | None
+    amount: str | None = Field(pattern=r"^(0|[1-9][0-9]{0,13})(\.[0-9]{1,2})?$")
+
+
+class PaymentReattachRequest(StrictRequest):
+    token: str = Field(min_length=64, max_length=64)
+    rule_id: int = Field(ge=1)
+    version: int = Field(ge=1)
+
+
+@router.get("/payment-rules")
+def payment_rules(session: SessionDep, month: str):
+    return _call(
+        session, lambda: payments.payment_rules_for_budget(session, month, include_archived=True)
+    )
+
+
+class OccurrenceDecision(StrictRequest):
+    token: str = Field(min_length=64, max_length=64)
+    rule_id: int = Field(ge=1)
+    version: int = Field(ge=1)
+    decision: Literal["payment", "separate"]
+
+
+class UndoOccurrence(StrictRequest):
+    token: str = Field(min_length=64, max_length=64)
+    occurrence_id: int = Field(ge=1)
+    version: int = Field(ge=1)
+
+
+@router.put("/payment-rules/{source}/{operation_id}/occurrence")
+def choose_payment_occurrence(
+    session: SessionDep,
+    source: PaymentSource,
+    operation_id: int,
+    month: str,
+    body: OccurrenceDecision,
+):
+    return _call(
+        session,
+        lambda: payments.choose_occurrence(
+            session, month, source, operation_id, **body.model_dump()
+        ),
+        write=True,
+    )
+
+
+@router.post("/payment-rules/{source}/{operation_id}/undo-occurrence")
+def undo_payment_occurrence(
+    session: SessionDep, source: PaymentSource, operation_id: int, month: str, body: UndoOccurrence
+):
+    return _call(
+        session,
+        lambda: payments.undo_occurrence(session, month, source, operation_id, **body.model_dump()),
+        write=True,
+    )
+
+
+class ArchiveRuleRequest(StrictRequest):
+    version: int = Field(ge=1)
+
+
+@router.post("/archived-payment-rules/{rule_id}")
+def archive_payment_rule(session: SessionDep, month: str, rule_id: int, body: ArchiveRuleRequest):
+    return _call(
+        session,
+        lambda: payments.archive_detached(session, month, rule_id, body.version),
+        write=True,
+    )
+
+
+@router.get("/payment-rules/{source}/{operation_id}")
+def payment_card(session: SessionDep, source: PaymentSource, operation_id: int, month: str):
+    return _call(session, lambda: payments.card(session, month, source, operation_id))
+
+
+@router.put("/payment-rules/{source}/{operation_id}")
+def save_payment_card(
+    session: SessionDep,
+    source: PaymentSource,
+    operation_id: int,
+    month: str,
+    body: PaymentRuleRequest,
+):
+    return _call(
+        session,
+        lambda: payments.save(session, month, source, operation_id, body.model_dump()),
+        write=True,
+    )
+
+
+@router.post("/payment-rules/{source}/{operation_id}/reattach")
+def reattach_payment_card(
+    session: SessionDep,
+    source: PaymentSource,
+    operation_id: int,
+    month: str,
+    body: PaymentReattachRequest,
+):
+    return _call(
+        session,
+        lambda: payments.reattach(session, month, source, operation_id, **body.model_dump()),
         write=True,
     )

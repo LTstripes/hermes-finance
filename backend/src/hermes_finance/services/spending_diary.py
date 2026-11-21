@@ -19,6 +19,8 @@ from hermes_finance.persistence import (
     SpendingExpenseLink,
     SpendingLinkOperation,
     SpendingOperation,
+    SpendingPaymentOccurrence,
+    SpendingPaymentRule,
     SpendingReview,
     SpendingRule,
     SpendingUpload,
@@ -41,6 +43,8 @@ TABLES = (
     SpendingRule,
     SpendingUpload,
     SpendingOperation,
+    SpendingPaymentRule,
+    SpendingPaymentOccurrence,
     SpendingExpenseLink,
     SpendingLinkOperation,
     SpendingReview,
@@ -795,6 +799,19 @@ def _plan(
             unchanged = unchanged and previous is not None and previous_period == period
     added, changed, removed, lost = [], [], [], []
     memberships = {m.operation_id for m in _objects(session, SpendingLinkOperation)}
+    annotated = set(
+        session.scalars(
+            select(SpendingPaymentRule.operation_id).where(SpendingPaymentRule.month == month)
+        )
+    )
+    annotated.update(
+        session.scalars(
+            select(SpendingPaymentOccurrence.operation_id).where(
+                SpendingPaymentOccurrence.month == month
+            )
+        )
+    )
+    ambiguous_notes = set()
     duplicate_targets = {r["duplicate_of_id"] for r in current if r["duplicate_of_id"]}
     for r in incoming:
         old = old_by_id.get(_identity(r))
@@ -811,6 +828,12 @@ def _plan(
             elif old["decision"] or old["id"] in memberships or old["id"] in duplicate_targets:
                 lost.append(old)
                 r["needs_review"] = True
+            if (
+                old["id"] in annotated
+                and not unchanged
+                and (old_counts[r["fingerprint"]] != 1 or new_counts[r["fingerprint"]] != 1)
+            ):
+                ambiguous_notes.add(old["id"])
             if any(r[k] != old[k] for k in ROW_FIELDS):
                 changed.append(r)
         else:
@@ -950,6 +973,7 @@ def _plan(
         unchanged=unchanged and not choices,
         period=period,
         projected=projected,
+        ambiguous_notes=ambiguous_notes,
     )
 
 
@@ -982,6 +1006,63 @@ def _invalidate_links(session: Session, operation_ids: set[int]) -> None:
             operation.duplicate_of_id = None
             operation.decision = None
             operation.needs_review = True
+    session.flush()
+
+
+def _move_confirmed_duplicate_notes(session: Session, month: str) -> None:
+    from hermes_finance.services.spending_payment_rules import transfer_duplicate_decisions
+
+    transfer_duplicate_decisions(session, month)
+    candidates = session.execute(
+        select(SpendingPaymentRule, SpendingOperation.duplicate_of_id)
+        .join(SpendingOperation, SpendingPaymentRule.operation_id == SpendingOperation.id)
+        .where(
+            SpendingPaymentRule.month == month,
+            SpendingOperation.decision == "duplicate",
+            SpendingOperation.duplicate_of_id.is_not(None),
+        )
+    ).all()
+    if not candidates:
+        return
+    rows = {row["id"]: row for row in read_month_base(session, month)["operations"]}
+    by_target = defaultdict(list)
+    for rule, target_id in candidates:
+        source = rows.get(rule.operation_id)
+        target = rows.get(target_id)
+        if (
+            source
+            and source["effective_reason"] is None
+            and target
+            and target["included"]
+            and target["source"] == "alfa_csv"
+        ):
+            by_target[target_id].append(rule)
+    occupied = set(
+        session.scalars(
+            select(SpendingPaymentRule.operation_id).where(
+                SpendingPaymentRule.operation_id.in_(by_target)
+            )
+        )
+    )
+    paid = set(
+        session.scalars(
+            select(SpendingPaymentOccurrence.operation_id).where(
+                SpendingPaymentOccurrence.operation_id.in_(by_target),
+                SpendingPaymentOccurrence.decision == "payment",
+            )
+        )
+    )
+    for target_id, notes in by_target.items():
+        if (
+            len(notes) == 1
+            and target_id not in occupied
+            and not (notes[0].was_recurring and target_id in paid)
+        ):
+            rule = notes[0]
+            rule.operation_id = target_id
+            rule.source = "alfa"
+            rule.title = rows[target_id]["description"]
+            rule.version += 1
     session.flush()
 
 
@@ -1036,6 +1117,19 @@ def apply_upload(
         uploads[account] = upload.id
     lost_ids = {r["id"] for r in plan["lost"]} | {r["id"] for r in plan["removed"]}
     receipts = [_decision_receipt(session, old) for old in plan["lost"]]
+    for rule in session.scalars(
+        select(SpendingPaymentRule).where(
+            SpendingPaymentRule.operation_id.in_(lost_ids | plan["ambiguous_notes"])
+        )
+    ):
+        rule.operation_id = None
+        rule.version += 1
+    for occurrence in session.scalars(
+        select(SpendingPaymentOccurrence).where(
+            SpendingPaymentOccurrence.operation_id.in_(lost_ids | plan["ambiguous_notes"])
+        )
+    ):
+        occurrence.operation_id = None
     _invalidate_links(session, lost_ids)
     for receipt in receipts:
         session.add(
@@ -1078,6 +1172,7 @@ def apply_upload(
                 action=choice["action"],
                 category=choice.get("category"),
             )
+    _move_confirmed_duplicate_notes(session, month)
     return dict(changed=True, month=read_month(session, month))
 
 
@@ -1114,6 +1209,7 @@ def decide_operation(
             session, scope="merchant", key=operation.merchant_key, action=action, category=category
         )
     session.flush()
+    _move_confirmed_duplicate_notes(session, operation.month)
     return read_month(session, operation.month)
 
 

@@ -167,6 +167,82 @@ test("spending: CSV and Markdown, disappearance, manual decision, saved review a
   await expect(page.getByRole("heading", { name: "Правила по продавцу" })).toHaveCount(0);
 });
 
+test("annual payment note persists, projects a monthly amount and can stop renewing", async ({
+  page,
+}) => {
+  await page.goto("/v2/spending?month=2026-09");
+  const purchase = page.getByRole("button", { name: "Сентябрьская покупка", exact: true });
+  await purchase.focus();
+  await page.keyboard.press("Enter");
+  const card = page.getByRole("dialog", { name: "Карточка покупки" });
+  await card.getByLabel("Моя заметка").fill("Проезд на работу");
+  await card.getByLabel("Обязательность для бюджета").selectOption("true");
+  await card.getByLabel("Планирую повторять").check();
+  await card.getByLabel("Интервал, месяцев").fill("12");
+  await card.getByLabel("Следующая оплата").fill("2027-09-01");
+  await card.getByLabel("Ожидаемая сумма, ₽").fill("24000,00");
+  await card.getByRole("button", { name: "Сохранить" }).click();
+  await expect(card.getByRole("status")).toHaveText("Сохранено");
+  await expect(card.getByText(/В среднем за месяц/)).toContainText("2 000");
+  await card.getByRole("button", { name: "Закрыть" }).click();
+  await page.reload();
+  await purchase.click();
+  await expect(card.getByLabel("Моя заметка")).toHaveValue("Проезд на работу");
+  await expect(card.getByLabel("Следующая оплата")).toHaveValue("2027-09-01");
+  await card.getByLabel("Планирую повторять").uncheck();
+  await card.getByRole("button", { name: "Сохранить" }).click();
+  await expect(card.getByRole("status")).toHaveText("Сохранено");
+  await expect(card.getByLabel("Моя заметка")).toHaveValue("Проезд на работу");
+  await expect(card.getByLabel("Следующая оплата")).toHaveCount(0);
+});
+
+test("record next rent against the existing schedule and undo the selection", async ({
+  page,
+  request,
+}) => {
+  async function rent(month: number) {
+    const report = await request.post("/api/months", {
+      data: { year: 2024, month, snapshot_date: `2024-${month}-28` },
+    });
+    expect(report.ok()).toBe(true);
+    const fact = await request.post("/api/expenses", {
+      data: {
+        reporting_month_id: (await report.json()).id,
+        category: "Аренда жилья",
+        expense_type: "mandatory",
+        amount: { amount: "30000.00", currency: "RUB" },
+      },
+    });
+    expect(fact.ok()).toBe(true);
+  }
+  await rent(10);
+  await rent(11);
+  async function open(month: string) {
+    await page.goto(`/v2/spending?month=${month}`);
+    await page.getByRole("button", { name: "Аренда жилья", exact: true }).click();
+    return page.getByRole("dialog", { name: "Карточка покупки" });
+  }
+  const first = await open("2024-10");
+  await first.getByLabel("Планирую повторять").check();
+  await first.getByLabel("Интервал, месяцев").fill("1");
+  await first.getByRole("button", { name: "Сохранить" }).click();
+  await expect(first.getByRole("status")).toHaveText("Сохранено");
+  await first.getByRole("button", { name: "Закрыть" }).click();
+  const second = await open("2024-11");
+  const pick = second.getByLabel("Существующий график");
+  const schedule = pick.getByRole("option", { name: /Аренда жилья · 2024-10/ });
+  await expect(schedule).toHaveCount(1);
+  const scheduleId = await schedule.getAttribute("value");
+  if (!scheduleId) throw new Error("Не найден график октябрьской аренды");
+  await pick.selectOption(scheduleId);
+  await second.getByRole("button", { name: "Уже оплачено по этому графику" }).click();
+  await expect(second.getByText(/Оплачено по графику · Аренда жилья/)).toBeVisible();
+  await second.getByRole("button", { name: "Закрыть" }).click();
+  await open("2024-11");
+  await second.getByRole("button", { name: "Отменить решение" }).click();
+  await expect(second.getByText(/Оплачено по графику · Аренда жилья/)).toHaveCount(0);
+});
+
 test("report expenses open in the same month before its first upload", async ({
   page,
   request,
