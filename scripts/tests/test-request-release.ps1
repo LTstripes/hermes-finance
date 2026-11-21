@@ -29,7 +29,7 @@ $runner = {
     }
     elseif ($text -match "^run list") {
         Assert ($text -match "--workflow ci.yml") "Canonical workflow filter missing"
-        $run = @{ headSha=$script:sha; event="push"; headBranch="main"; status="completed"; conclusion="success" }
+        $run = @{ databaseId=11; headSha=$script:sha; event="push"; headBranch="main"; status="completed"; conclusion="success" }
         switch ($script:mode) {
             "ci-sha" { $run.headSha = "f" * 40 }
             "ci-event" { $run.event = "pull_request" }
@@ -38,6 +38,22 @@ $runner = {
             "ci-failed" { $run.conclusion = "failure" }
         }
         $out = ConvertTo-Json -InputObject @($run) -Compress
+    }
+    elseif ($text -match "^run view 11 ") {
+        $view = @{databaseId=11; headSha=$script:sha; event="push"; headBranch="main"; status="completed"; conclusion="success"}
+        $proof = @{name="Verify full main push coverage"; conclusion="success"}
+        $gate = @{name="ci-ok"; conclusion="success"; steps=@($proof)}
+        $visual = @{name="Synthetic visual audit"; conclusion="success"}
+        $view.jobs = @($gate, $visual)
+        switch ($script:mode) {
+            "status-only" { $proof.conclusion = "skipped" }
+            "no-coverage" { $gate.steps = @() }
+            "visual-missing" { $view.jobs = @($gate) }
+            "visual-failed" { $visual.conclusion = "failure" }
+            "changed-sha" { $view.headSha = "f" * 40 }
+            "missing-jobs" { $view.jobs = @() }
+        }
+        $out = $view | ConvertTo-Json -Depth 8 -Compress
     }
     elseif ($text -match "/contents/") {
         Assert ($text.Contains("?ref=$script:sha")) "Notes are not pinned"
@@ -94,7 +110,7 @@ Run-Case "post exact file body and discover run" {
     Assert ($script:posts -eq 1) "Expected exactly one post"
     Assert (-not (Test-Path -LiteralPath $script:tempPath)) "Temporary file leaked"
 }
-foreach ($scenario in @("origin","sha","ci-sha","ci-event","ci-branch","ci-pending","ci-failed","notes","empty","user")) {
+foreach ($scenario in @("origin","sha","ci-sha","ci-event","ci-branch","ci-pending","ci-failed","status-only","no-coverage","visual-missing","visual-failed","changed-sha","missing-jobs","notes","empty","user")) {
     Run-Case "refuse $scenario before posting" {
         $script:mode = $scenario
         Expect-Failure { Submit }

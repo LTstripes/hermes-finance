@@ -160,6 +160,8 @@ function New-HermesFakeWorld {
         RemoteTag         = $RemoteTag
         Release           = $Release
         CiRuns            = @($CiRuns)
+        FullProof         = "success"
+        VisualAudit       = "success"
         GhAuthExit        = $GhAuthExit
         LsRemoteExit      = [int]$LsRemoteExit
         ReleaseApiFailure = [string]$ReleaseApiFailure
@@ -430,6 +432,15 @@ function Invoke-FakeGhCommand {
             }
         }
         return New-HermesCommandResult -Stdout (New-HermesTestJson -Object $filtered)
+    }
+
+    if ($ghArgs[0] -eq "run" -and $ghArgs[1] -eq "view") {
+        $view = ($State.CiRuns | Where-Object { [string]$_.databaseId -eq $ghArgs[2] } | Select-Object -First 1).Clone()
+        $view.jobs = @(
+            @{ name="ci-ok"; conclusion="success"; steps=@(@{ name="Verify full main push coverage"; conclusion=$State.FullProof }) },
+            @{ name="Synthetic visual audit"; conclusion=$State.VisualAudit }
+        )
+        return New-HermesCommandResult -Stdout ($view | ConvertTo-Json -Depth 8 -Compress)
     }
 
     if ($ghArgs[0] -eq "api") {
@@ -802,6 +813,18 @@ Invoke-HermesCase "in-progress CI performs zero publication" {
         Invoke-GuardedRelease -Workspace $workspace -World $world
     } | Out-Null
     Assert-NoPublication -Calls $world.State.Calls -Label "in-progress CI"
+}
+
+foreach ($field in @("FullProof", "VisualAudit")) {
+    Invoke-HermesCase "a green workflow with skipped $field performs zero publication" {
+        $workspace = New-HermesTestWorkspace
+        $world = New-HermesFakeWorld -RepoRoot $workspace.RepoRoot
+        $world.State[$field] = "skipped"
+        Invoke-ExpectFailure -Pattern "full main push" -Script {
+            Invoke-GuardedRelease -Workspace $workspace -World $world
+        } | Out-Null
+        Assert-NoPublication -Calls $world.State.Calls -Label "skipped $field"
+    }
 }
 
 Invoke-HermesCase "missing exact-main CI performs zero publication" {

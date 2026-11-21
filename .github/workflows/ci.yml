@@ -44,12 +44,11 @@ jobs:
       - name: Check docs-only classification regressions
         run: python3 scripts/tests/test-docs-only-ci.py
 
-  # Pull requests only. main pushes do not consult this mode.
+  # PR area selection and a separate, narrowly scoped main push decision.
   # Skipped product jobs are an omission, not a passed suite.
   # ui-v2-evidence.yml keeps its own path filter and does not run for these docs.
   docs-only-classify:
-    name: Pull request path classification
-    if: github.event_name == 'pull_request'
+    name: CI path classification
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -66,19 +65,32 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Classify the current base and head diff
         id: classify
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          FORCED: ${{ github.event.forced }}
         run: |
           set -euo pipefail
           # One decision owns both docs-only mode and per-area outputs.
           # A failed step or missing output keeps product jobs enabled.
-          python3 scripts/ci_paths.py --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            if [[ "$GITHUB_REF" == "refs/heads/main" && "$FORCED" == "false" ]]; then
+              python3 scripts/ci_paths.py --main-push --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=full" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            python3 scripts/ci_paths.py --base "$BASE_SHA" --head "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          fi
           echo "Classified base=$BASE_SHA head=$HEAD_SHA"
+
+      - name: Report installation status update
+        if: github.event_name == 'push' && steps.classify.outputs.mode == 'status-only'
+        run: echo "Installation status update only. Product suites were omitted. This push is ineligible for publication." >> "$GITHUB_STEP_SUMMARY"
 
   backend-quality:
     name: Backend quality
@@ -86,6 +98,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
@@ -126,6 +139,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
@@ -225,6 +239,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
@@ -266,6 +281,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
@@ -308,6 +324,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (contains(github.event.pull_request.labels.*.name, 'ci:full') ||
       (github.event_name != 'pull_request' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'docs-only') &&
@@ -505,10 +522,11 @@ jobs:
 
   visual-audit:
     name: Synthetic visual audit
-    needs: visual-audit-paths
+    needs: [visual-audit-paths, docs-only-classify]
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' || needs.visual-audit-paths.outputs.run == 'true' ||
       needs.visual-audit-paths.result != 'success' ||
@@ -586,6 +604,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
@@ -660,6 +679,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
@@ -702,6 +722,7 @@ jobs:
     if: >-
       always() &&
       !cancelled() &&
+      (github.event_name != 'push' || needs.docs-only-classify.result != 'success' || needs.docs-only-classify.outputs.mode != 'status-only') &&
       (!(github.event.action == 'labeled') || github.event.label.name == 'ci:full' || github.event.label.name == 'ci:windows') &&
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
@@ -888,6 +909,22 @@ jobs:
           if bad:
               print(f"CI jobs did not succeed: {bad}", file=sys.stderr)
               sys.exit(1)
+          PY
+
+      - name: Verify full main push coverage
+        if: github.event_name == 'push' && needs.docs-only-classify.outputs.mode == 'full'
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          results = json.loads(os.environ["NEEDS_JSON"])
+          pr_only = {"docs-fast-path", "visual-audit-paths"}
+          missing = [name for name, job in results.items()
+                     if name not in pr_only and job["result"] != "success"]
+          if missing:
+              raise SystemExit(f"Full main push requires successful jobs: {missing}")
           PY
 
       - name: Check out receipt implementation

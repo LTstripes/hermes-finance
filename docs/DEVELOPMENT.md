@@ -479,8 +479,7 @@ the legacy visual-path match; unsafe Git records still force full coverage.
 
 Add the existing `ci:full` label to a PR to request all product jobs, including
 browser and visual checks. The label event starts CI; the full visual run keeps
-all viewports/scenarios without duplicate-evidence omission. Canonical main
-pushes remain full, and release verification does not consult PR area outputs.
+all viewports/scenarios without duplicate-evidence omission. Main push selection is independent of PR area outputs.
 The `ci:windows` label retains the existing Windows/release opt-in. Other label
 events omit product jobs and cannot cancel product runs. Their required verdict
 inherits only the latest completed successful CI run for the same PR/head;
@@ -494,7 +493,7 @@ Its bounded Actions snapshot reports attempt wall time separately from pauses
 before reruns and lists expensive completed jobs/steps when available. These
 overlapping durations are not CPU time, runner queue measurements or a new ledger.
 
-The [documentation-only classifier](../scripts/docs_only_ci.py) permits only its proven non-executable prose fast path. A green Documentation fast path reports classification/privacy/diff evidence, not omitted product suites. Canonical main pushes and release gates retain full verification.
+The [documentation-only classifier](../scripts/docs_only_ci.py) permits only its proven non-executable prose fast path. A green Documentation fast path reports classification/privacy/diff evidence, not omitted product suites. A non-forced, single-update main push can omit product jobs only for a clean regular-file edit confined to the existing S1 release/installation section of `docs/CURRENT_STATUS.md`. Privacy and classification still run. Any other change, unknown diff, or changed section boundary runs the full pipeline. A release requires successful full main push coverage and the synthetic visual audit in the same exact-SHA CI run. A status-only head cannot be published.
 
 
 <a id="d4-test_suite_guide-1-add-a-regression-to-the-semantic-owner"></a>
