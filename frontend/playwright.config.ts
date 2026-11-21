@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,9 +11,9 @@ import { selectPlaywrightProjects } from "./playwrightProjects";
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), "hermes-finance-g04-"));
 const databasePath = path.join(databaseDir, "finance.db");
-const spendingPort = process.env.HERMES_STATEMENT_TEST_PORT ?? "18927";
-if (Number(spendingPort) === 8000) throw new Error("Use an isolated port for spending tests.");
-const spendingURL = `http://127.0.0.1:${spendingPort}`;
+// Workers reload this config. Keep the result directory stable for one invocation.
+process.env.HERMES_SPENDING_PLAYWRIGHT_RUN ??= randomUUID();
+const spendingRunId = process.env.HERMES_SPENDING_PLAYWRIGHT_RUN;
 
 // Keep each former config's project and server settings together. Playwright's
 // webServer/reporter/workers/forbidOnly settings are invocation-wide, so only the
@@ -381,12 +382,11 @@ const suites: Record<string, PlaywrightTestConfig> = {
   spending: {
     testDir: "./e2e",
     testMatch: ["spending.acceptance.ts", "reserve.acceptance.ts"],
-    outputDir: path.join(os.tmpdir(), "hermes-spending-playwright"),
+    outputDir: path.join(os.tmpdir(), "hermes-spending-playwright", spendingRunId),
     workers: 1,
     retries: 0,
     reporter: "list",
     use: {
-      baseURL: spendingURL,
       locale: "ru-RU",
       viewport: { width: 1440, height: 900 },
       trace: "retain-on-failure",
@@ -397,9 +397,10 @@ const suites: Record<string, PlaywrightTestConfig> = {
       env: {
         PYTHONPATH: "src",
         PYTHONIOENCODING: "utf-8",
-        HERMES_STATEMENT_TEST_PORT: spendingPort,
       },
-      url: `${spendingURL}/api/health`,
+      wait: {
+        stderr: /Uvicorn running on (?<hermes_spending_bound_url>http:\/\/127\.0\.0\.1:\d+)/,
+      },
       reuseExistingServer: false,
       timeout: 120_000,
     },

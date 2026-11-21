@@ -439,6 +439,7 @@ jobs:
           name: native-v2-real-backend-evidence
           path: |
             ${{ runner.temp }}/hermes-finance-playwright-results
+            ${{ runner.temp }}/hermes-spending-playwright
             ${{ runner.temp }}/hermes-statement-playwright-results
             ${{ runner.temp }}/hermes-571-playwright
             ${{ runner.temp }}/hermes-broker-month-playwright

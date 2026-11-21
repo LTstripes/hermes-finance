@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./spending-test";
 
 test("reserve saves a category budget, reads the calendar, and returns to the selected month", async ({
   page,

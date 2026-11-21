@@ -45,7 +45,11 @@ def seed(session, month, last_day, rows):
 
 
 def main():
-    port = int(os.environ["HERMES_STATEMENT_TEST_PORT"])
+    port = int(
+        os.environ.get("HERMES_SPENDING_TEST_PORT")
+        or os.environ.get("HERMES_STATEMENT_TEST_PORT")
+        or 0
+    )
     if port == 8000:
         raise SystemExit("The spending fixture requires an isolated port")
     with TemporaryDirectory(prefix="hermes-spending-e2e-") as directory:
