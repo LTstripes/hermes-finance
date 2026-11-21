@@ -14,6 +14,10 @@ const databasePath = path.join(databaseDir, "finance.db");
 // Workers reload this config. Keep the result directory stable for one invocation.
 process.env.HERMES_SPENDING_PLAYWRIGHT_RUN ??= randomUUID();
 const spendingRunId = process.env.HERMES_SPENDING_PLAYWRIGHT_RUN;
+// Playwright cleans outputDir. An inherited ID must be a single generated directory name.
+if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(spendingRunId)) {
+  throw new Error("Invalid spending Playwright run ID");
+}
 
 // Keep each former config's project and server settings together. Playwright's
 // webServer/reporter/workers/forbidOnly settings are invocation-wide, so only the
