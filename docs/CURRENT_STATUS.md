@@ -9,12 +9,15 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
-- The unified expense journal ([#1236](https://github.com/LTstripes/hermes-finance/pull/1236)),
-  purchase notes and recurring obligations ([#1238](https://github.com/LTstripes/hermes-finance/pull/1238)),
-  and the emergency fund ([#1237](https://github.com/LTstripes/hermes-finance/pull/1237))
-  are integrated on main for 1.23.0. The release adds revisions 0071 and 0072.
-  Historical statement import and private reconciliation remain open under
-  [#1227](https://github.com/LTstripes/hermes-finance/issues/1227).
+- [v1.23.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.23.0)
+  (`fe55ca73354aeb67c343e5b7f6904ae2d2275eae`, [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/44884837082),
+  [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/44886443799),
+  [release notes](release-notes-1.23.0.md)) was installed on Stable on 2026-11-21 through backup-first OPS02.
+  Start migrated 0070 to 0072. Health reported 1.23.0. The expense journal and emergency fund
+  loaded in Chromium with successful API responses. SQLite integrity and foreign keys passed.
+  The contents of all 87 pre-existing application tables matched the verified pre-update backup.
+  Historical import into the working diary awaits full monthly statements selected by the Owner
+  ([#1227](https://github.com/LTstripes/hermes-finance/issues/1227#issuecomment-7059910834)).
 - [v1.22.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.22.0)
   (`02c9b937f12e54f433ba04d57848546f777e6377`, exact-main CI
   [44455120917](https://github.com/LTstripes/hermes-finance/actions/runs/44455120917),
