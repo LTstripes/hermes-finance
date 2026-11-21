@@ -5,6 +5,9 @@ import type {
   SpendingPreview,
 } from "../src/api/spending";
 
+import type { PaymentCard } from "../src/api/spendingPayments";
+import type { ReserveView } from "../src/api/spendingReserve";
+
 const money = (amount: string) => ({ amount, currency: "RUB" });
 const months = [
   "2025-11",
@@ -217,6 +220,87 @@ const preview: SpendingPreview = {
   removed: 1,
 };
 
+const annualCard: PaymentCard = {
+  token: "synthetic-card",
+  title: item.description,
+  fact_amount: item.amount.amount,
+  category_mandatory: false,
+  schedules: [],
+  decisions: [],
+  rule: {
+    id: 8,
+    title: item.description,
+    month: selected,
+    source: "alfa",
+    operation_id: item.id,
+    note: "Продление годовой подписки",
+    mandatory_override: true,
+    mandatory: true,
+    repeat: true,
+    period_months: 12,
+    next_due: "2027-10-04",
+    amount: "24000",
+    monthly_amount: "2000",
+    needs_review: false,
+    archived: false,
+    was_recurring: true,
+    occurrences: [],
+    version: 1,
+  },
+};
+
+function reserveView(complete: boolean): ReserveView {
+  const renewal = {
+    rule_id: 8,
+    date: "2027-10-04",
+    title: item.description,
+    amount: money("24000"),
+  };
+  return {
+    revision: 1,
+    plan: {
+      start: "2027-10-01",
+      end: "2027-10-31",
+      sources: [{ key: "synthetic", portion: null }],
+      categories: complete ? [] : [{ id: 2, estimate: null }],
+      months: [],
+    },
+    gaps: complete ? [] : ["Для категории «Покупки» недостаточно истории."],
+    reserve: money("24000"),
+    monthly: complete ? money("2000") : null,
+    coverage_months: complete ? "12" : null,
+    target: complete ? money("24000") : null,
+    difference: complete ? money("0") : null,
+    snapshot_date: "2026-10-31",
+    payment_candidates: [],
+    history_coverage: [],
+    sources: [
+      { key: "synthetic", label: "Учебный вклад", kind: "deposit", balance: money("24000") },
+    ],
+    categories: [{ id: 2, name: "Покупки" }],
+    basis: complete ? [] : [{ id: 2, name: "Покупки", method: "history", amount: null }],
+    calendar: [
+      {
+        month: "2027-10",
+        variable: complete ? money("0") : null,
+        payments: [renewal],
+        total: complete ? money("24000") : null,
+      },
+    ],
+    rules: [
+      {
+        id: 8,
+        title: item.description,
+        amount: money("24000"),
+        period_months: 12,
+        monthly: money("2000"),
+        next_due: renewal.date,
+        needs_review: false,
+      },
+    ],
+  };
+}
+
 export function spendingVisualResponse(
   url: URL,
   method: string,
@@ -252,6 +336,9 @@ export function spendingVisualResponse(
         filtered_total: money(content ? "4000" : "0"),
       },
     };
+  if (path === "/api/spending/reserve" && method === "GET") return { json: reserveView(content) };
+  if (path === "/api/spending/payment-rules/alfa/1" && method === "GET")
+    return { json: annualCard };
   if (path === "/api/spending/payment-rules" && method === "GET") return { json: [] };
   if (path === "/api/spending/categories") return { json: content ? categories : [] };
   if (path === "/api/spending/rules")

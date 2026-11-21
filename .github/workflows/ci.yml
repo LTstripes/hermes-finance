@@ -453,6 +453,7 @@ jobs:
           name: native-v2-real-backend-evidence
           path: |
             ${{ runner.temp }}/hermes-finance-playwright-results
+            ${{ runner.temp }}/hermes-spending-playwright
             ${{ runner.temp }}/hermes-statement-playwright-results
             ${{ runner.temp }}/hermes-571-playwright
             ${{ runner.temp }}/hermes-broker-month-playwright
@@ -474,6 +475,7 @@ jobs:
     outputs:
       run: ${{ steps.filter.outputs.run }}
       duplicate_paths: ${{ steps.filter.outputs.duplicate_paths }}
+      spending_layout: ${{ steps.filter.outputs.spending_layout }}
 
     steps:
       - name: Check out repository history
@@ -500,6 +502,11 @@ jobs:
           if [ "$CLASSIFICATION_RESULT" != "success" ] || [ "$VISUAL_AREA" != "false" ]; then
             should_run=true
           fi
+          spending_layout=false
+          if grep -Eq '^frontend/(src/(ui-v2/(spending/|UiV2Shell)|app/|components/)|.*\.css$|e2e/(visual-audit\.spec|spending-visual-fixtures)\.ts$|playwright\.visual\.config\.ts$)' "$RUNNER_TEMP/changed-files.txt"; then
+            spending_layout=true
+          fi
+          echo "spending_layout=$spending_layout" >> "$GITHUB_OUTPUT"
           echo "run=$should_run" >> "$GITHUB_OUTPUT"
           # PR-owned files only. A missing base or merge-base fails closed to
           # "not a duplicate" so CI keeps the full audit.
@@ -593,6 +600,7 @@ jobs:
       - name: Run synthetic visual audit
         env:
           HERMES_VISUAL_AUDIT_OMIT_DUPLICATE_EVIDENCE: ${{ steps.identity.outputs.omit }}
+          HERMES_SPENDING_VISUAL_EXTENDED: ${{ github.event_name == 'push' || needs.visual-audit-paths.outputs.spending_layout != 'false' || contains(github.event.pull_request.labels.*.name, 'ci:full') }}
         run: npm run audit:visual
 
   release-safety:
