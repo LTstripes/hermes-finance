@@ -101,6 +101,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 CI_CORE_ADDITIONAL_FILES = (
     "test_spending_payment_rules.py",
     "test_spending_diary.py",
+    "test_spending_reserve.py",
     "domain/test_total_income.py",
     "test_total_income_service.py",
     "test_total_income_api.py",
@@ -227,6 +228,7 @@ CI_CORE_SHARD_WEIGHTS = {
 # original core-a group is subdivided; the accepted A/B membership stays fixed.
 CI_CORE_A_SHARD_WEIGHTS = {
     "test_spending_diary.py": 48.77,
+    "test_spending_reserve.py": 1.0,
     "test_spending_payment_rules.py": 9.73,
     "domain/test_total_income.py": 0.05,
     "test_total_income_service.py": 1.0,
@@ -837,6 +839,7 @@ def semantic_markers_for(test_path: Path) -> tuple[str, ...]:
     if filename.endswith("_service.py") or filename in {
         "test_source_instrument_events.py",
         "test_spending_diary.py",
+        "test_spending_reserve.py",
         "test_spending_payment_rules.py",
     }:
         markers.add("service")

@@ -87,6 +87,7 @@ export function App({ queryClient: providedQueryClient }: AppProps = {}) {
           <Route path="v2/income" element={<UiV2IncomeEntry />} />
           <Route path="v2/income/scenario-lab" element={<UiV2ScenarioLabEntry />} />
           <Route path="v2/spending" element={<SpendingEntry screen="month" />} />
+          <Route path="v2/spending/reserve" element={<SpendingEntry screen="reserve" />} />
           <Route path="v2/spending/import" element={<SpendingEntry screen="import" />} />
           <Route path="v2/spending/rules" element={<SpendingEntry screen="rules" />} />
           <Route path="v1" element={<Navigate replace to="/v2" />} />

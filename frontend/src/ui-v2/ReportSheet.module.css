@@ -237,7 +237,7 @@
   background: var(--line-2);
 }
 
-.segmented button {
+.segmented :is(button, a) {
   min-height: 30px;
   padding: 4px 12px;
   border: 0;
@@ -249,7 +249,16 @@
   font-size: var(--t-sm);
 }
 
-.segmented button[aria-pressed="true"] {
+.segmented a {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+nav.segmented {
+  justify-self: start;
+}
+.segmented button[aria-pressed="true"],
+.segmented a[aria-current="page"] {
   background: var(--surface);
   color: var(--ink);
   box-shadow: 0 1px 2px rgb(20 30 45 / 10%);
