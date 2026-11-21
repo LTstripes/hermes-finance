@@ -985,7 +985,9 @@ Use the existing issue/PR and review/acceptance notes with the AGENTS completion
 <a id="d5-agent_orchestration-20-staged-integration-for-parallel-slices"></a>
 #### Staged integration for parallel slices
 
-Use temporary `integration/*` staging early when sibling tasks overlap shared application structure or must be Owner-UATed together; main remains the only release source.
+At assignment, the Integrator records the dependency order and the owner of the shared contract in the existing issue. When a consumer depends on a changing contract, accept the producer first. The consumer can develop against agreed synthetic examples and run focused checks until the interface settles.
+
+For slices that need parallel review and joint acceptance, use temporary `integration/*` staging. Review the individual changes, then open one integration PR to main once the inputs are ready. Run the required checks on the combined tree and retain each slice’s applicable evidence. Main remains the only release source. Publication requires successful full push CI on the exact release commit.
 - Each task retains its isolated child branch/workspace; Workers do not merge siblings or independently refresh from main.
 - Integrate an exact accepted head promptly and run proportional integration smoke, not a mandatory extra full suite.
 - Later candidates should use the current accepted staging context when practical or prove compatibility; baseline reconciliation is Integrator-owned.
