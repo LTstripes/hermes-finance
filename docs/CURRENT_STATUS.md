@@ -9,10 +9,15 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
-- [Contract navigation](https://github.com/LTstripes/hermes-finance/pull/1255),
-  [Alfa savings at month close](https://github.com/LTstripes/hermes-finance/pull/1256) and
-  [payout review after PDF import](https://github.com/LTstripes/hermes-finance/pull/1257) are integrated on main.
-  Their combined synthetic checks passed. The first use with Owner statements is pending.
+- [v1.24.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.24.0)
+  (`06bebd2aa206dd14ce2324dcbdc762dd047b4d62`, [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/45005181026),
+  [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/45006400082),
+  [release notes](release-notes-1.24.0.md)) was installed on Stable on 2026-11-22 through backup-first OPS02.
+  Prepare and Validate passed. After Start, health reported 1.24.0 and the database reached schema 0073.
+  All 90 pre-existing application tables matched the verified 0072 backup row for row. The new savings
+  mapping table was empty. Both files passed SQLite integrity and foreign-key checks.
+  In Chromium the deposits section and PDF upload entry opened on Stable. CSV preview, confirmation and
+  reload were exercised on a synthetic editable month. First use with Owner statements is pending.
 
 - [v1.23.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.23.1)
   (`4fae48240b654149f07543970e6d17d9deb0582d`, [full CI on main](https://github.com/LTstripes/hermes-finance/actions/runs/44974227561),
