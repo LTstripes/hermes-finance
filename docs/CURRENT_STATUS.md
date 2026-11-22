@@ -9,6 +9,13 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.23.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.23.1)
+  (`4fae48240b654149f07543970e6d17d9deb0582d`, [full CI on main](https://github.com/LTstripes/hermes-finance/actions/runs/44974227561),
+  [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/44975243538),
+  [release notes](release-notes-1.23.1.md)) was installed on Stable on 2026-11-22 through backup-first OPS02.
+  Prepare and Validate passed. After Start, health reported 1.23.1 and the Returns screen and account selector loaded in Chromium.
+  Schema remained 0072. All 91 tables matched the pre-update backup. Both databases passed SQLite integrity and foreign-key checks.
+
 - [v1.23.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.23.0)
   (`fe55ca73354aeb67c343e5b7f6904ae2d2275eae`, [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/44884837082),
   [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/44886443799),
