@@ -1,6 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
+import {
+  applyAlfaDeposit,
+  type AlfaDepositRequest,
+  type AlfaDepositRow,
+} from "../api/alfaDeposits";
+import { AlfaDepositImport } from "./AlfaDepositImport";
 import { createAccount, listAccounts } from "../api/accounts";
 import { ApiClientError, formatApiError } from "../api/client";
 import {
@@ -531,6 +537,71 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
     }
     setDepositTotalsUnconfirmed(!editsConfirmed || pendingOtherDepositWrites.current.size > 0);
     return rows;
+  }
+
+  async function confirmAlfaRow(request: AlfaDepositRequest, row: AlfaDepositRow) {
+    if (
+      readOnly ||
+      closed ||
+      busyRef.current ||
+      localDirty ||
+      depositTotalsUnconfirmed ||
+      request.month_id !== monthId ||
+      !row.token ||
+      row.account_id === null
+    ) {
+      throw new Error("Сначала завершите редактирование и обновите предложения.");
+    }
+    const token = ++operation.current;
+    busyRef.current = true;
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    depositRecovery.version += 1;
+    setDepositTotalsUnconfirmed(true);
+    try {
+      let saved: DepositSnapshot;
+      try {
+        saved = await applyAlfaDeposit(request, row.source_key, row.token);
+      } catch (cause) {
+        if (isDefiniteWriteRejection(cause)) {
+          await refetchDepositRows();
+          throw cause;
+        }
+        throw new Error(
+          "Не удалось подтвердить результат записи. Перечитайте список вкладов и предложение перед повторным подтверждением.",
+        );
+      }
+      await markDataStale();
+      if (
+        saved.account_id !== row.account_id ||
+        saved.reporting_month_id !== monthId ||
+        (row.snapshot_id !== null && saved.id !== row.snapshot_id)
+      ) {
+        throw new Error("Ответ сохранения относится к другому вкладу. Обновите данные.");
+      }
+      const fresh = (await refetchDepositRows()).find((item) => item.id === saved.id);
+      if (
+        !fresh ||
+        fresh.account_id !== row.account_id ||
+        !matchesDepositIntent(fresh, saved) ||
+        (row.proposed.balance !== null && !sameMoney(fresh.balance.amount, row.proposed.balance)) ||
+        (row.proposed.actual_interest_received !== null &&
+          !sameMoney(
+            fresh.actual_interest_received.amount,
+            row.proposed.actual_interest_received,
+          )) ||
+        (row.proposed.annual_rate !== null &&
+          canonicalRate(fresh.annual_rate) !== canonicalRate(row.proposed.annual_rate))
+      ) {
+        setDepositTotalsUnconfirmed(true);
+        throw new Error(
+          "Запись принята, но значения не подтверждены перечитыванием. Обновите список вкладов.",
+        );
+      }
+    } finally {
+      finishAction(token);
+    }
   }
 
   async function refreshDepositDisplay() {
@@ -1122,6 +1193,16 @@ function MonthAssetsBody({ context }: { context: MonthEditorContext }) {
               label=""
               title="Депозиты"
             >
+              {!readOnly && !closed && !depositsForeign && (
+                <AlfaDepositImport
+                  monthId={monthId}
+                  monthLabel={formatMonth(month.year, month.month)}
+                  disabled={
+                    busy || localDirty || depositTotalsUnconfirmed || pendingCreated !== null
+                  }
+                  onConfirm={confirmAlfaRow}
+                />
+              )}
               {depositsForeign ? (
                 <div className="inline-alert inline-alert--error" role="alert">
                   {DEPOSITS_FOREIGN_MESSAGE}
