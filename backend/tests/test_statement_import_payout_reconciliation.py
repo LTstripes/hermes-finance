@@ -1845,3 +1845,95 @@ def test_unresolved_source_payout_warning_survives_user_close(database, settleme
             future_states(session, month_id)[("ecf", intent["expected_cash_flow_id"])]
             == "unresolved"
         )
+
+
+def test_alfa_pdf_prepare_hides_only_current_exact_settlement(database, settlement, tmp_path):
+    import gc
+    import os
+    import shutil
+    from pathlib import Path
+
+    from _statement_pdf import build_income_report_pdf
+    from test_statement_import_apply import SYN_DEPO, apply, prepare
+
+    from hermes_finance.persistence import Instrument
+
+    client, intent = settlement
+    account = intent["account_id"]
+    with database.session_factory() as session:
+        actual = session.get(InvestmentCashFlow, intent["investment_cash_flow_id"])
+        isin = session.get(Instrument, actual.instrument_id).isin
+        date_in_pdf = actual.event_date.strftime("%d.%m.%Y")
+        forecast = session.get(ExpectedCashFlow, intent["expected_cash_flow_id"])
+        forecast.expected_date = actual.event_date
+        forecast.forecast_version = "v1"
+        session.commit()
+        document = build_income_report_pdf(
+            [
+                {
+                    "isin": isin,
+                    "payment_kind": "погашение купона",
+                    "quantity": "1",
+                    "per_unit": "1123,45",
+                    "gross": "1123,45",
+                    "tax": "123,45",
+                    "net": "1000,00",
+                    "record_date": date_in_pdf,
+                    "payment_date": date_in_pdf,
+                }
+            ]
+        )
+        row = prepare(session, document, account).rows[0]
+        selection = row.to_apply_selection(action="link_existing", existing_cash_flow_id=actual.id)
+        result = apply(session, document, account, (selection,))
+        assert result.success, result
+
+    def compare():
+        before = database_bytes(database)
+        response = client.post(
+            "/api/statement-import/prepare",
+            files={"document": ("synthetic.pdf", document, "application/pdf")},
+            data={
+                "account_mappings": json.dumps(
+                    [{"hermes_account_id": account, "provider_account_ref": SYN_DEPO}]
+                )
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert before == database_bytes(database)
+        return response.json()["payout_review"]["items"]
+
+    assert [v["reason"] for v in compare()] == ["unconfirmed"]
+    with database.session_factory() as session:
+        forecast = session.get(ExpectedCashFlow, intent["expected_cash_flow_id"])
+        forecast.expected_date = date(2030, 2, 1)
+        forecast.forecast_version = "independent-plan"
+        session.commit()
+    assert [v["reason"] for v in compare()] == ["empty_plan"]
+    receipt, _ = accept(client, intent, "pdf-full-settlement")
+    assert receipt["relations"][0]["state"] == "paid"
+    (proven,) = compare()
+    assert (proven["reason"], proven["expected_date"], proven["forecast_version"]) == (
+        "verified",
+        "2030-02-01",
+        "independent-plan",
+    )
+    assert proven["forecast_snapshot"]
+    predecessor = receipt["relations"][0]["id"]
+    accept(
+        client, {**intent, "operation": "retire", "predecessor_id": predecessor}, "pdf-retirement"
+    )
+    assert [v["reason"] for v in compare()] == ["retired"]
+    accept(
+        client, {**intent, "operation": "reaffirm", "predecessor_id": predecessor}, "pdf-reaffirm"
+    )
+    assert [v["reason"] for v in compare()] == ["verified"]
+    # The same bytes restored into a different SQLite file no longer own the
+    # physical proof bound by the Money receipt.
+    database.engine.dispose()
+    gc.collect()
+    original = Path(database.engine.url.database)
+    copied = tmp_path / "different-synthetic-incarnation.db"
+    shutil.copy2(original, copied)
+    os.replace(copied, original)
+    assert [v["reason"] for v in compare()] == ["stale_evidence"]

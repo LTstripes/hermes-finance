@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import session_for_request
 from hermes_finance.api.uploads import BoundedUploadRoute
+from hermes_finance.database import coherent_read_snapshot
+from hermes_finance.services.instrument_names import instrument_names
 from hermes_finance.services.statement_import_apply import (
     StatementApplyAction,
     StatementApplySelection,
@@ -28,6 +31,7 @@ from hermes_finance.services.statement_import_retract import (
     retract_applied_statement_event,
     retract_statement_backed_cash_flow,
 )
+from hermes_finance.services.statement_payout_review import payout_review
 from hermes_finance.statement_import import (
     AccountMappingInput,
     InstrumentMappingInput,
@@ -115,6 +119,36 @@ class StatementRowOut(BaseModel):
     reason: str | None
 
 
+class PayoutReviewItem(BaseModel):
+    key: str
+    forecast_snapshot: date | None
+    forecast_version: str | None
+    reason: str
+    name: str | None
+    account_id: int | None
+    event_kind: str | None
+    actual_date: date | None
+    expected_date: date | None
+    actual_net: str | None
+    actual_tax: str | None
+    expected_tax: str | None
+    actual_currency: str | None
+    expected_amount: str | None
+    expected_currency: str | None
+    expected_basis: str | None
+
+
+class ForecastVintage(BaseModel):
+    month: date
+    snapshot: date | None
+
+
+class StatementPayoutReview(BaseModel):
+    vintages: list[ForecastVintage]
+    forecast_version: str
+    items: list[PayoutReviewItem]
+
+
 class StatementPreparationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -122,6 +156,7 @@ class StatementPreparationResponse(BaseModel):
     document_sha256: str
     status: str
     rows: list[StatementRowOut]
+    payout_review: StatementPayoutReview | None = None
     warnings: list[str]
     reason: str | None
 
@@ -338,21 +373,37 @@ async def prepare_statement_endpoint(
     document: UploadFile = File(...),
     account_mappings: str = Form("[]"),
     instrument_mappings: str = Form("[]"),
+    target_month: date | None = Form(None),
     session: Session = Depends(session_for_request),
 ) -> StatementPreparationResponse:
     payload = await _document(document)
-    result = prepare_income_report_apply(
-        session,
-        document=payload,
-        account_mappings=_account_mappings(account_mappings),
-        instrument_mappings=_instrument_mappings(instrument_mappings),
-    )
-    from hermes_finance.services.instrument_names import instrument_names
+    if target_month and target_month.day != 1:
+        raise HTTPException(
+            status_code=422, detail="target_month must be the first day of the month"
+        )
+    with coherent_read_snapshot(session):
+        result = prepare_income_report_apply(
+            session,
+            document=payload,
+            account_mappings=_account_mappings(account_mappings),
+            instrument_mappings=_instrument_mappings(instrument_mappings),
+        )
 
-    response = _preparation_response(result)
-    names = instrument_names(session)
-    for row in response.rows:
-        row.short_name = names.name(instrument_id=row.expected_hermes_instrument_id, isin=row.isin)
+        response = _preparation_response(result)
+        names = instrument_names(session)
+        for row in response.rows:
+            row.short_name = names.name(
+                instrument_id=row.expected_hermes_instrument_id, isin=row.isin
+            )
+        review = payout_review(
+            session,
+            result,
+            target_month=target_month,
+            today=datetime.now(ZoneInfo("Europe/Moscow")).date(),
+        )
+        response.payout_review = (
+            StatementPayoutReview.model_validate(review) if review is not None else None
+        )
     return response
 
 

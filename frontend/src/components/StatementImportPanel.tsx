@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-
 import { ApiClientError, formatApiError } from "../api/client";
 import { updateInstrument } from "../api/instruments";
 import {
@@ -10,6 +9,7 @@ import {
   type StatementCandidate,
   type StatementInspect,
   type StatementMapping,
+  type StatementPayoutReview,
   type StatementPreparation,
   type StatementRow,
 } from "../api/statementImport";
@@ -18,6 +18,7 @@ import { formatDate, formatMoney } from "../lib/format";
 import { FLOW_TYPE_LABELS, labelOf } from "../lib/labels";
 import { fromKopecks } from "../lib/money";
 import type { AlfaStatementTransientOutcome } from "./month-close/statementOutcome";
+import { StatementPayoutComparison } from "./StatementPayoutComparison";
 import { Badge, Button, ConfirmDialog, Field, Panel, Select, Table, Td, Th } from "./ui";
 
 type StatementDecision = {
@@ -296,6 +297,13 @@ export function StatementImportPanel({
   onApplyingChange,
 }: Props) {
   const target: StatementTargetPeriod | null = targetPeriod;
+  const targetMonth = target
+    ? `${target.year}-${String(target.month).padStart(2, "0")}-01`
+    : undefined;
+  const [review, setReview] = useState<{ data: StatementPayoutReview; month?: string } | null>(
+    null,
+  );
+  const [reviewError, setReviewError] = useState(false);
   const [file, setFile] = useState<File | null>(initialFile ?? null);
   const [inspected, setInspected] = useState<StatementInspect | null>(null);
   const [accountMappings, setAccountMappings] = useState<Record<string, string>>({});
@@ -386,6 +394,8 @@ export function StatementImportPanel({
   }
 
   function clearReview() {
+    setReview(null);
+    setReviewError(false);
     setPreparation(null);
     setSelected({});
     setDecisions({});
@@ -472,9 +482,10 @@ export function StatementImportPanel({
     setSuccess(null);
     setUnconfirmed(null);
     try {
-      const next = await prepareStatement(file, mapping());
+      const next = await prepareStatement(file, mapping(), undefined, targetMonth);
       if (!aliveRef.current || revision !== revisionRef.current) return;
       setPreparation(next);
+      setReview(next.payout_review ? { data: next.payout_review, month: targetMonth } : null);
       setMessage(reportMessage(next.status, next.reason));
     } catch (error) {
       if (!aliveRef.current || revision !== revisionRef.current) return;
@@ -671,6 +682,19 @@ export function StatementImportPanel({
       setSuccess(`Импортировано строк: ${result.selected_count}.`);
       onOutcome?.({ kind: "applied", selectedCount: result.selected_count });
       await refreshFacts();
+      if (preparation.payout_review && aliveRef.current && revision === revisionRef.current) {
+        try {
+          const refreshed = await prepareStatement(file, mapping(), undefined, targetMonth);
+          if (aliveRef.current && revision === revisionRef.current)
+            setReview(
+              refreshed.payout_review
+                ? { data: refreshed.payout_review, month: targetMonth }
+                : null,
+            );
+        } catch {
+          if (aliveRef.current && revision === revisionRef.current) setReviewError(true);
+        }
+      }
     } catch (error) {
       if (!aliveRef.current || revision !== revisionRef.current) return;
       // Only a proven client-side pre-handler 4xx rejection is definite: the
@@ -764,6 +788,14 @@ export function StatementImportPanel({
         <div className="month-workspace__save-ok" role="status">
           {success}
         </div>
+      ) : null}
+      {review && review.month === targetMonth ? (
+        <StatementPayoutComparison review={review.data} accounts={accounts} />
+      ) : null}
+      {reviewError ? (
+        <p role="alert">
+          Выплаты сохранены. Повторите подготовку PDF, чтобы обновить сверку прогноза.
+        </p>
       ) : null}
       {inspected ? (
         <div className="stack-12">

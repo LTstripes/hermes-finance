@@ -1097,6 +1097,9 @@ Manual persisted facts remain explicit Owner inputs. MyBroker supports the bound
 
 Alfa PDF supports bounded historical realised payout events. It is not a generic portfolio/price/future-payout importer. Alfa Pro connectivity, current snapshot preview/apply, and reconciliation are retired by [#1036](https://github.com/LTstripes/hermes-finance/issues/1036). Previously accepted broker records remain readable through generic source handling; old snapshot/reconciliation URLs redirect to Data settings. T-Invest is the accepted market quote/future payout provider. MOEX identity/reference proof is bounded and explicit; official bond FACEUNIT proof is not a universal FX engine. C9 owns field-by-field authority, exact units, dates, revision and omission behavior.
 
+After preparing an Alfa depository income-payment PDF, the owner sees confirmed payouts and attention counts. Only exceptions are expanded. Future payouts and expectations outside confirmed coverage are listed separately. Following a successful import the same PDF is compared again without applying changes. A suggested match, including an identical amount on the expected date, remains visible until its full settlement is independently evidenced (C3).
+
+
 <a id="p5"></a>
 ## 5. Goals, scenarios and exports
 

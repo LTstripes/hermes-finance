@@ -47,7 +47,33 @@ export type StatementRow = {
   reason: string | null;
 };
 
+export type PayoutReviewItem = {
+  key: string;
+  forecast_snapshot: string | null;
+  forecast_version: string | null;
+  reason: string;
+  name: string | null;
+  account_id: number | null;
+  event_kind: string | null;
+  actual_date: string | null;
+  expected_date: string | null;
+  actual_net: string | null;
+  actual_tax: string | null;
+  expected_tax: string | null;
+  actual_currency: string | null;
+  expected_amount: string | null;
+  expected_currency: string | null;
+  expected_basis: "net" | "announced" | null;
+};
+
+export type StatementPayoutReview = {
+  vintages: { month: string; snapshot: string | null }[];
+  forecast_version: string;
+  items: PayoutReviewItem[];
+};
+
 export type StatementPreparation = {
+  payout_review?: StatementPayoutReview | null;
   provider: string;
   document_sha256: string;
   status: string;
@@ -86,12 +112,15 @@ export function inspectStatement(file: File, signal?: AbortSignal) {
   return apiMultipart<StatementInspect>("/api/statement-import/inspect", form, signal);
 }
 
-export function prepareStatement(file: File, mapping: StatementMapping, signal?: AbortSignal) {
-  return apiMultipart<StatementPreparation>(
-    "/api/statement-import/prepare",
-    baseForm(file, mapping),
-    signal,
-  );
+export function prepareStatement(
+  file: File,
+  mapping: StatementMapping,
+  signal?: AbortSignal,
+  targetMonth?: string,
+) {
+  const form = baseForm(file, mapping);
+  if (targetMonth) form.set("target_month", targetMonth);
+  return apiMultipart<StatementPreparation>("/api/statement-import/prepare", form, signal);
 }
 
 export type StatementRetractResult = {

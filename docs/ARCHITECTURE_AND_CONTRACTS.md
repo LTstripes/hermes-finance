@@ -2625,6 +2625,8 @@ without changing S1 accepted evidence or committing a separate import.
 - raw PDF, полный extracted text, original path/filename, beneficiary private data и private provider payload не persist/log;
 - account / instrument / month автоматически не создаются.
 
+The read-only statement-import prepare response compares the mapped PDF rows against one saved forecast snapshot per payment month and account. It uses the latest snapshot before the month, falling back to that month's own snapshot when it is the first available one, and returns the vintage. Manual forecasts use the default version. Active announced provider amounts remain identified as such. A terminal, current full-settlement receipt must bind the exact accepted PDF revision through its current cash flow to the exact forecast before a row can be hidden. The bound forecast retains its actual snapshot date and version even when it falls outside the default vintage or payment month. An existing snapshot with no forecast for the account and period is distinguishable from a missing snapshot. The PDF and forecast must agree on comparable currencies, gross, tax and net. Candidate scope (account, instrument and payout kind), date and amount alone never prove settlement. A lower comparable amount merits checking for partial payment. An absent expected row cannot establish nonpayment because the supported PDF supplies no authoritative full-period coverage. This projection adds no financial writes, stored matching rules or migration.
+
 <a id="c3-source_intake-8"></a>
 ### Durable non-economic intake journal
 
@@ -13456,6 +13458,8 @@ informational vs warning only. This endpoint never promotes a warning to a close
 Finance uses **T-Invest** as the production read-only source for owner-triggered quote preview and, in 0.5, future investment payout events. Direct MOEX ISS is not a production quote fallback. The separate explicit bounded official identity/denomination lookup in C4 is supported and is not quote authority.
 
 Alfa depository income-payment PDF import remains supported under C3/C9. The retired snapshot path and retained broker history are specified in C4. This file remains the T-Invest quote/payout guide.
+
+
 
 
 <a id="c9-t-invest-market-data-1-what-this-does"></a>
