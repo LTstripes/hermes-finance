@@ -83,6 +83,7 @@ test("changing coverage requests a new proposal; only a confirmed row goes to ap
   const onConfirm = open();
   upload("month");
   const apply = await screen.findByRole("button", { name: "Подтвердить по счёту" });
+  expect(screen.getByLabelText("Счёт в Finance")).toBeDisabled();
   expect(apply).toBeDisabled();
   fireEvent.click(screen.getByRole("checkbox", { name: "Выписка охватывает весь месяц" }));
   await waitFor(() =>

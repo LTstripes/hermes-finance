@@ -175,6 +175,7 @@ function AlfaDepositForm({ monthId, monthLabel, disabled, onConfirm }: Props) {
               </small>
               <Field label="Счёт в Finance" htmlFor={formId + row.source_key}>
                 <Select
+                  disabled={row.mapped}
                   id={formId + row.source_key}
                   value={row.account_id ?? ""}
                   onChange={(e) => {
