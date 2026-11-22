@@ -11,7 +11,7 @@
 }
 
 .header h1 {
-  font-size: clamp(2rem, 2.8vw, 2.55rem);
+  font-size: var(--t-2xl);
 }
 
 .toolbar {
@@ -30,7 +30,7 @@
 
 .asOf {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--t-sm);
 }
 
 .emptyState {
@@ -43,8 +43,8 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
 .archive > summary {
@@ -54,7 +54,7 @@
   gap: 12px;
   padding: 15px 19px;
   color: var(--ink);
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   cursor: pointer;
   list-style: none;
 }
@@ -86,15 +86,15 @@
 }
 
 .content :global(.goal-card) {
-  border-color: #d8e0e8;
-  border-radius: 12px;
-  background: white;
+  border-color: var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
   box-shadow: none;
 }
 
 .content :global(.goal-card--main) {
-  border-color: #cfdae7;
-  background: #edf3f9;
+  border-color: var(--line);
+  background: var(--accent-soft);
   box-shadow: 0 1px 1px rgb(23 40 60 / 3%);
 }
 

@@ -1,10 +1,10 @@
 .panel {
   margin-top: 24px;
   padding: 24px;
-  border: 2px solid #8a671c;
-  border-radius: 12px;
-  background: #fffcf3;
-  color: #28251c;
+  border: 2px solid var(--fc);
+  border-radius: var(--r);
+  background: var(--fc-soft);
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 .panel h2 {
@@ -30,7 +30,7 @@
 }
 .panel pre {
   white-space: pre-wrap;
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 .facts {
   display: flex;
@@ -38,14 +38,14 @@
   gap: 12px 32px;
 }
 .rate {
-  font-size: 28px;
-  font-weight: 700;
+  font-size: var(--t-xl);
+  font-weight: var(--w-semibold);
 }
 .qualification {
-  border-left: 4px solid #8a671c;
+  border-left: 4px solid var(--fc);
   padding-left: 12px;
 }
 .panel :focus-visible {
-  outline: 3px solid #2864c8;
+  outline: 3px solid var(--focus);
   outline-offset: 3px;
 }

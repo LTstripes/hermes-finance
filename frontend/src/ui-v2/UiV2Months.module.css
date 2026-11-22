@@ -20,29 +20,29 @@
   justify-content: center;
   min-height: 40px;
   padding: 8px 12px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   font: inherit;
-  font-weight: 650;
+  font-weight: var(--w-semibold);
   cursor: pointer;
 }
 .primary {
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: white;
+  color: var(--surface);
 }
 /* `.shell a` (UiV2Page) outranks a single module class; keep link-buttons readable. */
 .primary:any-link {
-  color: white;
+  color: var(--surface);
 }
 .secondary {
   border: 1px solid var(--line);
-  background: white;
+  background: var(--surface);
   color: var(--ink);
 }
 .danger {
-  border: 1px solid #a74242;
-  background: white;
-  color: #8b3030;
+  border: 1px solid var(--neg);
+  background: var(--surface);
+  color: var(--neg);
 }
 .primary:disabled,
 .secondary:disabled,
@@ -54,19 +54,19 @@
   margin: 0 0 16px;
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 .panel h2 {
   margin-bottom: 10px;
-  font-size: 1.1rem;
+  font-size: var(--t-lg);
 }
 .panel p {
   margin: 8px 0;
 }
 .hint {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
   line-height: 1.5;
 }
 .form {
@@ -80,16 +80,16 @@
   display: grid;
   gap: 5px;
   min-width: 150px;
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 .form input,
 .form select {
   min-height: 40px;
   padding: 7px 10px;
   border: 1px solid var(--line);
-  border-radius: 9px;
-  background: white;
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
 }
@@ -133,26 +133,26 @@
   padding: 2px 7px;
   border-radius: 999px;
   background: var(--soft);
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 .selected {
-  background: #e8f0f9;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .error,
 .notice {
   margin: 10px 0;
   padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 13px;
+  border-radius: var(--r);
+  font-size: var(--t-sm);
 }
 .error {
-  background: #f8eaea;
-  color: #7a2e2e;
+  background: var(--neg-soft);
+  color: var(--neg);
 }
 .notice {
-  background: #e5f3ea;
-  color: #2f6b45;
+  background: var(--pos-soft);
+  color: var(--pos);
 }
 @media (max-width: 480px) {
   .toolbar > button,

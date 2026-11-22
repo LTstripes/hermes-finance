@@ -3,20 +3,20 @@
 }
 .preview {
   padding: 20px;
-  border: 2px dashed #c69d46;
-  border-radius: 12px;
-  background: #fffaf0;
+  border: 2px dashed var(--fc);
+  border-radius: var(--r);
+  background: var(--fc-soft);
 }
 .preview h2 {
   margin: 8px 0 12px;
-  font-size: 18px;
+  font-size: var(--t-lg);
 }
 .preview p {
   margin: 12px 0;
 }
 .badge {
-  color: #765214;
-  font-weight: 700;
+  color: var(--fc-ink);
+  font-weight: var(--w-semibold);
   letter-spacing: 0.04em;
 }
 .controls {
@@ -30,7 +30,7 @@
 .monthChoice {
   display: grid;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 .controls select,
 .monthChoice select {
@@ -43,8 +43,8 @@
   min-height: 40px;
 }
 .controls button:disabled {
-  color: #595959;
-  background: #f0eee9;
+  color: var(--muted);
+  background: var(--line-2);
   cursor: not-allowed;
 }
 .facts {
@@ -54,7 +54,7 @@
 .facts caption {
   text-align: left;
   padding: 12px 0;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
 }
 .monthChoice {
   margin-bottom: 12px;

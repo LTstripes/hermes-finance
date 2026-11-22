@@ -1,11 +1,11 @@
 .panel {
   margin-top: 1.5rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--border-color, #d8dee9);
+  border-top: 1px solid var(--line);
 }
 
 .qualification {
-  color: var(--text-muted, #52606d);
+  color: var(--ink-2);
   max-width: 76ch;
 }
 
@@ -15,8 +15,8 @@
 }
 
 .note {
-  color: var(--text-muted, #52606d);
-  font-size: 0.9rem;
+  color: var(--ink-2);
+  font-size: var(--t-md);
 }
 
 .requirement {
@@ -34,13 +34,13 @@
 
 .blocked {
   padding: 0.75rem;
-  border: 1px solid var(--danger-border, #b42318);
-  border-radius: 0.35rem;
+  border: 1px solid var(--neg);
+  border-radius: var(--r-sm);
 }
 
 .rate {
-  font-size: 1.4rem;
-  font-weight: 650;
+  font-size: var(--t-xl);
+  font-weight: var(--w-semibold);
 }
 
 .table {
@@ -51,6 +51,6 @@
 .table th,
 .table td {
   padding: 0.25rem 0.75rem;
-  border-bottom: 1px solid var(--border-color, #d8dee9);
+  border-bottom: 1px solid var(--line);
   text-align: left;
 }

@@ -45,7 +45,7 @@
   height: 100%;
   padding: 0;
   border: 0;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
   background: transparent;
   cursor: pointer;
 }
@@ -59,20 +59,20 @@
   right: 0;
   left: 0;
   min-height: 2px;
-  border-radius: 5px 5px 0 0;
-  background: #b9c9de;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: color-mix(in srgb, var(--accent) 30%, var(--surface));
 }
 
 .fill[data-negative] {
-  border-radius: 0 0 5px 5px;
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
 }
 
 .bar[data-outside="true"] .fill {
-  background: repeating-linear-gradient(135deg, #c9d4e2 0 4px, #e5ebf2 4px 8px);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, var(--surface)) 0 4px, var(--accent-soft) 4px 8px);
 }
 
 .bar:hover .fill {
-  background: #9fb5d1;
+  background: color-mix(in srgb, var(--accent) 45%, var(--surface));
 }
 
 .bar[data-selected="true"] .fill {
@@ -187,5 +187,5 @@
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  background: repeating-linear-gradient(135deg, #c9d4e2 0 3px, #e5ebf2 3px 6px);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, var(--surface)) 0 3px, var(--accent-soft) 3px 6px);
 }

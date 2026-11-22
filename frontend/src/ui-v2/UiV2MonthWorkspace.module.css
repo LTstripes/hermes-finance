@@ -34,9 +34,9 @@
 .workArea {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--r);
   padding: 16px;
-  background: white;
+  background: var(--surface);
 }
 .workHeader {
   display: flex;
@@ -123,8 +123,8 @@
   gap: 16px;
   justify-content: space-between;
   padding: 14px;
-  border: 1px solid #dce3ea;
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -141,15 +141,15 @@
 .actions button {
   padding: 8px 12px;
   font: inherit;
-  border: 1px solid #cad5df;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: inherit;
   cursor: pointer;
 }
 .note {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--t-sm);
   margin: 0;
 }
 
@@ -176,7 +176,7 @@
   padding: 14px;
   margin: 12px 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r);
   overflow-wrap: anywhere;
 }
 

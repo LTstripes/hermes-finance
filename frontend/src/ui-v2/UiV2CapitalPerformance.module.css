@@ -30,7 +30,7 @@
 
 .periodLine {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 
@@ -43,16 +43,16 @@
 .metricCard {
   min-width: 0;
   padding: 12px 14px;
-  border: 1px solid #e8ecf0;
-  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
   background: var(--surface-2);
 }
 
 .metricValue {
   margin-top: 8px !important;
-  font-size: 1.35rem;
+  font-size: var(--t-xl);
   font-variant-numeric: tabular-nums;
-  font-weight: 680;
+  font-weight: var(--w-semibold);
   letter-spacing: -0.03em;
   overflow-wrap: anywhere;
 }
@@ -60,19 +60,19 @@
 .metricNote {
   margin-top: 6px !important;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 
 .warning {
   margin-top: 6px !important;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 
 .stateLine {
-  font-size: 12px;
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 
@@ -86,15 +86,15 @@
 
 .diagnosticItem {
   padding: 10px 12px;
-  border: 1px solid #e8ecf0;
-  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .diagnosticItem strong {
   display: block;
-  font-size: 12px;
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 
@@ -107,7 +107,7 @@
 .capabilityNote {
   margin-top: 6px !important;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 
@@ -122,14 +122,14 @@
 .linkButton {
   min-height: 32px;
   padding: 6px 12px;
-  border: 1px solid #bdcadd;
-  border-radius: 7px;
-  background: white;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
   text-decoration: none;
   display: inline-block;
 }
@@ -137,14 +137,14 @@
 .inlineButton {
   min-height: 32px;
   padding: 6px 12px;
-  border: 1px solid #bdcadd;
-  border-radius: 7px;
-  background: white;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .controls {
@@ -157,7 +157,7 @@
 .controls label {
   display: grid;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--t-xs);
   color: var(--muted);
   min-width: 0;
 }
@@ -170,11 +170,11 @@
   min-height: 34px;
   padding: 6px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: white;
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: inherit;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 
 .controlsFull {
@@ -191,14 +191,14 @@
   min-width: 0;
   overflow-wrap: anywhere;
   padding: 10px 12px;
-  border: 1px solid #e8ecf0;
-  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .compositionBlock h3 {
-  font-size: 12px;
+  font-size: var(--t-xs);
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -212,21 +212,21 @@
 .accountsTableWrap {
   overflow-x: auto;
   margin-top: 8px;
-  border: 1px solid #e8ecf0;
-  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
 }
 
 .accountsTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--t-xs);
   min-width: 0;
 }
 
 .accountsTable th,
 .accountsTable td {
   padding: 8px 10px;
-  border-bottom: 1px solid #edf0f3;
+  border-bottom: 1px solid var(--line-2);
   text-align: left;
   vertical-align: top;
   overflow-wrap: break-word;
@@ -240,7 +240,7 @@
 
 .accountsTable th {
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 
 .numeric {
@@ -250,12 +250,12 @@
 
 .bridgeBox {
   margin-top: 10px;
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .technicalBox {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: var(--t-xs);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -266,7 +266,7 @@
 }
 
 .inlineButton[aria-pressed="true"] {
-  background: #eef3f9;
+  background: var(--accent-soft);
   border-color: var(--accent);
 }
 
@@ -281,7 +281,7 @@
 
 .viewControl legend {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
   margin-bottom: 6px;
 }
 
@@ -289,7 +289,7 @@
   table-layout: fixed;
   border-collapse: collapse;
   width: 100%;
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .classTable caption {
@@ -344,7 +344,7 @@
 
 .classExplanation code {
   display: block;
-  font-size: 10px;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -367,7 +367,7 @@
     grid-column: 1 / -1;
     margin-bottom: 8px;
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: var(--r-sm);
   }
 
   .classTable th,
@@ -381,7 +381,7 @@
     content: attr(data-label);
     display: block;
     color: var(--muted);
-    font-size: 11px;
+    font-size: var(--t-xs);
     margin-bottom: 4px;
   }
 

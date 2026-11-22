@@ -1,8 +1,8 @@
 .panel {
   min-width: 0;
   padding: 16px;
-  border: 1px solid #e8ecf0;
-  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
   background: var(--surface-2);
 }
 
@@ -17,13 +17,13 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--t-md);
 }
 
 .table th,
 .table td {
   padding: 12px;
-  border-bottom: 1px solid #e8ecf0;
+  border-bottom: 1px solid var(--line-2);
   text-align: left;
   vertical-align: top;
 }

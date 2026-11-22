@@ -11,14 +11,14 @@
   margin: 16px 0;
 }
 .summary .card {
-  background: #fff;
+  background: var(--surface);
 }
 .summary .card:first-child {
-  border-color: #adc2d4;
+  border-color: var(--field-line);
 }
 .card {
-  border: 1px solid var(--border, #dce3ea);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
   padding: 14px;
   min-width: 0;
 }
@@ -33,22 +33,22 @@
 }
 .card dd {
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .value {
   overflow-wrap: anywhere;
-  font-size: 22px;
-  font-weight: 700;
+  font-size: var(--t-xl);
+  font-weight: var(--w-semibold);
   margin: 8px 0;
 }
 .note {
-  font-size: 13px;
+  font-size: var(--t-sm);
   color: var(--muted);
 }
 .estimate {
-  background: #fff7e8;
-  border: 1px solid #e2c48b;
-  border-radius: 12px;
+  background: var(--fc-soft);
+  border: 1px solid var(--fc);
+  border-radius: var(--r);
   padding: 14px;
   margin: 16px 0;
 }
@@ -63,17 +63,17 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 .table caption {
   text-align: left;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   margin-bottom: 10px;
 }
 .table th,
 .table td {
   padding: 10px;
-  border-bottom: 1px solid #e8ecf0;
+  border-bottom: 1px solid var(--line-2);
   vertical-align: top;
   text-align: left;
   min-width: 110px;
@@ -81,27 +81,27 @@
 .table button {
   text-align: left;
   padding: 7px 9px;
-  border: 1px solid #bbccdc;
-  border-radius: 7px;
-  background: #fff;
-  color: #123c63;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--accent);
   cursor: pointer;
 }
 .table button[aria-pressed="true"] {
-  background: #eaf3fc;
-  border-color: #3b75ab;
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 .table td:last-child {
   min-width: 210px;
 }
 .reasons {
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 .reasons code,
 .references code {
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 .references {
   padding-left: 18px;

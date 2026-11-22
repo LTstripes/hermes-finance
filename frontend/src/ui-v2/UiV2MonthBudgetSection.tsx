@@ -19,7 +19,15 @@ import type {
   ReportingMonth,
   SavingAllocation,
 } from "../api/types";
-import { ConfirmDialog, OverflowMenu, OverflowMenuItem, Table, Td, Th } from "../components/ui";
+import {
+  Button,
+  ConfirmDialog,
+  OverflowMenu,
+  OverflowMenuItem,
+  Table,
+  Td,
+  Th,
+} from "../components/ui";
 import { formatMoney } from "../lib/format";
 import { EXPENSE_TYPE_LABELS, labelOf } from "../lib/labels";
 import { moneyAmount, normalizeMoneyInput, rub, toKopecks, sumMoneyAmounts } from "../lib/money";
@@ -848,9 +856,9 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
     return (
       <div className={styles.warning} role="alert">
         <p>Не удалось загрузить бюджет: {error}</p>
-        <button onClick={() => void load()} type="button">
+        <Button variant="secondary" onClick={() => void load()} type="button">
           Повторить загрузку
-        </button>
+        </Button>
       </div>
     );
   }
@@ -872,17 +880,18 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
       {!readOnly && templates.length > 0 ? (
         <div>
           <p>Перенесено из другого месяца — подтвердите или измените.</p>
-          <button
+          <Button
+            variant="secondary"
             type="button"
             disabled={busy || localDirty}
             onClick={() => void confirmTemplates()}
           >
             Подтвердить без изменений
-          </button>
+          </Button>
         </div>
       ) : null}
       {journalAvailable && (
-        <div className={styles.panel}>
+        <div className={styles.journalLinks}>
           <div className={styles.toolbar}>
             <Link
               className="btn btn--primary"
@@ -900,14 +909,15 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                   : "В отчёте пока нет записей о расходах"}
                 {plan.length > 0 && <> · План {formatMoney(plannedTotal)}</>}
               </p>
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 aria-controls={`expense-report-${monthId}`}
                 aria-expanded={showReportRows}
                 onClick={() => setExpandedReport(showReportRows ? null : monthId)}
               >
                 Записи отчёта и план по категориям
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -989,12 +999,13 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                         }}
                       />
                     </label>
-                    <button disabled={busy} type="submit">
+                    <Button variant="primary" disabled={busy} type="submit">
                       Добавить расход
-                    </button>
+                    </Button>
                   </form>
                 ) : (
-                  <button
+                  <Button
+                    variant="secondary"
                     type="button"
                     disabled={busy || expenseDraftTouched}
                     onClick={() =>
@@ -1002,7 +1013,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                     }
                   >
                     + Добавить расход
-                  </button>
+                  </Button>
                 )}
               </Td>
             </tr>
@@ -1134,16 +1145,18 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                             />
                                           </label>
                                           {!readOnly ? (
-                                            <button
+                                            <Button
+                                              variant="primary"
                                               disabled={busy || readOnly}
                                               onClick={() => void handleSaveExpenseEdit()}
                                               type="button"
                                             >
                                               Готово
-                                            </button>
+                                            </Button>
                                           ) : null}
                                           {!readOnly ? (
-                                            <button
+                                            <Button
+                                              variant="ghost"
                                               disabled={busy}
                                               onClick={() => {
                                                 setEditingExpenseId(null);
@@ -1152,7 +1165,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                               type="button"
                                             >
                                               Отмена
-                                            </button>
+                                            </Button>
                                           ) : null}
                                         </>
                                       ) : (
@@ -1278,16 +1291,18 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                           />
                                         </label>
                                         {!readOnly ? (
-                                          <button
+                                          <Button
+                                            variant="primary"
                                             disabled={busy || readOnly}
                                             onClick={() => void handleSavePlanEdit()}
                                             type="button"
                                           >
                                             Готово
-                                          </button>
+                                          </Button>
                                         ) : null}
                                         {!readOnly ? (
-                                          <button
+                                          <Button
+                                            variant="ghost"
                                             disabled={busy}
                                             onClick={() => {
                                               setEditingPlanId(null);
@@ -1296,7 +1311,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                             type="button"
                                           >
                                             Отмена
-                                          </button>
+                                          </Button>
                                         ) : null}
                                       </>
                                     ) : (
@@ -1453,16 +1468,18 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                               {editing ? (
                                 <>
                                   {!readOnly ? (
-                                    <button
+                                    <Button
+                                      variant="primary"
                                       disabled={busy || readOnly}
                                       onClick={() => void handleSaveExpenseEdit()}
                                       type="button"
                                     >
                                       Готово
-                                    </button>
+                                    </Button>
                                   ) : null}
                                   {!readOnly ? (
-                                    <button
+                                    <Button
+                                      variant="ghost"
                                       disabled={busy}
                                       onClick={() => {
                                         setEditingExpenseId(null);
@@ -1471,7 +1488,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                       type="button"
                                     >
                                       Отмена
-                                    </button>
+                                    </Button>
                                   ) : null}
                                 </>
                               ) : (
@@ -1572,9 +1589,9 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                     value={planNotes}
                   />
                 </label>
-                <button disabled={busy} type="submit">
+                <Button variant="primary" disabled={busy} type="submit">
                   Добавить в план
-                </button>
+                </Button>
               </form>
             </details>
           ) : null}
@@ -1674,14 +1691,16 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                           <Td numeric>
                             {editing ? (
                               <>
-                                <button
+                                <Button
+                                  variant="primary"
                                   disabled={busy || readOnly}
                                   onClick={() => void handleSaveSavingEdit()}
                                   type="button"
                                 >
                                   Готово
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                  variant="ghost"
                                   disabled={busy}
                                   onClick={() => {
                                     setEditingSavingId(null);
@@ -1690,7 +1709,7 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                                   type="button"
                                 >
                                   Отмена
-                                </button>
+                                </Button>
                               </>
                             ) : (
                               <OverflowMenu label="Действия строки">
@@ -1759,9 +1778,9 @@ export function UiV2MonthBudgetSection({ context }: { context: MonthEditorContex
                     value={savNotes}
                   />
                 </label>
-                <button disabled={busy} type="submit">
+                <Button variant="primary" disabled={busy} type="submit">
                   Добавить накопление
-                </button>
+                </Button>
               </form>
             ) : null}
           </details>

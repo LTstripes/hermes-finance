@@ -5,7 +5,7 @@
 
 .backLink {
   margin-top: 10px !important;
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .backLink a {
@@ -23,7 +23,7 @@
 
 .archiveNote {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .yearGroup {
@@ -32,7 +32,7 @@
 
 .yearGroup h2 {
   margin-bottom: 8px;
-  font-size: 1.05rem;
+  font-size: var(--t-md);
 }
 
 /* Keep the archive scannable on desktop: the action column must not borrow
@@ -98,7 +98,7 @@
 
 .reportCell {
   color: var(--ink);
-  font-weight: 700;
+  font-weight: var(--w-semibold);
 }
 
 .moneyCell {
@@ -130,11 +130,11 @@
   gap: 10px;
   margin-bottom: 15px;
   padding: 10px 14px;
-  border: 1px solid #d8e2ee;
-  border-radius: 10px;
-  background: #f4f7fb;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .draftNote strong {
@@ -153,11 +153,11 @@
 .caveat {
   margin-bottom: 16px !important;
   padding: 10px 14px;
-  border: 1px solid #ecdcc4;
-  border-radius: 10px;
-  background: #fdf8f0;
-  color: #6b4a1c;
-  font-size: 12px;
+  border: 1px solid var(--fc);
+  border-radius: var(--r);
+  background: var(--fc-soft);
+  color: var(--fc-ink);
+  font-size: var(--t-xs);
 }
 
 .compositionList,
@@ -180,9 +180,9 @@
   align-items: center;
   gap: 10px;
   border: 1px solid var(--line);
-  border-radius: 9px;
-  background: white;
-  font-size: 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: var(--t-xs);
 }
 
 .pairList li {
@@ -220,7 +220,7 @@
 
 .subBlock h3 {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -228,7 +228,7 @@
 .muted {
   margin-top: 9px !important;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .handoffList {
@@ -237,7 +237,7 @@
   display: grid;
   gap: 8px;
   margin-top: 14px;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 
 .neighbours {
@@ -257,8 +257,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
-  border-bottom: 1px solid #edf0f3;
-  font-size: 12px;
+  border-bottom: 1px solid var(--line-2);
+  font-size: var(--t-xs);
 }
 
 .positionList li:last-child {
@@ -277,8 +277,8 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px 14px;
-  border: 1px solid #e8ecf0;
-  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
   background: var(--surface-2);
 }
 
@@ -290,17 +290,17 @@
 
 .holdingName {
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 
 .holdingMeta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 
 .holdingAmount {
-  font-size: 13px;
+  font-size: var(--t-sm);
   text-align: right;
 }
 
@@ -309,9 +309,9 @@
   justify-self: start;
   padding: 3px 8px;
   border-radius: 999px;
-  background: #f1f3f6;
+  background: var(--surface-2);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--t-xs);
 }
 
 @media (max-width: 800px) {
@@ -349,8 +349,8 @@
     margin-bottom: 10px !important;
     padding: 12px 14px !important;
     border: 1px solid var(--line) !important;
-    border-radius: 12px !important;
-    background: white;
+    border-radius: var(--r) !important;
+    background: var(--surface);
   }
 
   .archiveTable td {
@@ -374,7 +374,7 @@
   .archiveTable td::before {
     content: attr(data-label);
     color: var(--muted);
-    font-size: 12px;
+    font-size: var(--t-xs);
     white-space: nowrap;
   }
 

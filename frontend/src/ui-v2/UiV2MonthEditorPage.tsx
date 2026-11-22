@@ -18,7 +18,7 @@ import {
   parseMonthlyCloseReturnContext,
   withMonthlyCloseReturn,
 } from "../components/month-close/navigation";
-import { ConfirmDialog } from "../components/ui";
+import { Button, ConfirmDialog } from "../components/ui";
 import { formatDate, formatMonth } from "../lib/format";
 import { SOURCE_LABELS, labelOf } from "../lib/labels";
 import { queryKeys } from "../queryClient";
@@ -254,23 +254,25 @@ export default function UiV2MonthEditorPage({
               Проверить и закрыть
             </Link>
           ) : null}
-          <button
+          <Button
+            variant="ghost"
             disabled={!month || rereading || monthQuery.isFetching || dirty}
             onClick={() => void rereadSavedData()}
             type="button"
           >
             {monthQuery.isFetching ? "Перечитываем…" : "Перечитать сохранённые данные"}
-          </button>
+          </Button>
         </div>
       )}
       {embedded ? (
-        <button
+        <Button
+          variant="secondary"
           type="button"
           disabled={!month || pending || rereading || monthQuery.isFetching}
           onClick={() => setConfirmReread(true)}
         >
           Перечитать сохранённые данные
-        </button>
+        </Button>
       ) : null}
       <ConfirmDialog
         open={confirmReread}
@@ -301,9 +303,9 @@ export default function UiV2MonthEditorPage({
               ? "Запрошенный месяц не найден. Выбери месяц из списка явно."
               : `Не удалось загрузить месяц: ${formatApiError(monthQuery.error)}`}
           </p>
-          <button onClick={() => void monthQuery.refetch()} type="button">
+          <Button variant="secondary" onClick={() => void monthQuery.refetch()} type="button">
             Повторить загрузку
-          </button>
+          </Button>
         </div>
       ) : null}
       {monthQuery.isSuccess && !month ? (
@@ -531,16 +533,21 @@ function GeneralSection({
             Снимок: {formatDate(month.snapshot_date)} · {formatMonth(month.year, month.month)}
           </p>
           {!readOnly ? (
-            <button disabled={!dirty || saving} type="submit">
+            <Button variant="primary" disabled={!dirty || saving} type="submit">
               {saving ? "Сохраняем…" : "Сохранить общие данные"}
-            </button>
+            </Button>
           ) : null}
         </form>
       ) : null}
       {readOnly && !context.workspace ? (
-        <button disabled={reopening} onClick={() => setConfirmReopen(true)} type="button">
+        <Button
+          variant="secondary"
+          disabled={reopening}
+          onClick={() => setConfirmReopen(true)}
+          type="button"
+        >
           Открыть для редактирования
-        </button>
+        </Button>
       ) : null}
       {error ? (
         <p className={styles.warning} role="alert">
@@ -681,7 +688,8 @@ function NoteSection({ context }: { context: MonthEditorContext }) {
                 <p className={styles.noteText}>{comment.text}</p>
                 {!readOnly ? (
                   <span className={styles.noteActions}>
-                    <button
+                    <Button
+                      variant="ghost"
                       aria-label={`Переместить заметку ${index + 1} выше`}
                       disabled={busy || index === 0}
                       onClick={() =>
@@ -697,8 +705,9 @@ function NoteSection({ context }: { context: MonthEditorContext }) {
                       type="button"
                     >
                       ↑
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
                       aria-label={`Переместить заметку ${index + 1} ниже`}
                       disabled={busy || index === comments.length - 1}
                       onClick={() =>
@@ -714,10 +723,15 @@ function NoteSection({ context }: { context: MonthEditorContext }) {
                       type="button"
                     >
                       ↓
-                    </button>
-                    <button disabled={busy} onClick={() => setDeleteTarget(comment)} type="button">
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setDeleteTarget(comment)}
+                      type="button"
+                    >
                       Удалить
-                    </button>
+                    </Button>
                   </span>
                 ) : null}
               </li>
@@ -738,9 +752,9 @@ function NoteSection({ context }: { context: MonthEditorContext }) {
               value={text}
             />
           </label>
-          <button disabled={busy || !text.trim()} type="submit">
+          <Button variant="primary" disabled={busy || !text.trim()} type="submit">
             {busy ? "Сохраняем…" : "Добавить заметку"}
-          </button>
+          </Button>
         </form>
       ) : null}
       {error ? (

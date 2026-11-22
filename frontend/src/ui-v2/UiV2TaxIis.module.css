@@ -12,8 +12,8 @@
   gap: 12px;
   padding: 16px 18px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
 .monthField {
@@ -22,17 +22,17 @@
   gap: 5px;
   min-width: min(100%, 260px);
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .monthSelect {
   min-height: 42px;
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #bdcadd;
-  border-radius: 7px;
-  background: white;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
 }
@@ -40,14 +40,14 @@
 .toolbarButton {
   min-height: 42px;
   padding: 8px 14px;
-  border: 1px solid #bdcadd;
-  border-radius: 8px;
-  background: white;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .toolbarButton:disabled {
@@ -67,11 +67,11 @@
   align-items: center;
   gap: 8px 12px;
   padding: 14px 17px;
-  border: 1px solid #d8e2ee;
-  border-radius: 10px;
-  background: #eef4fa;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--accent-soft);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .context strong {
@@ -81,7 +81,7 @@
 .backLink {
   margin-left: auto;
   color: var(--accent);
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   text-underline-offset: 3px;
 }
 
@@ -95,18 +95,18 @@
 
 .warnings li {
   padding: 11px 13px;
-  border: 1px solid #eed8a9;
-  border-radius: 9px;
-  background: #fff8e8;
-  color: #684d18;
-  font-size: 12px;
+  border: 1px solid var(--fc);
+  border-radius: var(--r-sm);
+  background: var(--fc-soft);
+  color: var(--fc-ink);
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 
 .warnings code {
   margin-left: 4px;
-  color: #765a21;
-  font-size: 0.9em;
+  color: var(--fc-ink);
+  font-size: var(--t-sm);
 }
 
 .salaryGrid {
@@ -119,23 +119,23 @@
 .metric {
   min-width: 0;
   padding: 15px;
-  border: 1px solid #e5e9ed;
-  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
   background: var(--surface-2);
 }
 
 .metric dt {
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .metric dd {
   margin: 8px 0 0;
   color: var(--ink);
-  font-size: clamp(1.05rem, 1.8vw, 1.55rem);
+  font-size: clamp(var(--t-lg), 1.8vw, var(--t-xl));
   font-variant-numeric: tabular-nums;
-  font-weight: 730;
+  font-weight: var(--w-semibold);
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
@@ -143,7 +143,7 @@
 .metric p {
   margin-top: 7px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   line-height: 1.45;
 }
 
@@ -157,18 +157,18 @@
 .metaItem {
   padding: 5px 9px;
   border-radius: 999px;
-  background: #f0f3f6;
-  color: #4e5e70;
-  font-size: 11px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
 }
 
 .sourceBadge {
   padding: 5px 9px;
   border-radius: 999px;
-  background: #e6eef8;
+  background: var(--accent-soft);
   color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .accountList {
@@ -180,7 +180,7 @@
   min-width: 0;
   padding: 17px;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--r);
   background: var(--surface-2);
 }
 
@@ -194,39 +194,39 @@
 
 .eyebrow {
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .accountHeader h3 {
   margin-top: 4px;
-  font-size: 1rem;
+  font-size: var(--t-md);
   overflow-wrap: anywhere;
 }
 
 .accountType {
   padding: 4px 9px;
   border-radius: 999px;
-  background: #e6eef8;
+  background: var(--accent-soft);
   color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .accountMeta {
   margin-top: 8px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 
 .accountEditLink {
   display: inline-block;
   margin-top: 9px;
   color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .accountSection {
@@ -235,36 +235,36 @@
 
 .accountSection h4 {
   margin-bottom: 9px;
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .tableWrap {
   max-width: 100%;
   overflow-x: auto;
-  border: 1px solid #e5e9ed;
-  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
 }
 
 .contributionTable {
   width: 100%;
   min-width: 480px;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--t-xs);
   text-align: left;
 }
 
 .contributionTable th,
 .contributionTable td {
   padding: 10px 12px;
-  border-bottom: 1px solid #e9edf1;
+  border-bottom: 1px solid var(--line-2);
   vertical-align: middle;
 }
 
 .contributionTable th {
-  background: #f4f6f8;
+  background: var(--surface-2);
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 750;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .contributionTable tbody tr:last-child th,
@@ -281,16 +281,16 @@
   display: inline-block;
   padding: 4px 8px;
   border-radius: 999px;
-  background: #f0f3f6;
-  color: #4e5e70;
-  font-size: 10px;
-  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
   white-space: nowrap;
 }
 
 .targetState[data-reached="true"] {
-  background: #e4f3eb;
-  color: #216343;
+  background: var(--pos-soft);
+  color: var(--pos);
 }
 
 .benefitsGrid {
@@ -302,22 +302,22 @@
 .benefit {
   min-width: 0;
   padding: 11px;
-  border: 1px solid #e5e9ed;
-  border-radius: 8px;
-  background: white;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
 }
 
 .benefit dt {
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .benefit dd {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
-  font-weight: 750;
+  font-weight: var(--w-semibold);
   overflow-wrap: anywhere;
 }
 
@@ -325,7 +325,7 @@
 .emptyCopy {
   margin-top: 10px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 
 @media (max-width: 800px) {

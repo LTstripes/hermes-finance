@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { formatApiError } from "../api/client";
 import { type Goal, type GoalPlan, type GoalPlanWithBase, getGoalPlan } from "../api/goals";
 import { DataValue, Field, Input } from "../components/ui";
-import { formatDate, formatPercent } from "../lib/format";
+import { formatDate, formatMonthKey, formatPercent } from "../lib/format";
 import { fromKopecks, moneySharePercent, normalizeMoneyInput, rub, toKopecks } from "../lib/money";
 import { GoalPlanChart } from "./GoalPlanChart";
 import { MonthMoneyInput } from "./MonthMoneyInput";
@@ -122,7 +122,13 @@ export function GoalPlanBlock({
                       капитал. Оценка предполагает сохранение текущей отдачи.
                     </p>
                     {visiblePlan.income_months_used?.length ? (
-                      <p>Месяцы дохода: {visiblePlan.income_months_used.join(", ")}.</p>
+                      <p>
+                        Месяцы дохода:{" "}
+                        {visiblePlan.income_months_used
+                          .map((month) => formatMonthKey(month))
+                          .join(", ")}
+                        .
+                      </p>
                     ) : null}
                   </>
                 ) : (
@@ -156,8 +162,8 @@ export function GoalPlanBlock({
                           <tbody>
                             {visiblePlan.trajectory.map((point) => (
                               <tr key={point.date}>
-                                <td>{formatDate(point.date)}</td>
-                                <td>{money(point.capital)}</td>
+                                <td className="num">{formatDate(point.date)}</td>
+                                <td className="num">{money(point.capital)}</td>
                               </tr>
                             ))}
                           </tbody>

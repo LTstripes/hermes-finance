@@ -493,7 +493,7 @@
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: var(--t-lg);
   line-height: 1;
   text-decoration: none;
