@@ -4,6 +4,15 @@ Current normative handbook. Historical evidence and section-by-section provenanc
 
 [1. Architecture, storage, API and security](#c1) | [2. Money, formulas, NULL and coverage](#c2) | [3. Original → Preview → journal → financial DRAFT → GET → Close](#c3) | [4. Identity, provenance, receipts and currentness](#c4) | [5. Money, trades, settlement, fees and NKD](#c5) | [6. H0/H1/H2, membership, valuation and coverage](#c6) | [7. Returns, hypothetical results and monetary attribution](#c7) | [8. Tax, IIS, actual income, goals, risk and scenarios](#c8) | [9. Providers, freshness, reconciliation and source units](#c9) | [10. Export formats, schema versions and compatibility](#c10)
 
+### Find a contract by task
+
+- **Import card or manual spending, or change the reserve calculation** — [Diary import and coverage](#c2-spending-diary) · [Reserve and recurring payments](#spending-reserve-1235).
+- **Record a savings account balance or interest at month close** — [Deposit snapshot fields](#c2-master_spec-295-99-deposit_snapshots) · [Source and freshness of deposit and cash snapshots](#c9-freshness_provenance-1-deposit_cash_snapshots).
+- **Change month close or reopen behavior** — [Close decisions and completeness warnings](#c3-user-close-warnings) · [Explicitly closing an empty manual month](#c3-empty-manual-close).
+- **Import a broker statement into a reporting month** — [Original file and normalized sections](#c3-mybroker_s1-1) · [Apply source rows to the financial draft](#c3-broker_months-1).
+- **Reconcile a PDF payout with a forecast** — [Alfa depository income statement import](#c3-060-39-alfa-depository-income-statement-import) · [Evidence for actual settlement](#actual-settlement-authority).
+- **Change a portfolio return calculation** — [XIRR and TWRR prerequisites](#c7-r08-01c-performance-availability-12-xirr-and-twrr-prerequisites) · [XIRR cash flows](#c7-r08-02-portfolio-xirr-8-cash-flow-convention) · [Exact TWRR availability](#c7-r08-03-twrr-contract-recon-32-exact-twrr-availability-rule).
+
 <a id="c1"></a>
 
 Startup readiness includes the supported versioned Alembic schema path and a real DB endpoint; HTTP health/root alone cannot prove DB readiness. Never substitute `Base.metadata.create_all()` for released migrations. Repeat startup on a current schema is idempotent. SQLite restore uses application-level maintenance/serialization: prevent new DB work during the critical replacement, finish or predictably reject active work, validate and retain pre-restore backup; engine.dispose alone does not prove all checked-out connections are gone. The accepted SQLite policy retains the bounded busy timeout and does not enable WAL merely as generic cleanup; a change requires reproducible need and Windows backup/restore/sidecar checks.
