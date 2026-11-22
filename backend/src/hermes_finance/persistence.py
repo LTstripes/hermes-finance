@@ -1857,6 +1857,16 @@ class PositionQuoteProvenance(Base):
     applied_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class AlfaSavingsLink(Base):
+    __tablename__ = "alfa_savings_links"
+    __table_args__ = (UniqueConstraint("account_id", name="uq_alfa_savings_link_account"),)
+
+    source_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False
+    )
+
+
 class DepositSnapshot(Base):
     __tablename__ = "deposit_snapshots"
     __table_args__ = (

@@ -99,6 +99,7 @@ CI_PERSISTENCE_SHARD_WEIGHTS = {
 
 # Append new suites without moving accepted shard anchors.
 CI_CORE_ADDITIONAL_FILES = (
+    "test_alfa_savings_api.py",
     "test_spending_payment_rules.py",
     "test_spending_diary.py",
     "test_spending_reserve.py",
@@ -227,6 +228,7 @@ CI_CORE_SHARD_WEIGHTS = {
 # Summed setup/call/teardown seconds per file, with a 0.01s floor. Only the
 # original core-a group is subdivided; the accepted A/B membership stays fixed.
 CI_CORE_A_SHARD_WEIGHTS = {
+    "test_alfa_savings_api.py": 4.0,
     "test_spending_diary.py": 48.77,
     "test_spending_reserve.py": 1.0,
     "test_spending_payment_rules.py": 9.73,

@@ -226,3 +226,36 @@
     font-size: var(--t-sm);
   }
 }
+
+.alfaImport {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 10px 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.alfaImport legend,
+.alfaRow h4 {
+  font-weight: 600;
+}
+.alfaCoverage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.alfaRow {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.alfaRow h4,
+.alfaRow p {
+  margin: 0;
+}
+.alfaRow button {
+  justify-self: start;
+}

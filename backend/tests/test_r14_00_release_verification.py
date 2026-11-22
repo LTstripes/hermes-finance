@@ -5,7 +5,7 @@ import sqlite3
 import subprocess
 
 import pytest
-from _migration_helpers import BACKEND_ROOT, revision_rows
+from _migration_helpers import BACKEND_ROOT, revision_rows, run_alembic
 from test_r13_00_release_verification import (
     _assert_original_rows,
     _backup,
@@ -31,6 +31,7 @@ TRANSITION = (
     "0070_spending_screen",
     "0071_spending_payment_rules",
     "0072_spending_reserve",
+    "0073_alfa_savings_links",
 )
 
 
@@ -104,3 +105,29 @@ def test_published_0058_upgrade_preserves_every_existing_row_and_recovery_pair(t
     with sqlite3.connect(recovered) as connection:
         _integrity(connection)
         assert _snapshot(connection) == after
+
+
+def test_alfa_savings_link_downgrade_requires_empty_mapping(tmp_path):
+    path = tmp_path / "synthetic-alfa.db"
+    previous, current = TRANSITION[-2:]
+    _upgrade(path, previous)
+    with sqlite3.connect(path) as c:
+        c.execute("INSERT INTO accounts(id,name,account_type) VALUES(1,'Synthetic','savings')")
+    _upgrade(path, current)
+    with sqlite3.connect(path) as c:
+        c.execute("INSERT INTO alfa_savings_links(source_key,account_id) VALUES(?,1)", ("a" * 64,))
+    failed = run_alembic(path, "downgrade", previous)
+    assert failed.returncode and "require forward recovery" in failed.stderr
+    assert revision_rows(path) == [current]
+    with sqlite3.connect(path) as c:
+        assert c.execute("SELECT source_key,account_id FROM alfa_savings_links").fetchall() == [
+            ("a" * 64, 1)
+        ]
+        c.execute("DELETE FROM alfa_savings_links")
+    empty = run_alembic(path, "downgrade", previous)
+    assert empty.returncode == 0, empty.stderr
+    assert revision_rows(path) == [previous]
+    _upgrade(path, current)
+    with sqlite3.connect(path) as c:
+        _integrity(c)
+        assert c.execute("SELECT name FROM accounts").fetchall() == [("Synthetic",)]

@@ -7,14 +7,16 @@ service layer (B10); this module only maps the HTTP boundary.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
 from hermes_finance.domain import DepositType, PercentageRate, RubleAmount
+from hermes_finance.services import alfa_savings
 from hermes_finance.services.deposits import (
     create_deposit_snapshot,
     delete_deposit_snapshot,
@@ -106,6 +108,51 @@ def _parse_if_match(if_match: str | None) -> datetime | None:
     if if_match is None:
         return None
     return datetime.fromisoformat(if_match)
+
+
+class AlfaSavingsPreview(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    month_id: int = Field(gt=0)
+    csv: str = Field(min_length=1, max_length=8 * 1024 * 1024)
+    full_month: bool = False
+    bindings: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("bindings", mode="before")
+    @classmethod
+    def validate_bindings(cls, value):
+        # Keep caller-supplied private identifiers out of nested error field names.
+        if not isinstance(value, dict) or any(
+            not re.fullmatch(r"[0-9a-f]{64}", key) or type(account_id) is not int or account_id <= 0
+            for key, account_id in value.items()
+        ):
+            raise ValueError("Неверная привязка счёта.")
+        return value
+
+
+class AlfaSavingsApply(AlfaSavingsPreview):
+    source_key: str = Field(pattern="^[0-9a-f]{64}$")
+    token: str = Field(pattern="^[0-9a-f]{64}$")
+
+
+@router.post("/alfa/preview")
+def preview_alfa_savings(
+    payload: AlfaSavingsPreview, response: Response, session: Session = Depends(session_for_request)
+) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return alfa_savings.preview(session, **payload.model_dump())
+
+
+@router.post("/alfa/apply", response_model=DepositResponse)
+def apply_alfa_savings(
+    payload: AlfaSavingsApply, response: Response, session: Session = Depends(session_for_request)
+) -> DepositResponse:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        snapshot = alfa_savings.apply(session, **payload.model_dump())
+    except alfa_savings.StaleSavingsPreview as error:
+        raise HTTPException(409, str(error)) from error
+    return _response_from_snapshot(snapshot)
 
 
 @router.get("", response_model=list[DepositResponse])

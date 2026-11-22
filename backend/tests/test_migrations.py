@@ -20,11 +20,6 @@ def test_source_return_proof_upgrade_is_empty_preserves_0064_and_refuses_history
 
     path = tmp_path / "synthetic-proof-migration.db"
     previous = "0064_month_template_provenance"
-    gold_tables = (
-        "owner_manual_gold_histories",
-        "owner_manual_gold_history_revisions",
-        "owner_manual_gold_history_applies",
-    )
     assert run_alembic(path, "upgrade", previous).returncode == 0
     database = create_database(path)
     save_service_month(database)
@@ -35,22 +30,23 @@ def test_source_return_proof_upgrade_is_empty_preserves_0064_and_refuses_history
             return {
                 name: connection.execute(f'SELECT * FROM "{name}" ORDER BY rowid').fetchall()
                 for (name,) in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('alembic_version','source_return_proofs','source_return_proof_dependencies')"
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'alembic_version'"
                 )
-                if name not in gold_tables and not name.startswith("spending_")
             }
 
     before = existing_rows()
     assert run_alembic(path, "upgrade", "head").returncode == 0
     assert revision_rows(path) == [REVISION]
-    assert existing_rows() == before
+    after = existing_rows()
+    assert {table: after[table] for table in before} == before
+    new_tables = after.keys() - before.keys()
+    assert {
+        "source_return_proofs",
+        "source_return_proof_dependencies",
+        "alfa_savings_links",
+    } <= new_tables
+    assert all(after[table] == [] for table in new_tables)
     with sqlite3.connect(path) as connection:
-        for table in gold_tables:
-            assert connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone() == (0,)
-        assert connection.execute("SELECT COUNT(*) FROM source_return_proofs").fetchone() == (0,)
-        assert connection.execute(
-            "SELECT COUNT(*) FROM source_return_proof_dependencies"
-        ).fetchone() == (0,)
         assert not connection.execute("PRAGMA foreign_key_check").fetchall()
     assert run_alembic(path, "downgrade", previous).returncode == 0
     assert existing_rows() == before
