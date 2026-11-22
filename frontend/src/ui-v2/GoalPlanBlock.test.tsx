@@ -179,7 +179,8 @@ describe("goal plan presentation", () => {
       ...base,
       status: "income_estimate",
       required_capital: "2000000.00",
-      income_months_count: 7,
+      income_months_count: 2,
+      income_months_used: ["2031-11", "2032-01"],
       income_months_complete: false,
     });
     render(
@@ -190,8 +191,10 @@ describe("goal plan presentation", () => {
       />,
     );
     await screen.findByText("≈ 2 000 000 ₽");
-    expect(screen.getByText("При текущей отдаче 12,0% в год, доход за 7 из 12 мес.")).toBeVisible();
+    expect(screen.getByText("При текущей отдаче 12,0% в год, доход за 2 из 12 мес.")).toBeVisible();
     expect(screen.queryByText("База оценки")).not.toBeInTheDocument();
     expect(screen.getByText(/Отдача = фактический/)).not.toBeVisible();
+    await userEvent.click(screen.getByText("Подробнее"));
+    expect(screen.getByText("Месяцы дохода: Ноябрь 2031, Январь 2032.")).toBeVisible();
   });
 });

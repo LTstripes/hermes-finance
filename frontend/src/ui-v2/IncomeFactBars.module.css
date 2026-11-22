@@ -68,7 +68,11 @@
 }
 
 .bar[data-outside="true"] .fill {
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, var(--surface)) 0 4px, var(--accent-soft) 4px 8px);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 24%, var(--surface)) 0 4px,
+    var(--accent-soft) 4px 8px
+  );
 }
 
 .bar:hover .fill {
@@ -187,5 +191,9 @@
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, var(--surface)) 0 3px, var(--accent-soft) 3px 6px);
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 24%, var(--surface)) 0 3px,
+    var(--accent-soft) 3px 6px
+  );
 }
