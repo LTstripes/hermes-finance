@@ -9,6 +9,15 @@ retains its original dated history and sources; it is not current installation e
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
 
+- [v1.24.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.24.1)
+  (`05119ca9849c9885822bde660a91244203a1fa39`, [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/45024250970),
+  [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/45025390086),
+  [release notes](release-notes-1.24.1.md)) was installed on Stable on 2026-11-22 through backup-first OPS02.
+  Prepare and Validate passed. After Start, health reported 1.24.1. Both the live database and its verified
+  backup were at schema 0073. Their 92 tables matched row for row, and both passed SQLite integrity and
+  foreign-key checks. Spending, category rules, the emergency reserve, income and goals opened in Chromium
+  with successful API reads. Editing and import flows were tested separately with synthetic data.
+
 - [v1.24.0](https://github.com/LTstripes/hermes-finance/releases/tag/v1.24.0)
   (`06bebd2aa206dd14ce2324dcbdc762dd047b4d62`, [exact-main CI](https://github.com/LTstripes/hermes-finance/actions/runs/45005181026),
   [guarded publication](https://github.com/LTstripes/hermes-finance/actions/runs/45006400082),
