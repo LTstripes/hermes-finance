@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-21**. This is the current status; product and numerical rules
+Updated **2026-11-22**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -8,6 +8,11 @@ retains its original dated history and sources; it is not current installation e
 
 <a id="s1"></a>
 ## 1. Code, release, installation and UAT
+
+- [Contract navigation](https://github.com/LTstripes/hermes-finance/pull/1255),
+  [Alfa savings at month close](https://github.com/LTstripes/hermes-finance/pull/1256) and
+  [payout review after PDF import](https://github.com/LTstripes/hermes-finance/pull/1257) are integrated on main.
+  Their combined synthetic checks passed. The first use with Owner statements is pending.
 
 - [v1.23.1](https://github.com/LTstripes/hermes-finance/releases/tag/v1.23.1)
   (`4fae48240b654149f07543970e6d17d9deb0582d`, [full CI on main](https://github.com/LTstripes/hermes-finance/actions/runs/44974227561),
@@ -205,8 +210,7 @@ total before loading historical statements.
    (formal UAT card #711 closed on 14.11.2026). At month close the Owner compares
    deposit balances with the bank on the snapshot date.
 2. Candidate development, Owner to choose: goal plan pauses and one-off expenses
-   (#1129 extension), actual monthly saving, payout reconciliation exceptions
-   ([#1033](https://github.com/LTstripes/hermes-finance/issues/1033)).
+   (#1129 extension) and actual monthly saving.
 3. Deferred by the Owner: annual tax and IIS reconciliation
    ([#1130](https://github.com/LTstripes/hermes-finance/issues/1130), documents first);
    a market-data supplement for amortizing bonds (until one is held).
