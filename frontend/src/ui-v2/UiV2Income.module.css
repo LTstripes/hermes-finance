@@ -124,7 +124,7 @@
 .tag {
   max-width: 98px;
   padding: 1px 8px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--accent-soft);
   color: var(--accent);
   font-size: var(--t-xs);
@@ -132,13 +132,13 @@
 }
 
 .tag[data-component="dividend"] {
-  background: #fbefe3;
-  color: #8a5420;
+  background: color-mix(in srgb, var(--c-stock) 12%, var(--surface));
+  color: color-mix(in srgb, var(--c-stock) 54%, var(--ink));
 }
 
 .tag[data-component="deposit_interest"] {
-  background: #f1ecf8;
-  color: #5d4590;
+  background: color-mix(in srgb, var(--c-dep) 12%, var(--surface));
+  color: color-mix(in srgb, var(--c-dep) 65%, var(--ink));
 }
 
 .tag[data-component="redemption_principal"],

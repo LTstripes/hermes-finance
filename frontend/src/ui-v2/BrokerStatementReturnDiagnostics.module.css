@@ -18,21 +18,21 @@
 .controls button {
   padding: 10px 12px;
   font: inherit;
-  border: 1px solid #bcc8d5;
-  border-radius: 6px;
-  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
 }
 .result {
   display: grid;
   gap: 16px;
   padding: 24px;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r);
 }
 .rate {
-  font-size: 2.2rem;
-  font-weight: 650;
+  font-size: var(--t-2xl);
+  font-weight: var(--w-semibold);
 }
 .result table {
   border-collapse: collapse;
@@ -46,7 +46,7 @@
 }
 .result caption {
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   padding-bottom: 12px;
 }
 .result details {

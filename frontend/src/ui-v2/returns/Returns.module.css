@@ -69,7 +69,7 @@
   gap: 8px;
   cursor: pointer;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   padding: 10px 14px;
   background: var(--surface);
   color: var(--ink-2);
@@ -86,7 +86,7 @@
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   margin: 0;
   padding: 0;
   cursor: pointer;
@@ -117,7 +117,7 @@
 .dates label {
   display: grid;
   gap: 5px;
-  font-size: 13px;
+  font-size: var(--t-sm);
   color: var(--ink-2);
   min-width: 0;
 }
@@ -146,15 +146,15 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  font-size: 13px;
+  font-size: var(--t-sm);
   color: var(--muted);
   margin-bottom: 22px !important;
 }
 .estimate {
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   background: var(--line-2);
   padding: 2px 7px;
-  font-size: 11px;
+  font-size: var(--t-xs);
   color: var(--ink-2);
 }
 .cards {
@@ -208,8 +208,8 @@
 .info {
   display: inline;
   position: relative;
-  font-size: 13px;
-  font-weight: 400;
+  font-size: var(--t-sm);
+  font-weight: var(--w-regular);
   letter-spacing: normal;
   color: var(--ink-2);
   white-space: normal;
@@ -230,8 +230,8 @@
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 8px 25px #17283c22;
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-soft);
   padding: 14px;
   text-align: left;
   line-height: 1.5;
@@ -253,7 +253,7 @@
 }
 .sectionHead > span,
 .sectionHead p {
-  font-size: 12px;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 .pager,
@@ -271,7 +271,7 @@
 .toggle button[aria-pressed="true"] {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--surface);
 }
 .chart {
   display: grid;
@@ -281,11 +281,11 @@
 }
 .page .monthBar {
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   padding: 0 2px 6px;
   min-width: 0;
-  font-size: 10px;
+  font-size: var(--t-xs);
   overflow-wrap: anywhere;
 }
 .monthBar[aria-pressed="true"] {
@@ -338,13 +338,13 @@
 }
 .historyTable {
   margin-top: 14px;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 .page table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 .page th,
 .page td {
@@ -356,8 +356,8 @@
 }
 .page thead th {
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 .instruments > thead > tr > th:first-child,
 .instruments > tbody > tr > th:first-child {
@@ -374,15 +374,15 @@
 .tops small {
   display: block;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--t-xs);
   margin-top: 4px;
-  font-weight: 400;
+  font-weight: var(--w-regular);
 }
 .page .instrumentName {
   border: none;
   padding: 0;
   text-align: left;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   background: transparent;
   overflow-wrap: anywhere;
 }
@@ -406,7 +406,7 @@
   gap: 32px;
 }
 .tops h3 {
-  font-size: 14px;
+  font-size: var(--t-md);
   margin-bottom: 10px;
 }
 .tops ol {
@@ -420,7 +420,7 @@
   gap: 14px;
   padding: 12px 0;
   border-bottom: 1px solid var(--line-2);
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 .tops li > * {
   min-width: 0;
@@ -439,13 +439,13 @@
 .empty,
 .status {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--t-sm);
   padding: 16px 0;
 }
 .detail {
   padding: 10px;
   background: var(--surface-2);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
 }
 .detailFacts {
   display: flex;
@@ -457,7 +457,7 @@
   margin: 10px 0;
 }
 .detail h3 {
-  font-size: 13px;
+  font-size: var(--t-sm);
   margin-top: 18px;
 }
 .events {
@@ -505,7 +505,7 @@
     gap: 1px;
   }
   .mainValue {
-    font-size: 1.25rem;
+    font-size: var(--t-lg);
   }
 }
 
@@ -545,7 +545,7 @@
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   margin: 12px 0;
 }
 .goldForm label,
@@ -599,7 +599,7 @@
 .breakdownTotal {
   border-top: 1px solid var(--line);
   padding-top: 12px;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
 }
 
 .primaryCard .mainValue {

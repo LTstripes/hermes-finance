@@ -1,0 +1,178 @@
+.header,
+.meta,
+.goalHead,
+.candidate,
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.header {
+  flex: 1;
+  justify-content: space-between;
+}
+.reserveFields {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 22px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.reserveFields legend {
+  margin-bottom: 8px;
+  font-weight: var(--w-semibold);
+}
+.reserveFields p,
+.gaps,
+.meta,
+.choice small {
+  margin: 0;
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 12rem));
+  gap: 12px;
+}
+.reserveLine {
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 10rem) minmax(0, 12rem);
+  gap: 8px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.reserveLine > :global(.field) {
+  grid-column: 3;
+}
+.balance {
+  text-align: end;
+}
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.choice small {
+  display: inline;
+}
+.check {
+  accent-color: var(--accent);
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+.actions {
+  align-items: end;
+}
+.actions .monthChip {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.goal {
+  display: grid;
+  gap: 10px;
+}
+.goalHead {
+  justify-content: space-between;
+}
+.goalHead strong {
+  color: var(--ink);
+}
+.goalBar {
+  width: 100%;
+  height: 9px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  appearance: none;
+  background: var(--line-2);
+}
+.goalBar::-webkit-progress-bar {
+  background: var(--line-2);
+}
+.goalBar::-webkit-progress-value {
+  background: var(--accent);
+}
+.goalBar::-moz-progress-bar {
+  background: var(--accent);
+}
+.candidate {
+  justify-content: space-between;
+  padding: 8px 12px;
+  color: var(--fc-ink);
+  background: var(--fc-soft);
+  border-radius: var(--r-sm);
+}
+.candidate p {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gaps {
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--line);
+}
+.coverage {
+  font-size: var(--t-sm);
+  color: var(--muted);
+}
+.coverage summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.coverage ul {
+  padding: 0;
+  list-style: none;
+}
+.coverage li {
+  padding-block: 4px;
+}
+.payment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 3px 0;
+}
+.payment > :first-child {
+  color: var(--muted);
+}
+.payment strong {
+  color: var(--fc-ink);
+  white-space: nowrap;
+}
+.share {
+  display: block;
+  width: min(100%, 6.5rem);
+  height: 4px;
+  overflow: hidden;
+  margin: 4px 0 0 auto;
+  border-radius: 999px;
+  background: var(--line-2);
+}
+.share span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+@media (max-width: 640px) {
+  .reserveLine {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .reserveLine > :global(.field) {
+    grid-column: 1 / -1;
+  }
+  .dates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dates input {
+    max-width: 100%;
+  }
+}

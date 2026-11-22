@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import {
   spendingApi,
@@ -8,7 +8,7 @@ import {
   type SpendingSource,
 } from "../../api/spending";
 import type { MoneyValue } from "../../api/types";
-import { Button } from "../../components/ui";
+import { Button, Select } from "../../components/ui";
 import { triggerDownload } from "../../lib/download";
 import { formatMonthKey, formatPercent } from "../../lib/format";
 import { moneyText } from "../valueFormat";
@@ -77,7 +77,7 @@ export function isNonzero(value?: MoneyValue | null) {
 export function Money({ value, empty = "—" }: { value?: MoneyValue | null; empty?: string }) {
   return (
     <span
-      className={value?.amount.startsWith("-") ? styles.negative : undefined}
+      className={value?.amount.startsWith("-") ? `num ${styles.negative}` : "num"}
       title={value ? moneyText(value) : undefined}
     >
       {wholeMoneyText(value, empty)}
@@ -98,13 +98,15 @@ export function MonthSelect({
   onChange: (month: string) => void;
   disabled?: boolean;
 }) {
+  const id = useId();
   const now = currentMonth();
   const months = Array.from({ length: 25 }, (_, offset) => shiftMonth(now, -offset));
   if (!months.includes(month)) months.push(month);
   return (
-    <label className={sheet.select}>
+    <label className={sheet.select} htmlFor={id}>
       Месяц{" "}
-      <select
+      <Select
+        id={id}
         aria-label="Месяц"
         value={month}
         onChange={(event) => onChange(event.target.value)}
@@ -115,7 +117,7 @@ export function MonthSelect({
             {formatMonthKey(value)}
           </option>
         ))}
-      </select>
+      </Select>
     </label>
   );
 }
@@ -172,7 +174,7 @@ export function TemplateButton({ month }: { month: string }) {
 export function UploadLink({ month }: { month: string }) {
   return (
     <Link className="btn btn--primary" to={importPath(month)}>
-      Загрузить траты
+      Загрузить расходы
     </Link>
   );
 }
@@ -188,7 +190,7 @@ export function TypeSelect({
   disabled?: boolean;
 }) {
   return (
-    <select
+    <Select
       aria-label={label}
       disabled={disabled}
       value={value}
@@ -199,6 +201,6 @@ export function TypeSelect({
           {typeLabels[type]}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }

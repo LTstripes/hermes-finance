@@ -144,13 +144,18 @@
   list-style: none;
 }
 
+.group {
+  --step-icon: 28px;
+  --step-gap: 14px;
+  --step-inset: clamp(6px, 1vw, 14px);
+}
 .row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto 14px;
+  grid-template-columns: var(--step-icon) minmax(0, 1fr) auto 14px;
   align-items: center;
-  gap: 14px;
+  gap: var(--step-gap);
   min-height: 64px;
-  padding: 10px 12px 10px 14px;
+  padding: 10px 12px 10px var(--step-inset);
   border-radius: var(--r-sm);
   color: var(--ink) !important;
   text-decoration: none;
@@ -493,7 +498,7 @@
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: var(--t-lg);
   line-height: 1;
   text-decoration: none;

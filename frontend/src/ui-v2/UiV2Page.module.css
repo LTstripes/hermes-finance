@@ -37,6 +37,10 @@
   color: var(--accent);
 }
 
+.shell a:global(.btn--primary) {
+  color: var(--surface);
+}
+
 .shell :is(button, a, input, select, textarea, summary):focus-visible {
   outline: var(--focus-width) solid var(--focus);
   outline-offset: var(--focus-offset);
@@ -82,10 +86,10 @@
   align-items: center;
   gap: 10px;
   padding: 0 8px;
-  color: #ffffff !important;
+  color: var(--surface) !important;
   text-decoration: none;
   font-weight: var(--w-semibold);
-  font-size: 14px;
+  font-size: var(--t-md);
 }
 
 .brandMark {
@@ -98,14 +102,14 @@
   background: var(--bg);
   color: var(--side-bg);
   font-family: var(--f-display);
-  font-size: 19px;
+  font-size: var(--t-lg);
   font-weight: var(--w-semibold);
 }
 
 .brand small {
   display: block;
   color: var(--side-muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   font-weight: var(--w-regular);
 }
 
@@ -119,15 +123,15 @@
   align-items: center;
   gap: 11px;
   padding: 9px 10px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   color: var(--side-text);
-  font-size: 14px;
+  font-size: var(--t-md);
   text-decoration: none;
 }
 
 .navigation a:hover {
   background: var(--side-raised);
-  color: #ffffff;
+  color: var(--surface);
 }
 
 .navigation svg {
@@ -141,7 +145,7 @@
 .navigation a[aria-current="page"] {
   background: var(--side-active);
   box-shadow: inset 3px 0 0 var(--side-marker);
-  color: #ffffff;
+  color: var(--surface);
   font-weight: var(--w-semibold);
 }
 
@@ -168,7 +172,7 @@
 
 .monthPlateLabel {
   color: var(--side-muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -178,9 +182,9 @@
 }
 
 .monthPlate strong {
-  color: #ffffff;
+  color: var(--surface);
   font-family: var(--f-display);
-  font-size: 16px;
+  font-size: var(--t-md);
   font-weight: var(--w-semibold);
 }
 
@@ -227,21 +231,21 @@
   min-height: 44px;
   max-width: calc(100vw - 32px);
   padding: 10px 14px;
-  border: 1px solid #b9c9da;
+  border: 1px solid var(--field-line);
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--surface);
   color: var(--accent);
   box-shadow: 0 8px 24px rgb(23 40 60 / 16%);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 750;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
   white-space: nowrap;
 }
 
 .backToTop:hover {
-  border-color: #8ea9c5;
-  background: #f3f6f9;
+  border-color: var(--field-line);
+  background: var(--surface-2);
 }
 
 .header {
@@ -255,7 +259,7 @@
 .subtitle {
   margin-top: 8px !important;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--t-md);
 }
 
 .reportContext {
@@ -265,7 +269,7 @@
   gap: 8px;
   margin-bottom: 15px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .reportContext a {
@@ -276,24 +280,24 @@
 .closedBadge {
   padding: 4px 9px;
   border-radius: 999px;
-  background: #e6eef8;
+  background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 700;
+  font-weight: var(--w-semibold);
 }
 
 .contextDivider {
-  color: #aab4bf;
+  color: var(--faint);
 }
 
 /* A historical report must never read as current state. */
 .reportContext[data-context="historical"] .closedBadge {
-  background: #f3e6d4;
-  color: #8a5a1d;
+  background: var(--fc-soft);
+  color: var(--fc-ink);
 }
 
 .reportStatus {
   color: var(--ink);
-  font-weight: 700;
+  font-weight: var(--w-semibold);
 }
 
 .reportContextLinks {
@@ -316,11 +320,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid #d8e2ee;
-  border-radius: 10px;
-  background: #eef4fa;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--accent-soft);
   color: var(--ink) !important;
-  font-size: 13px;
+  font-size: var(--t-sm);
   text-decoration: none;
 }
 
@@ -334,7 +338,7 @@
   border: 0;
   background: transparent;
   font: inherit;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   cursor: pointer;
 }
 
@@ -343,7 +347,7 @@
 }
 
 .draftAction[data-state="unavailable"] {
-  background: #f7f8fa;
+  background: var(--surface-2);
 }
 
 .metrics {
@@ -368,15 +372,15 @@
 }
 
 .metricPrimary {
-  border-color: #cfdae7;
-  background: #edf3f9;
+  border-color: var(--line);
+  background: var(--accent-soft);
 }
 
 .metricValue {
   margin-top: 13px !important;
   color: var(--ink);
   font-family: var(--f-num);
-  font-size: clamp(1.5rem, 2.45vw, 2.55rem);
+  font-size: clamp(var(--t-xl), 2.45vw, var(--t-2xl));
   font-variant-numeric: tabular-nums;
   font-weight: var(--w-medium);
   letter-spacing: -0.02em;
@@ -395,14 +399,14 @@
 .metricDetail {
   margin-top: 11px !important;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .metricEmpty {
   max-width: 260px;
   margin-top: 18px !important;
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: var(--t-lg);
+  font-weight: var(--w-semibold);
   line-height: 1.35;
 }
 
@@ -435,14 +439,14 @@
 .panelHint {
   max-width: 190px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
   line-height: 1.35;
   text-align: right;
 }
 
 .contextLink {
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--t-xs);
   text-underline-offset: 3px;
 }
 
@@ -452,27 +456,27 @@
   margin: 0;
   padding: 3px;
   border: 0;
-  border-radius: 8px;
-  background: #eef1f4;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
 }
 
 .segmented button {
   min-height: 32px;
   padding: 5px 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 
 .segmented button[aria-pressed="true"] {
-  background: white;
+  background: var(--surface);
   color: var(--ink);
   box-shadow: 0 1px 3px rgb(23 40 60 / 12%);
-  font-weight: 700;
+  font-weight: var(--w-semibold);
 }
 
 .chart {
@@ -483,20 +487,20 @@
 }
 
 .chart :global(.recharts-text) {
-  fill: #6b7886;
-  font-size: 10px;
+  fill: var(--muted);
+  font-size: var(--t-xs);
 }
 
 .chart :global(.recharts-default-tooltip) {
   border: 1px solid var(--line) !important;
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--t-xs);
 }
 
 .panelFootnote {
   margin-top: 7px !important;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 
 .compositionBody {
@@ -528,7 +532,7 @@
   grid-template-columns: 8px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 
 .legend li > span:first-child {
@@ -556,11 +560,11 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .netSummary dd {
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   text-align: right;
 }
 
@@ -580,13 +584,13 @@
   justify-content: space-between;
   gap: 14px;
   padding: 8px 0;
-  border-bottom: 1px solid #edf0f3;
-  font-size: 12px;
+  border-bottom: 1px solid var(--line-2);
+  font-size: var(--t-xs);
 }
 
 .liabilityChange {
   margin-top: 5px;
-  border-top: 1px dashed #cfd6dc;
+  border-top: 1px dashed var(--line);
 }
 
 .changeList details {
@@ -600,7 +604,7 @@
 .changeTotal {
   margin-top: 5px;
   border-bottom: 0;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 
 .passiveLayout {
@@ -613,7 +617,7 @@
 
 .sourceBreakdown {
   padding: 17px;
-  border-radius: 10px;
+  border-radius: var(--r);
   background: var(--soft);
 }
 
@@ -628,7 +632,7 @@
 .factNote {
   margin-top: 11px !important;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 
 .goalsGrid {
@@ -640,8 +644,8 @@
 
 .goalsGrid article {
   padding: 16px;
-  border: 1px solid #e5e9ed;
-  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
   background: var(--surface-2);
 }
 
@@ -653,12 +657,12 @@
 }
 
 .goalHeader h3 {
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 
 .goalHeader strong {
   color: var(--accent);
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 
 .goalTrack {
@@ -666,7 +670,7 @@
   margin-top: 13px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e4e9ee;
+  background: var(--line);
 }
 
 .goalTrack span {
@@ -680,7 +684,7 @@
 .goalsGrid article > p {
   margin-top: 10px !important;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 
 .widgetState {
@@ -691,32 +695,32 @@
   align-content: center;
   justify-items: start;
   gap: 10px;
-  border-radius: 9px;
-  background: #f5f7f9;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .widgetState button,
 .secondaryButton {
   min-height: 36px;
   padding: 7px 12px;
-  border: 1px solid #bdcadd;
-  border-radius: 7px;
-  background: white;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .notice,
 .loading {
   padding: 27px;
   border: 1px solid var(--line);
-  border-radius: 13px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
 .notice p {
@@ -757,8 +761,8 @@
   min-width: 0;
   padding: 16px 18px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
 .closeCurrent,
@@ -768,14 +772,14 @@
   min-width: 0;
   padding: 22px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
 .closeCurrent {
   display: grid;
   gap: 14px;
-  border-color: #b8cbe0;
+  border-color: var(--line);
   box-shadow: 0 12px 32px rgb(44 74 108 / 8%);
 }
 
@@ -807,9 +811,9 @@
   justify-content: center;
   min-height: 40px;
   padding: 9px 15px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   font: inherit;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   text-decoration: none;
   cursor: pointer;
 }
@@ -821,16 +825,16 @@
 }
 
 .secondaryButton {
-  border: 1px solid #b9c6d4;
-  background: white;
+  border: 1px solid var(--line);
+  background: var(--surface);
   color: var(--accent);
 }
 
 .closeError {
   padding: 10px 12px;
-  border-radius: 9px;
-  background: #fde8e7;
-  color: #7c2925;
+  border-radius: var(--r-sm);
+  background: var(--neg-soft);
+  color: var(--neg);
 }
 
 .closeAttention strong {
@@ -847,20 +851,20 @@
 
 .closeStepsNarrow > summary {
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
 }
 
 .closeStepsOverview {
   min-width: 0;
   padding: 18px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
 .closeStepsOverview > summary {
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   margin-bottom: 12px;
 }
 
@@ -931,7 +935,7 @@
     justify-content: space-between;
     gap: 14px;
     border-right: 0;
-    border-bottom: 1px solid #26394f;
+    border-bottom: 1px solid var(--side-line);
   }
 
   .sidebarNote,
@@ -950,7 +954,7 @@
 
   .navigation a {
     padding: 9px 11px;
-    font-size: 12px;
+    font-size: var(--t-xs);
   }
 
   .main {
@@ -1031,7 +1035,7 @@
   }
 
   .metricValue {
-    font-size: 1.85rem;
+    font-size: var(--t-2xl);
   }
 
   .panelHeader {
@@ -1060,13 +1064,13 @@
   }
 
   .brand {
-    font-size: 12px;
+    font-size: var(--t-xs);
   }
 
   .brandMark {
     width: 30px;
     height: 34px;
-    font-size: 20px;
+    font-size: var(--t-lg);
   }
 
   .navigation a > span {

@@ -2,12 +2,12 @@
   margin: 0;
   padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--soft);
+  border-radius: var(--r);
+  background: var(--surface-2);
 }
 .meta p {
   margin: 6px 0;
-  font-size: 13px;
+  font-size: var(--t-sm);
   line-height: 1.5;
 }
 .meta p:first-child {
@@ -18,7 +18,7 @@
 }
 .hint {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 @media (max-width: 480px) {
   .meta {
@@ -40,92 +40,6 @@
 .depositsTable :global(td.num) {
   width: auto;
 }
-@container (max-width: 760px) {
-  .depositsTable:not(.editable) thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    clip-path: inset(50%);
-  }
-  .depositsTable:not(.editable) tbody {
-    display: block;
-  }
-  .depositsTable:not(.editable) tr {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 16px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .depositsTable:not(.editable) td,
-  .depositsTable:not(.editable) :global(td.num),
-  .depositsTable:not(.editable) :global(td.month-deposits-table__actions) {
-    display: grid;
-    min-width: 0;
-    width: auto;
-    padding: 6px 0;
-    text-align: start;
-    border: 0;
-    white-space: normal;
-  }
-  .depositsTable:not(.editable) td::before {
-    content: attr(data-label);
-    color: var(--muted);
-    font-size: 12px;
-    margin-bottom: 4px;
-  }
-  .depositsTable:not(.editable) td:first-child {
-    grid-column: 1 / -1;
-  }
-  .depositsTable:not(.editable) :global(.row-actions) {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 799px) {
-  .depositsTable.editable thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    clip-path: inset(50%);
-  }
-  .depositsTable.editable tbody {
-    display: block;
-  }
-  .depositsTable.editable tr {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 16px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .depositsTable.editable td,
-  .depositsTable.editable :global(td.num),
-  .depositsTable.editable :global(td.month-deposits-table__actions) {
-    display: grid;
-    min-width: 0;
-    width: auto;
-    padding: 6px 0;
-    text-align: start;
-    border: 0;
-    white-space: normal;
-  }
-  .depositsTable.editable td::before {
-    content: attr(data-label);
-    color: var(--muted);
-    font-size: 12px;
-    margin-bottom: 4px;
-  }
-  .depositsTable.editable td:first-child {
-    grid-column: 1 / -1;
-  }
-  .depositsTable.editable :global(.row-actions) {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-}
-
 /* Let cash columns size to their content, including long monetary amounts. */
 .cashTable {
   table-layout: auto;
@@ -175,6 +89,98 @@
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 8px;
+}
+
+@container (max-width: 760px) {
+  .depositsTable:not(.editable) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+  }
+  .depositsTable:not(.editable) tbody {
+    display: block;
+  }
+  .depositsTable:not(.editable) tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .depositsTable:not(.editable) td,
+  .depositsTable:not(.editable) :global(td.num),
+  .depositsTable:not(.editable) :global(td.month-deposits-table__actions) {
+    display: grid;
+    min-width: 0;
+    width: auto;
+    padding: 6px 0;
+    text-align: start;
+    border: 0;
+    white-space: normal;
+  }
+  .depositsTable:not(.editable) td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: var(--t-xs);
+    margin-bottom: 4px;
+  }
+  .depositsTable:not(.editable) td:first-child {
+    grid-column: 1 / -1;
+  }
+  .depositsTable:not(.editable) :global(.row-actions) {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+
+@media (min-width: 800px) {
+  .depositsTable.editable tbody td {
+    padding-block: 8px;
+  }
+}
+
+@media (max-width: 799px) {
+  .depositsTable.editable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+  }
+  .depositsTable.editable tbody {
+    display: block;
+  }
+  .depositsTable.editable tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .depositsTable.editable td,
+  .depositsTable.editable :global(td.num),
+  .depositsTable.editable :global(td.month-deposits-table__actions) {
+    display: grid;
+    min-width: 0;
+    width: auto;
+    padding: 6px 0;
+    text-align: start;
+    border: 0;
+    white-space: normal;
+  }
+  .depositsTable.editable td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: var(--t-xs);
+    margin-bottom: 4px;
+  }
+  .depositsTable.editable td:first-child {
+    grid-column: 1 / -1;
+  }
+  .depositsTable.editable :global(.row-actions) {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
 }
 
 @media (min-width: 800px) {
@@ -228,17 +234,18 @@
 }
 
 .alfaImport {
+  background: var(--surface-2);
   display: grid;
   gap: 12px;
   min-width: 0;
   margin: 10px 0 16px;
   padding: 12px 16px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-sm);
 }
 .alfaImport legend,
 .alfaRow h4 {
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .alfaCoverage {
   display: flex;
@@ -258,4 +265,30 @@
 }
 .alfaRow button {
   justify-self: start;
+}
+
+.alfaFile {
+  max-width: 100%;
+  color: var(--muted);
+}
+.alfaFile::file-selector-button {
+  margin-inline-end: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--field-line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.alfaFile::file-selector-button:hover {
+  background: var(--accent-soft);
+}
+.alfaDifference {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--line-2);
 }

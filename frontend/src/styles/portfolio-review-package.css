@@ -36,7 +36,7 @@
 
 .portfolio-review-package__summary span {
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--t-sm);
 }
 
 .portfolio-review-package__summary span::before {
@@ -59,25 +59,25 @@
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
+  border-radius: var(--r);
   background: var(--surface-soft);
 }
 
 .portfolio-review-package__section > span {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: var(--text-sm);
+  font-size: var(--t-sm);
 }
 
 .portfolio-review-package__details {
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--t-sm);
 }
 
 .portfolio-review-package__details summary {
   width: fit-content;
   color: var(--accent);
-  font-weight: 650;
+  font-weight: var(--w-semibold);
   cursor: pointer;
 }
 

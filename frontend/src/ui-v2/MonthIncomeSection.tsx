@@ -367,7 +367,8 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
       {loadFailed ? (
         <div className={styles.warning} role="alert">
           <p>Не удалось загрузить данные: {formatApiError(loadError)}</p>
-          <button
+          <Button
+            variant="secondary"
             onClick={() => {
               void incomesQuery.refetch();
               void summaryQuery.refetch();
@@ -375,7 +376,7 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
             type="button"
           >
             Повторить загрузку
-          </button>
+          </Button>
         </div>
       ) : null}
       {!loading && !loadFailed ? (
@@ -530,9 +531,9 @@ export function MonthIncomeSection({ context }: { context: MonthEditorContext })
             Не удалось перечитать данные месяца: {recoveryError ?? "неизвестная ошибка"}. Сохранение
             заблокировано, чтобы не создать дубликат дохода.
           </p>
-          <button onClick={() => void retryRecovery()} type="button">
+          <Button variant="secondary" onClick={() => void retryRecovery()} type="button">
             Перечитать данные
-          </button>
+          </Button>
         </div>
       ) : null}
       {notice ? <p role="status">{context.workspace ? "Сохранено" : notice}</p> : null}

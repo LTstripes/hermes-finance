@@ -10,17 +10,14 @@
   gap: 12px;
   margin: 16px 0;
 }
-.summary .card {
-  background: #fff;
-}
-.summary .card:first-child {
-  border-color: #adc2d4;
-}
 .card {
-  border: 1px solid var(--border, #dce3ea);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   padding: 14px;
   min-width: 0;
+}
+.summary .card {
+  background: var(--surface);
 }
 .card h4 {
   margin: 0 0 10px;
@@ -33,22 +30,22 @@
 }
 .card dd {
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .value {
   overflow-wrap: anywhere;
-  font-size: 22px;
-  font-weight: 700;
+  font-size: var(--t-xl);
+  font-weight: var(--w-semibold);
   margin: 8px 0;
 }
 .note {
-  font-size: 13px;
+  font-size: var(--t-sm);
   color: var(--muted);
 }
 .estimate {
-  background: #fff7e8;
-  border: 1px solid #e2c48b;
-  border-radius: 12px;
+  background: var(--fc-soft);
+  border: 1px solid var(--fc);
+  border-radius: var(--r);
   padding: 14px;
   margin: 16px 0;
 }
@@ -63,45 +60,33 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
-.table caption {
+.table caption,
+.bonds caption {
   text-align: left;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   margin-bottom: 10px;
 }
 .table th,
 .table td {
   padding: 10px;
-  border-bottom: 1px solid #e8ecf0;
+  border-bottom: 1px solid var(--line-2);
   vertical-align: top;
   text-align: left;
   min-width: 110px;
-}
-.table button {
-  text-align: left;
-  padding: 7px 9px;
-  border: 1px solid #bbccdc;
-  border-radius: 7px;
-  background: #fff;
-  color: #123c63;
-  cursor: pointer;
-}
-.table button[aria-pressed="true"] {
-  background: #eaf3fc;
-  border-color: #3b75ab;
 }
 .table td:last-child {
   min-width: 210px;
 }
 .reasons {
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 .reasons code,
 .references code {
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 .references {
   padding-left: 18px;
@@ -113,7 +98,46 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 700px) {
-  .grid {
+  .grid,
+  .summary {
     grid-template-columns: 1fr;
   }
+}
+
+.period {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 12px;
+}
+.bonds button {
+  white-space: normal;
+  text-align: start;
+}
+.bonds button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.bonds small {
+  display: block;
+  color: var(--muted);
+  font: var(--t-xs) / 1.4 var(--f-ui);
+  white-space: normal;
+}
+.disclosure {
+  padding-block: 12px;
+  border-top: 1px solid var(--line-2);
+}
+.disclosure summary {
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.bonds th,
+.bonds td {
+  padding: 10px 8px;
+}
+.bonds :global(.num) {
+  text-align: end;
 }

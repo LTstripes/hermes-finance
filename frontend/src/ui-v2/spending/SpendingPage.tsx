@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { spendingApi, type SpendingMonth } from "../../api/spending";
-import { Button, HelpTip, Table, Td } from "../../components/ui";
+import { Button, HelpTip, Select, Table, Td } from "../../components/ui";
 import { formatMonthKey, formatPercent, pluralRu } from "../../lib/format";
 import sheet from "../ReportSheet.module.css";
 import { UiV2Shell } from "../UiV2Shell";
@@ -45,10 +45,8 @@ function MonthFigures({ data }: { data: SpendingMonth }) {
   const location = useLocation();
   const note = comparison && spendingComparisonNote(data.has_manual, comparison.months);
   const split = [
-    exceptions.excluded_count ? `${exceptions.excluded_count} не входят в траты` : "",
-    exceptions.double_risk_count
-      ? `${exceptions.double_risk_count} может быть посчитана дважды`
-      : "",
+    exceptions.excluded_count ? `вне итога — ${exceptions.excluded_count}` : "",
+    exceptions.double_risk_count ? `с риском двойного учёта — ${exceptions.double_risk_count}` : "",
   ].filter(Boolean);
   return (
     <section className={sheet.section}>
@@ -58,7 +56,7 @@ function MonthFigures({ data }: { data: SpendingMonth }) {
             <Money value={data.total} empty="Недоступно" />
           </strong>
           <span className={sheet.figureLabel}>
-            Траты за {spendingMonthForm(month, "accusative")}
+            Расходы за {spendingMonthForm(month, "accusative")}
           </span>
         </div>
         {comparison && !data.partial ? (
@@ -71,7 +69,7 @@ function MonthFigures({ data }: { data: SpendingMonth }) {
                 Среднее за 3 мес{" "}
                 <HelpTip label="Период среднего">
                   {comparison.months.map((item) => formatMonthKey(item.month)).join(", ")}.
-                  Частичные месяцы в среднее не входят.
+                  Частичные месяцы в среднее не входят. {note}
                 </HelpTip>
               </span>
             </div>
@@ -92,94 +90,80 @@ function MonthFigures({ data }: { data: SpendingMonth }) {
           </p>
         )}
       </div>
-      {note && !data.partial && <p className={sheet.gapNote}>{note}</p>}
-      {sources.some((source) => isNonzero(data.by_source[source])) && (
-        <p className={`${sheet.figureDetail} ${styles.sources}`}>
-          {sources
-            .filter((source) => isNonzero(data.by_source[source]))
-            .map((source, index) => {
-              const params = new URLSearchParams(location.search);
-              params.set("month", month);
-              params.set("source", source);
-              return (
-                <span key={source}>
-                  {index > 0 && <span aria-hidden="true">· </span>}
-                  <Link to={{ search: params.toString(), hash: "#spending-operations" }}>
-                    {sourceLabels[source]} <Money value={data.by_source[source]} />
-                  </Link>
-                </span>
-              );
-            })}
-        </p>
-      )}
-      {data.partial && (
-        <p className={sheet.gapNote}>
-          Выписка покрывает не весь месяц. Загрузите выписку за остальные дни — уже загруженные
-          операции не пропадут.
-        </p>
-      )}
-      {data.has_statement && !data.has_manual && (
-        <p className={sheet.gapNote}>
-          {data.partial
-            ? "Ручной файл не загружен"
-            : "Ручной файл не загружен: наличные и Сбер не учтены."}
-        </p>
-      )}
-      {!data.has_statement && data.has_manual && (
-        <p className={sheet.gapNote}>
-          Выписка Альфы не загружена: в итоге только то, что вы записали сами.
-        </p>
-      )}
-      {data.has_statement &&
-        data.total &&
-        !isNonzero(data.total) &&
-        !sources.some((source) => isNonzero(data.by_source[source])) && (
-          <p className={sheet.gapNote}>
-            В выписке нет покупок: все операции — переводы или технические.
-          </p>
+      <div className={`${sheet.figureDetail} ${styles.sources}`}>
+        <span className={styles.status}>
+          <span
+            className={sheet.chip}
+            data-coverage={
+              data.partial ? "partial" : data.has_manual && data.has_statement ? "both" : "single"
+            }
+          >
+            {coverageLabel(data)}
+          </span>
+          <HelpTip label="Что входит в итог">
+            {data.partial &&
+              "Выписка покрывает часть месяца. Можно загрузить выписку за остальные дни. "}
+            {data.has_manual
+              ? "Ручной файл учитывает те расходы, которые вы записали сами. "
+              : "Ручной файл не загружен. Отдельно записанные наличные покупки и покупки по карте Сбера сюда не попали. "}
+            {!data.has_statement && "Выписка Альфы не загружена. "}
+            {data.has_statement &&
+              data.total &&
+              !isNonzero(data.total) &&
+              !sources.some((source) => isNonzero(data.by_source[source])) &&
+              "В выписке нет покупок: все операции — переводы или технические. "}
+          </HelpTip>
+        </span>
+        {sources
+          .filter((source) => isNonzero(data.by_source[source]))
+          .map((source, index) => {
+            const params = new URLSearchParams(location.search);
+            params.set("month", month);
+            params.set("source", source);
+            return (
+              <span key={source}>
+                {index > 0 && <span aria-hidden="true">· </span>}
+                <Link to={{ search: params.toString(), hash: "#spending-operations" }}>
+                  {sourceLabels[source]} <Money value={data.by_source[source]} />
+                </Link>
+              </span>
+            );
+          })}
+        {isNonzero(data.processing_total) && (
+          <span>
+            В обработке <Money value={data.processing_total} />{" "}
+            <HelpTip label="Покупки в обработке">
+              Эти покупки уже входят в итог. После проводки сумма может измениться.
+            </HelpTip>
+          </span>
         )}
-      {data.has_manual && (
-        <p className={sheet.gapNote}>
-          Ручной файл — это крупные траты, которые вы записали сами. Мелкие наличные сюда не
-          попадают.
-        </p>
-      )}
-      {isNonzero(data.processing_total) && (
-        <p className={sheet.muted}>
-          Из них в обработке: <Money value={data.processing_total} />{" "}
-          <HelpTip label="Покупки в обработке">
-            Банк ещё не провёл эти покупки. Они уже входят в итог; после проводки сумма может
-            немного измениться.
-          </HelpTip>
-        </p>
-      )}
-      {cash.withdrawn && (
-        <p className={sheet.muted}>
-          Снято наличными <Money value={cash.withdrawn} /> · записано наличных трат{" "}
-          <Money value={cash.recorded} />{" "}
-          <HelpTip label="Наличные">
-            Снятие наличных — не трата. Наличные траты берутся только из ручного файла; в него вы
-            записываете крупные покупки, поэтому разница — это мелкие траты и деньги в кошельке.
-          </HelpTip>
-        </p>
-      )}
-      {data.entry_links.slice(0, 3).map((link) => (
-        <p className={sheet.muted} key={link.expense_entry_id}>
-          Связано с записями месяца: {link.entry_category} — в месяце{" "}
-          <Money value={link.month_amount} />, в выписке <Money value={link.diary_amount} />
-        </p>
-      ))}
-      {data.entry_links.length > 3 && (
-        <p className={sheet.muted}>и ещё {data.entry_links.length - 3}</p>
-      )}
+        {cash.withdrawn && (
+          <span>
+            Снято наличными <Money value={cash.withdrawn} />{" "}
+            <HelpTip label="Наличные">
+              Снятие денег не входит в расходы. В ручном файле записано наличных покупок на{" "}
+              <Money value={cash.recorded} />.
+            </HelpTip>
+          </span>
+        )}
+        {data.entry_links.length > 0 && (
+          <span>
+            Связи с отчётом · {data.entry_links.length}{" "}
+            <HelpTip label="Связи с записями месяца">
+              {data.entry_links.map((link) => (
+                <span className={styles.linkFact} key={link.expense_entry_id}>
+                  {link.entry_category} · в отчёте <Money value={link.month_amount} />, в выписке{" "}
+                  <Money value={link.diary_amount} />
+                </span>
+              ))}
+            </HelpTip>
+          </span>
+        )}
+      </div>
       {exceptions.count > 0 && (
-        <div className={styles.actions}>
+        <div className={`${styles.actions} ${styles.warning}`}>
           <p>
-            <span className={styles.warningIcon} aria-hidden="true">
-              ⚠{" "}
-            </span>
-            {exceptions.count} {pluralRu(exceptions.count, operationForms)}{" "}
-            {exceptions.count === 1 ? "ждёт" : "ждут"} решения
+            На проверке {exceptions.count} {pluralRu(exceptions.count, operationForms)}
             {split.length ? `: ${split.join(", ")}` : ""}.
           </p>
           <Link className="btn btn--secondary" to={importPath(month, true)}>
@@ -215,7 +199,10 @@ function CategoryDetail({
       )}
       <Operations month={month} category={category} inline />
       {category > 0 && (
-        <Link className={styles.sectionLink} to={`${spendingPath}/rules#category-${category}`}>
+        <Link
+          className={styles.sectionLink}
+          to={`${spendingPath}/rules?month=${month}#category-${category}`}
+        >
           Изменить категорию
         </Link>
       )}
@@ -402,7 +389,11 @@ export default function SpendingPage() {
     } | null
   )?.spending;
   const operationsLocation =
-    !busy && result && result.month === month && location.hash === "#spending-operations"
+    !busy &&
+    !history.isLoading &&
+    result &&
+    result.month === month &&
+    location.hash === "#spending-operations"
       ? location.key
       : null;
   useEffect(() => {
@@ -413,13 +404,15 @@ export default function SpendingPage() {
   return (
     <UiV2Shell
       busy={busy}
+      showRefresh={false}
       header={
         <div className={`${styles.actions} ${styles.screenHeader}`}>
           <h1>Расходы</h1>
           {month && !invalid && (
             <>
-              <div className={styles.actions}>
+              <fieldset className={styles.monthControl} aria-label="Выбор месяца">
                 <Button
+                  variant="ghost"
                   aria-label="Предыдущий месяц"
                   disabled={month <= "1000-01"}
                   onClick={() => selectMonth(shiftMonth(month, -1))}
@@ -428,13 +421,14 @@ export default function SpendingPage() {
                 </Button>
                 <MonthSelect month={month} onChange={selectMonth} />
                 <Button
+                  variant="ghost"
                   aria-label="Следующий месяц"
                   disabled={month >= currentMonth()}
                   onClick={() => selectMonth(shiftMonth(month, 1))}
                 >
                   ›
                 </Button>
-              </div>
+              </fieldset>
               <UploadLink month={month} />
             </>
           )}
@@ -442,7 +436,7 @@ export default function SpendingPage() {
       }
     >
       <div className={sheet.sheet}>
-        <ExpenseTabs />
+        <ExpenseTabs month={invalid ? undefined : month} />
         {invalid ? (
           <>
             <UiV2WidgetState title="Такого месяца нет" />
@@ -452,32 +446,15 @@ export default function SpendingPage() {
           </>
         ) : latest.isError || data.isError ? (
           <UiV2Notice
-            title="Траты временно недоступны"
+            title="Расходы временно недоступны"
             retry={() => void (latest.isError ? latest.refetch() : data.refetch())}
           >
             Не удалось получить данные. Загруженные выписки не потеряны.
           </UiV2Notice>
         ) : busy || !result || !month ? (
-          <UiV2Skeleton label="Загружаем траты" />
+          <UiV2Skeleton label="Загружаем расходы" />
         ) : (
           <>
-            <div className={styles.status}>
-              {result.loaded && (
-                <span
-                  className={sheet.chip}
-                  data-coverage={
-                    result.partial
-                      ? "partial"
-                      : result.has_manual && result.has_statement
-                        ? "both"
-                        : "single"
-                  }
-                >
-                  {coverageLabel(result)}
-                </span>
-              )}
-              <Link to={`${spendingPath}/rules?month=${month}`}>Категории и правила</Link>
-            </div>
             {status?.month === month && isQueryReady(data) && (
               <p role="status">
                 {monthName} обновлён: +{status.added} операции, изменено {status.changed}, удалено{" "}
@@ -485,54 +462,13 @@ export default function SpendingPage() {
               </p>
             )}
             {result.loaded ? (
-              <>
-                <MonthFigures data={result} />
-                <Section title="Операции" eyebrow={monthName} id="spending-operations">
-                  <div className={styles.filters}>
-                    <label className={sheet.select}>
-                      Категория{" "}
-                      <select
-                        value={category ?? ""}
-                        onChange={(event) => update({ category: event.target.value || null })}
-                      >
-                        <option value="">Все</option>
-                        {result.categories.map((item) => (
-                          <option value={item.id} key={item.id}>
-                            {item.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className={sheet.select}>
-                      Источник{" "}
-                      <select
-                        value={source ?? ""}
-                        onChange={(event) => update({ source: event.target.value || null })}
-                      >
-                        <option value="">Все</option>
-                        {sources.map((item) => (
-                          <option value={item} key={item}>
-                            {sourceLabels[item]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <Operations
-                    key={`${month}:${category}:${source}`}
-                    month={month}
-                    category={category}
-                    source={source}
-                  />
-                </Section>
-              </>
+              <MonthFigures data={result} />
             ) : (
               <>
                 <UiV2Notice title={`${monthName}: файлы расходов не загружены`}>
                   Загрузите выписку Альфа-Банка в CSV и ручной файл Markdown, если вели его.
                 </UiV2Notice>
                 <div className={styles.actions}>
-                  <UploadLink month={month} />
                   <TemplateButton month={month} />
                 </div>
                 <Section
@@ -547,7 +483,7 @@ export default function SpendingPage() {
             {(last?.loaded || result.loaded) && (
               <>
                 <Section
-                  title="Траты по месяцам"
+                  title="Расходы по месяцам"
                   eyebrow="История"
                   actions={
                     <div className={sheet.segmented}>
@@ -571,7 +507,7 @@ export default function SpendingPage() {
                       selectMonth={selectMonth}
                     />
                   ) : (
-                    <UiV2Loading label="Загружаем историю трат" />
+                    <UiV2Loading label="Загружаем историю расходов" />
                   )}
                 </Section>
                 {result.loaded && (
@@ -601,10 +537,50 @@ export default function SpendingPage() {
                           </Table>
                         </Section>
                       )}
-                      <Section title="Как набегали траты" eyebrow={monthName}>
+                      <Section title="Расходы по дням" eyebrow={monthName}>
                         <DailyChart month={month} daily={result.daily} />
                       </Section>
                     </div>
+                    <Section title="Операции" eyebrow={monthName} id="spending-operations">
+                      <div className={styles.filters}>
+                        <label className={sheet.select} htmlFor="spending-category-filter">
+                          Категория{" "}
+                          <Select
+                            id="spending-category-filter"
+                            value={category ?? ""}
+                            onChange={(event) => update({ category: event.target.value || null })}
+                          >
+                            <option value="">Все</option>
+                            {result.categories.map((item) => (
+                              <option value={item.id} key={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </label>
+                        <label className={sheet.select} htmlFor="spending-source-filter">
+                          Источник{" "}
+                          <Select
+                            id="spending-source-filter"
+                            value={source ?? ""}
+                            onChange={(event) => update({ source: event.target.value || null })}
+                          >
+                            <option value="">Все</option>
+                            {sources.map((item) => (
+                              <option value={item} key={item}>
+                                {sourceLabels[item]}
+                              </option>
+                            ))}
+                          </Select>
+                        </label>
+                      </div>
+                      <Operations
+                        key={`${month}:${category}:${source}`}
+                        month={month}
+                        category={category}
+                        source={source}
+                      />
+                    </Section>
                   </>
                 )}
               </>

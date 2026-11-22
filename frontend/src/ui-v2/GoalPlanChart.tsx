@@ -17,7 +17,7 @@ import { rubleAxisTick } from "./rubleAxis";
 import { moneyWholeText } from "./valueFormat";
 
 const stamp = (date: string) => Date.parse(`${date}T00:00:00Z`);
-const tick = { fill: "var(--muted)", fontSize: 11 };
+const tick = { fill: "var(--muted)", fontSize: "var(--t-xs)" };
 
 /** Numbers are chart coordinates only; amount labels keep the exact API strings. */
 export function GoalPlanChart({ plan, goal }: { plan: GoalPlanWithBase; goal: Goal }) {
@@ -41,7 +41,7 @@ export function GoalPlanChart({ plan, goal }: { plan: GoalPlanWithBase; goal: Go
   const dates = [start.time, start.time + (domainEnd - start.time) / 2, domainEnd];
   return (
     <figure className="goal-plan-chart" aria-label="Условная помесячная траектория капитала">
-      <figcaption className="goal-plan-chart-values">
+      <figcaption className="goal-plan-chart-values num">
         <span>
           Старт · {formatDate(start.date)}
           <strong>{moneyWholeText(rub(start.capital))}</strong>
@@ -59,7 +59,7 @@ export function GoalPlanChart({ plan, goal }: { plan: GoalPlanWithBase; goal: Go
               <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="var(--line-soft)" vertical={false} />
+          <CartesianGrid stroke="var(--line-2)" vertical={false} />
           <XAxis
             dataKey="time"
             type="number"
@@ -139,7 +139,12 @@ export function GoalPlanChart({ plan, goal }: { plan: GoalPlanWithBase; goal: Go
               fill="var(--pos)"
               stroke="var(--surface)"
               strokeWidth={2}
-              label={{ value: "Достигнете", position: "top", fill: "var(--pos)", fontSize: 11 }}
+              label={{
+                value: "Достигнете",
+                position: "top",
+                fill: "var(--pos)",
+                fontSize: "var(--t-xs)",
+              }}
             />
           ) : null}
         </AreaChart>

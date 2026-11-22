@@ -1,13 +1,13 @@
 .panel {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #dbe2ea;
+  border-top: 1px solid var(--line);
   min-width: 0;
   overflow-wrap: anywhere;
 }
 .choices {
-  border: 1px solid #dbe2ea;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   margin: 16px 0;
   padding: 12px;
   min-width: 0;
@@ -26,12 +26,12 @@
 .choice small {
   display: block;
   margin-top: 4px;
-  color: #475569;
+  color: var(--ink-2);
   line-height: 1.5;
 }
 .value {
-  font-weight: 650;
-  font-size: 20px;
+  font-weight: var(--w-semibold);
+  font-size: var(--t-lg);
   font-variant-numeric: tabular-nums;
 }
 .panel button {
@@ -39,6 +39,6 @@
   cursor: pointer;
 }
 .panel :focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--focus);
   outline-offset: 3px;
 }

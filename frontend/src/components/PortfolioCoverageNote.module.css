@@ -4,10 +4,10 @@
   margin-inline-start: 0.4em;
   padding: 0.12em 0.45em;
   border: 1px solid currentColor;
-  border-radius: 0.45em;
-  color: var(--color-text-muted, #725b32);
-  font-size: max(0.72em, 0.75rem);
-  font-weight: 500;
+  border-radius: var(--r-sm);
+  color: var(--fc-ink);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
   line-height: 1.35;
   overflow-wrap: anywhere;
   text-align: start;

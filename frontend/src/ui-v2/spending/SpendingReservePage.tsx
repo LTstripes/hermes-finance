@@ -1,5 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import type { MoneyValue } from "../../api/types";
+import { MonthMoneyInput } from "../MonthMoneyInput";
 import type { Purchase } from "../../api/spendingPayments";
 import { PaymentRuleDialog } from "./PaymentRuleDialog";
 import { formatApiError } from "../../api/client";
@@ -9,18 +11,29 @@ import {
   type ReservePlan,
   type ReserveView,
 } from "../../api/spendingReserve";
-import { Button, Table, Td, Th } from "../../components/ui";
-import { formatMonthKey } from "../../lib/format";
+import { Badge, Button, Field, Input, Table, Td, Th } from "../../components/ui";
+import { formatMonthKey, pluralRu } from "../../lib/format";
 import { MonthNavigationGuard } from "../MonthNavigationGuard";
 import { UiV2Shell } from "../UiV2Shell";
 import { UiV2Loading, UiV2WidgetState } from "../UiV2StateBlocks";
 import sheet from "../ReportSheet.module.css";
-import { Money, Section, shortDate } from "./common";
+import { Money, Section, shortDate, isNonzero } from "./common";
 import { ExpenseTabs } from "./ExpenseTabs";
-import styles from "./Spending.module.css";
+import styles from "./Reserve.module.css";
 
 const queryKey = ["spending", "reserve"];
-const currencyPattern = "[0-9]{1,14}([.,][0-9]{1,2})?";
+const currencyPattern = /^[0-9]{1,14}([.,][0-9]{1,2})?$/;
+
+function ShareBar({ value, max }: { value: MoneyValue | null; max: number }) {
+  if (!value || !(max > 0)) return null;
+  return (
+    <span className={styles.share} aria-hidden="true">
+      <span
+        style={{ width: `${Math.min(100, Math.max(0, (Number(value.amount) / max) * 100))}%` }}
+      />
+    </span>
+  );
+}
 function ReserveSettings({ data }: { data: ReserveView }) {
   const client = useQueryClient();
   const [draft, setDraft] = useState<{ revision: number; plan: ReservePlan } | null>(null);
@@ -37,6 +50,15 @@ function ReserveSettings({ data }: { data: ReserveView }) {
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!draft || pending) return;
+    if (
+      [
+        ...plan.sources.map((row) => row.portion),
+        ...plan.categories.map((row) => row.estimate),
+      ].some((value) => value !== null && !currencyPattern.test(value))
+    ) {
+      setError("Проверьте суммы. Допустимы до 14 цифр и до двух знаков после запятой.");
+      return;
+    }
     setPending(true);
     setError("");
     setNotice("");
@@ -77,25 +99,27 @@ function ReserveSettings({ data }: { data: ReserveView }) {
       <form onSubmit={save}>
         <fieldset disabled={pending} className={styles.reserveFields}>
           <legend>Период цели</legend>
-          <label>
-            С{" "}
-            <input
-              type="date"
-              required
-              value={plan.start}
-              onChange={(e) => change({ start: e.target.value })}
-            />
-          </label>
-          <label>
-            До{" "}
-            <input
-              type="date"
-              required
-              min={plan.start}
-              value={plan.end}
-              onChange={(e) => change({ end: e.target.value })}
-            />
-          </label>
+          <div className={styles.dates}>
+            <Field label="С" htmlFor="reserve-start">
+              <Input
+                id="reserve-start"
+                type="date"
+                required
+                value={plan.start}
+                onChange={(e) => change({ start: e.target.value })}
+              />
+            </Field>
+            <Field label="До" htmlFor="reserve-end">
+              <Input
+                id="reserve-end"
+                type="date"
+                required
+                min={plan.start}
+                value={plan.end}
+                onChange={(e) => change({ end: e.target.value })}
+              />
+            </Field>
+          </div>
         </fieldset>
         <fieldset disabled={pending} className={styles.reserveFields}>
           <legend>Деньги в резерве</legend>
@@ -111,8 +135,9 @@ function ReserveSettings({ data }: { data: ReserveView }) {
             const sel = plan.sources.find((s) => s.key === row.key);
             return (
               <div key={row.key} className={styles.reserveLine}>
-                <label>
+                <label className={styles.choice}>
                   <input
+                    className={styles.check}
                     type="checkbox"
                     checked={!!sel}
                     onChange={(e) =>
@@ -123,30 +148,31 @@ function ReserveSettings({ data }: { data: ReserveView }) {
                       })
                     }
                   />{" "}
-                  {row.label} · {row.kind === "savings" ? "накопления" : "деньги"} ·{" "}
-                  <Money value={row.balance} empty="остаток неизвестен" />
+                  <span>
+                    {row.label} <small>· {row.kind === "savings" ? "накопления" : "деньги"}</small>
+                  </span>
                 </label>
+                <span className={`num ${styles.balance}`}>
+                  <Money value={row.balance} empty="остаток неизвестен" />
+                </span>
                 {sel && (
-                  <label>
-                    Часть остатка, ₽{" "}
-                    <input
+                  <Field htmlFor={`portion-${row.key}`} label="Часть остатка">
+                    <MonthMoneyInput
+                      id={`portion-${row.key}`}
                       aria-label={`Часть остатка · ${row.label}`}
-                      type="text"
-                      inputMode="decimal"
-                      pattern={currencyPattern}
                       placeholder="Весь остаток"
                       value={sel.portion ?? ""}
-                      onChange={(e) =>
+                      onChange={(value) =>
                         change({
                           sources: plan.sources.map((s) =>
                             s.key === row.key
-                              ? { ...s, portion: e.target.value.replace(",", ".") || null }
+                              ? { ...s, portion: value.replace(",", ".") || null }
                               : s,
                           ),
                         })
                       }
                     />
-                  </label>
+                  </Field>
                 )}
               </div>
             );
@@ -163,8 +189,9 @@ function ReserveSettings({ data }: { data: ReserveView }) {
             const sel = plan.categories.find((c) => c.id === row.id);
             return (
               <div key={row.id} className={styles.reserveLine}>
-                <label>
+                <label className={styles.choice}>
                   <input
+                    className={styles.check}
                     type="checkbox"
                     checked={!!sel}
                     onChange={(e) =>
@@ -178,26 +205,23 @@ function ReserveSettings({ data }: { data: ReserveView }) {
                   {row.name}
                 </label>
                 {sel && (
-                  <label>
-                    Оценка в месяц, ₽{" "}
-                    <input
+                  <Field htmlFor={`estimate-${row.id}`} label="Оценка в месяц">
+                    <MonthMoneyInput
+                      id={`estimate-${row.id}`}
                       aria-label={`Оценка · ${row.name}`}
-                      type="text"
-                      inputMode="decimal"
-                      pattern={currencyPattern}
                       placeholder="По истории"
                       value={sel.estimate ?? ""}
-                      onChange={(e) =>
+                      onChange={(value) =>
                         change({
                           categories: plan.categories.map((c) =>
                             c.id === row.id
-                              ? { ...c, estimate: e.target.value.replace(",", ".") || null }
+                              ? { ...c, estimate: value.replace(",", ".") || null }
                               : c,
                           ),
                         })
                       }
                     />
-                  </label>
+                  </Field>
                 )}
               </div>
             );
@@ -205,11 +229,17 @@ function ReserveSettings({ data }: { data: ReserveView }) {
           {plan.categories.some((c) => c.estimate === null) && (
             <>
               <div className={styles.actions}>
-                <label>
-                  Месяц для среднего{" "}
-                  <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-                </label>
-                <button
+                <Field label="Месяц для среднего" htmlFor="reserve-month">
+                  <Input
+                    id="reserve-month"
+                    type="month"
+                    value={month}
+                    onChange={(e) => setMonth(e.target.value)}
+                  />
+                </Field>
+                <Button
+                  variant="secondary"
+                  size="sm"
                   type="button"
                   disabled={!month || plan.months.includes(month) || plan.months.length >= 12}
                   onClick={() => {
@@ -217,30 +247,34 @@ function ReserveSettings({ data }: { data: ReserveView }) {
                     setMonth("");
                   }}
                 >
-                  Добавить месяц
-                </button>
+                  Добавить
+                </Button>
               </div>
               <div className={styles.actions}>
                 {plan.months.map((m) => (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={styles.monthChip}
                     type="button"
                     key={m}
                     aria-label={`Убрать ${formatMonthKey(m)}`}
                     onClick={() => change({ months: plan.months.filter((item) => item !== m) })}
                   >
                     {formatMonthKey(m)} ×
-                  </button>
+                  </Button>
                 ))}
               </div>
             </>
           )}
         </fieldset>
         <div className={styles.actions}>
-          <Button type="submit" disabled={!draft || pending}>
+          <Button variant="primary" type="submit" disabled={!draft || pending}>
             {pending ? "Сохранение…" : "Сохранить план"}
           </Button>
           {draft && (
             <Button
+              variant="ghost"
               type="button"
               disabled={pending}
               onClick={async () => {
@@ -261,26 +295,65 @@ function ReserveSettings({ data }: { data: ReserveView }) {
             </Button>
           )}
         </div>
-        {error && <p role="alert">{error}</p>}
-        {notice && <p role="status">{notice}</p>}
+        {error && (
+          <p className="inline-alert inline-alert--error" role="alert">
+            {error}
+          </p>
+        )}
+        {notice && (
+          <p className="inline-alert inline-alert--ok" role="status">
+            {notice}
+          </p>
+        )}
       </form>
     </Section>
   );
 }
 export default function SpendingReservePage() {
+  const [settingsChoice, setSettingsChoice] = useState<boolean | null>(null);
   const [candidate, setCandidate] = useState<(Purchase & { ruleId: number }) | null>(null);
   const query = useQuery({ queryKey, queryFn: ({ signal }) => getReserve(signal) });
   const data = query.data;
+  const settingsOpen = settingsChoice ?? !data?.plan.sources.length;
+  const targetAmount = Number(data?.target?.amount);
+  const calendarPeak = Math.max(
+    0,
+    ...(data?.calendar.map((month) => Number(month.total?.amount ?? 0)) ?? []),
+  );
   return (
-    <UiV2Shell active="spending" header={<h1>Подушка безопасности</h1>}>
+    <UiV2Shell
+      active="spending"
+      showRefresh={false}
+      header={
+        <div className={styles.header}>
+          <h1>Подушка безопасности</h1>
+          {data && !query.isError && (
+            <Button
+              aria-expanded={settingsOpen}
+              aria-controls="reserve-settings"
+              onClick={() => setSettingsChoice(!settingsOpen)}
+            >
+              {settingsOpen ? "Свернуть настройки" : "Настроить подушку"}
+            </Button>
+          )}
+        </div>
+      }
+    >
       <div className={sheet.sheet}>
-        <ExpenseTabs reserve />
+        <ExpenseTabs />
         {query.isError ? (
           <UiV2WidgetState retry={() => void query.refetch()} />
         ) : !data ? (
           <UiV2Loading label="Загружаем подушку" />
         ) : (
           <>
+            <div
+              id="reserve-settings"
+              hidden={!settingsOpen}
+              onChangeCapture={() => setSettingsChoice(true)}
+            >
+              <ReserveSettings data={data} />
+            </div>
             <section className={sheet.section}>
               <div className={sheet.figures}>
                 <div className={sheet.figure}>
@@ -306,39 +379,91 @@ export default function SpendingReservePage() {
               </div>
             </section>
             <Section title={`Цель до ${shortDate(data.plan.end, true)}`}>
-              <p>
-                Потребуется{" "}
-                <strong>
-                  <Money value={data.target} empty="недостаточно данных" />
-                </strong>{" "}
-                с {shortDate(data.plan.start, true)}.
-              </p>
-              {data.difference && (
-                <p>
-                  {data.difference.amount.startsWith("-")
-                    ? "Осталось накопить"
-                    : "Запас сверх цели"}{" "}
-                  <strong>
-                    <Money
-                      value={{
-                        ...data.difference,
-                        amount: data.difference.amount.replace(/^-/, ""),
+              <div className={styles.goal}>
+                <div className={styles.goalHead}>
+                  <span>
+                    Цель к дате{" "}
+                    <strong className="num">
+                      <Money value={data.target} empty="недостаточно данных" />
+                    </strong>
+                  </span>
+                  {data.difference && (
+                    <span
+                      className={sheet.delta}
+                      data-tone={data.difference.amount.startsWith("-") ? "neutral" : "positive"}
+                    >
+                      {data.difference.amount.startsWith("-")
+                        ? "Осталось накопить"
+                        : !isNonzero(data.difference)
+                          ? "Цель достигнута"
+                          : "Запас сверх цели"}{" "}
+                      {isNonzero(data.difference) && (
+                        <strong className="num">
+                          <Money
+                            value={{
+                              ...data.difference,
+                              amount: data.difference.amount.replace(/^-/, ""),
+                            }}
+                          />
+                        </strong>
+                      )}
+                    </span>
+                  )}
+                </div>
+                {data.reserve && targetAmount > 0 && (
+                  <progress
+                    className={styles.goalBar}
+                    max={targetAmount}
+                    value={Math.min(targetAmount, Math.max(0, Number(data.reserve.amount)))}
+                    aria-label="Доступный резерв относительно цели"
+                  />
+                )}
+                <div className={styles.meta}>
+                  <span>
+                    {shortDate(data.plan.start, true)} — {shortDate(data.plan.end, true)}
+                  </span>
+                  <span>
+                    {data.plan.sources.length}{" "}
+                    {pluralRu(data.plan.sources.length, ["счёт", "счёта", "счетов"])}
+                  </span>
+                  <span>
+                    {data.plan.categories.length}{" "}
+                    {pluralRu(data.plan.categories.length, ["категория", "категории", "категорий"])}
+                  </span>
+                  {!settingsOpen && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-controls="reserve-settings"
+                      onClick={() => {
+                        setSettingsChoice(true);
+                        requestAnimationFrame(() =>
+                          document.getElementById("reserve-start")?.focus(),
+                        );
                       }}
-                    />
-                  </strong>
-                </p>
-              )}
+                    >
+                      Изменить состав
+                    </Button>
+                  )}
+                </div>
+              </div>
               {data.payment_candidates.map((c) => (
                 <div
-                  className={styles.actions}
+                  className={styles.candidate}
                   key={`${c.month}:${c.source}:${c.operation_id}:${c.rule_id}`}
                 >
                   <p>
-                    {formatMonthKey(c.month)} · {c.category}: «{c.title}»,{" "}
-                    <Money value={c.amount} /> за {shortDate(c.date, true)}. Проверьте совпадение с
-                    графиком или укажите переменную часть вручную.
+                    <strong>{c.title}</strong> ·{" "}
+                    <span className="num">
+                      <Money value={c.amount} />
+                    </span>
+                    <br />
+                    {shortDate(c.date, true)} · {c.category} · Возможная оплата по графику
                   </p>
                   <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-label={`Проверить покупку «${c.title}»`}
                     type="button"
                     onClick={() =>
                       setCandidate({
@@ -349,7 +474,7 @@ export default function SpendingReservePage() {
                       })
                     }
                   >
-                    Открыть покупку «{c.title}»
+                    Проверить
                   </Button>
                 </div>
               ))}
@@ -361,60 +486,75 @@ export default function SpendingReservePage() {
                   onClose={() => setCandidate(null)}
                 />
               )}
-              {data.gaps.map((gap) => (
-                <p key={gap} className={sheet.gapNote}>
-                  {gap}
-                </p>
-              ))}
+              {data.gaps.length > 0 && (
+                <div className={styles.gaps}>
+                  {Array.from(new Set(data.gaps)).map((gap) => (
+                    <div key={gap}>{gap}</div>
+                  ))}
+                </div>
+              )}
             </Section>
-            {(data.basis.length > 0 || data.rules.length > 0) && (
+            {(data.basis.length > 0 ||
+              data.rules.length > 0 ||
+              data.history_coverage.length > 0) && (
               <Section title="Из чего складывается обязательный месяц">
-                <Table>
-                  <thead>
-                    <tr>
-                      <Th>Статья</Th>
-                      <Th>Основание расчёта</Th>
-                      <Th numeric>В месяц</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.rules.map((rule) => (
-                      <tr key={`rule-${rule.id}`}>
-                        <Td>
-                          {rule.title}
-                          {rule.needs_review ? " · проверить" : ""}
-                        </Td>
-                        <Td>
-                          <Money value={rule.amount} empty="Сумма неизвестна" />{" "}
-                          {rule.period_months
-                            ? `раз в ${rule.period_months} мес.`
-                            : "· период неизвестен"}
-                          <br />
-                          <small className={sheet.muted}>
-                            Следующая оплата ·{" "}
-                            {rule.next_due ? shortDate(rule.next_due, true) : "дата неизвестна"}
-                          </small>
-                        </Td>
-                        <Td numeric>
-                          <Money value={rule.monthly} />
-                        </Td>
+                {(data.basis.length > 0 || data.rules.length > 0) && (
+                  <Table>
+                    <thead>
+                      <tr>
+                        <Th>Статья</Th>
+                        <Th>Основание расчёта</Th>
+                        <Th numeric>В месяц</Th>
                       </tr>
-                    ))}
-                    {data.basis.map((row) => (
-                      <tr key={`category-${row.id}`}>
-                        <Td>{row.name}</Td>
-                        <Td>
-                          {row.method === "estimate"
-                            ? "Ваша оценка переменных расходов"
-                            : `Переменные расходы · среднее за ${data.plan.months.map((m) => formatMonthKey(m)).join(", ")}`}
-                        </Td>
-                        <Td numeric>
-                          <Money value={row.amount} />
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
+                    </thead>
+                    <tbody>
+                      {data.rules.map((rule) => (
+                        <tr key={`rule-${rule.id}`}>
+                          <Td>
+                            {rule.title}
+                            {rule.needs_review && (
+                              <>
+                                {" "}
+                                <Badge tone="draft">Проверить</Badge>
+                              </>
+                            )}
+                          </Td>
+                          <Td>
+                            <Money value={rule.amount} empty="Сумма неизвестна" />{" "}
+                            {rule.period_months
+                              ? `раз в ${rule.period_months} мес.`
+                              : "· период неизвестен"}
+                            <br />
+                            <small className={sheet.muted}>
+                              Следующая оплата ·{" "}
+                              {rule.next_due ? shortDate(rule.next_due, true) : "дата неизвестна"}
+                            </small>
+                          </Td>
+                          <Td numeric>
+                            <Money value={rule.monthly} />
+                            <ShareBar value={rule.monthly} max={Number(data.monthly?.amount)} />
+                          </Td>
+                        </tr>
+                      ))}
+                      {data.basis.map((row) => (
+                        <tr key={`category-${row.id}`}>
+                          <Td>{row.name}</Td>
+                          <Td>
+                            {row.method === "estimate"
+                              ? "Ваша оценка переменных расходов"
+                              : data.plan.months.length
+                                ? `Переменные расходы · среднее за ${data.plan.months.map((m) => formatMonthKey(m)).join(", ")}`
+                                : "Месяцы для среднего не выбраны"}
+                          </Td>
+                          <Td numeric>
+                            <Money value={row.amount} />
+                            <ShareBar value={row.amount} max={Number(data.monthly?.amount)} />
+                          </Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                )}
                 {data.basis.some((c) => c.method === "history") && (
                   <p className={sheet.gapNote}>
                     Среднее исключает покупки с отдельным графиком и подтверждённые оплаты по нему.
@@ -422,26 +562,27 @@ export default function SpendingReservePage() {
                     укажите переменную часть вручную.
                   </p>
                 )}
+                {data.history_coverage.length > 0 && (
+                  <details className={styles.coverage}>
+                    <summary>Покрытие месяцев в среднем</summary>
+                    <ul>
+                      {data.history_coverage.map((m) => (
+                        <li key={m.month}>
+                          {formatMonthKey(m.month)} ·{" "}
+                          {m.full
+                            ? "по загруженным выпискам весь месяц"
+                            : "период выписок неполный"}{" "}
+                          · счетов Альфы {m.accounts} ·{" "}
+                          {m.manual ? "ручной файл загружен" : "ручного файла нет"}
+                          {!m.same_sources ? " · другой набор источников" : ""}
+                          {m.unresolved ? " · есть вопросы к операциям" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </Section>
             )}
-            {data.history_coverage.length > 0 && (
-              <details>
-                <summary>Покрытие месяцев в среднем</summary>
-                <ul>
-                  {data.history_coverage.map((m) => (
-                    <li key={m.month}>
-                      {formatMonthKey(m.month)} ·{" "}
-                      {m.full ? "по загруженным выпискам весь месяц" : "период выписок неполный"} ·
-                      счетов Альфы {m.accounts} ·{" "}
-                      {m.manual ? "ручной файл загружен" : "ручного файла нет"}
-                      {!m.same_sources ? " · другой набор источников" : ""}
-                      {m.unresolved ? " · есть вопросы к операциям" : ""}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
-            <ReserveSettings data={data} />
             <Section title="Календарь обязательных расходов">
               <p>
                 В неполном месяце переменная часть пропорциональна числу дней. Продления приходятся
@@ -465,14 +606,18 @@ export default function SpendingReservePage() {
                       </Td>
                       <Td>
                         {m.payments.map((p) => (
-                          <div key={`${p.date}-${p.rule_id}`}>
-                            {shortDate(p.date)} · {p.title} ·{" "}
-                            <Money value={p.amount} empty="сумма неизвестна" />
+                          <div className={styles.payment} key={`${p.date}-${p.rule_id}`}>
+                            <span className="num">{shortDate(p.date)}</span>
+                            <span>{p.title}</span>
+                            <strong className="num">
+                              <Money value={p.amount} empty="сумма неизвестна" />
+                            </strong>
                           </div>
                         ))}
                       </Td>
                       <Td numeric>
                         <Money value={m.total} />
+                        <ShareBar value={m.total} max={calendarPeak} />
                       </Td>
                     </tr>
                   ))}

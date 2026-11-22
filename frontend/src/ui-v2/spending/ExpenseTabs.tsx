@@ -1,22 +1,26 @@
-import { Link, useSearchParams } from "react-router";
-import { monthPath, spendingPath, validMonth } from "./common";
-import sheet from "../ReportSheet.module.css";
+import { useLocation, useSearchParams } from "react-router";
+import { UiV2Tabs } from "../UiV2Tabs";
+import { spendingPath, validMonth } from "./common";
 
-export function ExpenseTabs({ reserve = false }: { reserve?: boolean }) {
+export function ExpenseTabs({ month: selectedMonth }: { month?: string } = {}) {
+  const { pathname } = useLocation();
   const [params] = useSearchParams();
-  const month = params.get("month");
+  const month = selectedMonth ?? params.get("month");
   const query = month && validMonth(month) ? `?month=${month}` : "";
+  const sections = [
+    ["Обзор", spendingPath],
+    ["Подушка", `${spendingPath}/reserve`],
+    ["Категории и правила", `${spendingPath}/rules`],
+  ] as const;
   return (
-    <nav aria-label="Раздел расходов" className={sheet.segmented}>
-      <Link
-        aria-current={reserve ? undefined : "page"}
-        to={month && validMonth(month) ? monthPath(month) : spendingPath}
-      >
-        Операции
-      </Link>
-      <Link aria-current={reserve ? "page" : undefined} to={`${spendingPath}/reserve${query}`}>
-        Подушка
-      </Link>
-    </nav>
+    <UiV2Tabs
+      label="Раздел расходов"
+      inheritMonth={false}
+      tabs={sections.map(([label, path]) => ({
+        label,
+        to: `${path}${query}`,
+        active: pathname.replace(/\/$/, "") === path,
+      }))}
+    />
   );
 }

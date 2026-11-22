@@ -2,7 +2,7 @@
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
-  font-weight: 400;
+  font-weight: var(--w-regular);
 }
 .metrics {
   display: flex;
@@ -16,22 +16,22 @@
 }
 .metrics dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 .metrics dd {
   margin: 4px 0 0;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .list > tbody > tr > th > a,
 .list > tbody > tr > td:first-child > a {
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
 }
 .notice,
 .notes {
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
   line-height: 1.5;
 }
 .notes code {

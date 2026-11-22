@@ -322,7 +322,7 @@ test("Month reuses #949 detail, separates full/conditional/NULL and never starts
   await screen.findByRole("region", { name: `Инструмент ${ISIN}` });
   expect(
     within(
-      screen.getByRole("heading", { name: "Полный P&L, ₽" }).parentElement as HTMLElement,
+      screen.getByRole("heading", { name: "Полный результат, ₽" }).parentElement as HTMLElement,
     ).getByText("Недоступен"),
   ).toBeVisible();
   expect(screen.getByRole("region", { name: "Условная оценка по выписке" })).toHaveTextContent(
@@ -485,7 +485,7 @@ test.each(["account", "period"])(
     };
     fireEvent.click(screen.getByRole("button", { name: "Обновить чтение инструментов" }));
     await screen.findByRole("heading", { name: "Инструменты месяца не подтверждены" });
-    expect(screen.queryByRole("heading", { name: "Полный P&L, ₽" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Полный результат, ₽" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Запросить предварительные/ }),
     ).not.toBeInTheDocument();

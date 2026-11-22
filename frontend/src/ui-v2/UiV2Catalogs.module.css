@@ -10,21 +10,21 @@
   gap: 8px;
   padding: 6px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
 .catalogTab {
   min-height: 38px;
   padding: 8px 14px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--t-sm);
+  font-weight: var(--w-semibold);
 }
 
 .catalogTab:hover,
@@ -35,7 +35,7 @@
 
 .catalogTabActive {
   border-color: var(--accent);
-  background: #e8f0f9;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -43,8 +43,8 @@
   min-width: 0;
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
 .panelHeader {
@@ -56,14 +56,14 @@
 }
 
 .panelHeader h2 {
-  font-size: 1.15rem;
+  font-size: var(--t-lg);
 }
 
 .panelHeader p {
   max-width: 720px;
   margin-top: 5px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--t-sm);
   line-height: 1.5;
 }
 
@@ -78,7 +78,7 @@
 .toolbarNote {
   flex: 1 1 260px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .semanticNote {
@@ -86,11 +86,11 @@
   gap: 5px;
   margin-bottom: 14px;
   padding: 11px 13px;
-  border: 1px solid #dce5ed;
-  border-radius: 11px;
-  background: #f5f8fb;
-  color: #35506a;
-  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
   line-height: 1.45;
 }
 
@@ -113,20 +113,20 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
-  font-size: 0.95rem;
+  font-size: var(--t-md);
 }
 
 .groupTitle span {
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
 }
 
 .tableWrap {
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--r);
 }
 
 .table {
@@ -153,7 +153,7 @@
   background: var(--soft);
   color: var(--muted);
   font-size: var(--t-xs);
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   white-space: normal;
 }
 
@@ -196,9 +196,9 @@
 .empty {
   padding: 20px 12px;
   border: 1px dashed var(--line);
-  border-radius: 11px;
+  border-radius: var(--r);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--t-sm);
   text-align: center;
 }
 
@@ -208,7 +208,7 @@
   gap: 10px;
   margin-top: 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .brokerWrap {
@@ -218,11 +218,11 @@
 
 .brokerIntro {
   padding: 12px 14px;
-  border: 1px solid #eadfce;
-  border-radius: 11px;
-  background: #fffaf1;
-  color: #6f5425;
-  font-size: 12px;
+  border: 1px solid var(--fc);
+  border-radius: var(--r);
+  background: var(--fc-soft);
+  color: var(--fc-ink);
+  font-size: var(--t-xs);
   line-height: 1.5;
 }
 

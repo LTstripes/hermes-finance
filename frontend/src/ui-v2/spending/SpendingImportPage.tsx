@@ -426,7 +426,7 @@ function Upload({ month, changeMonth }: { month: string; changeMonth: (next: str
       {stale && (
         <>
           <UiV2Notice
-            title={`Траты ${spendingMonthForm(month, "genitive")} изменились, пока вы разбирали файл`}
+            title={`Расходы ${spendingMonthForm(month, "genitive")} изменились, пока вы разбирали файл`}
             alert
           >
             Проверьте файлы ещё раз.
@@ -538,7 +538,7 @@ function Upload({ month, changeMonth }: { month: string; changeMonth: (next: str
                 <p className={sheet.muted}>
                   {deferred}{" "}
                   {pluralRu(deferred, ["решение отложено", "решения отложены", "решений отложено"])}{" "}
-                  — их можно принять позже на экране „Траты“.
+                  — их можно принять позже на экране „Расходы“.
                 </p>
               )}
             </div>
@@ -560,7 +560,7 @@ export default function SpendingImportPage() {
       showRefresh={false}
       header={
         <div className={`${styles.actions} ${styles.screenHeader}`}>
-          <h1>Загрузка трат</h1>
+          <h1>Загрузка расходов</h1>
           <Link to={valid ? monthPath(month) : "/v2/spending"}>← К расходам</Link>
         </div>
       }

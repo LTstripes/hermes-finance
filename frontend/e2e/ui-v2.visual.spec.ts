@@ -169,7 +169,7 @@ test("ui-v2 total income Home row and link @viewport-owned", async ({ page }, te
   await page.goto("/v2");
   const row = page.getByTestId("total-income-home");
   await expect(row).toContainText("120 000 ₽");
-  await expect(row).toContainText("пассивка закрывает 16,7% дохода");
+  await expect(row).toContainText("Пассивный доход · 16,7%");
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1200 });
     await row.scrollIntoViewIfNeeded();
@@ -178,7 +178,7 @@ test("ui-v2 total income Home row and link @viewport-owned", async ({ page }, te
       true,
     );
   }
-  await row.getByRole("link", { name: "Весь доход →" }).click();
+  await row.getByRole("link", { name: "Доход и планы →" }).click();
   await expect(page).toHaveURL(/\/v2\/income$/);
   await expect(page.getByTestId("total-income-section")).toBeVisible();
   expect(evidence.reads.every((read) => read.startsWith("GET "))).toBe(true);

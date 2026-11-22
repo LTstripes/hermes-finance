@@ -1,4 +1,3 @@
-import { reasonCopy } from "../lib/reasonCopy";
 import { Link } from "react-router";
 import type {
   InstrumentAnalysis,
@@ -6,10 +5,18 @@ import type {
   InstrumentEvent,
   InstrumentMetric,
 } from "../api/sourceReturns";
+import { formatDate } from "../lib/format";
+import { reasonCopy } from "../lib/reasonCopy";
 import styles from "./UiV2BondSlice.module.css";
 
 type Money = number | string;
-const dateText = (value: string) => value.split("-").reverse().join(".");
+function tradeTime(value: string | null, day: string | null) {
+  if (!value) return formatDate(day, { empty: "Неизвестно" });
+  const dateAndTime = /^(\d{4}-\d{2}-\d{2})[T ](.+)$/.exec(value);
+  return dateAndTime
+    ? `${formatDate(dateAndTime[1])} ${dateAndTime[2]}`
+    : formatDate(value, { empty: value });
+}
 
 /** Display integer minor units exactly; reject already-unsafe legacy JSON numbers. */
 export function money(value: number | string | null): string {
@@ -84,20 +91,24 @@ function Endpoint({ title, value }: { title: string; value: InstrumentEndpoint<M
   return (
     <div className={styles.card}>
       <h4>
-        {title} · {value.date}
+        {title} · {formatDate(value.date)}
       </h4>
       <dl>
         <dt>Количество</dt>
-        <dd>{observed(value.quantity)}</dd>
+        <dd className="num">{observed(value.quantity)}</dd>
         <dt>Стоимость по выписке</dt>
-        <dd>{money(value.reported_value_kopecks)}</dd>
+        <dd className="num">{money(value.reported_value_kopecks)}</dd>
         <dt>НКД на границе</dt>
-        <dd>{money(value.accrued_interest_kopecks)}</dd>
+        <dd className="num">{money(value.accrued_interest_kopecks)}</dd>
         <dt>Состав оценки</dt>
         <dd>
-          {value.valuation_basis === "reported_unknown"
-            ? "Состав стоимости (clean/dirty) не подтверждён"
-            : value.valuation_basis}
+          {
+            {
+              reported_unknown: "Неизвестно, входит ли НКД в стоимость",
+              dirty: "Стоимость включает НКД",
+              clean_plus_nkd: "Стоимость без НКД и отдельно указанный НКД",
+            }[value.valuation_basis]
+          }
         </dd>
       </dl>
       <Reasons codes={value.reason_codes} />
@@ -115,7 +126,7 @@ function Metric(
   return (
     <div className={styles.card}>
       <h4>{title}</h4>
-      <p className={styles.value}>
+      <p className={`num ${styles.value}`}>
         {props.percent
           ? rate(props.metric.value)
           : props.metric.value === null
@@ -154,8 +165,8 @@ function Events({
             <th scope="col">Дата / состояние</th>
             {coupons ? (
               <>
-                <th scope="col">Зачислено (net)</th>
-                <th scope="col">Gross / налог</th>
+                <th scope="col">На руки</th>
+                <th scope="col">Начислено / налог</th>
                 <th scope="col">Сопоставление</th>
               </>
             ) : (
@@ -174,15 +185,15 @@ function Events({
             <tr key={event.event_key}>
               <td>
                 {coupons
-                  ? observed(event.event_date)
-                  : observed(event.trade_time ?? event.event_date)}
+                  ? formatDate(event.event_date, { empty: "Неизвестно" })
+                  : tradeTime(event.trade_time, event.event_date)}
                 {coupons && <p>{event.kind === "COUPON" ? "Купон" : "Дивиденд"}</p>}
                 {!coupons && (
                   <>
                     <br />
-                    Деньги: {observed(event.cash_settlement_date)}
+                    Деньги: {formatDate(event.cash_settlement_date, { empty: "Неизвестно" })}
                     <br />
-                    Бумаги: {observed(event.depository_settlement_date)}
+                    Бумаги: {formatDate(event.depository_settlement_date, { empty: "Неизвестно" })}
                   </>
                 )}
                 <p>
@@ -194,22 +205,29 @@ function Events({
               </td>
               {coupons ? (
                 <>
-                  <td>{money(event.net_payout_kopecks)}</td>
-                  <td>
+                  <td className="num">{money(event.net_payout_kopecks)}</td>
+                  <td className="num">
                     {money(event.gross_payout_kopecks)} / {money(event.withheld_tax_kopecks)}
                   </td>
                   <td>
                     {event.persisted_link_status === "linked" &&
                     event.current &&
-                    event.effective_isin === event.isin
-                      ? "Сохранённая связь с инструментом"
-                      : event.current &&
-                          event.effective_isin === event.isin &&
-                          ["xml_pdf_original_bound", "native_money_group_bridge"].includes(
-                            event.attribution_basis ?? "",
-                          )
-                        ? "Связь подтверждена исходными документами"
-                        : `Основание: ${event.attribution_basis ?? "неизвестно"}`}
+                    event.effective_isin === event.isin ? (
+                      "Сохранённая связь с инструментом"
+                    ) : event.current &&
+                      event.effective_isin === event.isin &&
+                      ["xml_pdf_original_bound", "native_money_group_bridge"].includes(
+                        event.attribution_basis ?? "",
+                      ) ? (
+                      "Связь подтверждена исходными документами"
+                    ) : event.attribution_basis ? (
+                      <details>
+                        <summary>Основание связи</summary>
+                        <code>{event.attribution_basis}</code>
+                      </details>
+                    ) : (
+                      "Основание связи неизвестно"
+                    )}
                     <br />
                     Классификация:{" "}
                     {event.classification_status === "confirmed"
@@ -227,7 +245,7 @@ function Events({
                     {observed(event.quantity_delta)}
                   </td>
                   <td>
-                    <span>{observed(event.unit_price)}</span>
+                    <span className="num">{observed(event.unit_price)}</span>
                     <br />
                     {event.price_unit === "PERCENT_OF_FACE"
                       ? "% от номинала"
@@ -236,7 +254,7 @@ function Events({
                         : "Единица не подтверждена"}
                   </td>
                   <td>
-                    {money(event.native_trade_amount_kopecks)}
+                    <span className="num">{money(event.native_trade_amount_kopecks)}</span>
                     <br />
                     <small>
                       Состав:{" "}
@@ -248,11 +266,13 @@ function Events({
                     </small>
                   </td>
                   <td>
-                    {money(event.accrued_interest_kopecks)} / {money(event.commission_kopecks)}
+                    <span className="num">
+                      {money(event.accrued_interest_kopecks)} / {money(event.commission_kopecks)}
+                    </span>
                     <br />
                     <small>
-                      Номинал: {observed(event.face_value)} · дата:{" "}
-                      {observed(event.face_value_date)}
+                      Номинал: <span className="num">{observed(event.face_value)}</span> · дата:{" "}
+                      {formatDate(event.face_value_date, { empty: "Неизвестно" })}
                     </small>
                   </td>
                 </>
@@ -296,12 +316,13 @@ function CashEvent({
             )[event.kind]}
       </h4>
       <p>
-        {observed(event.event_date)} ·{" "}
+        {formatDate(event.event_date, { empty: "Неизвестно" })} ·{" "}
         {event.counted && event.current ? "Учтено в доступных компонентах" : "Не учтено в расчёте"}
       </p>
       {event.cash_legs.map((leg) => (
         <p key={leg.ownership}>
-          {leg.date} · Движение денег по счёту: {money(leg.account_cash_kopecks)}
+          {formatDate(leg.date)} · Движение денег по счёту:{" "}
+          <span className="num">{money(leg.account_cash_kopecks)}</span>
         </p>
       ))}
       <Reasons codes={[...event.reason_codes, ...event.assumptions]} />
@@ -340,7 +361,7 @@ export function SourceInstrumentDetail({
       {!operationsOnly && (
         <>
           <p>
-            Интервал: ({analysis.opening_date}, {analysis.closing_date}].
+            Интервал: ({formatDate(analysis.opening_date)}, {formatDate(analysis.closing_date)}].
           </p>
           {personalResult && (
             <>
@@ -350,8 +371,10 @@ export function SourceInstrumentDetail({
               <div className={styles.summary}>
                 <Metric title="Мой результат за период, ₽" metric={analysis.pnl} />
                 <div className={styles.card}>
-                  <h4>Позиция на {dateText(analysis.closing.date)}</h4>
-                  <p className={styles.value}>{money(analysis.closing.reported_value_kopecks)}</p>
+                  <h4>Позиция на {formatDate(analysis.closing.date)}</h4>
+                  <p className={`num ${styles.value}`}>
+                    {money(analysis.closing.reported_value_kopecks)}
+                  </p>
                   <p>
                     Количество: {observed(analysis.opening.quantity)} →{" "}
                     {observed(analysis.closing.quantity)}
@@ -368,11 +391,13 @@ export function SourceInstrumentDetail({
                 <div className={styles.card}>
                   <h4>Полученные выплаты</h4>
                   <p>
-                    Купоны: <strong>{money(analysis.components.coupons.value)}</strong>
+                    Купоны:{" "}
+                    <strong className="num">{money(analysis.components.coupons.value)}</strong>
                   </p>
                   <p className={styles.note}>{statusLabel(analysis.components.coupons.status)}</p>
                   <p>
-                    Дивиденды: <strong>{money(analysis.components.dividends.value)}</strong>
+                    Дивиденды:{" "}
+                    <strong className="num">{money(analysis.components.dividends.value)}</strong>
                   </p>
                   <p className={styles.note}>{statusLabel(analysis.components.dividends.status)}</p>
                   <p className={styles.note}>
@@ -383,7 +408,7 @@ export function SourceInstrumentDetail({
               <details>
                 <summary>Доходность в процентах · Modified Dietz за период</summary>
                 <p>
-                  {dateText(analysis.opening_date)} — {dateText(analysis.closing_date)}.
+                  {formatDate(analysis.opening_date)} — {formatDate(analysis.closing_date)}.
                   Приблизительная доходность за этот интервал, не годовая. Начало периода не
                   переносится на первую покупку.
                 </p>
@@ -406,7 +431,7 @@ export function SourceInstrumentDetail({
             <>
               <h4>Полный экономический результат</h4>
               <div className={styles.grid}>
-                <Metric title="Полный P&L, ₽" metric={analysis.pnl} />
+                <Metric title="Полный результат, ₽" metric={analysis.pnl} />
                 <Metric
                   title="Modified Dietz · приблизительно, за период"
                   metric={analysis.modified_dietz}
@@ -450,7 +475,10 @@ export function SourceInstrumentDetail({
               <strong>
                 {bond ? "Известный компонент купонов:" : "Известный компонент дивидендов:"}
               </strong>{" "}
-              {money((bond ? analysis.components.coupons : analysis.components.dividends).value)} ·{" "}
+              <span className="num">
+                {money((bond ? analysis.components.coupons : analysis.components.dividends).value)}
+              </span>{" "}
+              ·{" "}
               {statusLabel(
                 (bond ? analysis.components.coupons : analysis.components.dividends).status,
               )}
@@ -459,10 +487,7 @@ export function SourceInstrumentDetail({
           )}
           <details>
             <summary>Известные компоненты, выплаты и расходы</summary>
-            <Metric
-              title="Известная часть результата · не полный P&L"
-              metric={analysis.known_subtotal}
-            />
+            <Metric title="Известная часть результата" metric={analysis.known_subtotal} />
             <div className={styles.grid}>
               {Object.entries(analysis.components).map(([name, metric]) => (
                 <Metric
@@ -567,7 +592,8 @@ export function SourceInstrumentDetail({
           ))}
         </ul>
         <p>
-          История источников: {analysis.history_start} — {analysis.history_end}.{" "}
+          История источников: {formatDate(analysis.history_start)} —{" "}
+          {formatDate(analysis.history_end)}.{" "}
           {analysis.history_complete_since_acquisition
             ? "В этом интервале подтверждены нулевой начальный остаток, покупка и движения количества. Этот признак не проверяет владение до начала источников."
             : "Начало истории владения не подтверждено. Результат относится только к выбранному интервалу."}

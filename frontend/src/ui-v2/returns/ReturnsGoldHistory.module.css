@@ -10,7 +10,7 @@
 .history :global(.btn--primary) {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--surface);
 }
 
 .history :global(.btn--primary):hover:not(:disabled) {
@@ -169,7 +169,7 @@
   width: 42px;
   height: 42px;
   padding: 0;
-  font-size: 24px;
+  font-size: var(--t-xl);
 }
 
 .remove:disabled {

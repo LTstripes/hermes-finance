@@ -1,4 +1,4 @@
-import { expect, type Page, type Locator, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { displayMetric } from "../src/ui-v2/returns/model";
 
 async function openDisclosure(page: Page, name: string) {
@@ -434,9 +434,9 @@ test("Month instruments and explicit source payout preview keep two accounts, da
   const stockData = native.instruments.find((row: { isin: string }) => row.isin === stock);
   expect(stockData.analysis.pnl.value).toBe(10000);
   expect(stockData.analysis.modified_dietz.value).toBe("0.1");
-  await expect(panel.getByRole("heading", { name: "Полный P&L, ₽" }).locator("..")).toContainText(
-    "100,00 ₽",
-  );
+  await expect(
+    panel.getByRole("heading", { name: "Полный результат, ₽" }).locator(".."),
+  ).toContainText("100,00 ₽");
   await expect(
     panel
       .getByRole("heading", { name: "Modified Dietz · приблизительно, за период", exact: true })
@@ -522,9 +522,9 @@ test("Month instruments and explicit source payout preview keep two accounts, da
 
   await panel.getByRole("button", { name: "Синтетическая облигация", exact: true }).click();
   await panel.getByText("Сделки, выплаты и расчёт инструмента", { exact: true }).click();
-  await expect(panel.getByRole("heading", { name: "Полный P&L, ₽" }).locator("..")).toContainText(
-    "Недоступен",
-  );
+  await expect(
+    panel.getByRole("heading", { name: "Полный результат, ₽" }).locator(".."),
+  ).toContainText("Недоступен");
   await expect(panel.getByRole("region", { name: "Условная оценка по выписке" })).toBeVisible();
   await expect(
     panel.getByRole("table", { name: "Actual для сверки · включая события после даты количества" }),

@@ -65,9 +65,12 @@ test("synthetic real-backend spanning statement: explicit month scope survives n
   await expect(page.getByText("Новая строка").first()).toBeVisible();
   const review = page.getByRole("region", { name: "Сверка прогноза с PDF" });
   const absentForecast = review.getByText(/В выбранном снимке у счёта нет прогноза выплат/);
-  await expect(review.getByText("Сверено 0 выплат · Требуют внимания 1")).toBeVisible();
+  await expect(review.getByText("Сверено 0 выплат")).toBeVisible();
+  await expect(review.getByText("Требуют внимания 1")).toBeVisible();
   await expect(absentForecast).toBeVisible();
-  await expect(review.getByText("Вне подтверждённого покрытия (1)")).toBeVisible();
+  await expect(
+    review.locator("summary").filter({ hasText: /Вне подтверждённого покрытия\s*1/ }),
+  ).toBeVisible();
   expect(posts).toEqual(["/api/statement-import/inspect", "/api/statement-import/prepare"]);
   expect(await readFlows(january.id)).toEqual([]);
   expect(await readFlows(february.id)).toEqual([]);
@@ -106,7 +109,8 @@ test("synthetic real-backend spanning statement: explicit month scope survives n
   await expect(page.getByText(/Импортировано строк: 1/)).toBeVisible();
   // Applying a PDF proves the cash flow, while a forecast match still needs separate evidence.
   await expect(absentForecast).toBeVisible();
-  await expect(review.getByText("Сверено 0 выплат · Требуют внимания 1")).toBeVisible();
+  await expect(review.getByText("Сверено 0 выплат")).toBeVisible();
+  await expect(review.getByText("Требуют внимания 1")).toBeVisible();
   expect(posts.filter((call) => call === "/api/statement-import/prepare")).toHaveLength(2);
   expect(posts.filter((call) => call === APPLY)).toHaveLength(1);
   const januaryFlows = await readFlows(january.id);

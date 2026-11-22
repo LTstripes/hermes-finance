@@ -11,18 +11,18 @@
 .field {
   display: grid;
   gap: 6px;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
   max-width: 640px;
 }
 
 .field select,
 .field input {
-  border: 1px solid #cad5df;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: inherit;
   font: inherit;
-  font-weight: 400;
+  font-weight: var(--w-regular);
   padding: 9px 12px;
   width: 100%;
   min-width: 0;
@@ -31,7 +31,7 @@
 
 .field :focus-visible,
 .review input:focus-visible {
-  outline: 3px solid #527da8;
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -42,9 +42,9 @@
 }
 
 .exceptions {
-  border: 1px solid #e3c790;
-  border-radius: 8px;
-  background: #fff9ef;
+  border: 1px solid var(--fc);
+  border-radius: var(--r-sm);
+  background: var(--fc-soft);
   padding: 12px;
 }
 
@@ -57,8 +57,8 @@
 .summary {
   display: grid;
   gap: 12px;
-  border: 1px solid #cad5df;
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
   padding: 16px;
   min-width: 0;
 }
@@ -74,11 +74,11 @@
   gap: 12px;
 }
 .metrics dt {
-  color: #485f72;
+  color: var(--ink-2);
 }
 .metrics dd {
   margin: 4px 0 0;
-  font-weight: 600;
+  font-weight: var(--w-semibold);
 }
 .sourceName,
 .summary li {

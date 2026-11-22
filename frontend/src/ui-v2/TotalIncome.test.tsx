@@ -19,13 +19,18 @@ it("shows API headlines, partial coverage, estimates once and no bonus, without 
   expect(screen.getAllByText("460 000 ₽")).toHaveLength(2);
   expect(screen.getAllByText("за 4 из 12 мес")).toHaveLength(3);
   expect(screen.getByTestId("total-income-warnings")).toHaveTextContent(
-    "Зарплата за 1 мес оценена по апрельской (04.2031). Пассивка учитывается с 04.2031",
+    "Зарплата за 1 мес оценена по апрельской (04.2031). Пассивный доход учитывается с 04.2031",
   );
   expect(screen.getByTestId("total-income-month-88")).toHaveAttribute("data-estimate", "true");
   expect(screen.getAllByTestId(/^total-income-month-/)).toHaveLength(4);
   expect(screen.queryByTestId("total-income-bonus-legend")).toBeNull();
-  expect(screen.getByText("Сейчас ≈ 125 000 ₽ в месяц")).toBeVisible();
+  expect(screen.getByText(/Сейчас ≈/)).toHaveTextContent("Сейчас ≈ 125 000 ₽ в месяц");
   expect(screen.getByTestId("total-income-average-line")).toBeInTheDocument();
+  const month = screen.getByTestId("total-income-month-88");
+  fireEvent.focus(month);
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Зарплата · оценка");
+  fireEvent.keyDown(month, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
 it("switches the average, bonus and months using the selected window; year and rolling totals stay fixed", () => {
@@ -73,26 +78,25 @@ it("uses only calendar year API share and average on home; hides unknown share, 
       <TotalIncomeHomeRow data={data} />
     </MemoryRouter>,
   );
-  expect(screen.getByTestId("total-income-home")).toHaveTextContent(
-    "пассивка закрывает 16,7% дохода",
+  expect(screen.getByTestId("total-income-home")).toHaveTextContent("Пассивный доход · 16,7%");
+  expect(screen.getByRole("link", { name: "Доход и планы →" })).toHaveAttribute(
+    "href",
+    "/v2/income",
   );
-  expect(screen.getByRole("link", { name: "Весь доход →" })).toHaveAttribute("href", "/v2/income");
   data.windows.calendar_year.passive_share_pct = "0.0";
   view.rerender(
     <MemoryRouter>
       <TotalIncomeHomeRow data={data} />
     </MemoryRouter>,
   );
-  expect(screen.getByTestId("total-income-home")).toHaveTextContent(
-    "пассивка закрывает 0,0% дохода",
-  );
+  expect(screen.getByTestId("total-income-home")).toHaveTextContent("Пассивный доход · 0,0%");
   data.windows.calendar_year.passive_share_pct = null;
   view.rerender(
     <MemoryRouter>
       <TotalIncomeHomeRow data={data} />
     </MemoryRouter>,
   );
-  expect(screen.queryByText(/пассивка закрывает/)).toBeNull();
+  expect(screen.queryByText(/Пассивный доход/)).toBeNull();
 });
 
 it("shows only retry on network failure, rejects stale identity and recovers", async () => {

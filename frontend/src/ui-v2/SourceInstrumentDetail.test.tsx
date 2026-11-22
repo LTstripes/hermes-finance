@@ -135,7 +135,7 @@ test("source zero-origin flag never asserts lifetime ownership or trims a late f
   fireEvent.click(screen.getByText("Полнота и происхождение"));
   expect(screen.getByText(/Этот признак не проверяет владение до начала источников/)).toBeVisible();
   fireEvent.click(screen.getByText("Доходность в процентах · Modified Dietz за период"));
-  expect(screen.getByText(/01.01.2020 — 31.05.2030/)).toBeVisible();
+  expect(screen.getByText(/^01\.01\.2020 — 31\.05\.2030/)).toBeVisible();
   expect(screen.queryByText("История с приобретения: подтверждена.")).not.toBeInTheDocument();
 });
 
@@ -229,7 +229,9 @@ test.each([false, true])(
     fireEvent.click(unbound.getAllByText("Строки источников (1)")[0]);
     expect(unbound.getByText("money:1:unbound-nkd:0")).toBeVisible();
     expect(
-      card(personalResult ? "Мой результат за период, ₽" : "Полный P&L, ₽").getByText("Недоступен"),
+      card(personalResult ? "Мой результат за период, ₽" : "Полный результат, ₽").getByText(
+        "Недоступен",
+      ),
     ).toBeVisible();
     expect(a).toEqual(before);
   },

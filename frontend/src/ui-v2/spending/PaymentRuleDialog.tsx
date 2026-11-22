@@ -9,8 +9,9 @@ import {
   type PaymentRule,
   type Purchase,
 } from "../../api/spendingPayments";
-import { Button } from "../../components/ui";
-import { formatMoney } from "../../lib/format";
+import { Button, ConfirmDialog, Field, Input, Select } from "../../components/ui";
+import { formatMoney, formatMonthKey } from "../../lib/format";
+import { MonthMoneyInput } from "../MonthMoneyInput";
 import styles from "./Spending.module.css";
 
 function initialEdit(card: PaymentCard): PaymentEdit {
@@ -114,21 +115,37 @@ function PaymentForm({
   return (
     <form onSubmit={submit} className={styles.paymentForm}>
       <MonthNavigationGuard dirty={dirty} pending={pending} />
-      <h2 id="payment-card-title">{saved.title}</h2>
-      <p>Оплачено {formatMoney(saved.fact_amount)}</p>
+      <header className={styles.paymentHeader}>
+        <div>
+          <h2 id="payment-card-title">{saved.title}</h2>
+          <p>
+            Оплачено <span className="num">{formatMoney(saved.fact_amount)}</span>
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label="Закрыть карточку покупки"
+          disabled={pending}
+          onClick={onClose}
+        >
+          ×
+        </Button>
+      </header>
       <fieldset disabled={pending}>
-        <label>
-          Моя заметка
+        <Field htmlFor="payment-note" label="Моя заметка">
           <textarea
+            className="input"
+            id="payment-note"
             maxLength={2000}
             rows={2}
             value={draft.note}
             onChange={(e) => update({ note: e.target.value })}
           />
-        </label>
-        <label>
-          Обязательность для бюджета
-          <select
+        </Field>
+        <Field htmlFor="payment-mandatory" label="Обязательность для бюджета">
+          <Select
+            id="payment-mandatory"
             value={
               draft.mandatory_override === null ? "category" : String(draft.mandatory_override)
             }
@@ -144,8 +161,8 @@ function PaymentForm({
             </option>
             <option value="true">Обязательная</option>
             <option value="false">Необязательная</option>
-          </select>
-        </label>
+          </Select>
+        </Field>
         <label className={styles.paymentCheck}>
           <input
             type="checkbox"
@@ -161,10 +178,10 @@ function PaymentForm({
           Планирую повторять
         </label>
         {draft.repeat && (
-          <>
-            <label>
-              Интервал, месяцев
-              <input
+          <div className={styles.scheduleFields}>
+            <Field htmlFor="payment-period" label="Интервал, месяцев">
+              <Input
+                id="payment-period"
                 type="number"
                 min="1"
                 max="120"
@@ -175,48 +192,53 @@ function PaymentForm({
                   update({ period_months: e.target.value ? Number(e.target.value) : null })
                 }
               />
-            </label>
-            <label>
-              Следующая оплата
-              <input
+            </Field>
+            <Field htmlFor="payment-due" label="Следующая оплата">
+              <Input
+                id="payment-due"
                 type="date"
                 value={draft.next_due ?? ""}
                 onChange={(e) => update({ next_due: e.target.value || null })}
               />
-            </label>
-            <label>
-              Ожидаемая сумма, ₽
-              <input
-                type="text"
-                inputMode="decimal"
+            </Field>
+            <Field htmlFor="payment-amount" label="Ожидаемая сумма, ₽">
+              <MonthMoneyInput
+                id="payment-amount"
+                selectOnFocus
                 placeholder="Пока неизвестно"
                 value={draft.amount ?? ""}
-                onChange={(e) => update({ amount: e.target.value || null })}
+                onChange={(amount) => update({ amount: amount || null })}
               />
-            </label>
-          </>
+            </Field>
+          </div>
         )}
         {saved.rule?.repeat && !dirty && (
-          <p>
+          <p className={styles.averageAmount}>
             В среднем за месяц ·{" "}
-            {saved.rule.monthly_amount === null
-              ? "пока неизвестно"
-              : formatMoney(saved.rule.monthly_amount)}
+            <span className="num">
+              {saved.rule.monthly_amount === null
+                ? "пока неизвестно"
+                : formatMoney(saved.rule.monthly_amount)}
+            </span>
           </p>
         )}
         {(saved.schedules.length > 0 || saved.decisions.length > 0) && (
-          <section>
+          <section className={styles.paymentSection}>
             <h3>Связь с графиком</h3>
             {saved.decisions.map((d) => (
-              <p key={d.id}>
-                {d.needs_review
-                  ? "Требует сверки"
-                  : d.decision === "payment"
-                    ? "Оплачено по графику"
-                    : "Самостоятельная покупка"}{" "}
-                · {d.rule_title}{" "}
+              <div key={d.id} className={styles.decisionRow}>
+                <span>
+                  {d.needs_review
+                    ? "Требует сверки"
+                    : d.decision === "payment"
+                      ? "Оплачено по графику"
+                      : "Самостоятельная покупка"}{" "}
+                  · {d.rule_title}
+                </span>
                 <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   disabled={dirty}
                   onClick={() =>
                     void write(() =>
@@ -226,23 +248,26 @@ function PaymentForm({
                 >
                   Отменить решение
                 </Button>
-              </p>
+              </div>
             ))}
             {saved.schedules.length > 0 && (
               <>
-                <label>
-                  Существующий график
-                  <select value={scheduleId} onChange={(e) => setScheduleId(e.target.value)}>
+                <Field htmlFor="payment-schedule" label="Существующий график">
+                  <Select
+                    id="payment-schedule"
+                    value={scheduleId}
+                    onChange={(e) => setScheduleId(e.target.value)}
+                  >
                     <option value="">Выберите график</option>
                     {saved.schedules.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.title} · {s.month} ·{" "}
+                        {s.title} · {formatMonthKey(s.month)} ·{" "}
                         {s.amount ? formatMoney(s.amount) : "Сумма неизвестна"}
-                        {s.repeat ? "" : " · продление отключено"} · №{s.id}
+                        {s.repeat ? "" : " · продление отключено"}
                       </option>
                     ))}
-                  </select>
-                </label>
+                  </Select>
+                </Field>
                 <div className={styles.actions}>
                   <Button
                     type="button"
@@ -260,6 +285,7 @@ function PaymentForm({
                   </Button>
                   <Button
                     type="button"
+                    variant="ghost"
                     disabled={dirty || !chosenSchedule}
                     onClick={() => record("separate")}
                   >
@@ -271,18 +297,22 @@ function PaymentForm({
           </section>
         )}
         {ownedRule && ownedRule.occurrences.length > 0 && (
-          <section>
+          <section className={styles.paymentSection}>
             <h3>Решения по покупкам этого графика</h3>
             {ownedRule.occurrences.map((o) => (
-              <p key={o.id}>
-                {o.month} · {o.title} ·{" "}
-                {o.needs_review
-                  ? "Требует сверки"
-                  : o.decision === "payment"
-                    ? "Оплачено"
-                    : "Самостоятельная покупка"}{" "}
+              <div key={o.id} className={styles.decisionRow}>
+                <span>
+                  {formatMonthKey(o.month)} · {o.title} ·{" "}
+                  {o.needs_review
+                    ? "Требует сверки"
+                    : o.decision === "payment"
+                      ? "Оплачено"
+                      : "Самостоятельная покупка"}
+                </span>
                 <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   disabled={dirty}
                   onClick={() =>
                     void write(() =>
@@ -292,23 +322,26 @@ function PaymentForm({
                 >
                   Отменить решение
                 </Button>
-              </p>
+              </div>
             ))}
           </section>
         )}
         {!saved.rule && detached.length > 0 && (
           <div>
-            <label>
-              Восстановить прежнюю пометку
-              <select value={attach} onChange={(e) => setAttach(e.target.value)}>
+            <Field htmlFor="payment-attach" label="Восстановить прежнюю пометку">
+              <Select
+                id="payment-attach"
+                value={attach}
+                onChange={(e) => setAttach(e.target.value)}
+              >
                 <option value="">Выберите пометку</option>
                 {detached.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.title} · {r.note || "Без заметки"} · №{r.id}
+                    {r.title} · {r.note || "Без заметки"}
                   </option>
                 ))}
-              </select>
-            </label>
+              </Select>
+            </Field>
             <Button
               type="button"
               disabled={!attach || dirty}
@@ -322,14 +355,22 @@ function PaymentForm({
           </div>
         )}
       </fieldset>
-      {error && <p role="alert">{error}</p>}
-      {status && <p role="status">{status}</p>}
-      <div className={styles.actions}>
-        <Button type="submit" disabled={!dirty || pending}>
-          Сохранить
-        </Button>
-        <Button type="button" disabled={pending} onClick={onClose}>
+      {error && (
+        <p className="inline-alert inline-alert--error" role="alert">
+          {error}
+        </p>
+      )}
+      {status && (
+        <p className="inline-alert inline-alert--ok" role="status">
+          {status}
+        </p>
+      )}
+      <div className={styles.dialogActions}>
+        <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
           Закрыть
+        </Button>
+        <Button type="submit" variant="primary" disabled={!dirty || pending}>
+          Сохранить
         </Button>
       </div>
     </form>
@@ -348,6 +389,7 @@ export function PaymentRuleDialog({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [discard, setDiscard] = useState(false);
   const guard = useRef({ dirty: false, pending: false });
   const protect = useRef((dirty: boolean, pending: boolean) => {
     guard.current = { dirty, pending };
@@ -358,11 +400,9 @@ export function PaymentRuleDialog({
     return () => node?.close();
   }, []);
   function close() {
-    if (
-      !guard.current.pending &&
-      (!guard.current.dirty || window.confirm("Закрыть без сохранения изменений?"))
-    )
-      onClose();
+    if (guard.current.pending) return;
+    if (guard.current.dirty) setDiscard(true);
+    else onClose();
   }
   const query = useQuery({
     queryKey: ["spending", "payment-card", purchase.month, purchase.source, purchase.id],
@@ -375,29 +415,49 @@ export function PaymentRuleDialog({
       ref={dialog}
       className={styles.paymentDialog}
       aria-label="Карточка покупки"
+      onKeyDownCapture={(event) => {
+        if (discard && event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setDiscard(false);
+        }
+      }}
       onCancel={(e) => {
         e.preventDefault();
         close();
       }}
     >
-      {query.isError ? (
-        <>
-          <p role="alert">{formatApiError(query.error)}</p>
-          <Button onClick={() => void query.refetch()}>Повторить</Button>
-          <Button onClick={close}>Закрыть</Button>
-        </>
-      ) : !query.data ? (
-        <p>Загружаем карточку…</p>
-      ) : (
-        <PaymentForm
-          purchase={purchase}
-          initial={query.data}
-          detached={detached}
-          suggestedRuleId={suggestedRuleId}
-          onClose={close}
-          protect={protect}
-        />
-      )}
+      <div inert={discard}>
+        {query.isError ? (
+          <>
+            <p className="inline-alert inline-alert--error" role="alert">
+              {formatApiError(query.error)}
+            </p>
+            <Button onClick={() => void query.refetch()}>Повторить</Button>
+            <Button onClick={close}>Закрыть</Button>
+          </>
+        ) : !query.data ? (
+          <p>Загружаем карточку…</p>
+        ) : (
+          <PaymentForm
+            purchase={purchase}
+            initial={query.data}
+            detached={detached}
+            suggestedRuleId={suggestedRuleId}
+            onClose={close}
+            protect={protect}
+          />
+        )}
+      </div>
+      <ConfirmDialog
+        open={discard}
+        title="Закрыть без сохранения?"
+        description="Изменения в карточке покупки будут потеряны."
+        cancelLabel="Продолжить редактирование"
+        confirmLabel="Закрыть без сохранения"
+        onCancel={() => setDiscard(false)}
+        onConfirm={onClose}
+      />
     </dialog>
   );
 }

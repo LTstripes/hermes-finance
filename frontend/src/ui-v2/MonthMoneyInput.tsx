@@ -1,4 +1,4 @@
-import { useState, type InputHTMLAttributes } from "react";
+import { useLayoutEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { Input } from "../components/ui";
 import styles from "./MonthMoneyInput.module.css";
 
@@ -14,18 +14,25 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | 
   value: string;
   onChange: (value: string) => void;
   suffix?: string;
+  selectOnFocus?: boolean;
 };
 
 export function MonthMoneyInput({
   value,
   onChange,
   suffix = "₽",
+  selectOnFocus = false,
   onFocus,
   onBlur,
   className = "",
   ...props
 }: Props) {
   const [focused, setFocused] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    // Select after React has replaced the formatted display with the exact editable value.
+    if (focused && selectOnFocus) input.current?.select();
+  }, [focused, selectOnFocus]);
   return (
     <span className={`${styles.field} ${suffix === "%" ? styles.rate : ""}`}>
       <Input
@@ -36,6 +43,7 @@ export function MonthMoneyInput({
         value={focused ? value : displayMonthNumber(value)}
         onChange={(event) => onChange(event.currentTarget.value)}
         onFocus={(event) => {
+          input.current = event.currentTarget;
           setFocused(true);
           onFocus?.(event);
         }}

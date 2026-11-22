@@ -260,3 +260,23 @@ export function pluralRu(value: number, forms: readonly [string, string, string]
   if (last >= 2 && last <= 4) return forms[1];
   return forms[2];
 }
+
+const SHORT_MONTHS = [
+  "янв",
+  "фев",
+  "мар",
+  "апр",
+  "май",
+  "июн",
+  "июл",
+  "авг",
+  "сен",
+  "окт",
+  "ноя",
+  "дек",
+];
+
+export function shortMonthLabel(year: number, month: number, first: boolean): string {
+  const name = SHORT_MONTHS[month - 1] ?? String(month);
+  return first || month === 1 ? `${name} ${year}` : name;
+}

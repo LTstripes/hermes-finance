@@ -3,8 +3,8 @@
   gap: 14px;
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: white;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 .header {
   display: flex;
@@ -14,16 +14,16 @@
 }
 .header h2 {
   margin: 3px 0 6px;
-  font-size: 1.1rem;
+  font-size: var(--t-lg);
 }
 .header p {
   max-width: 650px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--t-sm);
 }
 .eyebrow {
-  font-size: 11px !important;
-  font-weight: 700;
+  font-size: var(--t-xs) !important;
+  font-weight: var(--w-semibold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -39,12 +39,12 @@
   min-height: 38px;
   padding: 8px 12px;
   border: 1px solid var(--accent);
-  border-radius: 9px;
-  background: white;
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--accent);
   font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--t-sm);
+  font-weight: var(--w-semibold);
   cursor: pointer;
   text-decoration: none;
 }
@@ -55,24 +55,24 @@
 }
 .caution {
   padding: 10px 12px;
-  border-radius: 9px;
-  background: #fff8e8;
-  color: #684d18;
-  font-size: 12px;
+  border-radius: var(--r-sm);
+  background: var(--fc-soft);
+  color: var(--fc-ink);
+  font-size: var(--t-xs);
 }
 .error,
 .success {
   padding: 10px 12px;
-  border-radius: 9px;
-  font-size: 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--t-xs);
 }
 .error {
-  background: #fff1ef;
-  color: #852e24;
+  background: var(--neg-soft);
+  color: var(--neg);
 }
 .success {
-  background: #eaf6ee;
-  color: #216343;
+  background: var(--pos-soft);
+  color: var(--pos);
 }
 .sections {
   display: grid;
@@ -84,7 +84,7 @@
 }
 .sections h3 {
   margin-bottom: 10px;
-  font-size: 0.96rem;
+  font-size: var(--t-md);
 }
 .form {
   display: flex;
@@ -97,8 +97,8 @@
   gap: 5px;
   min-width: min(100%, 180px);
   flex: 1 1 180px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 .form input,
 .form select {
@@ -106,25 +106,25 @@
   width: 100%;
   padding: 7px 9px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: white;
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
 }
 .form button {
   background: var(--accent);
-  color: white;
+  color: var(--surface);
 }
 .hint {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 .rows {
   display: grid;
   gap: 6px;
   margin: 0 0 12px;
   padding-left: 18px;
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 @media (max-width: 550px) {
   .panel {
@@ -150,12 +150,12 @@
 .rowActions button {
   padding: 3px 9px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: white;
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--accent);
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
   cursor: pointer;
 }
 .rowActions button:disabled {
@@ -163,13 +163,13 @@
   cursor: default;
 }
 .rowActions .danger {
-  color: #852e24;
+  color: var(--neg);
 }
 .editForm {
   margin: 8px 0 4px;
 }
 .form .secondary {
-  background: white;
+  background: var(--surface);
   color: var(--accent);
 }
 .checkbox {

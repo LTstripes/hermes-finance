@@ -24,8 +24,8 @@
 .field label,
 .fieldLabel {
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .input {
@@ -33,8 +33,8 @@
   min-height: 40px;
   padding: 8px 11px;
   border: 1px solid var(--line);
-  border-radius: 9px;
-  background: white;
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
 }
@@ -53,7 +53,7 @@
 .fieldHint,
 .note {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .fieldHint {
@@ -64,19 +64,19 @@
 .error,
 .success {
   padding: 10px 12px;
-  border-radius: 9px;
-  font-size: 13px;
+  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
 }
 
 .fieldError,
 .error {
-  background: #f8eaea;
-  color: #7a2e2e;
+  background: var(--neg-soft);
+  color: var(--neg);
 }
 
 .success {
-  background: #e7f4eb;
-  color: #2f6b45;
+  background: var(--pos-soft);
+  color: var(--pos);
 }
 
 .fieldActions,
@@ -97,7 +97,7 @@
 .ghostButton {
   min-height: 40px;
   padding: 8px 14px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   font: inherit;
   cursor: pointer;
 }
@@ -105,8 +105,8 @@
 .primaryButton {
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: white;
-  font-weight: 700;
+  color: var(--surface);
+  font-weight: var(--w-semibold);
 }
 
 .primaryButton:disabled,
@@ -119,16 +119,16 @@
 .secondaryButton,
 .ghostButton {
   border: 1px solid var(--line);
-  background: white;
+  background: var(--surface);
   color: var(--ink);
-  font-weight: 650;
+  font-weight: var(--w-semibold);
 }
 
 .ghostButton {
   min-height: 34px;
   padding: 5px 10px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .readOnlyGrid {
@@ -140,18 +140,18 @@
 .readOnlyItem {
   min-width: 0;
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: var(--r);
   background: var(--soft);
 }
 
 .readOnlyItem dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--t-xs);
 }
 
 .readOnlyItem dd {
   margin-top: 5px;
-  font-weight: 700;
+  font-weight: var(--w-semibold);
   overflow-wrap: anywhere;
 }
 
@@ -159,9 +159,9 @@
   display: grid;
   gap: 8px;
   padding: 13px 14px;
-  border: 1px solid #d8e2ee;
-  border-radius: 10px;
-  background: #eef4fa;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--accent-soft);
 }
 
 .goalNote strong {
@@ -170,8 +170,8 @@
 
 .goalNote a {
   width: fit-content;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--t-xs);
+  font-weight: var(--w-semibold);
 }
 
 .compatPanel {

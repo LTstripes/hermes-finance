@@ -248,15 +248,16 @@ describe("StatementImportPanel explicit row decisions", () => {
       .mockResolvedValueOnce(report(["verified", "verified", "future", "coverage_unknown"]));
     const user = await prepareReport();
     const review = screen.getByRole("region", { name: "Сверка прогноза с PDF" });
-    expect(review).toHaveTextContent("Сверено 1 выплата · Требуют внимания 1");
+    expect(within(review).getByText("Сверено 1 выплата")).toBeVisible();
+    expect(within(review).getByText("Требуют внимания 1")).toBeVisible();
     expect(within(review).getByText(/Связь с прогнозом требует подтверждения/)).toBeVisible();
-    const confirmed = within(review).getByText("Подтверждённые совпадения (1)");
+    const confirmed = within(review).getByText("Подтверждённые совпадения");
     expect(confirmed.closest("details")).not.toHaveAttribute("open");
-    expect(within(review).getByText("Будущие выплаты (1)").closest("details")).not.toHaveAttribute(
+    expect(within(review).getByText("Будущие выплаты").closest("details")).not.toHaveAttribute(
       "open",
     );
     expect(
-      within(review).getByText("Вне подтверждённого покрытия (1)").closest("details"),
+      within(review).getByText("Вне подтверждённого покрытия").closest("details"),
     ).not.toHaveAttribute("open");
     await user.click(confirmed);
     expect(confirmed.closest("details")).toHaveAttribute("open");
@@ -264,7 +265,8 @@ describe("StatementImportPanel explicit row decisions", () => {
     await user.click(screen.getAllByRole("checkbox")[2]);
     await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
     await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
-    await screen.findByText("Сверено 2 выплаты · Требуют внимания 0");
+    await screen.findByText("Сверено 2 выплаты");
+    expect(within(review).queryByText(/Требуют внимания/)).not.toBeInTheDocument();
     expect(prepareStatement).toHaveBeenCalledTimes(2);
     expect(applyStatement).toHaveBeenCalledTimes(1);
   });

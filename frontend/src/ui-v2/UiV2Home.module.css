@@ -132,7 +132,7 @@
 }
 
 .deltaChip [aria-hidden="true"] {
-  font-size: 10px;
+  font-size: var(--t-xs);
 }
 
 .heroMeta {
@@ -207,8 +207,8 @@
   margin: 0;
   padding: 3px;
   border: 0;
-  border-radius: 10px;
-  background: #ebe9e2;
+  border-radius: var(--r);
+  background: var(--line);
 }
 
 .segmented button {
@@ -400,7 +400,7 @@
 
 .segBar {
   height: 14px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
 }
 
 .segBar i,
@@ -440,7 +440,7 @@
 .allocBar {
   height: 34px;
   margin-bottom: 12px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
 }
 
 .allocRows {
@@ -562,7 +562,7 @@
   border-radius: 50%;
   background:
     radial-gradient(closest-side, var(--bg) 78%, transparent 79%),
-    conic-gradient(var(--accent) calc(var(--goal-progress) * 1%), #e4e7ea 0);
+    conic-gradient(var(--accent) calc(var(--goal-progress) * 1%), var(--line) 0);
 }
 
 .ring span {

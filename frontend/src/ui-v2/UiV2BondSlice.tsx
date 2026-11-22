@@ -1,18 +1,33 @@
 import { useQuery } from "@tanstack/react-query";
+import { useId } from "react";
 import { useSearchParams } from "react-router";
 import { formatApiError } from "../api/client";
 import { getSourceInstrumentReturns, type SourceInstrumentReturns } from "../api/sourceReturns";
+import { Button, Select, Table, Td, Th } from "../components/ui";
+import { formatDate, formatMonthKey } from "../lib/format";
+import sheet from "./ReportSheet.module.css";
 import {
-  SourceInstrumentDetail,
   money,
   observed,
-  statusLabel,
   Reasons,
   References,
+  SourceInstrumentDetail,
+  statusLabel,
 } from "./SourceInstrumentDetail";
 import styles from "./UiV2BondSlice.module.css";
 import { UiV2Panel } from "./UiV2Panel";
 import { UiV2Loading, UiV2Notice } from "./UiV2StateBlocks";
+
+const eventLabels = {
+  BUY: "Покупка",
+  SELL: "Продажа",
+  COUPON: "Купон",
+  DIVIDEND: "Дивиденд",
+  FEE: "Комиссия",
+  TAX: "Налог",
+  REDEMPTION: "Погашение",
+  UNRESOLVED: "Вид операции не установлен",
+};
 
 /** Presentation of server v2 facts only: no return arithmetic, writers or evidence promotion. */
 export function UiV2BondSlice({
@@ -22,6 +37,7 @@ export function UiV2BondSlice({
   account: string;
   sources: SourceInstrumentReturns;
 }) {
+  const periodId = useId();
   const [params, setParams] = useSearchParams();
   const ownContext = !params.get("source_account") || params.get("source_account") === account;
   const period = ownContext ? (params.get("bond_period") ?? "history") : "history";
@@ -67,21 +83,19 @@ export function UiV2BondSlice({
       wide
     >
       <p>
-        Счёт источника:{" "}
-        <strong>{sources.native_source_account ?? "нативный счёт не установлен"}</strong> · выбран:{" "}
-        {account}.
+        Счёт источника: <strong>{sources.native_source_account ?? "не указан в выписке"}</strong>
       </p>
       <p className={styles.note}>
-        Только чтение. Данные выписок не являются принятой финансовой позицией и не дают готовности
-        к Close.
+        Позиции из выписок показаны для сверки. Они не влияют на закрытие месяца.
       </p>
       {sourceBonds.length === 0 ? (
         <p>В сохранённых источниках этого счёта нет облигаций с подтверждённым типом.</p>
       ) : (
         <>
-          <label>
+          <label className={`${sheet.select} ${styles.period}`} htmlFor={periodId}>
             Период облигаций{" "}
-            <select
+            <Select
+              id={periodId}
               aria-label="Период облигаций"
               value={period}
               onChange={(event) => select("bond_period", event.target.value)}
@@ -89,10 +103,10 @@ export function UiV2BondSlice({
               <option value="history">Доступная история источников</option>
               {months.map((value) => (
                 <option key={value} value={value}>
-                  {value.slice(0, 7)}
+                  {formatMonthKey(value.slice(0, 7))}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           {scopeMismatch ? (
             <UiV2Notice title="Счёт ответа не совпадает с выбранным">
@@ -107,59 +121,63 @@ export function UiV2BondSlice({
           ) : selected.isError && period !== "history" ? (
             <UiV2Notice title="Не удалось прочитать облигации">
               {formatApiError(selected.error)}
-              <button type="button" onClick={() => void selected.refetch()}>
+              <Button variant="ghost" onClick={() => void selected.refetch()}>
                 Повторить чтение облигаций
-              </button>
+              </Button>
             </UiV2Notice>
           ) : (
             <>
-              <div className={styles.tableWrap}>
-                <table className={styles.table}>
-                  <caption>Облигации выбранного счёта и периода</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Облигация</th>
-                      <th scope="col">Количество на конец</th>
-                      <th scope="col">Стоимость по выписке</th>
-                      <th scope="col">Дата оценки</th>
-                      <th scope="col">Известные купоны</th>
+              <Table className={styles.bonds}>
+                <caption>Облигации выбранного счёта и периода</caption>
+                <thead>
+                  <tr>
+                    <Th scope="col">Облигация</Th>
+                    <Th scope="col" numeric>
+                      Количество на конец
+                    </Th>
+                    <Th scope="col" numeric>
+                      Стоимость по выписке
+                    </Th>
+                    <Th scope="col">Дата оценки</Th>
+                    <Th scope="col" numeric>
+                      Известные купоны
+                    </Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bonds.map((row) => (
+                    <tr key={row.isin}>
+                      <Th scope="row">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title={row.isin}
+                          aria-pressed={instrument?.isin === row.isin}
+                          onClick={() => select("bond_isin", row.isin)}
+                        >
+                          {row.short_name === undefined
+                            ? (row.source_name ?? "Без названия")
+                            : (row.short_name ?? "Без названия")}
+                        </Button>
+                      </Th>
+                      <Td numeric>{observed(row.analysis.closing.quantity)}</Td>
+                      <Td numeric>{money(row.analysis.closing.reported_value_kopecks)}</Td>
+                      <Td>
+                        {row.analysis.closing.reported_value_kopecks === null
+                          ? `Нет оценки на ${formatDate(row.analysis.closing.date)}`
+                          : formatDate(row.analysis.closing.date)}
+                      </Td>
+                      <Td numeric>
+                        {money(row.analysis.components.coupons.value)}
+                        <small>{statusLabel(row.analysis.components.coupons.status)}</small>
+                      </Td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {bonds.map((row) => (
-                      <tr key={row.isin}>
-                        <th>
-                          <button
-                            type="button"
-                            aria-pressed={instrument?.isin === row.isin}
-                            onClick={() => select("bond_isin", row.isin)}
-                          >
-                            {row.short_name === undefined
-                              ? (row.source_name ?? "Без названия")
-                              : (row.short_name ?? "Без названия")}
-                          </button>
-                          <br />
-                          <small>{row.isin}</small>
-                        </th>
-                        <td>{observed(row.analysis.closing.quantity)}</td>
-                        <td>{money(row.analysis.closing.reported_value_kopecks)}</td>
-                        <td>
-                          {row.analysis.closing.reported_value_kopecks === null
-                            ? `Нет оценки на ${row.analysis.closing.date}`
-                            : row.analysis.closing.date}
-                        </td>
-                        <td>
-                          {money(row.analysis.components.coupons.value)} ·{" "}
-                          {statusLabel(row.analysis.components.coupons.status)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </Table>
               <p className={styles.note}>
-                Стоимость показана как reported value из выписки. Подтверждённый состав clean/dirty
-                указан в деталях.
+                Стоимость указана по выписке брокера. Состав цены и накопленный купонный доход (НКД)
+                показаны в деталях облигации.
               </p>
               {chosenIsin !== null && !instrument ? (
                 <UiV2Notice title="Выбранная облигация недоступна">
@@ -168,31 +186,42 @@ export function UiV2BondSlice({
                 </UiV2Notice>
               ) : instrument ? (
                 <section aria-label={`Детали облигации ${instrument.isin}`}>
-                  <h3>
+                  <h3 title={instrument.isin}>
                     {instrument.short_name === undefined
                       ? (instrument.source_name ?? "Без названия")
-                      : (instrument.short_name ?? "Без названия")}{" "}
-                    · {instrument.isin}
+                      : (instrument.short_name ?? "Без названия")}
                   </h3>
                   <SourceInstrumentDetail analysis={instrument.analysis} />
                 </section>
               ) : null}
               {!!data?.unresolved_events.length && (
-                <details>
+                <details className={styles.disclosure}>
                   <summary>
                     Нераспределённые события счёта в истории источников:{" "}
                     {data.unresolved_events.length}
                   </summary>
                   <p>Эти события не отнесены автоматически к выбранной облигации.</p>
-                  <ul>
-                    {data.unresolved_events.map((event) => (
-                      <li key={event.event_key}>
-                        {observed(event.event_date)} · {event.kind}
-                        <Reasons codes={event.reason_codes} />
-                        <References values={event.source_references} />
-                      </li>
-                    ))}
-                  </ul>
+                  <Table aria-label="Нераспределённые события">
+                    <thead>
+                      <tr>
+                        <Th>Дата</Th>
+                        <Th>Операция</Th>
+                        <Th>Причина и источники</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.unresolved_events.map((event) => (
+                        <tr key={event.event_key}>
+                          <Td>{formatDate(event.event_date)}</Td>
+                          <Td>{eventLabels[event.kind]}</Td>
+                          <Td>
+                            <Reasons codes={event.reason_codes} />
+                            <References values={event.source_references} />
+                          </Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
                 </details>
               )}
             </>

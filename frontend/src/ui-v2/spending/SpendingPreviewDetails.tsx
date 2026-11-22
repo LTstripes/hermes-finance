@@ -12,7 +12,7 @@ import styles from "./Spending.module.css";
 export function TotalChange({ preview }: { preview: SpendingPreview }) {
   return (
     <>
-      Траты за {spendingMonthForm(preview.month, "accusative")}:{" "}
+      Расходы за {spendingMonthForm(preview.month, "accusative")}:{" "}
       <Money value={preview.total_before} empty="не загружено" /> →{" "}
       <Money value={preview.total_after} empty="Недоступно" />
     </>
@@ -103,11 +103,13 @@ export function PreviewDetails({
       <Table className={styles.dataTable}>
         <thead>
           <tr>
-            {["Набор", "Добавится", "Изменится", "Исчезнет", "Траты набора"].map((label, index) => (
-              <Th key={label} numeric={index > 0}>
-                {label}
-              </Th>
-            ))}
+            {["Набор", "Добавится", "Изменится", "Исчезнет", "Расходы набора"].map(
+              (label, index) => (
+                <Th key={label} numeric={index > 0}>
+                  {label}
+                </Th>
+              ),
+            )}
           </tr>
         </thead>
         <tbody>

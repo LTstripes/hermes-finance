@@ -10,6 +10,7 @@ import "../ui-v2/UiV2DataSourcesPage";
 import "../ui-v2/UiV2DataAppPage";
 import "../ui-v2/UiV2ClosePage";
 import "../ui-v2/UiV2MonthsPage";
+import "../ui-v2/UiV2ReportsPage";
 
 vi.mock("../ui-v2/UiV2ScenarioLabPage", () => ({
   default: function BrokenScenarioLabPage() {

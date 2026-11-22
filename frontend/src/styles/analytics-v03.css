@@ -5,12 +5,12 @@
 .capital-composition-chart .recharts-cartesian-axis-tick-value {
   fill: var(--muted);
   font-family: var(--f-num);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .capital-composition-chart__legend {
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--t-xs);
 }
 
 .capital-composition-chart__summary {
@@ -19,7 +19,7 @@
   gap: 6px 20px;
   margin: 6px 8px 0;
   color: var(--muted);
-  font-size: var(--text-xs);
+  font-size: var(--t-xs);
   line-height: 1.45;
 }
 
@@ -61,7 +61,7 @@
 
 .composition-tooltip__row strong {
   font-family: var(--f-num);
-  font-size: 12px;
+  font-size: var(--t-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

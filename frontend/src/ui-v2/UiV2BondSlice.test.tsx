@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SourceInstrumentReturns } from "../api/sourceReturns";
-import { ISIN, metric, analysis, event, source } from "../test/sourceInstrumentFixtures";
+import { analysis, event, ISIN, metric, source } from "../test/sourceInstrumentFixtures";
 import { UiV2BondSlice } from "./UiV2BondSlice";
 
 function LocationReadback() {
@@ -47,7 +47,7 @@ test.each(["RU000STALE01", ""])(
     const first = setup(data, url);
     expect(screen.getByText("Выбранная облигация недоступна")).toBeVisible();
     expect(screen.queryByRole("region", { name: /Детали облигации/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Полный P&L, ₽" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Полный результат, ₽" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("region", { name: "Условная оценка по выписке" }),
     ).not.toBeInTheDocument();
@@ -108,8 +108,8 @@ test("no-trade bond shows reported operands and server-only conditional fraction
   const row = within(screen.getByRole("table", { name: "Облигации выбранного счёта и периода" }));
   expect(row.getByText("2")).toBeVisible();
   expect(row.getByText(/2.012,34/)).toBeVisible();
-  expect(row.getByText("2030-05-31")).toBeVisible();
-  expect(card("Полный P&L, ₽").getByText("Недоступен")).toBeVisible();
+  expect(row.getByText("31.05.2030")).toBeVisible();
+  expect(card("Полный результат, ₽").getByText("Недоступен")).toBeVisible();
   expect(card("Modified Dietz · приблизительно, за период").getByText("Недоступен")).toBeVisible();
   const estimate = within(screen.getByRole("region", { name: "Условная оценка по выписке" }));
   expect(estimate.getByText("0,617 %")).toBeVisible();
@@ -146,7 +146,7 @@ test("unknown NKD/gross/tax stays unknown and source units, unsettled trade and 
   const coupons = within(screen.getByRole("table", { name: "Купоны по строкам источников" }));
   expect(coupons.getByText("Неизвестно / Неизвестно")).toBeVisible();
   expect(coupons.getByText(/Классификация: правило по умолчанию/)).toBeVisible();
-  expect(screen.getAllByText(/Нужна dirty-оценка/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Нужна стоимость с учётом НКД/).length).toBeGreaterThan(0);
   await userEvent.click(screen.getByText("Полнота и происхождение"));
   expect(screen.getByText("a".repeat(64))).toBeVisible();
 });
@@ -180,7 +180,7 @@ test("blocked flows hide both conditional figures while keeping known coupon and
   ).not.toBeInTheDocument();
   await userEvent.click(screen.getByText("Условная оценка недоступна"));
   expect(screen.getByText(/Не подтверждено, входит ли НКД/)).toBeVisible();
-  expect(screen.getByText("Нет оценки на 2030-05-31")).toBeVisible();
+  expect(screen.getByText("Нет оценки на 31.05.2030")).toBeVisible();
   expect(screen.getByText(/Известный компонент купонов/).parentElement).toHaveTextContent(
     "12,34 ₽ · неполный компонент",
   );
