@@ -579,3 +579,85 @@ test("settings has one sidebar entry and diagnostics deep links keep selection, 
   }
   expect(settingsWrites).toBe(0);
 });
+
+test("Alfa savings statement: preview is read-only and confirmed deposit survives reload", async ({
+  page,
+  request,
+}) => {
+  async function create(path: string, data: object) {
+    const response = await request.post(path, { data });
+    expect(response.status()).toBe(201);
+    return response.json();
+  }
+  const account = await create("/api/accounts", {
+    name: "Синтетический накопительный счёт",
+    account_type: "savings",
+  });
+  async function seedMonth(month: number, day: number, balance: string) {
+    const result = await create("/api/months", {
+      year: 2030,
+      month,
+      snapshot_date: `2030-0${month}-${day}`,
+    });
+    await create("/api/deposits", {
+      reporting_month_id: result.id,
+      account_id: account.id,
+      name: account.name,
+      deposit_type: "savings",
+      balance: { amount: balance, currency: "RUB" },
+      annual_rate: "8.00",
+      actual_interest_received: { amount: "7.89", currency: "RUB" },
+    });
+    return result.id;
+  }
+  await seedMonth(4, 30, "100000.00");
+  const month = await seedMonth(5, 31, "98765.43");
+  async function monthRows(resource: string) {
+    const response = await request.get(`/api/${resource}?month_id=${month}`);
+    expect(response.status()).toBe(200);
+    return response.json();
+  }
+  const before = await monthRows("deposits");
+  expect(before).toHaveLength(1);
+  const csv = [
+    "operationDate,transactionDate,accountName,accountNumber,cardName,cardNumber,merchant,amount,currency,status,category,mcc,type,comment,bonusValue,bonusTitle",
+    "01.05.2030,01.05.2030,Накопительный счёт,40817000000000000001,,,Перевод,6000.00,RUR,Выполнен,Между своими счетами,,Пополнение,,,",
+    "12.05.2030,12.05.2030,Накопительный счёт,40817000000000000001,,,Перевод,2000.00,RUR,Выполнен,Между своими счетами,,Списание,,,",
+    "31.05.2030,31.05.2030,Накопительный счёт,40817000000000000001,,,Выплата процентов на ежедневный остаток по счету за 05.2030 по итоговой ставке 12% годовых,1000.40,RUR,Выполнен,Накопления,,Пополнение,,,",
+  ].join("\n");
+  await page.goto(`/v2/close?month=${month}&panel=assets`);
+  await page.getByRole("button", { name: "Заполнить депозиты из выписки" }).click();
+  await page.getByLabel("Выписка Альфы (CSV)").setInputFiles({
+    name: "synthetic-savings.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv),
+  });
+  await page.getByLabel("Выписка охватывает весь месяц").check();
+  await page.getByLabel("Счёт в Finance").selectOption(String(account.id));
+  const confirm = page.getByRole("button", { name: "Подтвердить по счёту" });
+  await expect(confirm).toBeEnabled();
+  const preview = page.getByRole("table", { name: "Сравнение значений" });
+  await expect(preview.getByRole("row", { name: /Остаток на конец месяца/ })).toContainText(
+    /105\s000,40/,
+  );
+  await expect(preview.getByRole("row", { name: /Полученные проценты/ })).toContainText(
+    /1\s000,40/,
+  );
+  expect(await monthRows("deposits")).toEqual(before);
+  await confirm.click();
+  await expect(page.getByText(/Сохранено и проверено/)).toBeVisible();
+  await page.reload();
+  const table = page.locator(".month-deposits-table");
+  await expect(table.getByLabel(/^Баланс —/)).toHaveValue(/105\s?000,40?$/);
+  await expect(table.getByLabel(/^Получено —/)).toHaveValue(/1\s?000,40?$/);
+  expect(await monthRows("deposits")).toEqual([
+    expect.objectContaining({
+      id: before[0].id,
+      account_id: account.id,
+      balance: { amount: "105000.40", currency: "RUB" },
+      actual_interest_received: { amount: "1000.40", currency: "RUB" },
+    }),
+  ]);
+  expect(await monthRows("expenses")).toEqual([]);
+  expect(await monthRows("incomes")).toEqual([]);
+});
