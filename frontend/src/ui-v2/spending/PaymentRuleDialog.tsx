@@ -204,6 +204,7 @@ function PaymentForm({
             <Field htmlFor="payment-amount" label="Ожидаемая сумма, ₽">
               <MonthMoneyInput
                 id="payment-amount"
+                selectOnFocus
                 placeholder="Пока неизвестно"
                 value={draft.amount ?? ""}
                 onChange={(amount) => update({ amount: amount || null })}
