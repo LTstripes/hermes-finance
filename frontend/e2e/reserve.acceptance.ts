@@ -6,6 +6,8 @@ test("reserve saves a category budget, reads the calendar, and returns to the se
   await page.goto("/v2/spending?month=2026-10");
   await page.getByRole("link", { name: "Подушка", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Подушка безопасности" })).toBeVisible();
+  const setup = page.getByRole("button", { name: "Настроить подушку", exact: true });
+  if (await setup.isVisible()) await setup.click();
   await page.getByLabel("С", { exact: true }).fill("2027-01-01");
   await page.getByLabel("До", { exact: true }).fill("2027-06-30");
   await page.getByRole("checkbox", { name: "Продукты", exact: true }).check();
@@ -17,9 +19,11 @@ test("reserve saves a category budget, reads the calendar, and returns to the se
     .filter({ has: page.getByRole("heading", { name: "Цель до 30.06.2027" }) });
   await expect(goal).toContainText(/228\s000/);
   await page.reload();
-  await expect(page.getByRole("textbox", { name: "Оценка · Продукты" })).toHaveValue("38000");
+  await expect(goal).toBeVisible();
+  if (await setup.isVisible()) await setup.click();
+  await expect(page.getByRole("textbox", { name: "Оценка · Продукты" })).toHaveValue("38 000");
   await expect(goal).toContainText(/228\s000/);
-  await page.getByRole("link", { name: "Операции", exact: true }).click();
+  await page.getByRole("link", { name: "Обзор", exact: true }).click();
   await expect(page).toHaveURL(/\/v2\/spending\?month=2026-10$/);
 });
 
@@ -109,7 +113,7 @@ test("reserve opens a possible rent payment and updates the budget after confirm
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "Цель до 30.06.2025" }) });
     await expect(goal).toContainText("недостаточно данных");
-    const action = goal.getByRole("button", { name: `Открыть покупку «${name}»` });
+    const action = goal.getByRole("button", { name: `Проверить покупку «${name}»` });
     await action.click();
     const card = page.getByRole("dialog", { name: "Карточка покупки" });
     await expect(card.getByLabel("Существующий график")).toHaveValue(
@@ -117,7 +121,7 @@ test("reserve opens a possible rent payment and updates the budget after confirm
     );
     await card.getByRole("button", { name: "Уже оплачено по этому графику" }).click();
     await expect(card.getByRole("status")).toHaveText("Сохранено");
-    await card.getByRole("button", { name: "Закрыть" }).click();
+    await card.getByRole("button", { name: "Закрыть", exact: true }).click();
     await expect(action).toHaveCount(0);
     await expect(goal).toContainText(/180\s000/);
     await page.reload();

@@ -308,7 +308,16 @@ test("spending laptop reserve and annual payment @viewport-owned", async ({ page
   await expect(page.getByRole("row").filter({ hasText: "Тестовый магазин" }).last()).toContainText(
     /24\s000/,
   );
+  const setup = page.getByRole("button", { name: "Настроить подушку", exact: true });
+  await expect(setup).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("С", { exact: true })).toBeHidden();
+  await expect(
+    page.getByRole("progressbar", { name: "Доступный резерв относительно цели" }),
+  ).toBeVisible();
   await capture("reserve");
+  await setup.click();
+  await expect(page.getByLabel("С", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Свернуть настройки" }).click();
   await page.unroute("**/api/**");
   const incompleteUnhandled = await installSyntheticApi(page, "empty");
   await page.reload();

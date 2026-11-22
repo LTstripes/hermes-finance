@@ -74,7 +74,8 @@ export function MonthSalaryTax({ monthId, report = false }: { monthId: number; r
           </>
         ) : null}
         <span>
-          Налог{rates.length ? ` (${rates.join(" + ")})` : ""} <strong>{moneyText(tax.tax)}</strong>
+          Налог{rates.length ? <span className="num"> ({rates.join(" + ")})</span> : null}{" "}
+          <strong>{moneyText(tax.tax)}</strong>
         </span>
         {known(actual) ? (
           <>
@@ -87,8 +88,8 @@ export function MonthSalaryTax({ monthId, report = false }: { monthId: number; r
       </p>
       {mismatch ? (
         <p className={styles.difference}>
-          Фактически на руки {moneyText(actual)}, по расчёту — {moneyText(calculated)}. Выплата
-          отличается от расчётной.
+          Фактически на руки <span className="num">{moneyText(actual)}</span>, по расчёту —{" "}
+          <span className="num">{moneyText(calculated)}</span>. Выплата отличается от расчётной.
         </p>
       ) : null}
     </section>

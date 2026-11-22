@@ -1,16 +1,14 @@
 .summary {
   min-width: 0;
-  margin: 0 12px 12px 56px;
+  margin: 0 12px 12px calc(var(--step-inset) + var(--step-icon) + var(--step-gap));
   color: var(--muted);
   font-size: var(--t-sm);
 }
 
 .summary[data-report] {
   margin: 0;
-  padding: 20px;
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--surface);
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
 }
 
 .summary h2 {
@@ -36,5 +34,10 @@
 }
 
 .difference {
-  margin: 6px 0 0;
+  display: inline-block;
+  margin: 8px 0 0;
+  padding: 4px 8px;
+  background: var(--fc-soft);
+  color: var(--fc-ink);
+  border-radius: var(--r-sm);
 }

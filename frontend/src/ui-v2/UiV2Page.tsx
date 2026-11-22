@@ -21,7 +21,7 @@ import type {
 import { isGuidedCloseStepId } from "../components/month-close/navigation";
 import { PortfolioCoverageNote } from "../components/PortfolioCoverageNote";
 import { HelpTip } from "../components/ui";
-import { formatDate, formatMonth } from "../lib/format";
+import { formatDate, formatMonth, shortMonthLabel } from "../lib/format";
 import { moneySharePercent, moneyToChartNumber, toKopecks } from "../lib/money";
 import { queryKeys } from "../queryClient";
 import { classMeta } from "./assetClasses";
@@ -74,26 +74,6 @@ const PASSIVE_SOURCE_META = [
   ["dividends", "Дивиденды", "var(--c-stock)"],
   ["other_capital_income", "Прочий доход от капитала", "var(--c-cash)"],
 ] as const;
-
-const SHORT_MONTHS = [
-  "янв",
-  "фев",
-  "мар",
-  "апр",
-  "май",
-  "июн",
-  "июл",
-  "авг",
-  "сен",
-  "окт",
-  "ноя",
-  "дек",
-];
-
-function shortMonthLabel(year: number, month: number, first: boolean): string {
-  const name = SHORT_MONTHS[month - 1] ?? String(month);
-  return first || month === 1 ? `${name} ${year}` : name;
-}
 
 function isPositive(value: MoneyValue | null | undefined): boolean {
   return value != null && toKopecks(value.amount) > 0n;

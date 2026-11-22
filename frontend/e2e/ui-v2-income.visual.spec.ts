@@ -26,7 +26,7 @@ test("ui-v2 total income desktop and mobile @viewport-owned", async ({ page }, t
     "true",
   );
   await expect(section.getByTestId("total-income-bonus-legend")).toHaveCount(0);
-  for (const width of [1440, 390]) {
+  for (const width of [1440, 1280, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 1200 : 900 });
     await expect(section.getByRole("button", { name: "Календарный год" })).toBeVisible();
     await expect(section.getByRole("button", { name: "Всё", exact: true })).toBeVisible();
