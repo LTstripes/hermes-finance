@@ -1772,3 +1772,72 @@ def test_duplicate_link_existing_target_fails_before_staging(tmp_path: Path) -> 
     finally:
         session.close()
         database.engine.dispose()
+
+
+def test_pdf_payout_comparison_preserves_partial_coverage_and_net_basis(tmp_path):
+    from hermes_finance.persistence import ExpectedCashFlow
+    from hermes_finance.services.statement_payout_review import payout_review
+
+    session, database = session_for(tmp_path)
+    try:
+        month, account, instruments = build_env(
+            session, extra_isins=(SYN_ISIN_COUPON, SYN_ISIN_REDEEM)
+        )
+        document = build_income_report_pdf()
+
+        def forecast(isin, day, kind):
+            item = ExpectedCashFlow(
+                reporting_month_id=month,
+                account_id=account,
+                instrument_id=instruments[isin],
+                flow_type=kind,
+                expected_date=date(2026, 1, day),
+                gross_amount_kopecks=1150,
+                expected_tax_amount_kopecks=150,
+                expected_net_amount_kopecks=1000,
+                source="synthetic",
+                source_as_of_date=date(2025, 12, 31),
+                forecast_version="v1",
+            )
+            session.add(item)
+            return item
+
+        forecast(SYN_ISIN_COUPON, 10, "coupon")
+        forecast(SYN_ISIN_REDEEM, 29, "redemption")
+
+        def reasons():
+            session.commit()
+            before = sqlite_blob(database)
+            review = payout_review(
+                session,
+                prepare(session, document, account),
+                target_month=date(2026, 1, 1),
+                today=date(2026, 1, 21),
+            )
+            assert sqlite_blob(database) == before
+            return [item["reason"] for item in review["items"]]
+
+        assert reasons() == ["no_forecast", "coverage_unknown", "future"]
+        manual = forecast(SYN_ISIN, 20, "dividend")
+        assert reasons() == ["unconfirmed", "coverage_unknown", "future"]
+        row = preview(session, document, account).rows[0]
+        assert apply(session, document, account, (selection_from_row(row),)).success
+        assert reasons()[0] == "unconfirmed"
+        manual.expected_net_amount_kopecks = 1100
+        assert reasons()[0] == "below_expected"
+        manual.expected_net_amount_kopecks = 900
+        assert reasons()[0] == "different_amount"
+        manual.expected_net_amount_kopecks = 1000
+        manual.gross_amount_kopecks, manual.expected_tax_amount_kopecks = 1200, 200
+        assert reasons()[0] == "different_components"
+        manual.expected_tax_amount_kopecks = None
+        assert reasons()[0] == "incomparable"
+        forecast(SYN_ISIN, 21, "dividend")
+        assert reasons()[0] == "ambiguous"
+        document = build_income_report_pdf(
+            [{"gross": "12,00", "per_unit": "1,20", "tax": "2,00", "net": "10,00"}]
+        )
+        assert reasons()[0] == "correction"
+    finally:
+        session.close()
+        database.engine.dispose()

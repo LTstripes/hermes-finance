@@ -862,6 +862,28 @@ def test_same_schema_physical_restore_invalidates_forms_preserves_rows_and_close
         assert all(not b["items"] for b in buckets)
 
 
+def accept_distinct(client, intent):
+    distinct = {**intent, "operation": "distinct"}
+    first = client.post("/api/broker-months/payout-preview", json=distinct).json()
+    distinct["claims"] = {
+        "reference": "review",
+        "independent_event_reference": "different-events",
+        "settlement_basis_reference": "separate-identities",
+        "review_context_digest": first["review_context_digest"],
+        "actual_and_forecast_are_distinct": True,
+        "actual_independent_event_key": "actual-event-A",
+        "forecast_independent_event_key": "future-event-B",
+    }
+    plan = client.post("/api/broker-months/payout-preview", json=distinct).json()
+    assert plan["can_apply"], plan["blockers"]
+    payload = {
+        **distinct,
+        "request_id": "distinct",
+        "confirmation_digest": plan["confirmation_digest"],
+    }
+    assert client.post("/api/broker-months/payout-apply", json=payload).status_code == 200
+
+
 @pytest.mark.parametrize("settlement", ["near"], indirect=True)
 def test_distinct_exact_pair_future_and_consumers_preserve_unknown_subtotal(database, settlement):
     from hermes_finance.services.cash_flow_ladder import build_cash_flow_ladder
@@ -889,25 +911,7 @@ def test_distinct_exact_pair_future_and_consumers_preserve_unknown_subtotal(data
                 session, intent["reporting_month_id"], forecast_version="synthetic-v1"
             ).payout_warnings
         )
-    distinct = {**intent, "operation": "distinct"}
-    first = client.post("/api/broker-months/payout-preview", json=distinct).json()
-    distinct["claims"] = {
-        "reference": "review",
-        "independent_event_reference": "different-events",
-        "settlement_basis_reference": "separate-identities",
-        "review_context_digest": first["review_context_digest"],
-        "actual_and_forecast_are_distinct": True,
-        "actual_independent_event_key": "actual-event-A",
-        "forecast_independent_event_key": "future-event-B",
-    }
-    plan = client.post("/api/broker-months/payout-preview", json=distinct).json()
-    assert plan["can_apply"], plan["blockers"]
-    payload = {
-        **distinct,
-        "request_id": "distinct",
-        "confirmation_digest": plan["confirmation_digest"],
-    }
-    assert client.post("/api/broker-months/payout-apply", json=payload).status_code == 200
+    accept_distinct(client, intent)
     obligations = client.get(
         f"/api/broker-months/payout-obligations?reporting_month_id={intent['reporting_month_id']}"
     ).json()
@@ -1845,3 +1849,146 @@ def test_unresolved_source_payout_warning_survives_user_close(database, settleme
             future_states(session, month_id)[("ecf", intent["expected_cash_flow_id"])]
             == "unresolved"
         )
+
+
+def linked_pdf_report(database, settlement):
+    from _statement_pdf import build_income_report_pdf
+    from test_statement_import_apply import SYN_DEPO, apply, prepare
+
+    from hermes_finance.persistence import Instrument
+
+    client, intent = settlement
+    account = intent["account_id"]
+    with database.session_factory() as session:
+        actual = session.get(InvestmentCashFlow, intent["investment_cash_flow_id"])
+        isin = session.get(Instrument, actual.instrument_id).isin
+        date_in_pdf = actual.event_date.strftime("%d.%m.%Y")
+        forecast = session.get(ExpectedCashFlow, intent["expected_cash_flow_id"])
+        forecast.expected_date = actual.event_date
+        forecast.forecast_version = "v1"
+        session.commit()
+        document = build_income_report_pdf(
+            [
+                {
+                    "isin": isin,
+                    "payment_kind": "погашение купона",
+                    "quantity": "1",
+                    "per_unit": "1123,45",
+                    "gross": "1123,45",
+                    "tax": "123,45",
+                    "net": "1000,00",
+                    "record_date": date_in_pdf,
+                    "payment_date": date_in_pdf,
+                }
+            ]
+        )
+        row = prepare(session, document, account).rows[0]
+        selection = row.to_apply_selection(action="link_existing", existing_cash_flow_id=actual.id)
+        result = apply(session, document, account, (selection,))
+        assert result.success, result
+
+    def compare(pdf=document):
+        before = database_bytes(database)
+        response = client.post(
+            "/api/statement-import/prepare",
+            files={"document": ("synthetic.pdf", pdf, "application/pdf")},
+            data={
+                "account_mappings": json.dumps(
+                    [{"hermes_account_id": account, "provider_account_ref": SYN_DEPO}]
+                )
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert before == database_bytes(database)
+        return response.json()["payout_review"]["items"]
+
+    return client, intent, compare, document
+
+
+def test_alfa_pdf_prepare_hides_only_current_exact_settlement(database, settlement, tmp_path):
+    import gc
+    import os
+    import shutil
+    from pathlib import Path
+
+    client, intent, compare, _ = linked_pdf_report(database, settlement)
+
+    assert [v["reason"] for v in compare()] == ["unconfirmed"]
+    with database.session_factory() as session:
+        forecast = session.get(ExpectedCashFlow, intent["expected_cash_flow_id"])
+        forecast.expected_date = date(2030, 2, 1)
+        forecast.forecast_version = "independent-plan"
+        session.commit()
+    assert [v["reason"] for v in compare()] == ["empty_plan"]
+    receipt, _ = accept(client, intent, "pdf-full-settlement")
+    assert receipt["relations"][0]["state"] == "paid"
+    (proven,) = compare()
+    assert (proven["reason"], proven["expected_date"], proven["forecast_version"]) == (
+        "verified",
+        "2030-02-01",
+        "independent-plan",
+    )
+    assert proven["forecast_snapshot"]
+    predecessor = receipt["relations"][0]["id"]
+    accept(
+        client, {**intent, "operation": "retire", "predecessor_id": predecessor}, "pdf-retirement"
+    )
+    assert [v["reason"] for v in compare()] == ["retired"]
+    accept(
+        client, {**intent, "operation": "reaffirm", "predecessor_id": predecessor}, "pdf-reaffirm"
+    )
+    assert [v["reason"] for v in compare()] == ["verified"]
+    # The same bytes restored into a different SQLite file no longer own the
+    # physical proof bound by the Money receipt.
+    database.engine.dispose()
+    gc.collect()
+    original = Path(database.engine.url.database)
+    copied = tmp_path / "different-synthetic-incarnation.db"
+    shutil.copy2(original, copied)
+    os.replace(copied, original)
+    assert [v["reason"] for v in compare()] == ["stale_evidence"]
+
+
+def test_pdf_respects_distinct_and_previously_paid_forecasts(database, settlement):
+    from _statement_pdf import build_income_report_pdf
+
+    from hermes_finance.persistence import Instrument
+
+    client, intent, compare, _ = linked_pdf_report(database, settlement)
+    accept_distinct(client, intent)
+    distinct_items = compare()
+    assert distinct_items[0]["reason"] == "distinct"
+    assert distinct_items[0]["expected_date"] is None
+    assert len(distinct_items) == 2
+    assert distinct_items[1]["reason"] in {"future", "coverage_unknown"}
+    assert distinct_items[1]["actual_date"] is None
+
+    with database.session_factory() as session:
+        forecast = session.get(ExpectedCashFlow, intent["expected_cash_flow_id"])
+        forecast.source = "updated independent source"
+        session.commit()
+        actual = session.get(InvestmentCashFlow, intent["investment_cash_flow_id"])
+        isin = session.get(Instrument, actual.instrument_id).isin
+        actual_date = actual.event_date
+        other_pdf = build_income_report_pdf(
+            [
+                {
+                    "isin": isin,
+                    "payment_kind": "погашение купона",
+                    "quantity": "1",
+                    "per_unit": "1123,45",
+                    "gross": "1123,45",
+                    "tax": "123,45",
+                    "net": "1000,00",
+                    "record_date": actual_date.replace(day=1).strftime("%d.%m.%Y"),
+                    "payment_date": actual_date.strftime("%d.%m.%Y"),
+                }
+            ]
+        )
+    assert [v["reason"] for v in compare()] == ["unconfirmed"]
+    accept(client, intent, "paid-forecast-on-A")
+    assert [v["reason"] for v in compare()] == ["verified"]
+    only_other = compare(other_pdf)
+    assert len(only_other) == 1
+    assert only_other[0]["reason"] == "already_allocated"
+    assert only_other[0]["expected_amount"] is None

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -217,6 +217,57 @@ describe("StatementImportPanel explicit row decisions", () => {
     await screen.findByText("Уже импортировано");
     return user;
   }
+
+  it("shows only exceptions initially and refreshes the PDF comparison after explicit import", async () => {
+    const item = {
+      forecast_snapshot: "2026-08-31",
+      forecast_version: "v1",
+      name: "Бумага из PDF",
+      account_id: 1,
+      event_kind: "dividend",
+      actual_date: "2026-09-10",
+      expected_date: "2026-09-09",
+      actual_net: "100.00",
+      actual_tax: "10.00",
+      actual_currency: "RUB",
+      expected_amount: "100.00",
+      expected_tax: "10.00",
+      expected_currency: "RUB",
+      expected_basis: "net" as const,
+    };
+    const report = (reasons: string[]) => ({
+      ...preparation,
+      payout_review: {
+        vintages: [{ month: "2026-09-01", snapshot: "2026-08-31" }],
+        forecast_version: "v1",
+        items: reasons.map((reason, index) => ({ ...item, reason, key: String(index) })),
+      },
+    });
+    vi.mocked(prepareStatement)
+      .mockResolvedValueOnce(report(["unconfirmed", "verified", "future", "coverage_unknown"]))
+      .mockResolvedValueOnce(report(["verified", "verified", "future", "coverage_unknown"]));
+    const user = await prepareReport();
+    const review = screen.getByRole("region", { name: "Сверка прогноза с PDF" });
+    expect(review).toHaveTextContent("Сверено 1 выплата · Требуют внимания 1");
+    expect(within(review).getByText(/Связь с прогнозом требует подтверждения/)).toBeVisible();
+    const confirmed = within(review).getByText("Подтверждённые совпадения (1)");
+    expect(confirmed.closest("details")).not.toHaveAttribute("open");
+    expect(within(review).getByText("Будущие выплаты (1)").closest("details")).not.toHaveAttribute(
+      "open",
+    );
+    expect(
+      within(review).getByText("Вне подтверждённого покрытия (1)").closest("details"),
+    ).not.toHaveAttribute("open");
+    await user.click(confirmed);
+    expect(confirmed.closest("details")).toHaveAttribute("open");
+    expect(applyStatement).not.toHaveBeenCalled();
+    await user.click(screen.getAllByRole("checkbox")[2]);
+    await user.click(screen.getByRole("button", { name: "Применить выбранные строки" }));
+    await user.click(screen.getByRole("button", { name: "Подтвердить и применить" }));
+    await screen.findByText("Сверено 2 выплаты · Требуют внимания 0");
+    expect(prepareStatement).toHaveBeenCalledTimes(2);
+    expect(applyStatement).toHaveBeenCalledTimes(1);
+  });
 
   it("blocks a mixed set when a checked CORRECTION lacks revise", async () => {
     const user = await prepareReport();
