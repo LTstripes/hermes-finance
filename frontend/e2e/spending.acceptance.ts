@@ -145,7 +145,7 @@ test("spending: CSV and Markdown, disappearance, manual decision, saved review a
   await expect(category).toHaveAttribute("aria-expanded", "false");
   await page.getByRole("combobox", { name: "Источник", exact: true }).selectOption("cash");
   await expect(page).toHaveURL(/source=cash/);
-  await expect(page.getByText(/Показано 1 операция на/)).toBeVisible();
+  await expect(page.getByText(/В выборке 1 операция на/)).toBeVisible();
 
   await page.getByRole("link", { name: "Разобрать" }).click();
   await expect(page).toHaveURL(/review=1/);

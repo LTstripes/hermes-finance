@@ -23,9 +23,6 @@
 .sectionLink {
   color: var(--accent);
 }
-.actions a:global(.btn--primary) {
-  color: var(--accent-contrast, white);
-}
 .status [data-coverage="partial"]::before {
   background: var(--fc);
 }

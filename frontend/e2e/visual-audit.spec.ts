@@ -261,8 +261,17 @@ test("spending visual matrix @viewport-owned", async ({ browser }, testInfo) => 
           await expect(
             page.getByRole("status").filter({ hasText: /Загружа|Проверяем/ }),
           ).toHaveCount(0);
-          if (slug === "month")
+          if (slug === "month") {
             await expect(page.getByTestId("spending-daily").locator("svg").first()).toBeVisible();
+            const amount = page
+              .getByText("Расходы за октябрь", { exact: true })
+              .locator("..")
+              .locator("strong .num");
+            const fontSize = await amount.evaluate((node) =>
+              parseFloat(getComputedStyle(node).fontSize),
+            );
+            expect(fontSize, "The hero amount keeps its display size").toBeGreaterThanOrEqual(32);
+          }
           await page.evaluate(() => document.fonts.ready.then(() => undefined));
           if (width === 390) {
             const layout = await collectLayoutIssues(page);

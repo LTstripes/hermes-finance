@@ -1169,14 +1169,9 @@ a.btn {
   border-bottom: 0;
 }
 
-.num {
-  font-family: var(--f-num);
+th.num,
+td.num {
   font-size: var(--t-sm);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-th.num {
   text-align: right;
 }
 

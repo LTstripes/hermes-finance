@@ -45,10 +45,8 @@ function MonthFigures({ data }: { data: SpendingMonth }) {
   const location = useLocation();
   const note = comparison && spendingComparisonNote(data.has_manual, comparison.months);
   const split = [
-    exceptions.excluded_count ? `${exceptions.excluded_count} не входят в траты` : "",
-    exceptions.double_risk_count
-      ? `${exceptions.double_risk_count} может быть посчитана дважды`
-      : "",
+    exceptions.excluded_count ? `вне итога — ${exceptions.excluded_count}` : "",
+    exceptions.double_risk_count ? `с риском двойного учёта — ${exceptions.double_risk_count}` : "",
   ].filter(Boolean);
   return (
     <section className={sheet.section}>
@@ -165,8 +163,7 @@ function MonthFigures({ data }: { data: SpendingMonth }) {
       {exceptions.count > 0 && (
         <div className={`${styles.actions} ${styles.warning}`}>
           <p>
-            {exceptions.count} {pluralRu(exceptions.count, operationForms)}{" "}
-            {exceptions.count === 1 ? "ждёт" : "ждут"} решения
+            На проверке {exceptions.count} {pluralRu(exceptions.count, operationForms)}
             {split.length ? `: ${split.join(", ")}` : ""}.
           </p>
           <Link className="btn btn--secondary" to={importPath(month, true)}>

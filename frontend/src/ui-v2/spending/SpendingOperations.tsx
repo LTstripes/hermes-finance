@@ -132,7 +132,7 @@ export function Operations({
     <>
       {!inline && total_count > 0 && (
         <p className={sheet.figureDetail} style={{ textAlign: "end" }}>
-          Показано {total_count} {pluralRu(total_count, ["операция", "операции", "операций"])} на{" "}
+          В выборке {total_count} {pluralRu(total_count, ["операция", "операции", "операций"])} на{" "}
           <Money value={filtered_total} />
         </p>
       )}
