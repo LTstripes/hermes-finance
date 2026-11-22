@@ -31,6 +31,7 @@ TRANSITION = (
     "0070_spending_screen",
     "0071_spending_payment_rules",
     "0072_spending_reserve",
+    "0073_alfa_savings_links",
 )
 
 
