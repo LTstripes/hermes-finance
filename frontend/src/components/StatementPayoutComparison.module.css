@@ -1,0 +1,65 @@
+.review {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+.summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.summary h3 {
+  margin: 0 8px 0 0;
+}
+.review .verified {
+  background: var(--pos-soft);
+  color: var(--pos);
+}
+.review .attention {
+  background: var(--fc-soft);
+  color: var(--fc-ink);
+}
+.table .forecast {
+  color: var(--fc-ink);
+}
+.table th,
+.table td {
+  vertical-align: top;
+  padding: 10px 8px;
+}
+.table th[scope="row"] {
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ink);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+}
+.table small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font: var(--t-xs) / 1.4 var(--f-ui);
+}
+.table tbody td:last-child {
+  max-width: 28em;
+}
+.review details {
+  border-top: 1px solid var(--line-2);
+  padding-block: 8px;
+}
+.review summary {
+  cursor: pointer;
+  font-weight: var(--w-medium);
+}
+.review summary > span {
+  margin-inline-start: 4px;
+}
+.review details[open] summary {
+  margin-bottom: 8px;
+}
+
+.table :global(.num) {
+  text-align: end;
+}

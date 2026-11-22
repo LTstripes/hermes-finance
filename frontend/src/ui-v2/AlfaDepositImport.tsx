@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
-  previewAlfaDeposits,
   type AlfaDepositPreview,
   type AlfaDepositRequest,
   type AlfaDepositRow,
+  previewAlfaDeposits,
 } from "../api/alfaDeposits";
 import { formatApiError } from "../api/client";
 import { Button, Field, Input, Select, Table, Td, Th } from "../components/ui";
@@ -125,6 +125,7 @@ function AlfaDepositForm({ monthId, monthLabel, disabled, onConfirm }: Props) {
       <legend>Выписка за {monthLabel}</legend>
       <Field label="Выписка Альфы (CSV)" htmlFor={formId}>
         <Input
+          className={styles.alfaFile}
           id={formId}
           type="file"
           accept=".csv,text/csv"
@@ -152,7 +153,11 @@ function AlfaDepositForm({ monthId, monthLabel, disabled, onConfirm }: Props) {
           )}
         </div>
       )}
-      {notice && <p role="status">{notice}</p>}
+      {notice && (
+        <p role="status" className="inline-alert inline-alert--ok">
+          {notice}
+        </p>
+      )}
       {request && !data && !error && <p role="status">Сверяем выписку с депозитами…</p>}
       {data && request && (
         <>
@@ -165,7 +170,7 @@ function AlfaDepositForm({ monthId, monthLabel, disabled, onConfirm }: Props) {
             <section key={row.source_key} className={styles.alfaRow} aria-label={row.label}>
               <h4>{row.label}</h4>
               <small>
-                Первая строка CSV: {row.first_line} · Операций: {row.count}
+                Операций: {row.count}
                 {row.first_date && row.last_date && (
                   <>
                     {" "}
@@ -224,7 +229,10 @@ function AlfaDepositForm({ monthId, monthLabel, disabled, onConfirm }: Props) {
                 </Table>
               )}
               {row.difference !== null && (
-                <p>Разница с текущим остатком: {formatMoney(row.difference)}</p>
+                <p className={styles.alfaDifference}>
+                  Разница с текущим остатком{" "}
+                  <strong className="num">{formatMoney(row.difference)}</strong>
+                </p>
               )}
               {row.messages.map((message) => (
                 <p className={styles.hint} key={message}>
@@ -234,7 +242,7 @@ function AlfaDepositForm({ monthId, monthLabel, disabled, onConfirm }: Props) {
               {row.account_id !== null && (
                 <Button
                   type="button"
-                  variant="primary"
+                  variant={data.rows.length === 1 && row.token ? "primary" : "secondary"}
                   disabled={!row.token}
                   onClick={() => void confirm(row)}
                 >

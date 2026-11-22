@@ -10,17 +10,14 @@
   gap: 12px;
   margin: 16px 0;
 }
-.summary .card {
-  background: var(--surface);
-}
-.summary .card:first-child {
-  border-color: var(--field-line);
-}
 .card {
   border: 1px solid var(--line);
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   padding: 14px;
   min-width: 0;
+}
+.summary .card {
+  background: var(--surface);
 }
 .card h4 {
   margin: 0 0 10px;
@@ -65,7 +62,8 @@
   border-collapse: collapse;
   font-size: var(--t-sm);
 }
-.table caption {
+.table caption,
+.bonds caption {
   text-align: left;
   font-weight: var(--w-semibold);
   margin-bottom: 10px;
@@ -77,19 +75,6 @@
   vertical-align: top;
   text-align: left;
   min-width: 110px;
-}
-.table button {
-  text-align: left;
-  padding: 7px 9px;
-  border: 1px solid var(--field-line);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--accent);
-  cursor: pointer;
-}
-.table button[aria-pressed="true"] {
-  background: var(--accent-soft);
-  border-color: var(--accent);
 }
 .table td:last-child {
   min-width: 210px;
@@ -113,7 +98,46 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 700px) {
-  .grid {
+  .grid,
+  .summary {
     grid-template-columns: 1fr;
   }
+}
+
+.period {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 12px;
+}
+.bonds button {
+  white-space: normal;
+  text-align: start;
+}
+.bonds button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.bonds small {
+  display: block;
+  color: var(--muted);
+  font: var(--t-xs) / 1.4 var(--f-ui);
+  white-space: normal;
+}
+.disclosure {
+  padding-block: 12px;
+  border-top: 1px solid var(--line-2);
+}
+.disclosure summary {
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.bonds th,
+.bonds td {
+  padding: 10px 8px;
+}
+.bonds :global(.num) {
+  text-align: end;
 }
