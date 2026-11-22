@@ -64,7 +64,7 @@ test("spending: CSV and Markdown, disappearance, manual decision, saved review a
     "page",
   );
   await expect(page.getByTestId("spending-history")).toBeVisible();
-  await page.getByRole("link", { name: "Загрузить траты" }).click();
+  await page.getByRole("link", { name: "Загрузить расходы" }).click();
 
   const uploads = page.getByLabel("Выписка Альфа-Банка (CSV)", { exact: true });
   await uploads.setInputFiles({
@@ -176,6 +176,12 @@ test("annual payment note persists, projects a monthly amount and can stop renew
   await page.keyboard.press("Enter");
   const card = page.getByRole("dialog", { name: "Карточка покупки" });
   await card.getByLabel("Моя заметка").fill("Проезд на работу");
+  await page.keyboard.press("Escape");
+  const discard = page.getByRole("alertdialog", { name: "Закрыть без сохранения?" });
+  await expect(discard).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(discard).toHaveCount(0);
+  await expect(card.getByLabel("Моя заметка")).toHaveValue("Проезд на работу");
   await card.getByLabel("Обязательность для бюджета").selectOption("true");
   await card.getByLabel("Планирую повторять").check();
   await card.getByLabel("Интервал, месяцев").fill("12");
@@ -184,7 +190,7 @@ test("annual payment note persists, projects a monthly amount and can stop renew
   await card.getByRole("button", { name: "Сохранить" }).click();
   await expect(card.getByRole("status")).toHaveText("Сохранено");
   await expect(card.getByText(/В среднем за месяц/)).toContainText("2 000");
-  await card.getByRole("button", { name: "Закрыть" }).click();
+  await card.getByRole("button", { name: "Закрыть", exact: true }).click();
   await page.reload();
   await purchase.click();
   await expect(card.getByLabel("Моя заметка")).toHaveValue("Проезд на работу");
@@ -227,17 +233,17 @@ test("record next rent against the existing schedule and undo the selection", as
   await first.getByLabel("Интервал, месяцев").fill("1");
   await first.getByRole("button", { name: "Сохранить" }).click();
   await expect(first.getByRole("status")).toHaveText("Сохранено");
-  await first.getByRole("button", { name: "Закрыть" }).click();
+  await first.getByRole("button", { name: "Закрыть", exact: true }).click();
   const second = await open("2024-11");
   const pick = second.getByLabel("Существующий график");
-  const schedule = pick.getByRole("option", { name: /Аренда жилья · 2024-10/ });
+  const schedule = pick.getByRole("option", { name: /Аренда жилья · Октябрь\s2024/ });
   await expect(schedule).toHaveCount(1);
   const scheduleId = await schedule.getAttribute("value");
   if (!scheduleId) throw new Error("Не найден график октябрьской аренды");
   await pick.selectOption(scheduleId);
   await second.getByRole("button", { name: "Уже оплачено по этому графику" }).click();
   await expect(second.getByText(/Оплачено по графику · Аренда жилья/)).toBeVisible();
-  await second.getByRole("button", { name: "Закрыть" }).click();
+  await second.getByRole("button", { name: "Закрыть", exact: true }).click();
   await open("2024-11");
   await second.getByRole("button", { name: "Отменить решение" }).click();
   await expect(second.getByText(/Оплачено по графику · Аренда жилья/)).toHaveCount(0);

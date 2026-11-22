@@ -5,7 +5,7 @@ import type {
   SpendingCategory,
   SpendingException,
 } from "../../api/spending";
-import { Badge, Button, ConfirmDialog, HelpTip } from "../../components/ui";
+import { Badge, Button, ConfirmDialog, Field, HelpTip, Input, Select } from "../../components/ui";
 import { normalizeMoneyInput } from "../../lib/money";
 import sheet from "../ReportSheet.module.css";
 import { spendingMonthForm } from "../uiV2Copy";
@@ -102,9 +102,10 @@ function CategoryPicker({
   const id = useId();
   return (
     <>
-      <label className={sheet.select}>
+      <label className={sheet.select} htmlFor={`${id}-category`}>
         Категория{" "}
-        <select
+        <Select
+          id={`${id}-category`}
           disabled={disabled}
           value={category}
           onChange={(event) => {
@@ -122,7 +123,7 @@ function CategoryPicker({
             <option key={item.id}>{item.name}</option>
           ))}
           <option value={id}>Новая категория…</option>
-        </select>
+        </Select>
       </label>
       <ConfirmDialog
         open={open}
@@ -136,10 +137,14 @@ function CategoryPicker({
           setOpen(false);
         }}
       >
-        <label>
-          Категория{" "}
-          <input maxLength={128} value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
+        <Field label="Категория" htmlFor={id}>
+          <Input
+            id={id}
+            maxLength={128}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
         <p className={sheet.muted}>Тип: Прочие</p>
       </ConfirmDialog>
     </>
@@ -325,7 +330,11 @@ function ExceptionRow({
       {actions.length > 0 && (
         <div className={styles.actions}>
           {!directCategory && (
-            <div className={sheet.segmented} role="radiogroup" aria-label="Решение">
+            <div
+              className={`${sheet.segmented} ${styles.decisionSegments}`}
+              role="radiogroup"
+              aria-label="Решение"
+            >
               {actions.map((value) => (
                 <label className={styles.radio} key={value}>
                   <input

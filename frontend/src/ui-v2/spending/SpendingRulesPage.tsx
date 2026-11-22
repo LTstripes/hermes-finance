@@ -2,11 +2,22 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { spendingApi, type SpendingCategory, type SpendingRule } from "../../api/spending";
-import { Button, ConfirmDialog, Table, Td, Th } from "../../components/ui";
+import {
+  Button,
+  ConfirmDialog,
+  Input,
+  OverflowMenu,
+  OverflowMenuItem,
+  Select,
+  Table,
+  Td,
+  Th,
+} from "../../components/ui";
 import sheet from "../ReportSheet.module.css";
 import { UiV2Shell } from "../UiV2Shell";
 import { UiV2Notice, UiV2Skeleton, UiV2WidgetState } from "../UiV2StateBlocks";
 import { monthPath, Section, spendingPath, TypeSelect, validMonth } from "./common";
+import { ExpenseTabs } from "./ExpenseTabs";
 import styles from "./Spending.module.css";
 
 type Action =
@@ -46,7 +57,7 @@ function CategoryRow({
               else setName(null);
             }}
           >
-            <input
+            <Input
               autoComplete="off"
               aria-label="Название категории"
               maxLength={128}
@@ -72,22 +83,16 @@ function CategoryRow({
         />
       </Td>
       <Td>{aliases.length ? aliases.join(", ") : "—"}</Td>
-      <Td numeric>—</Td>
       <Td>
         {!system && (
-          <div className={styles.ruleActions}>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={disabled}
-              onClick={() => setName(category.name)}
-            >
+          <OverflowMenu label={`Действия с категорией «${category.name}»`}>
+            <OverflowMenuItem disabled={disabled} onClick={() => setName(category.name)}>
               Переименовать
-            </Button>
-            <Button variant="ghost" size="sm" disabled={disabled} onClick={onMerge}>
+            </OverflowMenuItem>
+            <OverflowMenuItem disabled={disabled} onClick={onMerge}>
               Объединить с…
-            </Button>
-          </div>
+            </OverflowMenuItem>
+          </OverflowMenu>
         )}
       </Td>
     </tr>
@@ -193,7 +198,7 @@ export default function SpendingRulesPage() {
     <UiV2Shell
       header={
         <div className={`${styles.actions} ${styles.screenHeader}`}>
-          <h1>Категории трат</h1>
+          <h1>Категории и правила</h1>
           <Link to={month && validMonth(month) ? monthPath(month) : spendingPath}>
             ← К расходам
           </Link>
@@ -201,6 +206,7 @@ export default function SpendingRulesPage() {
       }
     >
       <div className={sheet.sheet}>
+        <ExpenseTabs />
         {failed && (
           <UiV2Notice title="Не удалось подтвердить сохранение" alert>
             Проверьте категории и правила.
@@ -220,11 +226,9 @@ export default function SpendingRulesPage() {
               <Table>
                 <thead>
                   <tr>
-                    {["Категория", "Тип", "Категории банка", "Операций за 12 мес", ""].map(
-                      (label) => (
-                        <Th key={label}>{label}</Th>
-                      ),
-                    )}
+                    {["Категория", "Тип", "Категории банка", "Действия"].map((label) => (
+                      <Th key={label}>{label}</Th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -273,8 +277,7 @@ export default function SpendingRulesPage() {
                 <tr>
                   <Th>Продавец / получатель</Th>
                   <Th>Категория</Th>
-                  <Th>Создано</Th>
-                  <Th />
+                  <Th>Действие</Th>
                 </tr>
               </thead>
               <tbody>
@@ -287,7 +290,6 @@ export default function SpendingRulesPage() {
                         : (categories.data?.find((item) => item.id === rule.category_id)?.name ??
                           "—")}
                     </Td>
-                    <Td>—</Td>
                     <Td>
                       <Button
                         size="sm"
@@ -310,15 +312,13 @@ export default function SpendingRulesPage() {
               <thead>
                 <tr>
                   <Th>Запись месяца</Th>
-                  <Th>Продавец</Th>
-                  <Th />
+                  <Th>Действие</Th>
                 </tr>
               </thead>
               <tbody>
                 {manageableLinks.map((link) => (
                   <tr key={link.id}>
                     <Td>{link.entry_category}</Td>
-                    <Td>—</Td>
                     <Td>
                       <Button
                         size="sm"
@@ -360,9 +360,10 @@ export default function SpendingRulesPage() {
           onCancel={() => setAction(null)}
         >
           {action?.kind === "merge" && (
-            <label className={sheet.select}>
+            <label className={sheet.select} htmlFor="merge-category">
               Категория{" "}
-              <select
+              <Select
+                id="merge-category"
                 disabled={busy}
                 value={target}
                 onChange={(event) => setTarget(event.target.value)}
@@ -373,7 +374,7 @@ export default function SpendingRulesPage() {
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
         </ConfirmDialog>

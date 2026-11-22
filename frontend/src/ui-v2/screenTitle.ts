@@ -21,8 +21,8 @@ const TITLES: Record<string, string> = {
   "/v2/income/scenario-lab": "Сценарии",
   "/v2/spending": "Расходы",
   "/v2/spending/reserve": "Подушка безопасности",
-  "/v2/spending/import": "Загрузка трат",
-  "/v2/spending/rules": "Категории трат",
+  "/v2/spending/import": "Загрузка расходов",
+  "/v2/spending/rules": "Категории и правила",
 };
 
 export function screenTitle(pathname: string) {

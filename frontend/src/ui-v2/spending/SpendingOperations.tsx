@@ -38,36 +38,43 @@ export function OperationTable({
           const rule = rules.find(
             (r) => !r.needs_review && r.source === item.source && r.operation_id === item.id,
           );
+          const metadata = [
+            rule?.note,
+            rule?.repeat && "Повторяется",
+            rule?.mandatory_override === true && "Обязательная",
+            item.is_month_entry && "из отчёта месяца",
+          ]
+            .filter(Boolean)
+            .join(" · ");
           return (
             <tr key={`${item.source}:${item.id}`}>
               <Td>{shortDate(item.date)}</Td>
               <Td>
-                {item.kind === "purchase" && !/^0(?:\.0+)?$/.test(item.amount.amount) ? (
-                  <button type="button" className={styles.paymentLink} onClick={() => select(item)}>
-                    {item.description}
-                  </button>
-                ) : (
-                  item.description
-                )}{" "}
-                {item.processing && <Badge>в обработке</Badge>}{" "}
-                {item.kind === "refund" && <Badge>возврат</Badge>}
-                {rule && (
-                  <small className={sheet.muted}>
-                    {[
-                      rule.note,
-                      rule.repeat ? "Повторяется" : null,
-                      rule.mandatory_override === true ? "Обязательная" : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </small>
-                )}
-                {item.is_month_entry && <small className={sheet.muted}>из отчёта месяца</small>}
-                {item.linked_entry && (
-                  <HelpTip label="Связь с записью месяца">
-                    Связана с записью месяца „{item.linked_entry.category}“ (
-                    <Money value={item.linked_entry.amount} />)
-                  </HelpTip>
+                <div className={styles.operationTitle}>
+                  {item.kind === "purchase" && !/^0(?:\.0+)?$/.test(item.amount.amount) ? (
+                    <button
+                      type="button"
+                      className={styles.paymentLink}
+                      onClick={() => select(item)}
+                    >
+                      {item.description}
+                    </button>
+                  ) : (
+                    item.description
+                  )}{" "}
+                  {item.processing && <Badge>в обработке</Badge>}{" "}
+                  {item.kind === "refund" && <Badge>возврат</Badge>}
+                </div>
+                {(metadata || item.linked_entry) && (
+                  <div className={styles.operationMeta}>
+                    {metadata}
+                    {item.linked_entry && (
+                      <HelpTip label="Связь с записью месяца">
+                        Связана с записью месяца „{item.linked_entry.category}“ (
+                        <Money value={item.linked_entry.amount} />)
+                      </HelpTip>
+                    )}
+                  </div>
                 )}
               </Td>
               <Td>{item.category_name}</Td>
@@ -136,7 +143,7 @@ export function Operations({
         </p>
       )}
       {!inline && detached.length > 0 && (
-        <details>
+        <details className={styles.detachedNotes}>
           <summary>Пометки без покупки · {detached.length}</summary>
           <p>Выберите покупку в ленте и восстановите связь с прежней пометкой.</p>
           <ul>
@@ -146,8 +153,13 @@ export function Operations({
                 {rule.archived ? (
                   "В архиве"
                 ) : (
-                  <Button disabled={archive.isPending} onClick={() => archive.mutate(rule)}>
-                    Убрать из плана в архив
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={archive.isPending}
+                    onClick={() => archive.mutate(rule)}
+                  >
+                    В архив
                   </Button>
                 )}
               </li>

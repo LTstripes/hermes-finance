@@ -274,7 +274,7 @@ export default function SpendingReservePage() {
   return (
     <UiV2Shell active="spending" header={<h1>Подушка безопасности</h1>}>
       <div className={sheet.sheet}>
-        <ExpenseTabs reserve />
+        <ExpenseTabs />
         {query.isError ? (
           <UiV2WidgetState retry={() => void query.refetch()} />
         ) : !data ? (
