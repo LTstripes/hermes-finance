@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from hermes_finance.persistence import (
@@ -16,7 +16,7 @@ from hermes_finance.persistence import (
     InvestmentCashFlow,
     ReportingMonth,
 )
-from hermes_finance.services.actual_payouts import relation_state
+from hermes_finance.services.actual_payouts import _distinct_current, event_key, relation_state
 from hermes_finance.services.applied_statement_events import get_applied_statement_event_by_identity
 from hermes_finance.services.instrument_names import instrument_names
 from hermes_finance.services.monthly_summary import DEFAULT_FORECAST_VERSION
@@ -38,6 +38,7 @@ class Forecast:
     tax: Decimal | None
     snapshot: date
     version: str | None
+    provider_key: str | None
 
 
 def forecast_view(kind, f, month):
@@ -56,6 +57,7 @@ def forecast_view(kind, f, month):
         else None,
         month.snapshot_date,
         f.forecast_version if manual else None,
+        None if manual else event_key(f),
     )
 
 
@@ -101,10 +103,10 @@ def month_forecasts(session, start, accounts):
     return month.snapshot_date, forecasts
 
 
-def paid_forecasts(session, provider, row):
+def accepted_flow(session, provider, row):
     """Proof must bind this exact PDF fingerprint, current cash flow and terminal settlement."""
     if row.duplicate_class != DuplicateClass.DUPLICATE or not row.natural_identity:
-        return None, []
+        return None, None
     event = get_applied_statement_event_by_identity(
         session, provider=provider, natural_identity=row.natural_identity
     )
@@ -116,10 +118,16 @@ def paid_forecasts(session, provider, row):
         or event.instrument_id != row.expected_hermes_instrument_id
         or not event.investment_cash_flow_id
     ):
-        return "stale_evidence", []
+        return "stale_evidence", None
     flow = session.get(InvestmentCashFlow, event.investment_cash_flow_id)
     if not _linked_flow_matches_accepted(session, event=event, flow=flow):
-        return "stale_evidence", []
+        return "stale_evidence", None
+    return None, flow
+
+
+def paid_forecasts(session, flow):
+    if flow is None:
+        return None, []
     links = list(
         session.scalars(
             select(AppliedPayoutReconciliation).where(
@@ -159,6 +167,43 @@ def paid_forecasts(session, provider, row):
             return "stale_evidence", []
         forecasts.append(forecast_view(kind, forecast, month))
     return None, forecasts
+
+
+def settled_forecast_keys(session, pool):
+    """Exclude already settled plans even if the PDF contains only another payment."""
+    if not pool:
+        return set()
+    manual = {f.key[1] for f in pool if f.key[0] == "ecf"}
+    providers = {f.key[1] for f in pool if f.key[0] == "app"}
+    keys = {f.provider_key for f in pool if f.provider_key}
+    links = session.scalars(
+        select(AppliedPayoutReconciliation).where(
+            AppliedPayoutReconciliation.retired_request_id.is_(None),
+            AppliedPayoutReconciliation.archived_from_period.is_(None),
+            or_(
+                AppliedPayoutReconciliation.expected_cash_flow_id.in_(manual),
+                AppliedPayoutReconciliation.applied_payout_id.in_(providers),
+                AppliedPayoutReconciliation.provider_event_key.in_(keys),
+            ),
+        )
+    )
+    settled = set()
+    provider_keys = set()
+    for link in links:
+        if relation_state(session, link) == "paid":
+            settled.add(("ecf", link.expected_cash_flow_id))
+            settled.add(("app", link.applied_payout_id))
+            if link.provider_event_key:
+                provider_keys.add(link.provider_event_key)
+    return {f.key for f in pool if f.key in settled or f.provider_key in provider_keys}
+
+
+def distinct_from_flow(session, flow, forecast):
+    if flow is None:
+        return False
+    kind, ident = forecast.key
+    model = ExpectedCashFlow if kind == "ecf" else AppliedProviderPayout
+    return _distinct_current(session, flow, kind, session.get(model, ident))
 
 
 def verdict(row: StatementApplyPreparationRow, forecast: Forecast, proven: bool):
@@ -241,6 +286,8 @@ def payout_review(session: Session, preparation, *, target_month: date | None, t
         }
         stamp, pool = month_forecasts(session, start, accounts)
         vintages.append({"month": start, "snapshot": stamp})
+        settled = settled_forecast_keys(session, pool)
+        seen.update(settled)
         grouped = defaultdict(list)
         for f in pool:
             grouped[(f.account, f.instrument, f.kind)].append(f)
@@ -257,8 +304,17 @@ def payout_review(session: Session, preparation, *, target_month: date | None, t
             if identities[row.natural_identity] > 1:
                 add("ambiguous", row)
                 continue
-            candidates = grouped[scope(row)]
-            issue, proven = paid_forecasts(session, preparation.provider, row)
+            issue, flow = accepted_flow(session, preparation.provider, row)
+            if issue:
+                add(issue, row)
+                continue
+            issue, proven = paid_forecasts(session, flow)
+            scoped_plans = grouped[scope(row)]
+            candidates = [
+                f
+                for f in scoped_plans
+                if f.key not in settled and not distinct_from_flow(session, flow, f)
+            ]
             # A proven manual forecast and its provider counterpart describe one
             # event. Only the manual row supplies a comparable net amount.
             if proven:
@@ -269,6 +325,13 @@ def payout_review(session: Session, preparation, *, target_month: date | None, t
                 add(issue, row)
             elif row.duplicate_class == DuplicateClass.CORRECTION:
                 add("correction", row)
+            elif scoped_plans and not candidates:
+                add(
+                    "already_allocated"
+                    if all(f.key in settled for f in scoped_plans)
+                    else "distinct",
+                    row,
+                )
             elif not candidates:
                 has_account_plan = any(f.account == row.expected_hermes_account_id for f in pool)
                 reason = (
