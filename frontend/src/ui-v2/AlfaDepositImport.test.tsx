@@ -24,7 +24,7 @@ const row: AlfaDepositRow = {
   proposed: { balance: "105000.40", actual_interest_received: "1000.40", annual_rate: null },
   difference: "5000.40",
   messages: [],
-  token: "verified",
+  token: "synthetic-verified",
 };
 const view = (rows: AlfaDepositRow[]): AlfaDepositPreview => ({
   month_id: 7,
@@ -78,7 +78,7 @@ test("a late response to a replaced file cannot show or authorize its proposal",
 
 test("changing coverage requests a new proposal; only a confirmed row goes to apply", async () => {
   vi.mocked(previewAlfaDeposits).mockImplementation(async (request) =>
-    view([{ ...row, token: request.full_month ? "complete" : null }]),
+    view([{ ...row, token: request.full_month ? "synthetic-complete" : null }]),
   );
   const onConfirm = open();
   upload("month");
@@ -94,6 +94,6 @@ test("changing coverage requests a new proposal; only a confirmed row goes to ap
   await screen.findByText(/Сохранено и проверено/);
   expect(onConfirm).toHaveBeenCalledExactlyOnceWith(
     { month_id: 7, csv: "month", full_month: true, bindings: {} },
-    expect.objectContaining({ source_key: "first", token: "complete" }),
+    expect.objectContaining({ source_key: "first", token: "synthetic-complete" }),
   );
 });
