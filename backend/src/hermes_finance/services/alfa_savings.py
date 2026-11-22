@@ -23,6 +23,7 @@ from hermes_finance.services.deposits import create_deposit_snapshot, update_dep
 from hermes_finance.services.reporting_months import get_reporting_month
 
 _TOKEN_KEY = secrets.token_bytes(32)
+_ACCOUNT_NUMBER = re.compile(r"[0-9]{20}")
 _MAX_STORED = 2**63 - 1
 _INTEREST = re.compile(
     r"выплата процентов на ежедневный остаток по сч[её]ту за "
@@ -58,7 +59,7 @@ def _interest(rows: list[AlfaRow], start: date) -> tuple[int | None, int | None]
         fields = row.fields
         category = fields["category"].strip().casefold()
         descriptions = [" ".join(fields[k].split()) for k in ("merchant", "comment")]
-        looks_like_interest = any("выплата процент" in s.casefold() for s in descriptions)
+        looks_like_interest = any("процент" in s.casefold() for s in descriptions)
         if not looks_like_interest and not (
             category == "накопления" and row.direction == "Пополнение"
         ):
@@ -80,7 +81,7 @@ def _interest(rows: list[AlfaRow], start: date) -> tuple[int | None, int | None]
     return total or None, next(iter(rates)) if len(rates) == 1 else None
 
 
-def _groups(csv: str) -> dict[str, list[AlfaRow]]:
+def _parse_statement(csv: str) -> tuple[dict[str, list[AlfaRow]], str]:
     payload = csv.encode("utf-8")
     if len(payload) > 8 * 1024 * 1024:
         raise ValueError("Файл превышает 8 МБ.")
@@ -95,9 +96,10 @@ def _groups(csv: str) -> dict[str, list[AlfaRow]]:
     for row in parsed.rows:
         number = row.fields["accountNumber"].strip()
         # A digest of the entire number is sufficient for repeat local matching.
-        key = hashlib.sha256(number.encode()).hexdigest()
+        identity = number if _ACCOUNT_NUMBER.fullmatch(number) else f"unidentified-row-{row.line}"
+        key = hashlib.sha256(identity.encode()).hexdigest()
         groups[key].append(row)
-    return groups
+    return groups, hashlib.sha256(payload).hexdigest()
 
 
 def _snapshots(session: Session, month_id: int | None) -> dict[int, list[DepositSnapshot]]:
@@ -116,7 +118,9 @@ def _proposal(source_rows, start, end, source_key, account_id, mapped):
     number = source_rows[0].fields["accountNumber"].strip()
     return {
         "source_key": source_key,
-        "label": "Счёт ··" + number[-4:],
+        "label": "Счёт ··" + number[-4:]
+        if _ACCOUNT_NUMBER.fullmatch(number)
+        else "Номер не определён",
         "first_line": source_rows[0].line,
         "count": len(booked),
         "first_date": min(dates) if dates else None,
@@ -132,13 +136,15 @@ def _proposal(source_rows, start, end, source_key, account_id, mapped):
     }, booked
 
 
-def _prepare_row(row, booked, source_rows, current, previous, month, full_month, conflict):
+def _prepare_row(
+    row, booked, source_rows, current, previous, month, full_month, conflict, unidentified
+):
     messages = row["messages"]
     if current:
         row["current"] = _values(current)
         row["snapshot_id"] = current.id
-    if not re.fullmatch(r"[0-9]{20}", source_rows[0].fields["accountNumber"].strip()):
-        messages.append("Для привязки нужен полный номер банковского счёта.")
+    if unidentified:
+        messages.append("Для расчёта нужны полные номера счетов во всех строках выбранного месяца.")
     if not row["account_id"]:
         messages.append("Выберите соответствующий накопительный счёт в Finance.")
     if conflict:
@@ -151,6 +157,10 @@ def _prepare_row(row, booked, source_rows, current, previous, month, full_month,
         messages.append("Есть неподдерживаемая валюта или статус операции.")
     if not full_month:
         messages.append("Подтвердите, что выгрузка содержит все движения за календарный месяц.")
+    if month.snapshot_date != month.period_end:
+        messages.append(
+            "Для месячных сумм дата текущего снимка должна совпадать с последним днём месяца."
+        )
     if month.status != "draft":
         messages.append("Месяц закрыт. Для записи его нужно открыть.")
     if messages:
@@ -161,7 +171,9 @@ def _prepare_row(row, booked, source_rows, current, previous, month, full_month,
     interest, rate = _interest(booked, month.period_start)
     balance = previous.balance_kopecks + delta if previous else None
     if balance is None:
-        messages.append("Нет однозначного остатка предыдущего месяца. Баланс остаётся ручным.")
+        messages.append(
+            "Нет однозначного остатка на последний день предыдущего месяца. Баланс остаётся ручным."
+        )
     if interest is None:
         messages.append("Сумма процентов не подтверждена. Текущее значение сохраняется.")
     if not current and (not previous or balance is None or interest is None):
@@ -178,11 +190,13 @@ def _prepare_row(row, booked, source_rows, current, previous, month, full_month,
     ):
         messages.append("Расчёт выходит за допустимые границы. Проверьте остаток и движения.")
         return False
+    if current is None and rate is None:
+        messages.append("Ставка нового снимка перенесена из предыдущего месяца.")
     row["proposed"] = {
         "balance": _money(balance),
         "actual_interest_received": _money(interest),
-        "annual_rate": PercentageRate(rate).to_api()
-        if rate is not None and rate != reference.annual_rate_basis_points
+        "annual_rate": PercentageRate(next_rate).to_api()
+        if current is None or next_rate != reference.annual_rate_basis_points
         else None,
     }
     if current and balance is not None:
@@ -190,8 +204,8 @@ def _prepare_row(row, booked, source_rows, current, previous, month, full_month,
     return any(v is not None for v in row["proposed"].values())
 
 
-def _build(session, month, csv, full_month, bindings):
-    groups = _groups(csv)
+def _build(session, month, statement, full_month, bindings):
+    groups, csv_hash = statement
     if set(bindings) - groups.keys():
         raise ValueError("Выбранный счёт отсутствует в этой выписке.")
     last_day = month.period_start.replace(day=1) - timedelta(days=1)
@@ -213,9 +227,17 @@ def _build(session, month, csv, full_month, bindings):
     ).all()
     links = {m.source_key: m.account_id for m in session.scalars(select(AlfaSavingsLink))}
     target_owners = {v: k for k, v in links.items()}
-    selected = {key: bindings.get(key, links.get(key)) for key in groups}
+    selected = {key: links.get(key, bindings.get(key)) for key in groups}
     selected_counts = Counter(selected.values())
-    csv_hash = hashlib.sha256(csv.encode()).hexdigest()
+    unidentified = any(
+        not _ACCOUNT_NUMBER.fullmatch(items[0].fields["accountNumber"].strip())
+        and any(
+            r.transaction_date is None
+            or month.period_start <= r.transaction_date <= month.period_end
+            for r in items
+        )
+        for items in groups.values()
+    )
     result = []
     for key, items in groups.items():
         account_id = selected[key]
@@ -228,7 +250,9 @@ def _build(session, month, csv, full_month, bindings):
         )
         previous = (
             previous_items[0]
-            if len(previous_items) == 1 and previous_items[0].deposit_type == "savings"
+            if len(previous_items) == 1
+            and previous_items[0].deposit_type == "savings"
+            and prior_month.snapshot_date == last_day
             else None
         )
         row, booked = _proposal(
@@ -241,12 +265,15 @@ def _build(session, month, csv, full_month, bindings):
         )
         result.append(row)
         conflict = account_id is not None and (
-            account_id not in possible_accounts
+            (key in links and key in bindings and links[key] != bindings[key])
+            or account_id not in possible_accounts
             or selected_counts[account_id] > 1
             or target_owners.get(account_id, key) != key
             or (current_items and not current)
         )
-        if not _prepare_row(row, booked, items, current, previous, month, full_month, conflict):
+        if not _prepare_row(
+            row, booked, items, current, previous, month, full_month, conflict, unidentified
+        ):
             continue
         if (
             row["mapped"]
@@ -290,8 +317,11 @@ def _build(session, month, csv, full_month, bindings):
 
 
 def preview(session: Session, *, month_id: int, csv: str, full_month: bool, bindings: dict) -> dict:
+    statement = _parse_statement(csv)
     with coherent_read_snapshot(session):
-        return _build(session, get_reporting_month(session, month_id), csv, full_month, bindings)
+        return _build(
+            session, get_reporting_month(session, month_id), statement, full_month, bindings
+        )
 
 
 def apply(
@@ -304,16 +334,15 @@ def apply(
     source_key: str,
     token: str,
 ) -> DepositSnapshot:
+    statement = _parse_statement(csv)
     month = require_editable_reporting_month(session, month_id)
-    proposal = _build(session, month, csv, full_month, bindings)
+    proposal = _build(session, month, statement, full_month, bindings)
     row = next((r for r in proposal["rows"] if r["source_key"] == source_key), None)
     if not row or not row["token"] or not hmac.compare_digest(row["token"], token):
         raise StaleSavingsPreview("Предпросмотр изменился. Проверьте выписку и суммы заново.")
     link = session.get(AlfaSavingsLink, source_key)
     if link is None:
         session.add(AlfaSavingsLink(source_key=source_key, account_id=row["account_id"]))
-    else:
-        link.account_id = row["account_id"]
     values = {k: v for k, v in row["proposed"].items() if v is not None}
     if row["snapshot_id"] is not None:
         snapshot = session.get(DepositSnapshot, row["snapshot_id"])
@@ -333,7 +362,6 @@ def apply(
             DepositSnapshot.account_id == row["account_id"],
         )
     ).one()
-    values.setdefault("annual_rate", PercentageRate(prior.annual_rate_basis_points).to_api())
     return create_deposit_snapshot(
         session,
         reporting_month_id=month.id,

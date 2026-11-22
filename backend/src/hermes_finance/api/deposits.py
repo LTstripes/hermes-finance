@@ -7,10 +7,11 @@ service layer (B10); this module only maps the HTTP boundary.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from hermes_finance.api.settings import MoneyValue, session_for_request
@@ -116,6 +117,17 @@ class AlfaSavingsPreview(BaseModel):
     csv: str = Field(min_length=1, max_length=8 * 1024 * 1024)
     full_month: bool = False
     bindings: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("bindings", mode="before")
+    @classmethod
+    def validate_bindings(cls, value):
+        # Keep caller-supplied private identifiers out of nested error field names.
+        if not isinstance(value, dict) or any(
+            not re.fullmatch(r"[0-9a-f]{64}", key) or type(account_id) is not int or account_id <= 0
+            for key, account_id in value.items()
+        ):
+            raise ValueError("Неверная привязка счёта.")
+        return value
 
 
 class AlfaSavingsApply(AlfaSavingsPreview):

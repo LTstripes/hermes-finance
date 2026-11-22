@@ -239,7 +239,9 @@ def test_missing_snapshot_or_missing_opening_balance(env):
     data = {
         "month_id": month,
         "csv": statement(
-            movement(amount="125.12", category="Накопления", merchant=INTEREST),
+            movement(
+                amount="125.12", category="Накопления", merchant=INTEREST.split(" по итоговой")[0]
+            ),
             movement(SOURCE_B, "123.01", category="Накопления", merchant=INTEREST),
         ),
         "full_month": True,
@@ -248,10 +250,111 @@ def test_missing_snapshot_or_missing_opening_balance(env):
     data["bindings"] = {a["source_key"]: accounts[0], b["source_key"]: accounts[1]}
     a, b = preview(client, data)
     assert a["snapshot_id"] is None
-    assert apply(client, data, a).json()["balance"]["amount"] == "100125.12"
+    assert a["proposed"]["annual_rate"] == "9.00"
+    assert any("перенесена" in m for m in a["messages"])
+    created = apply(client, data, a).json()
+    assert (
+        created["balance"]["amount"] == "100125.12"
+        and created["annual_rate"] == a["proposed"]["annual_rate"]
+    )
     assert b["proposed"]["balance"] is None
     body = apply(client, data, b).json()
     assert (
         body["balance"]["amount"] == "101000.01"
         and body["actual_interest_received"]["amount"] == "123.01"
     )
+
+
+def test_confirmed_link_cannot_be_reassigned_or_apply_twice(env):
+    client, _, month, _, accounts = env
+    data = {
+        "month_id": month,
+        "csv": statement(movement(category="Накопления", merchant=INTEREST)),
+        "full_month": True,
+    }
+    row = preview(client, data)[0]
+    data["bindings"] = {row["source_key"]: accounts[0]}
+    row = preview(client, data)[0]
+    assert apply(client, data, row).status_code == 200
+    data["bindings"][row["source_key"]] = accounts[1]
+    again = preview(client, data)[0]
+    assert again["account_id"] == accounts[0] and again["mapped"] and not again["token"]
+    assert apply(client, data, row).status_code == 409
+    untouched = client.get(
+        "/api/deposits", params={"month_id": month, "account_id": accounts[1]}
+    ).json()[0]
+    assert untouched["actual_interest_received"]["amount"] == "7.89"
+
+
+def test_unidentified_movements_do_not_group_or_silently_change_the_other_account(env):
+    client, _, month, _, accounts = env
+    data = {
+        "month_id": month,
+        "csv": statement(movement(), movement("   "), movement("****4000"), movement("****4000")),
+        "full_month": True,
+    }
+    good, *invalid = preview(client, data)
+    assert len({r["source_key"] for r in invalid}) == len(invalid) == 3
+    assert {r["label"] for r in invalid} == {"Номер не определён"}
+    good = preview(client, {**data, "bindings": {good["source_key"]: accounts[0]}})[0]
+    assert good["token"] is None and all(v is None for v in good["proposed"].values())
+    bad_request = client.post(
+        "/api/deposits/alfa/preview", json={**data, "bindings": {SOURCE_A: "wrong"}}
+    )
+    assert bad_request.status_code == 422 and SOURCE_A not in bad_request.text
+
+
+def test_interest_reversal_preserves_interest_and_rate_while_netting_balance(env):
+    client, _, month, _, accounts = env
+    data = {
+        "month_id": month,
+        "csv": statement(
+            movement(amount="100.00", category="Накопления", merchant=INTEREST),
+            movement(
+                amount="75.17",
+                category="Накопления",
+                type="Списание",
+                comment="Сторно выплаты процентов",
+            ),
+        ),
+        "full_month": True,
+    }
+    row = preview(client, data)[0]
+    data["bindings"] = {row["source_key"]: accounts[0]}
+    row = preview(client, data)[0]
+    assert row["proposed"] == {
+        "balance": "100024.83",
+        "annual_rate": None,
+        "actual_interest_received": None,
+    }
+    result = apply(client, data, row).json()
+    assert (
+        result["actual_interest_received"]["amount"] == "7.89" and result["annual_rate"] == "9.00"
+    )
+
+
+@pytest.mark.parametrize("intermediate", ["opening", "current"])
+def test_month_end_snapshot_boundaries(env, intermediate):
+    client, db, month, before, accounts = env
+    data = {
+        "month_id": month,
+        "csv": statement(movement(category="Накопления", merchant=INTEREST)),
+        "full_month": True,
+    }
+    row = preview(client, data)[0]
+    data["bindings"] = {row["source_key"]: accounts[0]}
+    old = preview(client, data)[0]
+    with db.session_factory() as s:
+        target = before if intermediate == "opening" else month
+        m = s.get(ReportingMonth, target)
+        m.snapshot_date = m.period_end.replace(day=15)
+        s.commit()
+    assert apply(client, data, old).status_code == 409
+    new = preview(client, data)[0]
+    assert new["proposed"]["balance"] is None
+    if intermediate == "opening":
+        assert new["proposed"]["actual_interest_received"] == "6000.00"
+        result = apply(client, data, new).json()
+        assert result["balance"]["amount"] == "101000.01"
+    else:
+        assert new["token"] is None and all(v is None for v in new["proposed"].values())
