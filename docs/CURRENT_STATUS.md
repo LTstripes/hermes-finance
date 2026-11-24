@@ -1,6 +1,6 @@
 # Current state, limitations and next actions
 
-Updated **2026-11-22**. This is the current status; product and numerical rules
+Updated **2026-11-24**. This is the current status; product and numerical rules
 remain in [P](MASTER_SPEC.md) and [C](ARCHITECTURE_AND_CONTRACTS.md), development
 rules in [D](DEVELOPMENT.md), and operating procedures in [O](OWNER_RUNTIME_OPERATIONS.md).
 The [previous complete status](archive/current-status-through-2026-11-05.md)
@@ -216,9 +216,11 @@ checks do not establish Owner UAT.
 <a id="s3"></a>
 ## 3. Next actions
 
-For the first real spending import, use one Alfa CSV and one manual Markdown file
-for the same month. Review the preview, apply the import and reconcile the monthly
-total before loading historical statements.
+For the first real spending import, use a full monthly Alfa CSV. If you kept
+manual spending records for that month, include the matching Markdown file.
+With the CSV alone, the month has «Только выписка» (statement-only) coverage.
+Review the preview, apply the import and reconcile the monthly total before
+loading historical statements. [Spending diary follow-up](https://github.com/LTstripes/hermes-finance/issues/1227#issuecomment-7059910834)
 
 1. The Owner monitors numbers in everyday use and reports problems as new issues
    (formal UAT card #711 closed on 14.11.2026). At month close the Owner compares
